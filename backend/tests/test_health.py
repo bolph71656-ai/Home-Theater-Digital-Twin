@@ -1,26 +1,25 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
-from htdt.main import app
+from htdt.main import create_app
 
 
-def test_health_endpoint() -> None:
-    client = TestClient(app)
-
-    response = client.get("/api/health")
-
+def test_health_endpoint(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path))
+    response = client.get('/api/health')
     assert response.status_code == 200
     assert response.json() == {
-        "status": "ok",
-        "version": "0.1.0.dev0",
-        "platform_target": "Windows 11 x64",
-        "rew_required": False,
-        "measurement_hardware_required": False,
+        'status': 'ok',
+        'version': '0.1.0.dev0',
+        'platform_target': 'Windows 11 x64',
+        'rew_required': False,
+        'measurement_hardware_required': False,
+        'schema_version': 1,
     }
 
 
-def test_root_is_available_without_built_frontend() -> None:
-    client = TestClient(app)
-
-    response = client.get("/")
-
+def test_root_is_available_without_built_frontend(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path))
+    response = client.get('/')
     assert response.status_code == 200
