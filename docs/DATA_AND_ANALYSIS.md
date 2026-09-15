@@ -15,16 +15,25 @@
 | LayoutRevision | RoomRevision、個体ごとの位置/向き/役割、測定点一覧 | 保存した版の座標を上書きしない |
 | MeasurementPoint | 配置版内ID、座席ID（任意）、カプセル座標・方向・位置精度 | 座席中心と実際のマイク位置を区別 |
 | AVRConfiguration | 機種、入力、処理設定、サイズ、距離、レベル、クロスオーバー | 変更時に新しい版、未知値を保持 |
-| MicrophoneProfile | 型番、個体、校正原本のハッシュ、校正方向 | ファイル名が同じでも内容を区別 |
+| MicrophoneProfile | 版ID、型番、個体、校正原本のハッシュ、校正方向 | 校正や方向の訂正は新しい版。旧測定の参照を変えない |
 | AcquisitionContext | 配置版、AVR版、マイク版、点、経路、ゲイン、測定設定 | 一つの測定が参照する条件を固定 |
 | MeasurementSession | 日時、目的、メモ、測定ID群 | 途中で変わった条件を一括上書きしない |
-| Measurement | 独自ID、Session、Context、入力、音源群、evidence_type | 外部IDやファイル名を主キーにしない |
-| Dataset | FR/IR等、配列、単位、原本、処理状態、版 | 元データを表示処理で変更しない |
-| ComparisonSpec | 選択ID、帯域、補間・重み・レベル調整、算法版 | 開き直して同じ比較を再現 |
+| Measurement | 独自ID、版ID、Session、Context、入力、音源群、evidence_type、品質評価 | 取得の同一性と訂正版を分け、外部IDやファイル名を主キーにしない |
+| Dataset | FR/IR等、配列、単位、原本、処理状態、不変の版ID | 再解析・単位訂正も新しい版。元データを変更しない |
+| ComparisonSpec | 入力Measurement版/Dataset版/Context版、A/B順、帯域、有効区間、補間・重み・レベル調整、算法版 | 測定の最新版へ参照を自動更新しない |
 | AnalysisResult | 入力ハッシュ、算法版、パラメータ、結果、分類 | 入力や算法が変われば別の結果 |
 | ImportRecord | 原本ハッシュ、取込時刻、形式、parser_version、警告 | 再取込と新しい測定を混同しない |
+| RawAsset | ハッシュ、相対パス、種別、元の名前、サイズ | 数値原本と添付原本を区別し、同じ内容を共有可能 |
 
 「古い測定へのメモ追記」と「古い測定条件の訂正」は別操作。条件の誤記を直す場合は訂正版と修正理由を残し、旧版も参照可能にする。配置を複製しただけの未測定の候補に、既存測定を移して「新しい配置の実測」と見せない。
+
+### 訂正と保存済み比較
+
+比較が参照する配置・AVR・マイク・Context・Datasetの版は不変とする。MeasurementPointはLayoutRevisionとの組で識別し、Contextの点が別の配置版に属していれば保存を拒否する。Speakerの表示名は編集可能でも、測定時の型番・役割・基準点は配置版に残す。未確認の座標やAVR条件には明示的なunknownを使い、取込時の現在配置を測定時の事実として補わない。
+
+訂正は旧版を置換せず、新版・訂正理由・旧版への参照を同じトランザクションで保存する。例: マイク方向の誤記を直しても、保存済み比較C1は旧Contextを保持して「訂正版あり」と表示する。訂正版で再評価するとC2を作り、C1の警告や数値を上書きしない。
+
+v0.1から比較保存時のAnalysisResultも残す。入力版とハッシュ、適用した判定・警告、グリッド条件、有効点数、オフセット、差分配列と要約値を保持する。分類・品質評価もMeasurement版に固定し、後の訂正で旧比較の根拠を変えない。アプリ更新で旧算法を実行できなくなっても保存済み結果を表示できるようにし、新算法での再計算は別結果にする。全旧算法を永続的に実行可能にする基盤は不要。
 
 ### 所有情報と値の出所
 
@@ -41,19 +50,22 @@ speaker_idは物理個体、roleはその配置での役割、input_roleは測�
 ~~~text
 Measurement
   id: HTDT UUID
+  revision_id: 不変の版ID
   session_id
-  acquisition_context_id
+  acquisition_context_id?  # 実測ではunknownを表せるContextを参照
   input_role: "center"
   source_speaker_ids: ["speaker-C", "speaker-FL", "speaker-FR"]
   radiation_scope: single | bass_managed | mixed | unknown
   routing_evidence: verified | manual | inferred | unknown
   captured_at?
-  evidence_type: measured | predicted | unknown
+  evidence_type: measured | derived | predicted | unknown
   datasets[]
   provenance
 ~~~
 
-後から取込むREW演算結果はderived、シミュレーター結果はpredictedとして扱えるように分類を拡張する。エクスポート元がREWというだけで実測に決めない。ソースがunknownのデータは表示できても、実測の根拠として自動診断へ投入しない。
+v0.1の取込時からREW演算結果はderived、シミュレーター結果はpredictedとして分類する。分類を保存することと、HTDTで演算・予測を実装することは別である。形式だけで判別できなければunknownを既定とし、measuredへの確定には取得元情報またはユーザーの明示選択を残す。unknownは実測の根拠として自動診断へ投入しない。
+
+derivedは分かる範囲の入力・演算・元データ参照を来歴に残す。predictedはモデル・幾何版・設定・出力条件を来歴に残し、不明ならunknownとする。実際に使っていないマイクやAVRのAcquisitionContextを必須にして捏造しない。v0.1では来歴メタデータとして保存できればよく、予測エンジン用の汎用スキーマは後続で決める。
 
 ## 3. 座標契約
 
@@ -83,7 +95,7 @@ Measurement
 
 | データ | 必須項目 | 任意/不明を許す項目 |
 |---|---|---|
-| FrequencyResponse | frequency_hz[N]、level_db[N]、level_reference、source_hash | phase_deg[N]、サンプルレート、校正状態 |
+| FrequencyResponse | frequency_hz[N]、level_db[N]、level_reference、source_hash、phase_status | phase_deg[N]、サンプルレート、校正状態 |
 | ImpulseResponse | samples[N]、sample_rate_hz、amplitude_reference | start_time_s、timing_reference、t_zero/shift、校正状態 |
 | ProcessingState | smoothing、resolution、normalization、window、calibration_applied | 各状態のunknown |
 | Provenance | source_kind、importer_version、imported_at、原本参照 | REW版、外部UUID、測定日時 |
@@ -91,6 +103,8 @@ Measurement
 level_referenceはspl/relative/dbfs/other/unknown。SPLという列名と、絶対音圧校正が有効であることも分けて記録する。calibration_appliedはtrue/false/unknownとし、周波数校正と感度校正を区別する。
 
 FRは元の周波数点を保持し、保存時の等間隔化・平滑化は行わない。位相は存在するときだけ同じNを要求する。周波数・レベルは有限値を要求し、位相の欠測を扱う拡張では明示的なvalidity maskを導入する。位相列を部分的に0で埋めない。
+
+phase_statusはvalid/absent/unknownとし、列の存在と有効性を分ける。REWテキストでは位相なしでも0.0が出力され得るため、全ゼロだけでvalidにもabsentにも決めない。確認できない列は原本に残し、unknownとして位相依存の計算から除く。validでも共通タイミング基準が確認できるとは限らない。[REW File Menu](https://www.roomeqwizard.com/help/help_en-GB/html/file.html)
 
 IRでstart_time_sが不明なら、sample indexを時間へ換算できても共通のt=0があるとはしない。配列の単位がPercent、normalized amplitude、Pa等のどれかを明示し、dB化された表示値と線形IRサンプルを混ぜない。
 
@@ -110,15 +124,23 @@ IRでstart_time_sが不明なら、sample indexを時間へ換算できても共
 
 平滑化・窓が異なるデータはその差を表示する。既に平滑化済みのデータを「unsmoothedへ復元」しない。周波数応答の窓変更やETCの表示設定は同一視しない。
 
+Measurement版にはquality_status（usable/warning/invalid/unknown）、理由、確認元、再測定グループを記録する。同じAcquisitionContextを共有する測定でも品質は個別に評価する。クリッピングや誤チャンネルなど既知の不良測定は保存・参考表示を許すが、品質評価の指標と自動候補比較から除外する。暗騒音や再現性が不明なら条件付きとし、有限のFR値だけから良好なS/Nを推定しない。同条件の繰返しを比較対象と並べ、A/B差が繰返しの差と同程度なら改善と断定しない。2回の測定だけから統計的な信頼区間は作らない。
+
 ## 6. v0.1の指標を明確にする
 
 初期版は周波数応答のレベル比較のみ。複素和、位相差、群遅延、RT60をMVPの指標に含めない。
 
 ### 共通グリッド
 
-比較帯域は、ユーザー選択とすべての入力の有効帯域の共通部分。f_min>0とする。既定の比較グリッドは1/96 octave間隔を案とし、最後の点は共通範囲内に収める。
+指標ごとにA/Bの2入力を指定する。比較帯域は、ユーザー選択とその2入力の有効帯域の共通部分。重ね描きの3本目を追加しても、保存したA/B指標の帯域を変えない。複数ペアを順位比較する場合は全候補に共通の評価帯域・有効区間を明示的に固定する。
 
-レベルはlog2(f)軸上の線形補間で揃える。これは表示・指標用の再標本化であり平滑化ではない。粗い出力を96 PPOに増やしても分解能は上がらないことを表示する。大きな欠落区間は有効区間マスクで除き、外挿しない。算出帯域と有効点数を結果に保存する。
+グリッドの初期契約はf_k = 1 Hz × 2^(k/96)。kは整数で、正の下限以上・上限以下の点だけを採る。帯域端の追加点は作らない。1 Hzの基準と96 PPO、採用したk範囲、端点判定の算法版を保存する。評価帯域とレベル調整の基準帯域には、同じ規約で別々の有効点集合を作る。
+
+レベルはlog2(f)軸上の線形補間で揃える。これは表示・指標用の再標本化であり平滑化ではない。粗い出力を96 PPOに増やしても分解能は上がらないことを表示する。外挿せず、無効区間をまたぐ補間もしない。指標に使う点数は独立した実測の標本数ではない。
+
+無効区間は元データの明示情報またはユーザー指定から作り、その出所を保存する。既知の出力グリッドに欠番があれば警告して再出力か区間除外を求める。未知の不等間隔データは間隔が広いだけで欠測と断定せず、最大間隔と解像度不明を表示する。無効区間に接する補間区間も使用せず、A/Bの両方で有効な点のみ採用する。自動の欠落判定を後で追加する場合は閾値と算法版を別途定義する。
+
+要求帯域、実際の共通帯域、除外区間、全グリッド点数と有効点数・割合を保存する。除外を含む指標は「有効区間のみ」と表示し、欠けた帯域を含む全帯域の改善値と呼ばない。評価帯域の有効点が2未満なら平均差/RMSを出さない。基準帯域の有効点が2未満ならレベル調整と形状RMSだけを不可とし、生の差分は評価帯域の条件に従う。これは計算の最低条件であり、測定精度の保証ではない。
 
 ### 差分とレベル調整
 
@@ -228,6 +250,12 @@ project/
 
 SQLiteはメタデータ、配列、比較設定を持つ。配列はdtype（float64 little-endianを初期案）、shape、単位、codec、content_hashを添えたBLOBとして保存する。Pythonのpickleを永続形式にしない。大きいIRを扱い始めた時に、外部.npz等へ移す必要があるか計測する。
 
+### 数値原本と添付原本
+
+RawAssetの種別は、数値取込元、REW .mdat、マイク校正、設定メモ/画像などを区別する。数値DatasetはImportRecord経由で数値取込元に結び、SessionやMeasurement版・MicrophoneProfile版は必要な添付原本へ参照を持つ。一つの.mdatに複数測定を含められるよう、多対多の対応とする。対応付けは手動確認し、ファイル名だけで推定確定しない。
+
+.mdatは解析せずコピー・ハッシュ保存する任意添付。存在しなくてもテキスト取込は使えるが、「再解析用.mdatなし」と表示する。校正ファイルも外部パスやハッシュだけでなく、提供されたバイト列を保持する。取得できなければ未添付と表示する。各RawAssetは参照中に上書き・削除せず、再出力や新しい校正は別の原本として登録する。
+
 ### 取込の原子性
 
 1. 原本を一時ファイルへコピーしハッシュを算出する。
@@ -241,7 +269,7 @@ DBだけで外部ファイルまで原子的になったとは扱わない。ま
 
 SQLite稼働中のDBファイルだけをコピーしてバックアップ完了にしない。書込みを停止した短い整合点でSQLite Backup API等によりDBのコピーを作り、そのDBが参照する原本とmanifestをZIPにまとめる。[SQLite Backup API](https://www.sqlite.org/backup.html)
 
-manifestにはスキーマ版、DBと原本のハッシュ、作成日時を記録する。出力中の一時ZIPは完成品と区別する。既定のbackups配下を再帰的にZIPへ取り込まず、DBから列挙した原本のみ収集する。
+manifestにはスキーマ版、DBと原本のハッシュ、作成日時を記録する。DBコピーが参照する全RawAsset（.mdat・校正・設定添付を含む）を収集し、参照先が欠けていれば完全なバックアップとして成功扱いしない。出力中の一時ZIPは完成品と区別する。既定のbackups配下を再帰的にZIPへ取り込まない。
 
 復元は新しいフォルダに展開し、パスとハッシュ・参照整合性を確認してから開く。元のプロジェクトへ無言で上書きしない。元の取込ファイルを移動した後でも、同梱したrawだけで再解析できることを受入条件とする。
 
