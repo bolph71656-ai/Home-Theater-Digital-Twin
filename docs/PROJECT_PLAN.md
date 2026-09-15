@@ -1,1115 +1,200 @@
-# Home Theater Digital Twin — Project Plan
+# Home Theater Digital Twin — 詳細計画
 
-> Status: **Planning / pre-implementation**  
-> Target: **Windows 11, single-user, personal use**  
-> Development model: GitHub repository, local-first application  
-> This document is intentionally detailed so implementation can start later without reopening basic architectural decisions.
+> 改訂: 2026-09-15 / 状態: Planning only（本格実装前）
+> 対象: Windows・個人利用・ローカル完結・サブウーファーなしを優先
+> この改訂は文書のみ。未検証の技術選択を実装済み・動作確認済みとは扱わない。
 
----
+## 1. 目的と計画の読み方
 
-## 1. Project goal
+HTDTは、実測に裏付けられたホームシアターの記録・比較ワークスペースを作る。部屋の寸法、スピーカーとマイクの位置、AVRの設定、REW測定、配置変更の履歴を結び付け、「どの変更が、どの席・帯域に、どの程度の差を生んだか」を追跡する。
 
-Home Theater Digital Twin (HTDT) is a local application that combines four kinds of information that are usually managed separately:
+最初の成果は、FL/FRの実測を取り込み、配置と設定を保持したまま再表示・比較できること。実測を超えた精度を持つ音響モデルや、設定を自動で最適化する製品は初期目標にしない。
 
-1. **Physical room model** — room geometry, openings, TV/screen, speakers, listening seats.
-2. **Measured acoustic data** — primarily measurements produced by REW (Room EQ Wizard).
-3. **Configuration/history** — AVR state, YPAO on/off, speaker placement changes, measurement conditions and notes.
-4. **Model-based predictions** — room modes, geometric reflection paths, approximate SBIR candidates and later placement optimization.
+| 文書 | 正本とする内容 |
+|---|---|
+| 本書 | スコープ、方針、技術選択の状態、段階別の到達点 |
+| [レビュー](PLAN_REVIEW.md) | 旧計画からの修正とその根拠、外部資料 |
+| [測定・連携](MEASUREMENT_WORKFLOW.md) | 測定手順、取込形式、REW/AVRとの境界 |
+| [データ・解析](DATA_AND_ANALYSIS.md) | データ不変条件、数式、保存契約 |
+| [実装ロードマップ](IMPLEMENTATION_ROADMAP.md) | 作業順序、検証、完了条件 |
 
-The purpose is **not** to build another measurement application. REW remains the measurement engine. HTDT provides the missing layer above it: a persistent digital representation of the actual home theater, linked to measurement history and spatial context.
+本書の「決定」はプロジェクト方針、「暫定」は実装開始後に短い検証で確定する選択、「未確認」はユーザー環境・実機・実データが必要な事項を指す。外部機能の存在は資料確認、対象PCで使えるかは実機確認として区別する。
 
-The project must remain useful for systems **without a subwoofer**. Low-frequency analysis must therefore work directly with full-range/main speakers and should not assume a bass-management or multi-sub workflow.
+## 2. 確定した制約と未確認の前提
 
----
+| 項目 | 状態 | 扱い |
+|---|---|---|
+| Windows・個人利用 | 確定 | Windowsで検証し、サーバー運用を要求しない |
+| マンション、サブウーファーを使わない | 確定 | 5.0等の構成、メインスピーカーの低域、低音振り分けを扱う |
+| 本格実装はまだ開始しない | 確定 | 今回は計画書のみ。依存導入・アプリ雛形・大量Issue作成をしない |
+| 過剰なセキュリティを避ける | 確定 | 単一ローカルプロセスと必要な入力検証に留める |
+| Windows 11 x64 | 検証環境案 | 実際のOS・CPU・メモリ・GPUを確認して固定する |
+| AVR機種・ファームウェア・配線 | 未確認 | RX-A4Aを所有機種として断定しない |
+| USB測定マイク | 未確認 | UMM-6/iMM-6C等は検討候補。購入済みと扱わない |
+| 部屋・開口・座席・スピーカー | 未確認 | 寸法、型番、移動可能範囲を収集する |
+| RIGOL、COSMOS ADC、HIOKI | 所有情報あり | 室内測定MVPの必須機器にしない。アンプ電気測定は別スコープ |
 
-## 2. Product principles
+部屋が矩形でない場合でも実測管理は利用できる。矩形の外接箱をそのまま正確な室内音響モデルとして使用しない。
 
-### 2.1 Reuse before build
+## 3. 中心となる利用手順
 
-If REW, SciPy, pyroomacoustics, Three.js or another maintained library already implements a function correctly, HTDT should integrate or reuse it instead of recreating it.
+1. プロジェクトを作り、部屋の概略とFL/FR、MLPを入力する。
+2. 配置版、AVR設定版、マイク条件を保存する。
+3. REWで手動測定し、測定ファイルを保管、指定形式で出力する。
+4. HTDTでファイルを読み、入力チャンネル・音源・測定点との対応を確認する。
+5. FL/FR、設定A/B、配置A/Bを比較する。比較できない条件は理由を示す。
+6. スピーカーまたは座席を動かす際は配置版を複製する。以前の測定の位置は変えない。
+7. 再測定し、変更内容と結果を同じ比較画面に保存する。
+
+成功の単位は、実際の部屋で一つの改善仮説を測定して比較できること。3Dの見栄え、解析グラフの数、自動化の数を成功指標にしない。
+
+## 4. MVPの範囲
 
-### 2.2 Measurement and simulation are different evidence
+### v0.1に含む
+
+- プロジェクト作成・保存・再読込・バックアップと復元。
+- 矩形の参照形状、スピーカーと複数測定点の数値入力、簡易平面図。
+- 配置・部屋状態・AVR設定・測定点の不変スナップショット。
+- 対応を明示したREW周波数応答テキストの取込、原本保持、重複確認。
+- 複数応答の重ね描き、FL/FR差、条件A/B差、保存した比較設定の再現。
+- 校正状態、単位、平滑化、窓設定、レベル差などの比較条件の表示。
+- 部屋と測定を相互選択できる画面。3Dは後半に追加し、なくても操作できる。
+- サブウーファーなし、入力と実際の放射音源が一対一でない測定の記録。
 
-The UI and data model must never blur these categories:
+### 後続段階
 
-- **Measured**: actual REW measurement.
-- **Derived**: deterministic calculation from measured data.
-- **Predicted**: room/speaker model estimate.
-- **Hypothesis**: likely explanation such as SBIR or early reflection candidate.
+APIによる取込省力化、IR/ETC、モード・境界反射の候補表示、REW Room Simulator連携、3D反射経路、実測候補の配置比較、条件を満たした場合のみ予測による探索。
 
-A predicted 85 Hz null must not look equivalent to an 85 Hz null actually measured in REW.
+### 初期に作らないもの
 
-### 2.3 Local-first and single-user
+独自スイープ、ASIO/WASAPIエンジン、マイク校正エンジン、REW全グラフの複製、EQ自動生成、YPAO/Dirac/Audyssey相当の補正、未公開.mdat解析、Atmosエンコーダー、汎用CAD、FEM/BEM/FDTD、常駐AVR制御、クラウド・ログイン・マルチユーザー・LLM解説。
 
-This is a Windows personal tool, not a SaaS product.
+サブウーファーを追加できるデータ構造にはするが、複数サブの最適化はv1.0の条件にしない。
 
-Therefore:
+## 5. 再利用の判断
 
-- no user accounts;
-- no cloud database;
-- no authentication layer for the local UI;
-- no multi-user permission system;
-- no mandatory telemetry;
-- no encryption-at-rest requirement;
-- no server deployment requirement.
+| 機能 | 方針 | HTDTが担う範囲 |
+|---|---|---|
+| 測定・校正・タイミング基準 | REWを使用 | 使用条件とデータの来歴を記録 |
+| SPL/位相/IR、EQ、詳細な残響解析 | REW出力を利用 | 必要な比較ビューだけ追加 |
+| 矩形室の低域応答予測 | REW Room Simulatorを先に評価 | 配置版との対応、予測結果の記録 |
+| 測定の自動取込 | 後からREW APIを接続 | 読取専用アダプター、版ごとの互換性確認 |
+| 座標、矩形室固有周波数、一次反射の距離 | 小さな自前計算 | 数式・仮定を表示し独立した既知値で検証 |
+| 多次反射や一般形状のRIR | pyroomacousticsを必要時だけ評価 | Windows導入と精度検証後に任意依存 |
+| 数値計算 | NumPy/SciPy | データ契約と指標定義を統一 |
+| 図・3D | 既存描画ライブラリ | 空間と測定の選択連動 |
+| AVR | 手入力から開始 | メーカー固有設定を生の名称ごと保存 |
+| プロジェクト保存 | SQLite | 一貫した履歴、復元、移行 |
 
-The local application/API should bind to `127.0.0.1`, primarily to avoid accidentally exposing local controls on the LAN. That is sufficient for the intended use case.
+REW Room Simulatorは矩形室の複数音源・受音点に対する応答を計算する既存機能である。したがって独自の低域応答ソルバーを先に作る理由はない。[REW Room Simulator](https://www.roomeqwizard.com/help/help_en-GB/html/modalsim.html)
 
-### 2.4 Progressive fidelity
+.mdatはREWで再解析するための原本として保管する。HTDTの内部標準形式にはせず、読込みはREWに任せる。
 
-Start with measurements and simple analytical models. Do not begin with a physically complete acoustic simulator.
+## 6. 測定結果を誤解させない設計
 
-Priority order:
+| 分類 | 例 | 必須表示 |
+|---|---|---|
+| 実測 | REWで測った応答 | 測定条件、取込元、校正状態 |
+| 実測由来 | 2本の応答の差 | 入力、帯域、補間、レベル調整、算法版 |
+| 予測 | 矩形室モデルの応答 | モデル・幾何版・パラメータ・適用条件 |
+| 仮説 | 谷と壁反射の周波数が近い | 候補理由、検証方法、未考慮の要因 |
 
-1. measured data;
-2. simple analytical room-mode model;
-3. image-source / geometric reflection model;
-4. optimization built on validated models;
-5. advanced simulation only if real use demonstrates a need.
-
----
-
-## 3. Primary use cases
-
-### UC-01 — Create a room digital twin
-
-The user enters room dimensions and optionally irregular walls/openings, then places:
-
-- TV/screen;
-- FL / C / FR;
-- SL / SR;
-- height speakers such as FHL / FHR;
-- listening seats / MLP;
-- optional furniture/reference objects.
-
-The initial version needs only enough geometry to support acoustic reasoning. It is not a CAD package.
-
-### UC-02 — Import REW measurements
-
-Import measurements from REW and associate each measurement with:
-
-- speaker/channel;
-- listening position;
-- date/time;
-- YPAO state/profile;
-- master volume / measurement level if known;
-- speaker placement revision;
-- microphone/calibration metadata;
-- notes/tags.
-
-### UC-03 — Compare speakers and configurations
-
-Examples:
-
-- FL vs FR;
-- C vs FL/FR;
-- YPAO OFF vs ON;
-- speaker position A vs B;
-- MLP vs left/right seat;
-- before vs after furniture/curtain changes.
-
-### UC-04 — Explain low-frequency problems spatially
-
-Correlate measured peaks/dips with:
-
-- analytical room modes;
-- distances to nearby boundaries;
-- estimated SBIR cancellation frequencies;
-- speaker/listener positions.
-
-The output should be phrased as candidate explanations, not absolute diagnoses.
-
-### UC-05 — Inspect impulse / reflection behavior
-
-Visualize IR/ETC and associate strong arrivals with predicted wall/ceiling/floor paths where geometrically plausible.
-
-### UC-06 — Maintain measurement history
-
-The application should answer questions such as:
-
-- “Which FL position produced the smoothest 60–200 Hz response?”
-- “What changed after the sofa moved 20 cm?”
-- “Was this measurement taken with YPAO Flat or Through?”
-
-### UC-07 — Later: evaluate alternative positions
-
-Given practical movement bounds for speaker/listener positions, search candidate placements and compare model-based objective functions before physically moving equipment.
-
----
-
-## 4. Explicit non-goals
-
-The following are intentionally **not** part of the early implementation.
-
-### Do not build at all unless requirements change
-
-- A replacement for REW measurement sweeps.
-- A full audio interface / ASIO / WASAPI measurement engine.
-- A Dirac/YPAO/Audyssey-like proprietary room-correction system.
-- Reverse engineering of Yamaha firmware or private YPAO algorithms.
-- A professional CAD/BIM package.
-- Cloud accounts, login, permissions or remote access infrastructure.
-- A general home-automation platform.
-
-### Defer for a long time
-
-- Direct parsing of undocumented REW `.mdat` internals.
-- Full FEM/BEM/FDTD wave simulation.
-- Real-time ray tracing.
-- Automatic PEQ generation intended to replace REW EQ tools.
-- Multi-sub optimization as a core feature.
-- LLM/AI interpretation.
-- Mobile application.
-- macOS/Linux packaging.
-
----
-
-## 5. Existing software: Build / Reuse / Integrate / Defer
-
-| Capability | Decision | Technology / product | Rationale |
-|---|---|---|---|
-| Acoustic measurement sweeps | **Integrate** | REW | Mature, trusted, already solves measurement I/O and calibration. |
-| Frequency/phase/IR source data | **Integrate** | REW API / REW export | Avoid duplicating measurement computation. |
-| `.mdat` binary parsing | **Defer** | REW native format | Undocumented binary dependency creates unnecessary maintenance risk. |
-| Numerical arrays / FFT support | **Reuse** | NumPy / SciPy | Mature scientific stack. |
-| Signal processing helpers | **Reuse** | SciPy; evaluate pyfar/acoustic-toolbox when a concrete need appears | Do not introduce dependencies before use cases require them. |
-| Room-mode calculation | **Build small** | simple analytical formulas | Very small, transparent domain logic; easy to test. |
-| Image-source simulation | **Reuse later** | pyroomacoustics | Existing implementation is preferable to writing a geometric acoustics engine. |
-| 3D scene rendering | **Reuse** | Three.js via React Three Fiber | Good fit for interactive room/speaker visualization. |
-| 2D engineering plots | **Reuse** | Plotly.js or ECharts; decide by prototype | Need zoom, cursor, overlays and logarithmic frequency axes. |
-| Optimization | **Reuse later** | `scipy.optimize`; consider pymoo only if multi-objective needs justify it | Start with common algorithms already in SciPy. |
-| Persistence | **Reuse** | SQLite | Single-user local application; zero server administration. |
-| Desktop shell | **Defer** | Tauri | A native shell is not needed to validate the application architecture. |
-| AVR control | **Integrate later** | adapter layer; Yamaha first | Keep optional and vendor-specific. |
-| Yamaha YPAO internal coefficients | **Do not build** | — | Treat before/after measurements as authoritative evidence. |
-
----
-
-## 6. REW integration strategy
-
-REW is an external first-class dependency, not an implementation detail.
-
-### 6.1 Canonical integration path
-
-Preferred order:
-
-1. **REW localhost API** for measurements already open in REW.
-2. **Text/CSV/IR export import** as portable fallback.
-3. Manual metadata entry when an external format does not encode room/session context.
-
-REW exposes a localhost HTTP API (default `127.0.0.1:4735`) and supports data retrieval when the API is enabled. Automated sweep control has different licensing constraints, so HTDT should not depend on automatic measurement execution for its core operation.
-
-### 6.2 Do not make `.mdat` the canonical format
-
-Reasons:
-
-- it is REW-specific;
-- binary structure may change;
-- HTDT only needs a subset of REW's data;
-- the REW API/export paths are clearer integration boundaries.
-
-If a stable third-party parser later becomes trustworthy and useful, it can be added as an optional importer.
-
-### 6.3 HTDT canonical measurement representation
-
-Internally, normalize imported data into a versioned structure independent of REW:
-
-```text
-Measurement
-  id
-  source = rew_api | rew_export | wav_ir | other
-  source_version
-  channel_role
-  listening_position_id
-  captured_at
-  sample_rate
-  frequency_hz[]
-  spl_db[]
-  phase_deg[]? 
-  impulse_time_s[]?
-  impulse_value[]?
-  metadata
-  provenance
-```
-
-The exact storage layout may differ, but the domain model should not expose REW API response shapes directly to the UI.
-
-### 6.4 REW functions HTDT must not recreate
-
-- sweep signal generation;
-- microphone/audio interface selection;
-- SPL calibration workflow;
-- timing reference handling;
-- base measurement acquisition;
-- REW's mature EQ/filter-generation workflow;
-- all REW graphs merely for parity.
-
-HTDT should only implement plots when they are needed for **cross-measurement / spatial / historical** workflows that REW does not naturally provide.
-
----
-
-## 7. Measurement microphone handling
-
-The Digital Twin does not calibrate microphones itself.
-
-Calibration belongs primarily to REW. HTDT stores provenance metadata so a historical measurement remains interpretable.
-
-Suggested metadata:
-
-```text
-MicrophoneProfile
-  manufacturer
-  model
-  serial_number?
-  calibration_file_name?
-  calibration_orientation = 0deg | 90deg | unknown
-  calibration_file_hash?
-  notes
-```
-
-For products such as UMIK-1/2 or Dayton UMM-6/iMM-6C, individual calibration files may exist. HTDT only records which profile was used; it should not duplicate REW's calibration compensation pipeline.
-
----
-
-## 8. AVR integration strategy
-
-### 8.1 MVP
-
-No automatic AVR control.
-
-Store a manual snapshot:
-
-```text
-AVRConfiguration
-  vendor
-  model
-  profile_name
-  room_correction = off | ypao_flat | ypao_natural | ypao_front | other
-  speaker_size/settings
-  crossover_hz?
-  distances?
-  levels?
-  notes
-```
-
-This is enough to compare REW measurements under different AVR states.
-
-### 8.2 Yamaha later
-
-Add an adapter boundary rather than putting Yamaha calls into domain code:
-
-```text
-AVRAdapter
-  discover()
-  read_basic_state()
-  read_volume()
-  read_input()
-  read_sound_program()
-  read_available_public_settings()
-```
-
-Target Yamaha RX-A4A generation first.
-
-Important rule: **AVR control support does not imply access to YPAO's internal correction data.** HTDT should assume YPAO internals are unavailable unless a documented public interface proves otherwise.
-
-### 8.3 Other vendors
-
-Future adapters may include Denon/Marantz or Onkyo/Pioneer, but vendor support must remain optional plug-in-like infrastructure.
-
----
-
-## 9. Acoustic analysis boundaries
-
-### 9.1 Phase A — deterministic, low-risk calculations
-
-Implement directly:
-
-- logarithmic interpolation/resampling;
-- smoothing utilities when needed for comparison views;
-- difference curves;
-- mean / RMS deviation across selected bands;
-- peak/dip candidate detection;
-- left/right difference metrics;
-- analytical rectangular-room modes;
-- boundary-distance-based SBIR frequency candidates;
-- geometry angles/distances between seats and speakers.
-
-### 9.2 Phase B — impulse-derived analysis
-
-Use SciPy/NumPy and validate against REW where possible:
-
-- time-of-flight alignment helpers;
-- ETC generation from imported IR;
-- direct-arrival detection;
-- reflection candidate timing;
-- windowed frequency response comparison.
-
-Do not duplicate every REW metric. Add only analyses that are spatially useful in the Digital Twin.
-
-### 9.3 Phase C — geometric prediction
-
-Use pyroomacoustics or another validated library for:
-
-- image-source paths;
-- approximate room IR;
-- reflection-order exploration.
-
-These predictions must be visually labeled **Simulation**.
-
-### 9.4 Low-frequency warning
-
-Geometric acoustics is not a reliable universal model at low frequencies. For bass-region decisions, measured REW data and analytical modal reasoning take priority over ray-style visuals.
-
----
-
-## 10. Speaker-role ontology
-
-Internally use vendor-neutral speaker roles rather than tying the schema to a specific immersive format.
-
-Initial roles:
-
-```text
-front_left
-front_center
-front_right
-surround_left
-surround_right
-surround_back_left
-surround_back_right
-height_front_left
-height_front_right
-height_middle_left
-height_middle_right
-height_rear_left
-height_rear_right
-subwoofer_1 ... subwoofer_n
-```
-
-A separate rules layer may later validate layouts against publicly documented Dolby/DTS/Auro guidance.
-
-The application should present those checks as guidance/ranges, not as proprietary certification.
-
----
-
-## 11. Coordinate system
-
-Use a single documented room-local coordinate system everywhere.
-
-Recommended convention:
-
-- units: **meters**;
-- origin: front-left-floor corner of the room reference bounding box;
-- +X: right when facing the front screen;
-- +Y: toward the rear of the room;
-- +Z: upward;
-- angles stored in degrees at UI boundaries, radians internally where libraries expect them.
-
-Every object should have a stable ID and transform independent of rendering technology.
-
-```text
-Transform
-  position: { x, y, z }
-  orientation: { yaw, pitch, roll }
-```
-
-Do not store Three.js objects directly in persistent data.
-
----
-
-## 12. Core domain model
-
-### Project
-
-Top-level digital twin.
-
-```text
-Project
-  id
-  name
-  schema_version
-  room_id
-  active_layout_revision
-  created_at
-  updated_at
-```
-
-### Room
-
-```text
-Room
-  id
-  name
-  geometry_type = rectangular | polygonal
-  dimensions?
-  vertices?
-  height
-  surfaces[]
-  openings[]
-```
-
-Start with rectangular rooms plus limited polygonal support. Complex curved geometry is not required.
-
-### Speaker
-
-```text
-Speaker
-  id
-  role
-  label
-  transform
-  model?
-  notes?
-```
-
-### ListeningPosition
-
-```text
-ListeningPosition
-  id
-  label
-  transform
-  kind = mlp | seat | measurement_point
-```
-
-### LayoutRevision
-
-A placement/configuration snapshot.
-
-```text
-LayoutRevision
-  id
-  name
-  created_at
-  speaker_transforms
-  listening_position_transforms
-  notes
-```
-
-This is important: comparison across physical changes should not mutate history.
-
-### MeasurementSession
-
-```text
-MeasurementSession
-  id
-  name
-  captured_at
-  layout_revision_id
-  avr_configuration_id
-  microphone_profile_id
-  notes
-```
-
-### Measurement
-
-One channel at one listening position under one session.
-
-### AnalysisResult
-
-Versioned derived result:
-
-```text
-AnalysisResult
-  id
-  measurement_ids[]
-  analysis_type
-  algorithm_version
-  parameters
-  result
-  generated_at
-```
-
-Versioning derived analyses avoids silent changes when algorithms improve.
-
----
-
-## 13. Storage design
-
-### Application state
-
-Use **SQLite** for metadata, relationships and derived analysis summaries.
-
-### Large numerical arrays
-
-For the MVP, avoid prematurely introducing Parquet/Zarr/HDF5.
-
-Use one of these simple options after prototyping:
-
-- compressed NumPy `.npz` files referenced by SQLite; or
-- compact binary blobs in SQLite for modest datasets.
-
-Prefer separate `.npz` files if measurement arrays become large because they are easier to inspect and replace independently.
-
-### Raw imports
-
-Preserve the original imported files unchanged when practical:
-
-```text
-project-data/
-  project.sqlite3
-  raw/
-    rew-export-2026-09-xx.txt
-    impulse-....wav
-  arrays/
-    <measurement-id>.npz
-```
-
-Raw files provide provenance and make importer bugs recoverable.
-
-### Source repository vs user project data
-
-Do not store personal room measurements in the application source repository by default.
-
-Recommended user-data location on Windows:
-
-```text
-%USERPROFILE%\Documents\Home Theater Digital Twin\Projects\...
-```
-
----
-
-## 14. Proposed technology stack
-
-### Selected architecture for the first implementation
-
-**Backend / analysis**
-
-- Python 3.12+
-- FastAPI
-- Pydantic
-- NumPy
-- SciPy
-- SQLAlchemy or SQLModel
-- SQLite
-- pytest
-
-**Frontend**
-
-- TypeScript
-- React
-- Vite
-- Three.js via `@react-three/fiber`
-- Plotly.js or Apache ECharts after a focused graph prototype
-- Vitest
-
-**Application execution**
-
-During MVP:
-
-```text
-python -m htdt
-  -> starts FastAPI on 127.0.0.1:<port>
-  -> serves/launches frontend
-  -> communicates with REW localhost API
-```
-
-The user sees a browser-based local UI, but no external server exists.
-
-### Why not Tauri immediately?
-
-Tauri remains a good packaging option, but it introduces Rust/toolchain/sidecar packaging decisions before core workflows are validated. A local Python + browser application is simpler for an individual Windows project.
-
-Once the UI and analysis model are stable, Tauri can wrap the existing frontend and launch the Python analysis process as a sidecar if a native installer is desirable.
-
-### Why not Electron?
-
-Electron is viable but adds a full Chromium/Node runtime while the scientific stack still needs Python. It provides little benefit during the early validation phase.
-
-### Why not pure .NET/WPF?
-
-Windows integration would be good, but scientific/audio-acoustics libraries and exploratory numerical development are stronger in Python. Using React/Three.js also keeps the 3D interface portable.
-
----
-
-## 15. Planned repository structure
-
-Do **not** create all of these directories until implementation starts. This is the target shape.
-
-```text
-Home-Theater-Digital-Twin/
-  README.md
-  docs/
-    PROJECT_PLAN.md
-    architecture/
-      ADR-0001-local-web-architecture.md
-      ADR-0002-rew-as-measurement-engine.md
-      ADR-0003-canonical-coordinate-system.md
-    data-model.md
-    rew-integration.md
-  backend/
-    pyproject.toml
-    src/htdt/
-      domain/
-      storage/
-      importers/
-      integrations/
-        rew/
-        avr/
-      analysis/
-      simulation/
-      api/
-    tests/
-      unit/
-      integration/
-      fixtures/
-  frontend/
-    package.json
-    src/
-      app/
-      components/
-      features/
-      scene3d/
-      plots/
-      api/
-    tests/
-  sample-data/
-    synthetic/
-  .github/
-    workflows/
-```
-
----
-
-## 16. UI concept
-
-The application should feel closer to an engineering workspace than a consumer AVR setup wizard.
-
-### Main workspace
-
-```text
-+-------------------------------------------------------------+
-| Project | Session | Compare | Simulation | Settings          |
-+-------------+-----------------------------------------------+
-|             |                                               |
-| Room tree   |              3D Room                          |
-| - Speakers  |                                               |
-| - Seats     |                                               |
-| - Sessions  |                                               |
-| - Measures  |                                               |
-|             +-----------------------------------------------+
-|             | Frequency / IR / comparison plot              |
-+-------------+-----------------------------------------------+
-| Inspector / selected-object properties                      |
-+-------------------------------------------------------------+
-```
-
-### Essential interaction
-
-Selecting a speaker in 3D should filter measurements associated with that speaker. Selecting a measurement should highlight its speaker and microphone/listening position in the room.
-
-This cross-link between **space** and **measurement history** is the central UX value of the product.
-
----
-
-## 17. Analysis views planned for MVP
-
-### Frequency response overlay
-
-- multiple measurements;
-- configurable frequency range;
-- smoothing selection for viewing only;
-- raw data preserved;
-- difference curve;
-- selected-band statistics.
-
-### FL/FR symmetry view
-
-For asymmetric rooms:
-
-- FL and FR overlay;
-- absolute difference vs frequency;
-- band summaries such as 20–80, 80–200, 200–500, 500–2000 Hz;
-- associated speaker/wall distances.
-
-### Before/after view
-
-Designed specifically for cases such as YPAO OFF vs ON.
-
-The application must not imply that a flatter graph is automatically better; it simply presents measured differences and selected metrics.
-
-### Room-mode overlay
-
-Show calculated axial/tangential/oblique mode candidates over the measured graph with enable/disable toggles.
-
-### SBIR candidate overlay
-
-From current speaker/listener boundary distances, calculate candidate cancellation frequencies and show them as hypotheses.
-
----
-
-## 18. Simulation design
-
-Simulation must be separated into model levels.
-
-### Model L0 — geometry only
-
-- distances;
-- angles;
-- speaker aiming;
-- seating angles.
-
-### Model L1 — analytical acoustics
-
-- rectangular-room modes;
-- boundary-distance SBIR candidates.
-
-### Model L2 — geometric room acoustics
-
-- image-source reflections;
-- path lengths / arrival times;
-- approximate early reflection mapping.
-
-Use pyroomacoustics if it meets the concrete requirement when this phase begins.
-
-### Model L3 — optimization
-
-Search speaker/listener candidate coordinates using L1/L2 metrics and, where useful, measured-data-derived objectives.
-
-### Not planned — wave solver
-
-FEM/BEM/FDTD is not appropriate for an initial personal Windows tool because meshing, boundary conditions and compute requirements are far beyond the value needed for this use case.
-
----
-
-## 19. Optimization approach
-
-Do not optimize until the basic models have been validated against actual room measurements.
-
-Potential variables:
-
-- FL/FR distance from front wall;
-- distance from side walls;
-- MLP front/back movement;
-- speaker toe-in;
-- surround/height positions within installation constraints.
-
-Potential objectives:
-
-- reduce modeled low-frequency variance in a selected band;
-- reduce left/right asymmetry;
-- avoid predicted SBIR nulls in important bands;
-- satisfy speaker-angle guidance;
-- minimize movement from the current practical layout.
-
-Start with `scipy.optimize` or grid/random search. A sophisticated evolutionary optimizer is unnecessary until objectives and constraints are proven useful.
-
----
-
-## 20. Validation and test strategy
-
-Acoustic software can generate plausible-looking but incorrect graphs. Numerical validation is therefore more important than UI test coverage.
-
-### Unit tests
-
-- coordinate conversion;
-- room-mode formulas;
-- SBIR candidate formulas;
-- interpolation/resampling;
-- metric calculations;
-- session/revision history rules.
-
-### Synthetic fixtures
-
-Create analytically controlled data:
-
-- sine response with known peaks/dips;
-- simple impulse with known reflection delays;
-- rectangular room with known modal frequencies;
-- identical FL/FR curves where asymmetry score must be zero.
-
-### REW fixtures
-
-Maintain a small set of exported REW measurements generated specifically for tests.
-
-Tests should verify:
-
-- importer correctness;
-- no unit mistakes;
-- frequency/phase arrays preserve alignment;
-- metadata survives round trips.
-
-### Cross-validation
-
-Where HTDT computes a metric REW also exposes, compare the outputs on test fixtures with documented numerical tolerances.
-
-### Simulation validation
-
-For image-source simulation, compare simple shoebox cases against known analytical path lengths and/or pyroomacoustics reference behavior.
-
----
-
-## 21. GitHub and development workflow
-
-Because this is a personal project, keep process lightweight.
-
-### Branching
-
-- `main` should remain usable.
-- short feature branches for implementation work.
-- PRs are useful even for a single developer when Codex/AI-generated code needs review, but not mandatory for trivial docs.
-
-### Issues
-
-When implementation begins, convert roadmap items into issues. Avoid creating dozens of speculative issues during planning.
-
-### CI
-
-Initial GitHub Actions should eventually run:
-
-- Python formatting/lint checks;
-- Python tests on Windows;
-- frontend type-check/tests;
-- build smoke test.
-
-Linux CI is optional initially. Windows is authoritative.
-
-### Dependency automation
-
-Dependabot or Renovate is optional and can wait until dependencies stabilize.
-
-### Release engineering
-
-No signing/SBOM/installer work during MVP. For personal use, a zip or local startup command is acceptable. Native installer and signing are later quality-of-life work.
-
----
-
-## 22. Security scope appropriate to this project
-
-No enterprise security program is needed.
-
-Implement only practical basics:
-
-- local service binds to `127.0.0.1`;
-- imported file size/type sanity checks;
-- never execute content from imported measurement files;
-- AVR network adapter only accesses explicitly discovered/configured local devices;
-- project file paths are normalized before read/write operations.
-
-Do not spend early development time on:
-
-- login/auth;
-- encryption-at-rest;
-- TLS for localhost;
-- role-based access control;
-- secret-management platforms;
-- cloud threat models.
-
----
-
-## 23. Roadmap
-
-## Phase 0 — Planning (current)
-
-**Goal:** freeze enough decisions to prevent architecture churn.
-
-Deliverables:
-
-- this project plan;
-- explicit scope/non-goals;
-- technology decision;
-- domain model draft;
-- REW integration boundary;
-- repository structure proposal.
-
-No application implementation in this phase.
-
-**Exit criteria:**
-
-- plan reviewed;
-- first real REW sample files available;
-- actual room geometry can be described in the proposed coordinate system;
-- unresolved decisions for MVP are limited to small library choices.
-
----
-
-## v0.1 — Measurement-linked room model
-
-**Build**
-
-- project/room/speaker/listener domain model;
-- rectangular room editor;
-- speaker/listener coordinates;
-- basic 3D room view;
-- REW exported-data importer;
-- measurement sessions and tags;
-- frequency-response overlay;
-- FL/FR comparison;
-- YPAO OFF/ON comparison workflow;
-- SQLite persistence.
-
-**Reuse**
-
-- React/Three.js;
-- NumPy/SciPy;
-- SQLite.
-
-**Integrate**
-
-- REW via exported data first.
-
-**Defer**
-
-- live REW API;
-- AVR network control;
-- impulse reflection matching;
-- optimization;
-- native desktop packaging.
-
-**Success criterion:** a real home-theater project can be represented, multiple REW measurements can be attached to speakers/positions, and configuration changes can be compared without manually managing files.
-
----
-
-## v0.2 — Acoustic reasoning
-
-Add:
-
-- analytical room-mode calculation;
-- SBIR candidate calculation;
-- measurement peak/dip detection;
-- selected-band metrics;
-- IR/ETC import/display;
-- layout revisions;
-- multiple listening positions;
-- measurement history timeline.
-
-**Success criterion:** the application begins to explain *where measured differences may come from* while clearly distinguishing measurement from hypothesis.
-
----
-
-## v0.5 — REW live integration and spatial reflection model
-
-Add:
-
-- REW localhost API client;
-- import measurements currently open in REW;
-- optional REW launch/API connectivity helper;
-- image-source based early-reflection candidate model;
-- 3D reflection-path overlay;
-- multi-seat visualizations;
-- exportable comparison report.
-
-Evaluate at this point:
-
-- pyroomacoustics adoption;
-- Plotly vs ECharts final choice;
-- whether Tauri packaging is worth adding.
-
-**Success criterion:** moving between REW and HTDT becomes a smooth workflow rather than manual export bookkeeping.
-
----
-
-## v1.0 — Practical placement planning
-
-Add only after model validation:
-
-- constrained speaker/listener position search;
-- objective comparison over candidate positions;
-- angle/layout guidance;
-- optional Yamaha basic-state adapter;
-- optional Tauri Windows packaging;
-- stable project-data migration system.
-
-Potential later additions, outside v1.0 commitment:
-
-- Denon/Marantz adapters;
-- richer irregular-room simulation;
-- AI-generated explanation reports;
-- automated measurement orchestration if REW licensing/workflow makes it worthwhile.
-
----
-
-## 24. MVP implementation order when coding is authorized
-
-When implementation eventually begins, use this order:
-
-1. Python package skeleton + frontend skeleton.
-2. Domain schema and coordinate-system tests.
-3. SQLite persistence.
-4. Synthetic room/speaker/seat fixtures.
-5. REW text export importer.
-6. 2D frequency-response comparison plot.
-7. 3D room view.
-8. Link 3D objects to measurements.
-9. Measurement session/history UI.
-10. FL/FR and YPAO before/after workflows.
-11. Only then add analytical room modes/SBIR.
-
-Do **not** start with AVR networking, simulation or optimization.
-
----
-
-## 25. Key architectural decisions to preserve
-
-1. **REW is the measurement engine.**
-2. **HTDT owns the digital-twin domain model and history.**
-3. **Measured, derived and simulated data are separate types.**
-4. **Canonical internal data is REW-independent.**
-5. **`.mdat` parsing is not an MVP dependency.**
-6. **Python owns numerical/acoustic logic.**
-7. **React/Three.js owns interactive visualization.**
-8. **SQLite is sufficient for single-user storage.**
-9. **Local browser UI is preferred before desktop-shell packaging.**
-10. **No cloud/security infrastructure beyond basic localhost safety.**
-
----
-
-## 26. Open decisions before v0.1 implementation
-
-These should be settled using small prototypes, not prolonged research:
-
-### Graph library
-
-Prototype one representative frequency-response view in both:
-
-- Plotly.js;
-- Apache ECharts.
-
-Choose based on log-axis behavior, cursor UX, overlay performance and implementation simplicity.
-
-### Measurement array storage
-
-Benchmark:
-
-- SQLite BLOB;
-- `.npz` referenced by SQLite.
-
-Use realistic REW exports before deciding.
-
-### Irregular room representation
-
-Decide whether v0.1 needs only a rectangular room or a simple floor-plan polygon extrusion. Avoid a general mesh editor.
-
-### REW export fixture format
-
-Collect actual exports from the intended REW version and define the first importer contract from real files, not assumptions.
-
----
-
-## 27. References / external systems
-
-Primary systems and libraries to consult during implementation:
-
-- Room EQ Wizard: https://www.roomeqwizard.com/
-- REW API documentation: https://www.roomeqwizard.com/help/help_en-GB/html/api.html
-- pyroomacoustics: https://github.com/LCAV/pyroomacoustics
-- NumPy: https://numpy.org/
-- SciPy: https://scipy.org/
-- Three.js: https://threejs.org/
-- React Three Fiber: https://r3f.docs.pmnd.rs/
-- FastAPI: https://fastapi.tiangolo.com/
-- SQLite: https://www.sqlite.org/
-- Tauri (future packaging candidate): https://tauri.app/
-
-Vendor-specific AVR and speaker-layout documentation should be referenced only at the adapter/rules layer, not embedded into the core domain model.
-
----
-
-## 28. Definition of the project's unique value
-
-The project's value is **not** “better acoustic measurement than REW” and not “another room correction algorithm.”
-
-Its value is the combination of:
-
-> **physical room + speaker/listener geometry + real REW measurements + AVR/configuration state + history + model-based hypotheses in one persistent workspace.**
-
-That is the design criterion for every future feature. If a proposed feature does not strengthen that link, it should usually remain in REW or another specialized tool instead of being rebuilt here.
+推測したピーク位置を実測と同じ線種・凡例にしない。根拠なく「85%確実」のような確率を表示しない。平坦さを音質スコアに置き換えない。
+
+入力チャンネルCの測定でも、クロスオーバー以下をFL/FRが再生していれば「Cスピーカー単体の周波数応答」と呼ばない。畳み込み・電気補正・音響伝達を分離できない場合は、その再生経路全体の測定として保存する。
+
+## 7. データと保存の基本決定
+
+- HTDT固有IDを使用し、REWの測定番号やファイル名を主キーにしない。
+- Sessionは測定のまとまり。条件が変わった測定は別の条件スナップショットを参照する。
+- 部屋形状・開口/家具状態・スピーカー配置・マイク位置も履歴の対象にする。
+- 配置を変更しても過去データの外部参照先を現在の位置にすり替えない。
+- 欠測・不明を0、off、校正済みに変換しない。
+- 数値配列は周波数、値、単位、処理履歴をセットで保存する。
+- v0.1はSQLite内の数値BLOBを暫定採用し、保存の原子性を優先する。巨大IRが必要になった時に外部ファイルを再評価する。
+- 原本はプロジェクト配下に保存し、ハッシュと相対パスで参照する。PC固有の絶対パスだけに依存しない。
+- スキーマ版とバックアップ・復元を最初から用意する。大規模な移行基盤は不要。
+
+具体的なスキーマ、取込失敗時の処理、比較計算は[データ・解析仕様](DATA_AND_ANALYSIS.md)を正本とする。
+
+## 8. アーキテクチャと技術選択
+
+単一のPythonプロセスでローカルAPI・保存・解析を提供し、ビルド済みのUIを同じホストから配信する。REW接続はPython側が行い、UIからREWへ直接接続しない。
+
+~~~mermaid
+flowchart TD
+  UI["ローカルUI"] --> APP["Pythonアプリ"]
+  APP --> DOMAIN["条件・履歴・解析"]
+  DOMAIN --> DB["SQLiteと原本"]
+  APP --> IMPORT["取込アダプター"]
+  IMPORT --> FILES["REW出力ファイル"]
+  IMPORT --> API["REW API・後続段階"]
+~~~
+
+| 項目 | 暫定選択 | 確定する条件 |
+|---|---|---|
+| Python | 3.12 x64を最初の検証候補 | Windowsで依存が導入可能。確認したminorを固定し、無制限の3.12+にしない |
+| API/入力契約 | FastAPI、Pydantic | 取込と保存の縦断試作で負担を確認 |
+| 数値計算 | NumPy、必要な解析からSciPy | 利用する処理とWindows対応を確認して版を固定 |
+| DBアクセス | 標準sqlite3を第一候補 | 不変条件とトランザクションが簡潔に書けること |
+| UI | TypeScript、React、Vite | 対応するNode LTSと組合せを実装時に固定 |
+| 周波数グラフ | Plotly.jsを第一候補 | 対数軸、カーソル、8曲線、操作性能を確認。未達時だけECharts比較 |
+| 3D | Three.js、React Three Fiber | Reactとの互換性と座標変換を確認 |
+| 配布 | 起動コマンドとビルド済みUI | 利用時にNode開発サーバーを要求しない |
+| ネイティブシェル | 保留 | ローカルブラウザーで具体的な不便が出てから評価 |
+| pyroomacoustics | 任意・後続 | 対象Windows/Pythonで導入、最小RIR、座標・精度を検証 |
+
+PySide/.NET/Electron等への再選定調査は、現構成の失敗が具体化した場合に限る。TauriとPython sidecarの配布を既定のゴールにしない。
+
+### 起動・終了・エラーの扱い
+
+- 127.0.0.1にのみバインド。空きポートを確保してからブラウザーを開く。
+- 同一プロジェクトの同時書込を避け、2回目の起動は既存画面へ案内または読取専用にする。
+- 終了時にDBを閉じる。ブラウザーを閉じただけで保存済みデータが消えない。
+- REW停止・API無効・非対応版でも、保存済み測定の表示とファイル取込は利用できる。
+- 長い取込は進捗・キャンセルを持ち、途中状態を完成した測定として表示しない。
+- 重い予測を導入する時点でキャンセル可能なワーカーを追加する。初期にキュー基盤は作らない。
+
+## 9. 個人利用に必要な最低限の運用
+
+ログイン、TLS、暗号化DB、RBAC、クラウド認証は作らない。localhostだけで任意サイトからの書込み対策まで完結したとは見なさず、同一originのUI、期待するHost/Originの確認、ワイルドカードCORSを使わない構成にする。
+
+ファイルは数値・テキストとして読み、pickle等の実行可能な形式を受け入れない。容量、配列長、パスを確認する。AVRの設定変更や自動発音はMVPに含めない。過剰な監査基盤を設けず、取込失敗と保存失敗を診断できるローカルログを残す。
+
+Windowsの既定保存先は、同期対象になっていないローカルディレクトリ（例: %LOCALAPPDATA%/HomeTheaterDigitalTwin/Projects）。DocumentsやOneDrive配下は無条件の既定にせず、バックアップ用ZIPの保存先として選べるようにする。
+
+## 10. 段階別の到達点
+
+| 段階 | 必須成果 | 次に進める条件 |
+|---|---|---|
+| Phase 0（現在） | 本計画・修正記録・契約・作業順 | 文書の整合が取れ、未確認事項が列挙されている |
+| 実装前の確認 | 実機構成、REW版、最小サンプル、部屋寸法 | 対応できる取込形式と測定チャンネルが一つ以上分かる |
+| v0.1 | 実測と空間・履歴の管理、比較、復元 | REWを閉じても実データの比較を再現できる |
+| v0.2 | 任意API読取、IR/ETC、モード・一次反射候補 | データ単位・時間基準と数値検証が通る |
+| v0.5 | REW予測の再利用評価、反射経路、比較レポート | モデルの仮定と実測との差を表示できる |
+| v1.0 | 安定した個人ワークフロー、実測候補の配置比較 | Windowsで移動・復元・更新後も履歴を再現できる |
+| 条件付き研究 | 未測定位置の予測探索、任意AVR読取、任意パッケージ化 | 各機能の検証条件を満たした場合のみ |
+
+v1.0を「自動最適化が完成した状態」と定義しない。信頼できる比較・記録ツールとして完了できる計画にする。カレンダー上の納期は実データの準備と実装時間が不明なため約束しない。
+
+## 11. 画面と完了のイメージ
+
+| 画面 | 主な操作 | 必ず見える情報 |
+|---|---|---|
+| プロジェクト | 開く、保存、バックアップ、復元 | プロジェクト名、保存状態、版 |
+| 部屋・配置 | 寸法と座標入力、版を複製 | 単位、正面、選択している配置版 |
+| 測定一覧 | 取込、条件付与、曲線選択 | 入力、音源、マイク点、条件不明の項目 |
+| 比較 | 帯域指定、差分、レベル調整 | 実測/予測区分、処理条件、比較可否 |
+| 候補説明 | モードや反射を選択 | 仮定、対応する実測、次の検証案 |
+
+数値入力・平面図を先に成立させる。3Dは選択と位置関係の理解に使い、3D操作ができないと測定が登録できないUIにしない。曲線の色だけに頼らず、凡例と線種で区別する。
+
+## 12. 変更しない設計原則
+
+1. REWが測定・校正・詳細解析を担う。
+2. HTDTは条件、空間、来歴、比較を担う。
+3. 実測・実測由来・予測・仮説を区別する。
+4. 古い測定条件と配置は変更によって失われない。
+5. 実際に確認できた形式と機能だけを対応済みとする。
+6. 既存機能の再利用で足りる場合は新しいソルバーを作らない。
+7. 初期構成は個人がWindowsで保守できる小ささに保つ。
