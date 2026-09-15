@@ -11,7 +11,7 @@ REWを測定・解析の中心に据え、HTDTは「どの配置・条件で測�
 | 文書 | 内容 |
 |---|---|
 | [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | 目的、対象範囲、再利用方針、アーキテクチャ、段階別の到達点 |
-| [PLAN_REVIEW.md](docs/PLAN_REVIEW.md) | 2026-09-15のレビュー、旧方針の修正理由、一次資料 |
+| [PLAN_REVIEW.md](docs/PLAN_REVIEW.md) | 初回・追加レビュー、修正理由、一次資料、未検証事項 |
 | [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | Windows・REWでの測定手順、AVR設定、取込契約、API連携 |
 | [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 履歴・データモデル、座標、比較計算、音響モデル、保存 |
 | [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | 実装開始後の作業単位、依存関係、受入条件、検証データ |
@@ -21,8 +21,11 @@ REWを測定・解析の中心に据え、HTDTは「どの配置・条件で測�
 - Windows-first、単独利用、ローカル完結。Windows 11 x64を最初の検証環境案とする。
 - v0.1はREWテキスト出力の取込から始め、APIがなくても成立させる。
 - 配置・AVR設定・マイク位置の不変スナップショットをv0.1から保存する。
+- 条件訂正後も保存済み比較を再現し、指定された.mdat・校正原本・設定添付をバックアップへ含める。
 - 実測、実測からの計算、予測、原因候補を別の表示・型として扱う。
 - 既存のREW Room Simulatorを先に評価し、高度な独自シミュレーションや自動最適化を急がない。
 - アカウント、クラウドDB、過剰な認証基盤は作らない。
+
+追加レビューでは、REWの位相ゼロ列・API平滑化、比較帯域と欠測、測定品質、再取込と再出力の区別を明確にしました。API・IR・3D・予測は必要に応じて追加し、実測の記録・比較・復元を先に完成させます。
 
 AVR機種、マイク、実際のWindows版、部屋寸法、スピーカー構成は要確認です。旧計画のYamaha RX-A4Aは機器例として扱います。Atmosの配置を記録できることと、各高さスピーカーをPCから個別測定できることは別の要件です。
