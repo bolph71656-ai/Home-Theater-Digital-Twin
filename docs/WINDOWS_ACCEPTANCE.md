@@ -26,6 +26,14 @@ M10は「自動化できる保存・比較・復元契約」と「実REW/実測�
 
 このシナリオはファイルI/O、SQLite、FastAPI、比較保存、report、backup/restoreをWindows runner上で横断する。ただしREWそのものやオーディオデバイスは使用しない。
 
+## 2026-09-16 実機進捗
+
+- REW V5.40 beta 135 API版を所有PCへ導入。`-api`起動で127.0.0.1:4735を確認。
+- HTDTから実REWへread-only接続し、measurement一覧と96 PPO FR取得を確認。
+- 合成FR 958点で周波数軸最大誤差約2e-11 Hz、magnitude最大差約0.00723 dB。
+- RX-A4AはまだPC未接続。接続後のendpoint/channel mappingは未実施。
+- 同一measurementのREW text exportとAPI取得の照合は未実施。
+
 ## 2. 実機を用意した後の最終受入
 
 以下は合成fixtureでは代替しない。

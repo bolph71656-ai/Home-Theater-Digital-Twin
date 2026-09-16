@@ -12,7 +12,7 @@
 | スピーカー構成 | 現在3.0.2 | 役割・本数は可変 |
 | サブウーファー | なし | 現在の主要シナリオ。将来追加可能 |
 | 測定マイク | 未所有 | 実機受入のみ保留。合成fixture開発のブロッカーにはしない |
-| REW | 未導入 | file/APIともmock・合成fixtureで実装済み。実機互換性受入だけ保留 |
+| REW | V5.40 beta 135 API版を所有PCへ導入済み | 実API接続・FRデコード確認済み。text export同一測定照合と実測受入は継続 |
 
 ## 中心目標
 
@@ -59,7 +59,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 - 取得曲線は現段階ではHTDT Measurement/Datasetへ自動保存しない
 - REWへのPOST/PUT/DELETE、Generator、測定開始、設定変更は実装しない
 
-所有PC上の実REW接続がないため、実API応答との最終互換性だけを保留する。
+所有PC上のREW V5.40 beta 135へ実接続し、合成FR 958点のGET・big-endian復号・96 PPO周波数軸復元を確認済み。同一measurementのREW text exportとの照合と実測データでの受入は継続する。
 
 ## A04 — ピーク/ディップと幾何候補対応
 
@@ -86,7 +86,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 ## 現時点でハードウェア/実データ待ちの項目
 
 - 実REW安定版テキストとのparser互換性
-- REW 5.40系APIの所有PC上での実接続とA03 UI実機確認
+- REW text exportとAPI取得を同一measurementで数値照合する実互換性確認
 - 測定マイク校正・絶対SPL
 - RX-A4A HDMIチャンネル割当と実際の発音源確認
 - 高さチャンネルをREWから個別励振できるかの確認

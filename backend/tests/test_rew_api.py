@@ -111,3 +111,35 @@ def test_invalid_arrays_are_rejected() -> None:
     non_finite = base64.b64encode(struct.pack('>f', float('nan'))).decode()
     with pytest.raises(RewApiError):
         decode_rew_float_array(non_finite)
+
+
+def test_real_rew_beta135_measurement_fixture_is_normalized() -> None:
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / 'fixtures' / 'rew_5_40_beta135_measurements.json'
+    payload = json.loads(fixture.read_text(encoding='utf-8'))
+    measurements = normalize_measurement_summaries(payload)
+
+    assert len(measurements) == 1
+    summary = measurements[0]
+    assert summary['title'] == 'HTDT synthetic real-API fixture'
+    assert summary['rewVersion'] == 'V5.40 beta 135'
+    assert summary['startFreq'] == pytest.approx(20.0)
+    assert summary['endFreq'] == pytest.approx(20041.156)
+
+
+def test_real_rew_beta135_frequency_response_fixture_decodes() -> None:
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / 'fixtures' / 'rew_5_40_beta135_frequency_response.json'
+    payload = json.loads(fixture.read_text(encoding='utf-8'))
+    response = decode_frequency_response('beta135-fixture', payload, requested_unit='SPL', requested_ppo=96)
+
+    assert len(response.magnitude) == 958
+    assert response.points_per_octave == pytest.approx(96.0)
+    assert response.smoothing == '1/48'
+    assert response.unit == 'SPL'
+    assert response.phase_deg is None
+    assert response.frequency_hz[0] == pytest.approx(20.0)
+    assert response.frequency_hz[-1] == pytest.approx(20041.155831556098)
+    assert response.magnitude[0] == pytest.approx(73.80723571777344)
