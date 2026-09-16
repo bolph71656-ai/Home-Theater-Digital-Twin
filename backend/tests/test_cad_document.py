@@ -89,9 +89,9 @@ def test_domain_pose_conversion_reflects_y_axis_without_treating_reflection_as_r
     assert matrix[0][3] == pytest.approx(1.0)
     assert matrix[1][3] == pytest.approx(-2.0)
     assert matrix[2][3] == pytest.approx(3.0)
-    # C*Rz(+90)*C maps render +X toward render +Y; no reflection is stored in the quaternion.
+    # Domain +X rotated to domain +Y; domain +Y is render -Y after C*R*C.
     assert matrix[0][0] == pytest.approx(0.0, abs=1e-9)
-    assert matrix[1][0] == pytest.approx(1.0, abs=1e-9)
+    assert matrix[1][0] == pytest.approx(-1.0, abs=1e-9)
 
 
 def test_noop_move_is_not_added_to_history() -> None:
