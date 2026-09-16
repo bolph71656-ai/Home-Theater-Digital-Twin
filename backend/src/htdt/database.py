@@ -244,8 +244,13 @@ class Store:
         with tempfile.TemporaryDirectory(dir=self.root) as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             snapshot_db = temp_dir / 'htdt.sqlite3'
-            with self.connect() as source, sqlite3.connect(snapshot_db) as destination:
-                source.backup(destination)
+            destination = sqlite3.connect(snapshot_db)
+            try:
+                with self.connect() as source:
+                    source.backup(destination)
+                destination.close()
+            finally:
+                destination.close()
             manifest = {'schema_version': SCHEMA_VERSION, 'created_at': utc_now()}
             with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
                 archive.write(snapshot_db, 'htdt.sqlite3')
@@ -271,10 +276,13 @@ class Store:
                         raise ValueError('Unsafe backup path')
                 archive.extractall(staging)
             restored_db = staging / 'htdt.sqlite3'
-            with sqlite3.connect(restored_db) as db:
-                version = db.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
+            validation_db = sqlite3.connect(restored_db)
+            try:
+                version = validation_db.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
                 if version is None or int(version[0]) != SCHEMA_VERSION:
                     raise ValueError('Backup database schema mismatch')
+            finally:
+                validation_db.close()
             replacement_assets = staging / 'assets'
             old_assets = self.root / 'assets.old'
             if old_assets.exists():
