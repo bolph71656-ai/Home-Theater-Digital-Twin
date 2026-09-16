@@ -19,8 +19,8 @@ from .comparison import FrequencyResponse
 from .rew_parser import parse_rew_frequency_response
 
 
-SCHEMA_VERSION = 2
-SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2}
+SCHEMA_VERSION = 3
+SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3}
 
 
 def utc_now() -> str:
@@ -82,16 +82,21 @@ class Store:
                     parent_context_id TEXT REFERENCES contexts(id), created_at TEXT NOT NULL, payload_json TEXT NOT NULL,
                     UNIQUE(project_id, revision_number)
                 );
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), purpose TEXT,
+                    started_at TEXT, notes TEXT, created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS assets (
                     sha256 TEXT PRIMARY KEY, relative_path TEXT NOT NULL, original_filename TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL, created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS measurements (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), context_id TEXT NOT NULL REFERENCES contexts(id),
-                    channel_role TEXT NOT NULL, evidence_type TEXT NOT NULL, source_speaker_ids_json TEXT NOT NULL,
-                    radiation_scope TEXT NOT NULL, routing_evidence TEXT NOT NULL DEFAULT 'unknown', captured_at TEXT,
-                    imported_at TEXT NOT NULL, notes TEXT, quality_status TEXT NOT NULL DEFAULT 'unknown',
-                    quality_reasons_json TEXT NOT NULL DEFAULT '[]', quality_source TEXT NOT NULL DEFAULT 'unknown', repeat_group TEXT
+                    session_id TEXT REFERENCES sessions(id), channel_role TEXT NOT NULL, evidence_type TEXT NOT NULL,
+                    source_speaker_ids_json TEXT NOT NULL, radiation_scope TEXT NOT NULL,
+                    routing_evidence TEXT NOT NULL DEFAULT 'unknown', captured_at TEXT, imported_at TEXT NOT NULL, notes TEXT,
+                    quality_status TEXT NOT NULL DEFAULT 'unknown', quality_reasons_json TEXT NOT NULL DEFAULT '[]',
+                    quality_source TEXT NOT NULL DEFAULT 'unknown', repeat_group TEXT
                 );
                 CREATE TABLE IF NOT EXISTS datasets (
                     id TEXT PRIMARY KEY, measurement_id TEXT NOT NULL REFERENCES measurements(id), asset_sha256 TEXT NOT NULL REFERENCES assets(sha256),
@@ -116,6 +121,7 @@ class Store:
                 ('quality_reasons_json', "ALTER TABLE measurements ADD COLUMN quality_reasons_json TEXT NOT NULL DEFAULT '[]'"),
                 ('quality_source', "ALTER TABLE measurements ADD COLUMN quality_source TEXT NOT NULL DEFAULT 'unknown'"),
                 ('repeat_group', 'ALTER TABLE measurements ADD COLUMN repeat_group TEXT'),
+                ('session_id', 'ALTER TABLE measurements ADD COLUMN session_id TEXT REFERENCES sessions(id)'),
             )
             for name, sql in migrations:
                 if name not in columns:
@@ -138,6 +144,35 @@ class Store:
         with self.connect() as db:
             row = db.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
             return dict(row) if row else None
+
+    def create_session(self, project_id: str, purpose: str | None, started_at: str | None, notes: str | None) -> dict[str, Any]:
+        session = {
+            'id': str(uuid4()),
+            'project_id': project_id,
+            'purpose': purpose.strip() if purpose and purpose.strip() else None,
+            'started_at': started_at.strip() if started_at and started_at.strip() else None,
+            'notes': notes.strip() if notes and notes.strip() else None,
+            'created_at': utc_now(),
+        }
+        with self.connect() as db:
+            if db.execute('SELECT id FROM projects WHERE id = ?', (project_id,)).fetchone() is None:
+                raise KeyError('project_not_found')
+            db.execute(
+                'INSERT INTO sessions(id, project_id, purpose, started_at, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                (session['id'], project_id, session['purpose'], session['started_at'], session['notes'], session['created_at']),
+            )
+            db.commit()
+        return session
+
+    def list_sessions(self, project_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                '''SELECT s.*, COUNT(m.id) AS measurement_count
+                   FROM sessions s LEFT JOIN measurements m ON m.session_id = s.id
+                   WHERE s.project_id = ? GROUP BY s.id ORDER BY COALESCE(s.started_at, s.created_at) DESC, s.created_at DESC''',
+                (project_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def create_context(self, project_id: str, payload: dict[str, Any], parent_context_id: str | None) -> dict[str, Any]:
         with self.connect() as db:
@@ -187,7 +222,8 @@ class Store:
     def import_measurement(self, project_id: str, context_id: str, filename: str, raw: bytes, channel_role: str,
                            evidence_type: str, source_speaker_ids: list[str], radiation_scope: str, captured_at: str | None,
                            notes: str | None, routing_evidence: str = 'unknown', quality_status: str = 'unknown',
-                           quality_reasons: list[str] | None = None, quality_source: str = 'unknown', repeat_group: str | None = None) -> dict[str, Any]:
+                           quality_reasons: list[str] | None = None, quality_source: str = 'unknown', repeat_group: str | None = None,
+                           session_id: str | None = None) -> dict[str, Any]:
         parsed = parse_rew_frequency_response(raw)
         asset_sha, asset_path, asset_created, already_known = self._store_asset(filename, raw)
         measurement_id, dataset_id, imported_at = str(uuid4()), str(uuid4()), utc_now()
@@ -198,13 +234,15 @@ class Store:
             with self.connect() as db:
                 if db.execute('SELECT id FROM contexts WHERE id = ? AND project_id = ?', (context_id, project_id)).fetchone() is None:
                     raise KeyError('context_not_found')
+                if session_id is not None and db.execute('SELECT id FROM sessions WHERE id = ? AND project_id = ?', (session_id, project_id)).fetchone() is None:
+                    raise KeyError('session_not_found')
                 existing_count = int(db.execute('SELECT COUNT(*) FROM datasets WHERE asset_sha256 = ?', (asset_sha,)).fetchone()[0])
                 db.execute('INSERT OR IGNORE INTO assets(sha256, relative_path, original_filename, size_bytes, created_at) VALUES (?, ?, ?, ?, ?)',
                            (asset_sha, str(asset_path.relative_to(self.root)), filename, len(raw), imported_at))
-                db.execute('''INSERT INTO measurements(id, project_id, context_id, channel_role, evidence_type, source_speaker_ids_json,
+                db.execute('''INSERT INTO measurements(id, project_id, context_id, session_id, channel_role, evidence_type, source_speaker_ids_json,
                            radiation_scope, routing_evidence, captured_at, imported_at, notes, quality_status, quality_reasons_json,
-                           quality_source, repeat_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                           (measurement_id, project_id, context_id, channel_role, evidence_type, json.dumps(source_speaker_ids), radiation_scope,
+                           quality_source, repeat_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                           (measurement_id, project_id, context_id, session_id, channel_role, evidence_type, json.dumps(source_speaker_ids), radiation_scope,
                             routing_evidence, captured_at, imported_at, notes, quality_status, json.dumps(quality_reasons or [], ensure_ascii=False),
                             quality_source, repeat_group.strip() if repeat_group else None))
                 db.execute('''INSERT INTO datasets(id, measurement_id, asset_sha256, kind, frequency_blob, level_blob, phase_blob, metadata_json, created_at)
@@ -219,7 +257,7 @@ class Store:
         return {'measurement_id': measurement_id, 'dataset_id': dataset_id, 'asset_sha256': asset_sha, 'points': len(parsed.frequency_hz),
                 'frequency_min_hz': parsed.frequency_hz[0], 'frequency_max_hz': parsed.frequency_hz[-1], 'phase_status': parsed.phase_status,
                 'warnings': list(parsed.warnings), 'duplicate_asset': already_known or existing_count > 0,
-                'existing_dataset_count': existing_count, 'quality_status': quality_status}
+                'existing_dataset_count': existing_count, 'quality_status': quality_status, 'session_id': session_id}
 
     def list_measurements(self, project_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:
@@ -228,12 +266,12 @@ class Store:
         result = []
         for row in rows:
             frequency = _unpack(row['frequency_blob']) or ()
-            result.append({'id': row['id'], 'dataset_id': row['dataset_id'], 'context_id': row['context_id'], 'channel_role': row['channel_role'],
-                           'evidence_type': row['evidence_type'], 'source_speaker_ids': json.loads(row['source_speaker_ids_json']),
-                           'radiation_scope': row['radiation_scope'], 'routing_evidence': row['routing_evidence'], 'captured_at': row['captured_at'],
-                           'imported_at': row['imported_at'], 'notes': row['notes'], 'quality_status': row['quality_status'],
-                           'quality_reasons': json.loads(row['quality_reasons_json']), 'quality_source': row['quality_source'],
-                           'repeat_group': row['repeat_group'], 'asset_sha256': row['asset_sha256'],
+            result.append({'id': row['id'], 'dataset_id': row['dataset_id'], 'context_id': row['context_id'], 'session_id': row['session_id'],
+                           'channel_role': row['channel_role'], 'evidence_type': row['evidence_type'],
+                           'source_speaker_ids': json.loads(row['source_speaker_ids_json']), 'radiation_scope': row['radiation_scope'],
+                           'routing_evidence': row['routing_evidence'], 'captured_at': row['captured_at'], 'imported_at': row['imported_at'],
+                           'notes': row['notes'], 'quality_status': row['quality_status'], 'quality_reasons': json.loads(row['quality_reasons_json']),
+                           'quality_source': row['quality_source'], 'repeat_group': row['repeat_group'], 'asset_sha256': row['asset_sha256'],
                            'frequency_min_hz': frequency[0] if frequency else None, 'frequency_max_hz': frequency[-1] if frequency else None,
                            'points': len(frequency), 'metadata': json.loads(row['metadata_json'])})
         return result
@@ -248,16 +286,16 @@ class Store:
     def get_dataset_descriptor(self, dataset_id: str) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute('''SELECT d.id AS dataset_id, d.metadata_json, d.asset_sha256, m.id AS measurement_id, m.project_id, m.context_id,
-                               m.channel_role, m.evidence_type, m.quality_status, m.quality_reasons_json, m.quality_source, m.repeat_group,
+                               m.session_id, m.channel_role, m.evidence_type, m.quality_status, m.quality_reasons_json, m.quality_source, m.repeat_group,
                                c.payload_json AS context_payload_json FROM datasets d JOIN measurements m ON m.id = d.measurement_id
                                JOIN contexts c ON c.id = m.context_id WHERE d.id = ?''', (dataset_id,)).fetchone()
         if row is None:
             raise KeyError('dataset_not_found')
         return {'dataset_id': row['dataset_id'], 'measurement_id': row['measurement_id'], 'project_id': row['project_id'], 'context_id': row['context_id'],
-                'channel_role': row['channel_role'], 'evidence_type': row['evidence_type'], 'quality_status': row['quality_status'],
-                'quality_reasons': json.loads(row['quality_reasons_json']), 'quality_source': row['quality_source'], 'repeat_group': row['repeat_group'],
-                'asset_sha256': row['asset_sha256'], 'dataset_metadata': json.loads(row['metadata_json']),
-                'context_payload': json.loads(row['context_payload_json'])}
+                'session_id': row['session_id'], 'channel_role': row['channel_role'], 'evidence_type': row['evidence_type'],
+                'quality_status': row['quality_status'], 'quality_reasons': json.loads(row['quality_reasons_json']),
+                'quality_source': row['quality_source'], 'repeat_group': row['repeat_group'], 'asset_sha256': row['asset_sha256'],
+                'dataset_metadata': json.loads(row['metadata_json']), 'context_payload': json.loads(row['context_payload_json'])}
 
     def attach_asset(self, project_id: str, filename: str, raw: bytes, kind: str, label: str | None,
                      measurement_id: str | None, context_id: str | None) -> dict[str, Any]:
