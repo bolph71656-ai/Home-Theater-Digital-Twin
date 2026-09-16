@@ -126,6 +126,25 @@ class MeasurementImportRequest(ImportPreviewRequest):
     repeat_group: str | None = Field(default=None, max_length=200)
 
 
+class RewApiSnapshotImportRequest(BaseModel):
+    measurement_uuid: str = Field(min_length=1, max_length=200)
+    context_id: str
+    session_id: str | None = None
+    channel_role: str = Field(min_length=1)
+    evidence_type: EvidenceType = 'unknown'
+    source_speaker_ids: list[str] = Field(default_factory=list)
+    radiation_scope: RadiationScope = 'unknown'
+    routing_evidence: RoutingEvidence = 'unknown'
+    notes: str | None = None
+    quality_status: QualityStatus = 'unknown'
+    quality_reasons: list[str] = Field(default_factory=list)
+    quality_source: QualitySource = 'unknown'
+    repeat_group: str | None = Field(default=None, max_length=200)
+    unit: str = Field(default='SPL', min_length=1, max_length=32)
+    ppo: int | None = Field(default=None, ge=1, le=384)
+    smoothing: str | None = Field(default=None, max_length=32)
+
+
 class AttachmentCreate(BaseModel):
     filename: str = Field(min_length=1, max_length=512)
     raw_base64: str = Field(min_length=1, max_length=MAX_ATTACHMENT_BASE64_CHARS)

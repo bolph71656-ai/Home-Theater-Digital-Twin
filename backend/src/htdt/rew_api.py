@@ -38,6 +38,14 @@ class RewFrequencyResponse:
     requested_smoothing: str | None
 
 
+@dataclass(frozen=True)
+class RewFrequencyResponseSnapshot:
+    measurement_summary: dict[str, Any]
+    query: dict[str, str | int]
+    raw_frequency_response: dict[str, Any]
+    decoded: RewFrequencyResponse
+
+
 def validate_rew_api_url(base_url: str) -> str:
     parsed = urlparse(base_url)
     if parsed.scheme != 'http':
@@ -312,6 +320,33 @@ class RewApiClient:
             requested_ppo=ppo,
             requested_smoothing=smoothing,
         )
+
+    def get_frequency_response_snapshot(
+        self, measurement_uuid: str, *, ppo: int | None = None, unit: str = 'SPL', smoothing: str | None = None
+    ) -> RewFrequencyResponseSnapshot:
+        if ppo is not None and not (1 <= ppo <= 384):
+            raise ValueError('ppo must be between 1 and 384')
+        matches = [item for item in self.list_measurements() if item.get('uuid') == measurement_uuid]
+        if len(matches) != 1:
+            raise RewApiError('Selected REW measurement UUID is not unique in the current measurement list')
+        before = self.get_measurement(measurement_uuid)
+        if before.get('uuid') != measurement_uuid:
+            raise RewApiError('REW measurement summary UUID does not match the requested UUID')
+        query: dict[str, str | int] = {'unit': unit}
+        if ppo is not None:
+            query['ppo'] = ppo
+        if smoothing:
+            query['smoothing'] = smoothing
+        payload = self._get_json(f'/measurements/{quote(measurement_uuid, safe="")}/frequency-response', query)
+        if not isinstance(payload, dict):
+            raise RewApiError('Unexpected REW frequency-response response shape')
+        after = self.get_measurement(measurement_uuid)
+        if before != after:
+            raise RewApiError('REW measurement changed while the snapshot was being read')
+        decoded = decode_frequency_response(
+            measurement_uuid, payload, requested_unit=unit, requested_ppo=ppo, requested_smoothing=smoothing
+        )
+        return RewFrequencyResponseSnapshot(before, query, payload, decoded)
 
     def status(self) -> dict[str, Any]:
         try:
