@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections.abc import Callable
 from math import atan2, degrees
@@ -368,4 +368,3 @@ class RotationWidget3D:
         for handle in self.handles:
             self.plotter.remove_actor(handle, render=False)
         self.handles.clear()
-
