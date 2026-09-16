@@ -21,6 +21,7 @@ python -m htdt
 |---|---|
 | `GET /api/rew/status` | REW APIへの到達可否と測定数を確認 |
 | `GET /api/rew/measurements` | REWに現在ロードされている測定summaryを読取 |
+| `GET /api/rew/audio-preflight` | driver/sample rate/Java入力・出力device/input cal/EXCL候補/ch数/mappingをGETだけで確認 |
 | `GET /api/rew/measurements/{uuid}/frequency-response` | 指定測定の周波数応答を読取・デコード |
 
 REWのindex番号は測定の追加・削除・group変更で動き得るため、HTDTは永続参照にindexを使わずUUIDを使う。

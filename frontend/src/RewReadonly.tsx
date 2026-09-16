@@ -9,6 +9,38 @@ type RewStatus = {
   error: string | null
 }
 
+type RewAudioPreflight = {
+  read_only: boolean
+  audio_enabled: boolean | null
+  audio_ready: boolean | null
+  driver: string
+  sample_rate_hz: number | null
+  sample_rate_unit: string | null
+  java: null | {
+    input_device: string | null
+    input_devices: string[]
+    hardware_input_channels: number
+    input: string | null
+    inputs: string[]
+    input_channel: number | null
+    input_channels: number
+    input_endpoint_ready: boolean
+    input_cal_selection: string | null
+    input_cal_file: string | null
+    input_cal_file_present: boolean
+    output_device: string | null
+    output_devices: string[]
+    hardware_output_channels: number
+    output_channels: string[]
+    output_channel_mapping: Array<{ index?: number; hardwareChannel?: number; channelLabel?: string }>
+    stereo_only: boolean | null
+    exclusive_output_candidates: string[]
+    current_output_is_exclusive: boolean
+    multichannel_ready: boolean
+  }
+  warnings: string[]
+}
+
 type RewMeasurement = Record<string, unknown> & {
   uuid?: string
   title?: string
@@ -113,6 +145,7 @@ function FrequencyPreview({ response }: { response: RewFrequencyResponse }) {
 export function RewReadonlyPanel() {
   const [status, setStatus] = useState<RewStatus | null>(null)
   const [measurements, setMeasurements] = useState<RewMeasurement[]>([])
+  const [preflight, setPreflight] = useState<RewAudioPreflight | null>(null)
   const [selectedId, setSelectedId] = useState('')
   const [ppo, setPpo] = useState('96')
   const [unit, setUnit] = useState('SPL')
@@ -130,11 +163,16 @@ export function RewReadonlyPanel() {
       setStatus(nextStatus)
       if (!nextStatus.connected) {
         setMeasurements([])
+        setPreflight(null)
         setSelectedId('')
         return
       }
-      const rows = await api<RewMeasurement[]>('/api/rew/measurements')
+      const [rows, audio] = await Promise.all([
+        api<RewMeasurement[]>('/api/rew/measurements'),
+        api<RewAudioPreflight>('/api/rew/audio-preflight'),
+      ])
       setMeasurements(rows)
+      setPreflight(audio)
       const firstId = rows.map(validMeasurementId).find((id): id is string => id !== null) ?? ''
       setSelectedId((current) => rows.some((item) => validMeasurementId(item) === current) ? current : firstId)
     } catch (reason) {
@@ -172,6 +210,11 @@ export function RewReadonlyPanel() {
 
   const selectableMeasurements = measurements.filter((measurement) => validMeasurementId(measurement) !== null)
 
+  const umik1Visible = preflight?.java?.input_devices.some((name) => /UMIK[- ]?1/i.test(name)) ?? false
+  const currentInputIsUmik1 = /UMIK[- ]?1/i.test(preflight?.java?.input_device ?? '')
+  const umik1RateReady = preflight?.sample_rate_hz === 48000
+  const surroundCalHint = preflight?.java?.input_cal_file?.toLowerCase().includes('_90deg') ?? false
+
   return (
     <main className="shell supplemental-shell">
       <section className="panel">
@@ -204,6 +247,23 @@ export function RewReadonlyPanel() {
               <span>{status.measurement_count ?? measurements.length} measurement(s)</span>
               <span>REWへのHTTP GETのみ</span>
             </div>
+            {preflight && <div className="preview rew-preflight">
+              <strong>Measurement audio preflight</strong>
+              <span>driver: {preflight.driver} · audio ready: {preflight.audio_ready === null ? 'unknown' : preflight.audio_ready ? 'yes' : 'no'}</span>
+              <span>sample rate: {preflight.sample_rate_hz ?? 'unknown'} {preflight.sample_rate_unit ?? ''}</span>
+              <span>target mic: miniDSP UMIK-1 · visible: {umik1Visible ? 'yes' : 'no'} · selected: {currentInputIsUmik1 ? 'yes' : 'no'} · 48 kHz: {umik1RateReady ? 'yes' : 'no'}</span>
+              {preflight.java ? <>
+                <span>input: {preflight.java.input_device ?? 'unknown'} · {preflight.java.input ?? 'unknown'} · ch {preflight.java.input_channel ?? 'unknown'}/{preflight.java.input_channels}</span>
+                <span>input endpoint ready: {preflight.java.input_endpoint_ready ? 'yes' : 'no'} · mic cal file: {preflight.java.input_cal_file_present ? preflight.java.input_cal_file : 'not selected'}</span>
+                <span>HTDT surround baseline: ceiling orientation + UMIK-1 90° cal · filename hint: {surroundCalHint ? '90deg' : 'not confirmed'}</span>
+                <span>output: {preflight.java.output_device ?? 'unknown'}</span>
+                <span>hardware channels: {preflight.java.hardware_output_channels} · stereo-only: {preflight.java.stereo_only === null ? 'unknown' : preflight.java.stereo_only ? 'yes' : 'no'}</span>
+                <span>WASAPI Exclusive: {preflight.java.current_output_is_exclusive ? 'selected' : 'not selected'} · multichannel ready: {preflight.java.multichannel_ready ? 'yes' : 'no'}</span>
+                <span>EXCL candidates: {preflight.java.exclusive_output_candidates.length ? preflight.java.exclusive_output_candidates.join(' / ') : 'none'}</span>
+                <span>mapping: {preflight.java.output_channel_mapping.length ? preflight.java.output_channel_mapping.map((item) => `${item.channelLabel ?? '?'}→HW${item.hardwareChannel ?? '?'}`).join(', ') : 'none'}</span>
+              </> : <span>Java output preflight is not applicable for the selected driver.</span>}
+              {preflight.warnings.map((warning) => <em key={warning}>{warning}</em>)}
+            </div>}
             <div className="grid4 rew-controls">
               <label>Measurement
                 <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setResponse(null) }}>

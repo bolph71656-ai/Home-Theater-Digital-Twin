@@ -143,3 +143,61 @@ def test_real_rew_beta135_frequency_response_fixture_decodes() -> None:
     assert response.frequency_hz[0] == pytest.approx(20.0)
     assert response.frequency_hz[-1] == pytest.approx(20041.155831556098)
     assert response.magnitude[0] == pytest.approx(73.80723571777344)
+
+
+def test_audio_preflight_java_exclusive_multichannel() -> None:
+    payloads = {
+        '/audio/status': {'enabled': True, 'ready': True},
+        '/audio/driver': {'driver': 'Java'},
+        '/audio/samplerate': {'value': 48000.0, 'unit': 'Hz'},
+        '/audio/java/input-device': {'device': 'UMIK-1'},
+        '/audio/java/input-devices': ['UMIK-1'],
+        '/audio/java/num-input-device-channels': 1,
+        '/audio/java/input': {'input': 'Default Input'},
+        '/audio/java/inputs': ['Default Input'],
+        '/audio/java/input-channel': {'channel': 1},
+        '/audio/java/num-input-channels': 1,
+        '/audio/input-cal': {'currentInputSelection': 'UMIK-1 Default Input', 'calDataAllInputs': {'calFilePath': 'umik.cal'}},
+        '/audio/java/output-device': {'device': 'EXCL: RX-A4A (AMD High Definition Audio Device)'},
+        '/audio/java/output-devices': ['Default Device', 'EXCL: RX-A4A (AMD High Definition Audio Device)'],
+        '/audio/java/num-output-device-channels': 8,
+        '/audio/java/output-channels': ['L', 'R', 'C', 'LFE', 'SL', 'SR', 'SBL', 'SBR'],
+        '/audio/java/output-channel-mapping': {'mapping': [{'index': 1, 'hardwareChannel': 1, 'channelLabel': 'L'}]},
+        '/audio/java/stereo-only': {'enable': False},
+    }
+    calls: list[str] = []
+    def opener(request: Request, timeout: float) -> FakeResponse:
+        from urllib.parse import urlparse
+        path = urlparse(request.full_url).path
+        calls.append(path)
+        return FakeResponse(payloads[path])
+    preflight = RewApiClient(opener=opener).get_audio_preflight()
+    assert preflight['driver'] == 'Java'
+    assert preflight['sample_rate_hz'] == 48000.0
+    assert preflight['java']['input_device'] == 'UMIK-1'
+    assert preflight['java']['input_endpoint_ready'] is True
+    assert preflight['java']['input_cal_file_present'] is True
+    assert preflight['java']['hardware_output_channels'] == 8
+    assert preflight['java']['current_output_is_exclusive'] is True
+    assert preflight['java']['multichannel_ready'] is True
+    assert preflight['warnings'] == []
+    assert calls and all(path.startswith('/audio/') for path in calls)
+
+
+def test_audio_preflight_non_java_skips_java_endpoints() -> None:
+    payloads = {
+        '/audio/status': {'enabled': True, 'ready': True},
+        '/audio/driver': {'driver': 'ASIO'},
+        '/audio/samplerate': {'value': 48000.0, 'unit': 'Hz'},
+    }
+    calls: list[str] = []
+    def opener(request: Request, timeout: float) -> FakeResponse:
+        from urllib.parse import urlparse
+        path = urlparse(request.full_url).path
+        calls.append(path)
+        return FakeResponse(payloads[path])
+    preflight = RewApiClient(opener=opener).get_audio_preflight()
+    assert preflight['driver'] == 'ASIO'
+    assert preflight['java'] is None
+    assert any('not applicable' in warning for warning in preflight['warnings'])
+    assert calls == ['/audio/status', '/audio/driver', '/audio/samplerate']

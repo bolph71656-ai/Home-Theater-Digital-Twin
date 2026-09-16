@@ -11,7 +11,7 @@
 | AVR | Yamaha RX-A4A | AVR設定は不変スナップショットとして手入力から開始 |
 | スピーカー構成 | 現在3.0.2 | 役割・本数は可変 |
 | サブウーファー | なし | 現在の主要シナリオ。将来追加可能 |
-| 測定マイク | 未所有 | 実機受入のみ保留。合成fixture開発のブロッカーにはしない |
+| 測定マイク | miniDSP UMIK-1を採用。実機接続/serial登録は未実施 | 48 kHz、ホームシアター基準は天井向き+個体別90°校正。実機受入のみ保留 |
 | REW | V5.40 beta 135 API版を所有PCへ導入済み | 実API接続・FRデコード確認済み。text export同一測定照合と実測受入は継続 |
 
 ## 中心目標
@@ -37,6 +37,7 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
 - A03 backend: localhost限定・GET専用のREW 5.40系APIアダプター
 - A03 UI: offline表示、測定一覧、PPO/unit/smoothing指定FRプレビュー、requested/returned来歴表示
+- A03 preflight: REW audio ready/driver/sample rate/Java input+output/input cal/EXCL候補/hardware ch/mappingをread-only表示
 - A04: 96 PPO特徴検出、room mode/一次反射の候補対応、quality/evidence gate、UI
 - R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
 - V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
@@ -87,7 +88,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 
 - 実REW安定版テキストとのparser互換性
 - REW text exportとAPI取得を同一measurementで数値照合する実互換性確認
-- 測定マイク校正・絶対SPL
+- UMIK-1実機接続、個体別90°校正ファイル、絶対SPL
 - RX-A4A HDMIチャンネル割当と実際の発音源確認
 - 高さチャンネルをREWから個別励振できるかの確認
 - 実部屋での同条件再測定ばらつき
@@ -98,7 +99,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 ## 次の実行ゲート
 
 1. REWを導入し、まずFL/FRの同条件repeatを含むテキストexportを取得する。
-2. 測定マイク導入後、校正ファイル・向き・Windows入力経路を記録する。
+2. UMIK-1導入後、48 kHz、天井向き、個体別90°校正ファイル、Windows/REW入力経路を記録する。
 3. RX-A4AでFL/FR/C/Heightの実発音経路を確認し、input roleと実音源を分離して記録する。
 4. `docs/WINDOWS_ACCEPTANCE.md`の実機最終受入を実行する。
 5. 実REW APIを確認できた後、API取得をHTDT Datasetへ保存する場合はresponse/query来歴をRawAsset/metadataへ固定し、実API確認前に`measured`へ自動分類しない。

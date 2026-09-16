@@ -11,7 +11,7 @@ v0.1の中核であるプロジェクト保存、配置/条件スナップショ
 - Yamaha RX-A4A
 - 現在3.0.2（増減可能なデータモデル）
 - サブウーファーなしを主要シナリオとするが、将来追加可能
-- REW V5.40 beta 135 API版を所有PCへ導入済み。測定マイクは未導入
+- REW V5.40 beta 135 API版を所有PCへ導入済み。測定マイクはminiDSP UMIK-1を採用、実機接続/serial登録は未実施
 - REW/測定マイクがなくても保存・比較・解析・バックアップ機能は利用/テスト可能
 
 ## Windowsでローカル起動
@@ -86,6 +86,8 @@ REW 5.40系のAPIについてはlocalhost限定・GET専用のブラウザを実
 | [WINDOWS_ACCEPTANCE.md](docs/WINDOWS_ACCEPTANCE.md) | Windows合成E2Eと実機最終受入手順 |
 | [REW_API.md](docs/REW_API.md) | 読取専用REW API契約 |
 | [REW_REAL_VALIDATION.md](docs/REW_REAL_VALIDATION.md) | 所有PC上の実REW API/UI検証記録 |
+| [RXA4A_HDMI_VALIDATION.md](docs/RXA4A_HDMI_VALIDATION.md) | RX-A4A HDMI/WASAPI Exclusive/routing実機受入手順 |
+| [UMIK1_VALIDATION.md](docs/UMIK1_VALIDATION.md) | UMIK-1の48 kHz/校正/向き/入力経路の実機受入手順 |
 | [PLAN_REVIEW.md](docs/PLAN_REVIEW.md) | 計画レビューと根拠 |
 
 ## 重要な制約
