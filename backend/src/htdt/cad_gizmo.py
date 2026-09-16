@@ -131,9 +131,9 @@ class TranslationWidget3D:
             return
         self.plotter.enable_trackball_style()
         self.pressing = False
-        _release_mouse(self.plotter)
         if self.release_callback:
             self.release_callback(self.matrix.copy())
+        _release_mouse(self.plotter)
 
     def cancel(self) -> None:
         self.actor.user_matrix = np.eye(4)
@@ -319,9 +319,9 @@ class RotationWidget3D:
         axis_index = self.handles.index(self.selected)
         self.plotter.enable_trackball_style()
         self.pressing = False
-        _release_mouse(self.plotter)
         if self.release_callback:
             self.release_callback(axis_index, self.angle_deg)
+        _release_mouse(self.plotter)
 
     def cancel(self) -> None:
         self.actor.user_matrix = np.eye(4)
