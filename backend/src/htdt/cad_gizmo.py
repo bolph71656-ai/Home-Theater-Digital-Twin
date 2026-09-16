@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 import pyvista as pv
+from vtkmodules.vtkRenderingCore import vtkPropPicker
 
 
 MatrixCallback = Callable[[np.ndarray], None]
@@ -33,6 +34,10 @@ class TranslationWidget3D:
         self.pressing = False
         self.matrix = np.eye(4)
         self.observers: list[int] = []
+        # Keep gizmo hit-testing isolated from PyVista's scene mesh picker.
+        # Reusing interactor.GetPicker() emits the scene picker's EndPickEvent and
+        # causes one Windows click to run the selection callback twice.
+        self.handle_picker = vtkPropPicker()
         colors = (
             pv.global_theme.axes.x_color,
             pv.global_theme.axes.y_color,
@@ -75,9 +80,8 @@ class TranslationWidget3D:
     def _pick_handle(self, interactor) -> pv.Actor | None:
         x, y = interactor.GetEventPosition()
         renderer = self.plotter.iren.get_poked_renderer()
-        picker = interactor.GetPicker()
-        picker.Pick(x, y, 0, renderer)
-        picked = picker.GetActor()
+        self.handle_picker.Pick(x, y, 0, renderer)
+        picked = self.handle_picker.GetActor()
         return picked if picked in self.handles else None
 
     def _move(self, interactor, _event) -> None:

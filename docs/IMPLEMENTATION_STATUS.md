@@ -1,24 +1,24 @@
 # 実装ステータス
 
-> 更新: 2026-09-16 / N05縦断試作・Windows A01/A02受入反映
+> 更新: 2026-09-16 / N10 editor shell・Windows A03/A04受入反映
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧UI/旧PoCをnative CAD完了とは扱わない。
 
 ## Native CADの状態
 
-**N05 — 技術の縦断試作はPR #43で実装・実機受入済み。** `SceneDocument / WorkingDocument / SceneRevision`境界、Qt/PyVista native shell、共通selection、speaker axis drag、Inspector数値編集、Esc cancel、Undo/Redo、immutable Save/reopen、Windows standalone packageまで通した。旧Issue #36/#38と旧PR #37は履歴として保持する。
+**N05とN10の技術gateは通過。** N05はPR #43でmainへ反映済み。N10はIssue #44 / `feat/n10-editor-shell-recovery` で、ViewState、Delete履歴、Save失敗保持、recovery snapshotとA03/A04実機受入まで完了した。N20のRotate/multi-select/snap等はまだ実装していない。
 
 | 区分 | 現在の状態 |
 |---|---|
-| 実装branch / PR | `feat/n05-cad-vertical-slice` / PR #43 |
-| 実装基準 | base `baafc039c3ab13d878796c4cd8d9906cbc27bcf5`、実機受入対象コード `c4ee5c8d3856d7cf1ec05d590775d66e67ef244b` |
-| A01 | Windows実マウスでpick→axis drag→数値編集→Esc cancel→Undo→Save→reopenを通過。unknown aim保持 |
-| A02 | PyInstaller onedirをisolated buildし、開発`.venv`を利用不能にしても起動・正常終了。新規browser起動なし |
-| DPI | 実OS 200%でpass。100%/150%は同一実機のQt scale-factor相当検証でpass。実OS設定としては未実施 |
-| reproducibility | Python 3.12.10 / Windows x64の55依存を`backend/requirements-n05-windows.lock`へfreeze |
-| CI | PR #43のN05実装headでWindows CI成功。最終doc更新後に再確認する |
-| 次工程 | N10 — editor shell / 保存。復旧最小版とA03/A04を追加し、N20へ進む条件を固める |
+| main | N05 / PR #43、merge `73184061a608aa9d50c21a81549ec937d2438100` |
+| N10 branch / Issue | `feat/n10-editor-shell-recovery` / Issue #44 |
+| N10受入対象コード | `1f44d0f2a957f9d2908fbb9d713bbf853d262718` |
+| A03 | 実マウスでtree/viewport選択、hide/lock、Delete/Undo、reopenをpass。scene pickerとgizmo pickerの共有による二重callbackを専用`vtkPropPicker`で解消 |
+| A04 | Save→Undo→新操作、注入Save失敗、recovery候補→明示Recover→再Saveをpass。既存revision不変・draft/history保持を確認 |
+| 自動検証 | editor/repository対象10 tests pass。最終backend全回帰pass（既存1 skip） |
+| N05配布 | Python 3.12.10 / Windows x64の55依存lockとstandalone A02はmainに反映済み |
+| 次工程 | N20a — Move/Rotate、数値編集、grid/axis/angle snap、A05/A06 |
 
-詳細な実機条件・手順・既知事項は[N05 Windows acceptance](N05_ACCEPTANCE_2026-09-16.md)。N05で確認した内容をN10以降の全CAD機能完成と読み替えない。
+N05詳細は[N05 Windows acceptance](N05_ACCEPTANCE_2026-09-16.md)、N10詳細は[N10 Windows acceptance](N10_ACCEPTANCE_2026-09-16.md)。N10完了をN20以降の変形・snap・room sketch完成とは扱わない。
 
 ## 確定した実環境
 

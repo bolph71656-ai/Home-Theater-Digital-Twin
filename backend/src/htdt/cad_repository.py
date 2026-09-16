@@ -26,6 +26,23 @@ class SaveResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class RecoverySnapshot:
+    document_id: str
+    source_revision_id: str | None
+    updated_at_utc: str
+    content_hash: str
+    document: SceneDocument
+
+
+@dataclass(frozen=True)
+class EditorViewRecord:
+    document_id: str
+    selected_id: str | None
+    hidden_ids: tuple[str, ...]
+    locked_ids: tuple[str, ...]
+
+
 class SceneRepository:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -57,6 +74,29 @@ class SceneRepository:
             connection.execute(
                 'CREATE INDEX IF NOT EXISTS idx_scene_revisions_document_seq '
                 'ON scene_revisions(document_id, seq DESC)'
+            )
+            connection.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS scene_recovery_snapshots (
+                    document_id TEXT PRIMARY KEY,
+                    source_revision_id TEXT,
+                    updated_at_utc TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(source_revision_id) REFERENCES scene_revisions(revision_id)
+                )
+                '''
+            )
+            connection.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS editor_view_states (
+                    document_id TEXT PRIMARY KEY,
+                    selected_id TEXT,
+                    hidden_ids_json TEXT NOT NULL,
+                    locked_ids_json TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                )
+                '''
             )
 
     def latest(self, document_id: str) -> SceneRevision | None:
@@ -91,6 +131,10 @@ class SceneRepository:
                 if parent['document_id'] != document.document_id:
                     raise ValueError('parent revision belongs to a different document')
                 if parent['content_hash'] == content_hash:
+                    connection.execute(
+                        'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
+                        (document.document_id,),
+                    )
                     return SaveResult(self._row_to_revision(parent), created=False)
             revision_id = str(uuid4())
             created_at = datetime.now(timezone.utc).isoformat()
@@ -102,11 +146,132 @@ class SceneRepository:
                 ''',
                 (revision_id, document.document_id, parent_revision_id, created_at, content_hash, payload_json),
             )
+            connection.execute(
+                'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
+                (document.document_id,),
+            )
             row = connection.execute(
                 'SELECT * FROM scene_revisions WHERE revision_id=?',
                 (revision_id,),
             ).fetchone()
         return SaveResult(self._row_to_revision(row), created=True)
+
+    def save_recovery(
+        self,
+        document: SceneDocument,
+        *,
+        source_revision_id: str | None,
+    ) -> RecoverySnapshot | None:
+        payload_json = canonical_scene_json(document)
+        content_hash = scene_content_hash(document)
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            if source_revision_id is not None:
+                source = connection.execute(
+                    'SELECT * FROM scene_revisions WHERE revision_id=?',
+                    (source_revision_id,),
+                ).fetchone()
+                if source is None:
+                    raise ValueError(f'unknown recovery source revision: {source_revision_id}')
+                if source['document_id'] != document.document_id:
+                    raise ValueError('recovery source belongs to a different document')
+                if source['content_hash'] == content_hash:
+                    connection.execute(
+                        'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
+                        (document.document_id,),
+                    )
+                    return None
+            connection.execute(
+                '''
+                INSERT INTO scene_recovery_snapshots(
+                    document_id, source_revision_id, updated_at_utc, content_hash, payload_json
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(document_id) DO UPDATE SET
+                    source_revision_id=excluded.source_revision_id,
+                    updated_at_utc=excluded.updated_at_utc,
+                    content_hash=excluded.content_hash,
+                    payload_json=excluded.payload_json
+                ''',
+                (document.document_id, source_revision_id, updated_at, content_hash, payload_json),
+            )
+        return RecoverySnapshot(
+            document_id=document.document_id,
+            source_revision_id=source_revision_id,
+            updated_at_utc=updated_at,
+            content_hash=content_hash,
+            document=document,
+        )
+
+    def recovery(self, document_id: str) -> RecoverySnapshot | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT * FROM scene_recovery_snapshots WHERE document_id=?',
+                (document_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        document = SceneDocument.model_validate(json.loads(row['payload_json']))
+        content_hash = scene_content_hash(document)
+        if content_hash != row['content_hash']:
+            raise ValueError(f'recovery snapshot hash mismatch: {document_id}')
+        return RecoverySnapshot(
+            document_id=row['document_id'],
+            source_revision_id=row['source_revision_id'],
+            updated_at_utc=row['updated_at_utc'],
+            content_hash=row['content_hash'],
+            document=document,
+        )
+
+    def clear_recovery(self, document_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
+                (document_id,),
+            )
+
+    def save_view_state(
+        self,
+        document_id: str,
+        *,
+        selected_id: str | None,
+        hidden_ids: set[str],
+        locked_ids: set[str],
+    ) -> None:
+        hidden_json = json.dumps(sorted(hidden_ids), separators=(',', ':'))
+        locked_json = json.dumps(sorted(locked_ids), separators=(',', ':'))
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                '''
+                INSERT INTO editor_view_states(
+                    document_id, selected_id, hidden_ids_json, locked_ids_json, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(document_id) DO UPDATE SET
+                    selected_id=excluded.selected_id,
+                    hidden_ids_json=excluded.hidden_ids_json,
+                    locked_ids_json=excluded.locked_ids_json,
+                    updated_at_utc=excluded.updated_at_utc
+                ''',
+                (document_id, selected_id, hidden_json, locked_json, updated_at),
+            )
+
+    def view_state(self, document_id: str) -> EditorViewRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT * FROM editor_view_states WHERE document_id=?',
+                (document_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        hidden = tuple(str(value) for value in json.loads(row['hidden_ids_json']))
+        locked = tuple(str(value) for value in json.loads(row['locked_ids_json']))
+        return EditorViewRecord(
+            document_id=row['document_id'],
+            selected_id=row['selected_id'],
+            hidden_ids=hidden,
+            locked_ids=locked,
+        )
 
     @staticmethod
     def _row_to_revision(row: sqlite3.Row) -> SceneRevision:
