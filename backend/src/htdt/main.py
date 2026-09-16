@@ -18,7 +18,7 @@ from .comparison import ComparisonError, compare_frequency_responses
 from .conditions import classify_differences, context_differences
 from .database import SCHEMA_VERSION, Store
 from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
-from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate
+from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, SessionCreate
 from .report import build_report_payload, render_report_html
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
 from .rew_parser import RewParseError, parse_rew_frequency_response
@@ -117,6 +117,17 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
             raise HTTPException(status_code=404, detail='Project not found')
         return project
 
+    @app.get('/api/projects/{project_id}/sessions')
+    def list_sessions(project_id: str) -> list[dict]:
+        return store.list_sessions(project_id)
+
+    @app.post('/api/projects/{project_id}/sessions', status_code=201)
+    def create_session(project_id: str, request: SessionCreate) -> dict:
+        try:
+            return store.create_session(project_id, request.purpose, request.started_at, request.notes)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get('/api/projects/{project_id}/contexts')
     def list_contexts(project_id: str) -> list[dict]:
         return store.list_contexts(project_id)
@@ -164,7 +175,8 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
                                             source_speaker_ids=request.source_speaker_ids, radiation_scope=request.radiation_scope,
                                             captured_at=request.captured_at, notes=request.notes, routing_evidence=request.routing_evidence,
                                             quality_status=request.quality_status, quality_reasons=request.quality_reasons,
-                                            quality_source=request.quality_source, repeat_group=request.repeat_group)
+                                            quality_source=request.quality_source, repeat_group=request.repeat_group,
+                                            session_id=request.session_id)
         except (ValueError, RewParseError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except KeyError as exc:
@@ -231,6 +243,7 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
             'measurement': {
                 'measurement_id': descriptor['measurement_id'],
                 'context_id': descriptor['context_id'],
+                'session_id': descriptor['session_id'],
                 'channel_role': descriptor['channel_role'],
                 'evidence_type': descriptor['evidence_type'],
                 'quality_status': descriptor['quality_status'],
@@ -307,7 +320,7 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
             differences = context_differences(descriptor_a['context_payload'], descriptor_b['context_payload'])
             classified = classify_differences(differences, request.expected_change_paths)
             same_repeat_group = bool(descriptor_a['repeat_group'] and descriptor_a['repeat_group'] == descriptor_b['repeat_group'])
-            keys = ('measurement_id', 'context_id', 'channel_role', 'evidence_type', 'quality_status', 'quality_reasons', 'quality_source', 'repeat_group')
+            keys = ('measurement_id', 'context_id', 'session_id', 'channel_role', 'evidence_type', 'quality_status', 'quality_reasons', 'quality_source', 'repeat_group')
             result_payload = {**asdict(result), 'measurement_a': {key: descriptor_a[key] for key in keys},
                               'measurement_b': {key: descriptor_b[key] for key in keys},
                               'comparison_role': 'repeatability' if same_repeat_group else 'configuration_ab',
