@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_REW_API_URL = 'http://127.0.0.1:4735'
+ROOMSIM_ADAPTER_VERSION = 'rew-roomsim-readonly-1'
 
 
 class RewApiError(RuntimeError):
@@ -44,6 +45,37 @@ class RewFrequencyResponseSnapshot:
     query: dict[str, str | int]
     raw_frequency_response: dict[str, Any]
     decoded: RewFrequencyResponse
+
+
+@dataclass(frozen=True)
+class RewRoomSimFrequencyResponse:
+    source_name: str | None
+    mic_position: str
+    message: str | None
+    unit: str | None
+    smoothing: str | None
+    start_frequency_hz: float
+    points_per_octave: float | None
+    frequency_step_hz: float | None
+    frequency_hz: tuple[float, ...]
+    magnitude: tuple[float, ...]
+    phase_deg: tuple[float, ...] | None
+
+
+@dataclass(frozen=True)
+class RewRoomSimSnapshot:
+    rew_version: str
+    room_size: dict[str, Any]
+    room_is_sealed: bool
+    absorptions: dict[str, Any]
+    options: dict[str, Any]
+    head_position_rew: dict[str, Any]
+    head_position_htdt: dict[str, float]
+    mic_position_offsets: dict[str, Any]
+    active_sources: tuple[str, ...]
+    recognized_sources: tuple[str, ...]
+    mic_positions: tuple[str, ...]
+    sources: dict[str, dict[str, Any]]
 
 
 def validate_rew_api_url(base_url: str) -> str:
@@ -142,6 +174,35 @@ def decode_frequency_response(
         requested_ppo=requested_ppo,
         requested_smoothing=requested_smoothing,
     )
+
+
+def roomsim_position_to_htdt(room_depth_m: float, position: dict[str, Any]) -> dict[str, float]:
+    if not math.isfinite(room_depth_m) or room_depth_m <= 0:
+        raise ValueError('room depth must be positive')
+    if position.get('unit') != 'metres':
+        raise RewApiError('REW Room Simulator position must be requested in metres')
+    values = {name: position.get(name) for name in ('fromRear', 'fromLeft', 'fromFloor')}
+    if any(not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in values.values()):
+        raise RewApiError('REW Room Simulator position is invalid')
+    return {
+        'x_m': float(values['fromLeft']),
+        'y_m': room_depth_m - float(values['fromRear']),
+        'z_m': float(values['fromFloor']),
+    }
+
+
+def htdt_position_to_roomsim(room_depth_m: float, position: dict[str, Any]) -> dict[str, float | str]:
+    if not math.isfinite(room_depth_m) or room_depth_m <= 0:
+        raise ValueError('room depth must be positive')
+    values = {name: position.get(name) for name in ('x_m', 'y_m', 'z_m')}
+    if any(not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in values.values()):
+        raise ValueError('HTDT position is invalid')
+    return {
+        'unit': 'metres',
+        'fromRear': room_depth_m - float(values['y_m']),
+        'fromLeft': float(values['x_m']),
+        'fromFloor': float(values['z_m']),
+    }
 
 
 def normalize_measurement_summaries(payload: Any) -> list[dict[str, Any]]:
@@ -289,6 +350,93 @@ class RewApiClient:
         return result
 
 
+    def get_roomsim_snapshot(self) -> RewRoomSimSnapshot:
+        version = self._get_json('/version')
+        room_size = self._get_json('/roomsim/room-size', {'unit': 'metres'})
+        sealed = self._get_json('/roomsim/room-is-sealed')
+        absorptions = self._get_json('/roomsim/absorptions')
+        options = self._get_json('/roomsim/options')
+        head = self._get_json('/roomsim/head-position', {'unit': 'metres'})
+        offsets = self._get_json('/roomsim/mic-posn-offsets')
+        active_payload = self._get_json('/roomsim/sources')
+        recognized_payload = self._get_json('/roomsim/source-names')
+        mic_payload = self._get_json('/roomsim/mic-positions')
+        if not isinstance(version, dict) or not isinstance(version.get('message'), str):
+            raise RewApiError('Unexpected REW version response shape')
+        if not isinstance(room_size, dict):
+            raise RewApiError('Unexpected REW Room Simulator room-size response shape')
+        for key in ('length', 'width', 'height'):
+            value = room_size.get(key)
+            if not isinstance(value, (int, float)) or not math.isfinite(float(value)) or value <= 0:
+                raise RewApiError('REW Room Simulator room dimensions are invalid')
+        if room_size.get('unit') != 'metres' or not isinstance(sealed, bool):
+            raise RewApiError('Unexpected REW Room Simulator room response')
+        if not isinstance(absorptions, dict) or not isinstance(options, dict) or not isinstance(head, dict) or not isinstance(offsets, dict):
+            raise RewApiError('Unexpected REW Room Simulator configuration response shape')
+        if not isinstance(active_payload, dict) or not isinstance(active_payload.get('sources'), list):
+            raise RewApiError('Unexpected REW Room Simulator sources response shape')
+        if not isinstance(recognized_payload, list) or not isinstance(mic_payload, list):
+            raise RewApiError('Unexpected REW Room Simulator names response shape')
+        active = tuple(item for item in active_payload['sources'] if isinstance(item, str))
+        recognized = tuple(item for item in recognized_payload if isinstance(item, str))
+        mic_positions = tuple(item for item in mic_payload if isinstance(item, str))
+        if len(active) != len(active_payload['sources']) or len(recognized) != len(recognized_payload) or len(mic_positions) != len(mic_payload):
+            raise RewApiError('REW Room Simulator name list contains invalid values')
+        if any(source not in recognized for source in active):
+            raise RewApiError('REW Room Simulator active source is not recognized')
+        room_depth = float(room_size['length'])
+        source_state: dict[str, dict[str, Any]] = {}
+        for source in active:
+            escaped = quote(source, safe='')
+            position = self._get_json(f'/roomsim/{escaped}/position', {'unit': 'metres'})
+            configuration = self._get_json(f'/roomsim/{escaped}/configuration')
+            if not isinstance(position, dict) or not isinstance(configuration, dict):
+                raise RewApiError('Unexpected REW Room Simulator source response shape')
+            source_state[source] = {
+                'position_rew': position,
+                'position_htdt': roomsim_position_to_htdt(room_depth, position),
+                'configuration': configuration,
+            }
+        return RewRoomSimSnapshot(
+            rew_version=version['message'], room_size=room_size, room_is_sealed=sealed, absorptions=absorptions, options=options,
+            head_position_rew=head, head_position_htdt=roomsim_position_to_htdt(room_depth, head),
+            mic_position_offsets=offsets, active_sources=active, recognized_sources=recognized, mic_positions=mic_positions, sources=source_state,
+        )
+
+
+    def get_roomsim_frequency_response(
+        self, *, mic_position: str = 'Main', source_name: str | None = None
+    ) -> RewRoomSimFrequencyResponse:
+        mic_payload = self._get_json('/roomsim/mic-positions')
+        if not isinstance(mic_payload, list) or any(not isinstance(item, str) for item in mic_payload):
+            raise RewApiError('Unexpected REW Room Simulator mic-position response shape')
+        if mic_position not in mic_payload:
+            raise RewApiError(f'Unknown REW Room Simulator mic position: {mic_position}')
+        if source_name is None:
+            path = '/roomsim/frequency-response'
+        else:
+            source_payload = self._get_json('/roomsim/source-names')
+            if not isinstance(source_payload, list) or any(not isinstance(item, str) for item in source_payload):
+                raise RewApiError('Unexpected REW Room Simulator source-name response shape')
+            if source_name not in source_payload:
+                raise RewApiError(f'Unknown REW Room Simulator source: {source_name}')
+            path = f'/roomsim/{quote(source_name, safe="")}/frequency-response'
+        payload = self._get_json(path, {'micposition': mic_position})
+        if not isinstance(payload, dict):
+            raise RewApiError('Unexpected REW Room Simulator frequency-response response shape')
+        decoded = decode_frequency_response(
+            f'roomsim:{source_name or "all"}:{mic_position}', payload,
+            requested_unit='SPL', requested_ppo=None, requested_smoothing=None,
+        )
+        return RewRoomSimFrequencyResponse(
+            source_name=source_name, mic_position=mic_position,
+            message=payload.get('message') if isinstance(payload.get('message'), str) else None,
+            unit=decoded.unit, smoothing=decoded.smoothing, start_frequency_hz=decoded.start_frequency_hz,
+            points_per_octave=decoded.points_per_octave, frequency_step_hz=decoded.frequency_step_hz,
+            frequency_hz=decoded.frequency_hz, magnitude=decoded.magnitude, phase_deg=decoded.phase_deg,
+        )
+
+
     def get_measurement(self, measurement_id: str) -> dict[str, Any]:
         payload = self._get_json(f'/measurements/{quote(measurement_id, safe="")}')
         if not isinstance(payload, dict):
@@ -365,6 +513,46 @@ class RewApiClient:
             'base_url': self.base_url,
             'measurement_count': len(measurements),
             'error': None,
+        }
+
+
+    @staticmethod
+    def roomsim_snapshot_payload(snapshot: RewRoomSimSnapshot) -> dict[str, Any]:
+        return {
+            'classification': 'rew_room_simulator_configuration',
+            'read_only': True,
+            'adapter_version': ROOMSIM_ADAPTER_VERSION,
+            'model_contract': {
+                'prediction_kind': 'predicted',
+                'geometry_support': 'rectangular_room_only',
+                'exact_non_rectangular_geometry': False,
+                'reference_box_htdt': {
+                    'width_m': float(snapshot.room_size['width']),
+                    'depth_m': float(snapshot.room_size['length']),
+                    'height_m': float(snapshot.room_size['height']),
+                },
+            },
+            'coordinate_contract': {
+                'htdt_origin': 'front-left-floor',
+                'htdt_axes': {'x': 'right', 'y': 'rear', 'z': 'up'},
+                'rew_axes': {'x': 'fromLeft', 'y': 'fromRear', 'z': 'fromFloor'},
+                'mapping': 'x=fromLeft; y=room_length-fromRear; z=fromFloor',
+            },
+            **asdict(snapshot),
+        }
+
+    @staticmethod
+    def roomsim_response_payload(response: RewRoomSimFrequencyResponse) -> dict[str, Any]:
+        return {
+            'classification': 'predicted_rew_room_simulator',
+            'read_only': True,
+            'adapter_version': ROOMSIM_ADAPTER_VERSION,
+            'model_contract': {
+                'prediction_kind': 'predicted',
+                'geometry_support': 'rectangular_room_only',
+                'exact_non_rectangular_geometry': False,
+            },
+            **asdict(response),
         }
 
     @staticmethod

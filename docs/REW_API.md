@@ -22,10 +22,14 @@ python -m htdt
 | `GET /api/rew/status` | REW APIへの到達可否と測定数を確認 |
 | `GET /api/rew/measurements` | REWに現在ロードされている測定summaryを読取 |
 | `GET /api/rew/audio-preflight` | driver/sample rate/Java入力・出力device/input cal/EXCL候補/ch数/mappingをGETだけで確認 |
+| `GET /api/rew/roomsim/state` | Room Simulatorの矩形room/source/mic/optionsをGET-only snapshot |
+| `GET /api/rew/roomsim/frequency-response` | Room Simulatorの予測FR。`predicted_rew_room_simulator`として返す |
 | `GET /api/rew/measurements/{uuid}/frequency-response` | 指定測定の周波数応答を読取・デコード |
 | `POST /api/projects/{project_id}/rew-snapshots` | HTDT側へsnapshot保存。REW通信は内部でGETのみ |
 
 REWのindex番号は測定の追加・削除・group変更で動き得るため、HTDTは永続参照にindexを使わずUUIDを使う。
+
+Room Simulator統合の座標契約、実beta135結果、矩形限定モデルとしての扱いは[REW Room Simulator integration contract](REW_ROOM_SIMULATOR.md)を参照する。非矩形実室へ適用する場合はexact modelではなく矩形近似として分類する。
 
 
 ## Snapshot保存契約

@@ -46,20 +46,37 @@ HTDTの配置探索は、部屋・スピーカー・MLPの可動範囲から候�
 
 家具、開口、吸音率、スピーカー指向性を無視するモデルで中高域まで最適化したと主張しない。FEM/BEM/FDTDを前提にしない。
 
+### 3.1 実室Geometry: 非矩形を正本にする
+
+実室形状は矩形を前提にしない。初期の一般形状は**任意頂点数の単純2Dポリゴンを一定天井高で押し出したpolygon prism**とする。8頂点の部屋を標準受入fixtureに含め、凸形状だけでなく凹形状も扱う。曲面壁、段差天井、傾斜天井は後続拡張とする。
+
+- 座標系は既存の`X=right / Y=rear / Z=up`を維持する。
+- footprint vertexは順序付きで保存し、自己交差を拒否する。
+- 外接`reference_box`は座標参照や矩形モデルへの近似入力に使ってよいが、実室境界そのものとは扱わない。
+- speaker/MLPはfootprint内かつ0〜heightの範囲に存在することを検証する。
+- 開口、家具、通路、設置不能領域はroom boundaryへ無理に混ぜず、別のconstraint geometryとして保存する。
+- Context revisionには正確なpolygonと、矩形近似を使った場合の近似規則・誤差・用途を別々に保存する。
+
+REW Room Simulatorは公式にrectangular room用なので、8頂点実室のexact predictorとしては使わない。REWモデルは`rectangular_approximation`として明示し、実室polygonと混同しない。
+
 ## 4. モデル再利用方針
 
-第一候補はREW Room Simulatorの再利用であり、HTDT独自のフル低域ソルバーを先に作らない。S01で、対象REW版に対して入力設定、結果取得、単位、座標変換、再現性、バッチ利用可能性を確認する。
+第一候補の**矩形基準モデル**はREW Room Simulatorの再利用とし、HTDT独自のフル低域ソルバーを先に作らない。S01で、対象REW版に対して入力設定、結果取得、単位、座標変換、再現性、バッチ利用可能性を確認する。ただしREW Room Simulatorは矩形室専用なので、非矩形実室では外接/近似矩形によるbaseline predictorに限定する。
 
-REW側を安全かつ再現可能に自動駆動できない場合は、無理に画面自動操作へ依存しない。手動結果取込、公開API、限定的な自前幾何モデル、pyroomacousticsの順で具体的な不足を評価する。
+非矩形polygon-prismの第一候補はS03でpyroomacousticsを評価する。`Room.from_corners()` + `extrude()`で一般polygonを3D化できるため車輪の再発明を避けられるが、Windows導入、座標/境界条件、低域精度、計算時間、再現性を実測と独立検証してから採用する。REW矩形近似とpolygon predictorは別model ID/版として保存し、結果を上書きしない。
+
+REW側を安全かつ再現可能に自動駆動できない場合は、無理に画面自動操作へ依存しない。公開API、手動結果取込、検証済み外部ライブラリ、限定的な自前幾何モデルの順で具体的な不足を評価する。
 
 すべての予測器は内部的に同じ最小契約へ合わせる。汎用プラグイン基盤は作らず、必要になったモデルだけをアダプターとして追加する。
 ## 5. 正式マイルストーン
 
 | ID | 段階 | 主な成果 | 完了条件 |
 |---|---|---|---|
-| O00 | 探索前提 | 同条件再測定、配置A/B、S01モデル契約 | 測定ばらつきと予測モデルの適用条件を表示できる |
-| O10 | Search Space | 可動範囲、刻み、連動、禁止領域、最小離隔を持つ探索仕様 | 同一仕様から同一候補集合を再生成し、制約違反候補を作らない |
-| O20 | Batch Prediction | 候補ごとの予測結果、モデル版、入力ハッシュ、実行履歴 | 中断・再開可能で、予測を実測として保存せず、同一入力で再現できる |
+| G00 | Room Geometry v2 | polygon-prism実室、reference box、座標契約 | 8頂点・凹polygonを保存/再読込し、自己交差や室外点を拒否できる |
+| G10 | Placement Constraint Engine | entity別allowed region、禁止領域、壁離隔、相互離隔、連動拘束 | hard constraint違反候補を生成せず、拒否理由を機械的に説明できる |
+| O00 | 探索前提 | 同条件再測定、配置A/B、S01モデル契約、G00 | 測定ばらつきと予測モデルの適用条件を表示できる |
+| O10 | Search Space | O00、G10 | 可動範囲、刻み/seed、連動、禁止領域、最小離隔から同一feasible候補集合を再生成できる |
+| O20 | Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはS03通過後 | 中断・再開可能で、予測を実測として保存せず、同一入力で再現できる。矩形近似は近似ラベルを保持 |
 | O30 | Objective Vector | 帯域別偏差、ピーク/谷、左右差、席間差、移動量などの独立指標 | 合成データで各指標を検証し、算法版と評価条件を保存する |
 | O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | 支配される候補をPareto集合へ含めず、探索条件から結果を再現できる |
 | O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | 候補→実配置→Measurement→予測残差を一つの履歴として追跡できる |
@@ -73,14 +90,37 @@ O10以降はv1.0安定版の必須条件にしない。安定した測定・履�
 
 探索仕様は単なる最小/最大座標ではなく、次を保存する。
 
-- 対象となるContext revision。
-- 変更可能な機器と座標軸。
-- 最小値、最大値、刻み幅またはサンプリング規則。
-- FL/FRの左右対称、等距離、連動移動などの拘束条件。
-- 壁、家具、通路などの禁止領域と最小離隔。
-- MLPやスピーカーの移動量上限。
+- 対象となるContext revisionとroom polygon revision。
+- entity別の`allowed_region`。FL/FR/MLPで別領域を指定できる。
+- 家具、扉、通路、ラック等の`exclusion_region`。複数polygonを許可する。
+- 各壁または壁タグごとの最小/最大離隔。例: 前壁から0.20〜1.20 m、側壁から0.30 m以上。
+- スピーカー筐体を点ではなくfootprint/radiusで扱う安全余白。
+- speaker-speaker、speaker-MLP等の最小/最大相互距離。
+- 変更可能な座標軸、固定高さ、高さ範囲、刻み幅またはサンプリング規則。
+- FL/FRの左右対称、鏡映、等距離、同時前後移動などの連動拘束。
+- MLPやスピーカーの現在位置からのhardな移動量上限。
 - 固定するAVR条件、測定点、モデル設定。
 - 乱数を使う場合のseedと探索算法版。
+
+hard constraintとsoft objectiveを混同しない。設置不能位置はスコアを悪化させるのではなく候補集合から除外する。一方、移動量、ケーブル長、見た目上の好みなど「許容はできるが避けたい」条件は独立Objectiveとして保持できる。
+
+polygon演算は自前実装を最小化し、Shapely 2.xを第一候補としてWindows/Python 3.12で検証する。採用時はversionをlockし、`contains/covers`、bufferによる壁離隔、differenceによる禁止領域除外をfixtureで検証する。
+2026-09-16時点のShapely 2.1.2にはCPython 3.12 / Windows x86-64 wheelが提供されている。ただしG00/G10実装時に所有PCとWindows CIで導入検証してから依存へ追加する。
+
+### 6.1 hard constraint実装順
+
+| ID | 制約 | 初期実装 | 判定 |
+|---|---|---|---|
+| C01 | Allowed region | speaker/MLPごとのpolygon/multipolygon | entity footprintが領域内 |
+| C02 | Exclusion region | 家具、ラック、扉可動域、通路 | C01からdifferenceして除外 |
+| C03 | Wall clearance | 壁/壁タグごとのmin/max距離 | 指定境界までの最短距離 |
+| C04 | Cabinet clearance | speaker footprint/radius + 安全余白 | point中心だけで判定しない |
+| C05 | Pair distance | FL-FR、speaker-MLP等のmin/max | entity間距離 |
+| C06 | Linked placement | 左右鏡映、等Y、同時前後移動 | master候補からslaveを決定 |
+| C07 | Axis/height | x/y/z固定または範囲 | 量子化後も範囲内 |
+| C08 | Movement budget | 現在位置からの最大移動 | hard上限として候補除外 |
+
+各候補は`accepted/rejected`だけでなく、拒否したconstraint IDと実測値/閾値を保存する。これにより「なぜその位置を探索しなかったか」を後から再現できる。
 
 実行前に候補数を見積もり、過大な全探索は明示的に縮約する。小さい空間は全列挙、大きい空間は粗い格子、空間充填サンプリング、局所細分化などを比較して選ぶ。
 ## 7. 多目的評価
@@ -122,6 +162,8 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 
 探索機能は少なくとも次の概念を不変版として保存できるようにする。実装上のテーブル名は別途データ設計で決める。
 
+- RoomGeometry: polygon-prism頂点列、高さ、座標系、reference box、geometry版。
+- ConstraintSet: entity別allowed/exclusion polygon、壁離隔、筐体余白、相互離隔、連動拘束。
 - SearchSpec: 探索対象、制約、帯域、算法、seed。
 - PlacementCandidate: 候補座標と元Context revision。
 - PredictionRun: 使用モデル、モデル版、入力、出力、警告。
@@ -137,6 +179,7 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 
 | 画面/領域 | 必須操作 | 必ず見える情報 |
 |---|---|---|
+| 実室/制約編集 | room polygon、allowed/exclusion region、壁離隔、筐体余白を編集 | 8頂点等の実境界、reference box、feasible region、各constraint ID |
 | 探索条件 | 可動範囲、拘束、帯域、モデルを設定 | 候補数見積り、固定条件、モデル適用制限 |
 | 候補一覧 | Pareto候補を絞り込み、比較 | 各目的値、移動量、予測/実測区分 |
 | 候補詳細 | 配置、予測曲線、既存実測を重ねる | モデル版、入力Context、警告 |
@@ -154,6 +197,10 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 - 学習配置と保留配置が重ならないことをテストする。
 - 適応探索は単純基準より有利かを独立データで比較し、有利でない場合も結果を記録する。
 - 中断、モデル失敗、一部候補失敗があっても成功候補と失敗理由を混同しない。
+- 8頂点の凸polygonと凹polygonをfixture化し、頂点順、面積、inside/outside、境界上の扱いを手計算結果と一致させる。
+- allowed regionから家具/通路exclusionを差し引き、指定wall clearanceと筐体footprintを満たす候補だけが残ることを検証する。
+- 同一SearchSpec/seedからpolygon内の同一候補集合を再生成し、reference box内でも実室polygon外の点を生成しない。
+- REW矩形近似を使ったPredictionRunには`rectangular_approximation`を残し、polygon実室のexact predictionへ自動昇格しない。
 
 ## 13. 自動推薦を止める条件
 
@@ -164,5 +211,7 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 - 探索結果が小さな入力誤差で大きく入れ替わる。
 - 同条件再測定のばらつきが候補間差と同程度以上である。
 - 必要な部屋形状、境界条件、チャンネル対応が不明である。
+- 非矩形実室に対し、矩形近似モデルしか検証できていない。
+- feasible regionが空、または候補数が少なすぎて探索結果が制約境界だけで決まる。
 
 この停止条件は失敗ではなく、モデルの信頼範囲を越えて断定しないための通常動作とする。

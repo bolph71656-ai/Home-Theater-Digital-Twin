@@ -45,6 +45,8 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
 - V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
 - V02: schema移行前ZIP、移行後整合性検査、失敗時DB/RawAssetロールバック
+- S01 backend: REW Room Simulator read-only state/FR契約、座標変換、実beta135 fixture。モデルは`rectangular_room_only`として明示
+- Geometry gap: 現行Contextは矩形/reference boxのみ。8頂点実室のexact geometryは未実装で、G00 polygon-prism + G10 placement constraintsを正式ロードマップ化
 
 ## A03 — 読取専用REW API / UI
 
@@ -66,6 +68,19 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 - REWへのPOST/PUT/DELETE、Generator、測定開始、設定変更は実装しない
 
 所有PC上のREW V5.40 beta 135へ実接続し、合成FR 958点のGET・big-endian復号・96 PPO周波数軸復元に加え、REW API snapshot保存、REW停止後の保存Dataset比較、RawAsset入りbackup/restoreまで確認済み。同一measurementのREW text exportとの照合と実測データでの受入は継続する。
+
+## S01 — REW Room Simulator契約 / 非矩形方針
+
+REW V5.40 beta 135の実OpenAPIと所有PC実機で、Room Simulator APIを確認した。REW公式仕様上、Room Simulatorはrectangular room用であり、8頂点などの非矩形実室をexactに表現できない。
+
+- 実機state: 5.0 × 4.0 × 2.4 m、座標は`fromRear/fromLeft/fromFloor`。
+- HTDT座標変換: `x=fromLeft`, `y=room_length-fromRear`, `z=fromFloor`。
+- 実機FR: 20 Hz開始、192 PPO、751 points、SPL、smoothing `None`、phaseあり。
+- 同一stateで5回連続GETしたraw FR JSON/Base64は完全一致。
+- 検証専用にhead位置を1 cm動かして即時復元したところFRは変化し、復元後はRoom Sim全state・FR・measurement一覧が完全一致した。
+- HTDT本体のS01初期APIはGET-onlyとし、将来batch駆動はstate snapshot/apply/read/restoreの復元保証を別PRで実装する。
+
+非矩形実室はG00でpolygon-prismを正本化する。REW Room Simulator結果は非矩形Contextに対して`rectangular_approximation`とし、exact predictionや自動推薦の根拠へ自動昇格しない。
 
 ## A04 — ピーク/ディップと幾何候補対応
 
