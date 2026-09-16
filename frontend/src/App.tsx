@@ -111,6 +111,17 @@ type SpeakerDraft = {
 }
 type ExcludedBand = { low_hz: number; high_hz: number }
 type MicOrientation = 'ceiling' | 'toward_speakers' | 'unknown'
+type ReadinessCheck = { key: string; passed: boolean; detail: string }
+type MeasurementReadiness = {
+  classification: string
+  machine_ready: boolean
+  status: 'blocked' | 'manual_confirmation_required'
+  context_id: string
+  checks: ReadinessCheck[]
+  failed_check_keys: string[]
+  manual_confirmation_required: string[]
+  notice: string
+}
 
 const initialSpeakers: SpeakerDraft[] = [
   { speaker_id: 'FL', role: 'front_left', model: '', x: '', y: '', z: '' },
@@ -210,6 +221,8 @@ export default function App() {
   const [maxModeHz, setMaxModeHz] = useState('300')
   const [soundSpeed, setSoundSpeed] = useState('343')
   const [acoustics, setAcoustics] = useState<AcousticAnalysis | null>(null)
+  const [readiness, setReadiness] = useState<MeasurementReadiness | null>(null)
+  const [readinessLoading, setReadinessLoading] = useState(false)
 
   const activeContext = useMemo(
     () => contexts.find((context) => context.id === selectedContextId) ?? contexts[0] ?? null,
@@ -256,6 +269,7 @@ export default function App() {
 
   useEffect(() => {
     setAcoustics(null)
+    setReadiness(null)
   }, [selectedContextId])
 
   function notify(text: string) {
@@ -432,6 +446,23 @@ export default function App() {
     }
   }
 
+  async function checkMeasurementReadiness() {
+    if (!projectId || !activeContext) return
+    setReadinessLoading(true)
+    try {
+      const result = await api<MeasurementReadiness>(`/api/projects/${projectId}/contexts/${activeContext.id}/measurement-readiness`)
+      setReadiness(result)
+      notify(result.machine_ready
+        ? '自動preflightは通過しました。物理マイク向きとRX-A4A routingは手動確認が必要です'
+        : '測定preflightに未充足項目があります')
+    } catch (reason) {
+      setReadiness(null)
+      setError(reason instanceof Error ? reason.message : '測定preflight失敗')
+    } finally {
+      setReadinessLoading(false)
+    }
+  }
+
   async function runAcoustics() {
     try {
       if (!projectId || !activeContext) throw new Error('配置版を選択してください')
@@ -533,7 +564,22 @@ export default function App() {
             <button type="button" className="ghost" disabled={!activeContext} onClick={copyActiveContextToEditor}>選択版を複製して編集</button>
           </div>
         </form>
-        {activeContext && <RoomPlot context={activeContext.payload} />}
+        {activeContext && <>
+          <RoomPlot context={activeContext.payload} />
+          <div className="row action-row">
+            <button type="button" className="ghost" disabled={readinessLoading} onClick={() => void checkMeasurementReadiness()}>
+              {readinessLoading ? '照合中…' : 'REW測定条件を照合'}
+            </button>
+            <span className="hint">保存Contextと現在のREW/UMIK-1/HDMI状態をGET-onlyで照合します。</span>
+          </div>
+          {readiness && <div className="preview">
+            <strong>Measurement readiness: {readiness.status}</strong>
+            <span>machine checks: {readiness.machine_ready ? 'pass' : 'blocked'}</span>
+            {readiness.checks.map((item) => <span key={item.key}>{item.passed ? 'PASS' : 'FAIL'} · {item.key} · {item.detail}</span>)}
+            <em>{readiness.notice}</em>
+            {readiness.manual_confirmation_required.map((item) => <em key={item}>Manual: {item}</em>)}
+          </div>}
+        </>}
       </section>
 
       <section className="panel">
