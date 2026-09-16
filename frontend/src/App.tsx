@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { api, fileToBase64 } from './api'
 import { FeatureCandidatePanel } from './FeatureCandidates'
 import { PlacementConstraintPanel } from './PlacementConstraints'
+import { SearchSpacePanel } from './SearchSpace'
 import { FrequencyPlot, RoomPlot, type ComparisonResult, type ContextPayload, type Speaker } from './plots'
 
 type Health = {
@@ -129,6 +130,7 @@ const workflowNav = [
   { href: '#project', icon: 'project', label: 'Project' },
   { href: '#room', icon: 'room', label: 'Room' },
   { href: '#constraints', icon: 'constraints', label: 'Constraints' },
+  { href: '#search', icon: 'search', label: 'Search' },
   { href: '#measure', icon: 'measure', label: 'Measure' },
   { href: '#compare', icon: 'compare', label: 'Compare' },
   { href: '#model', icon: 'model', label: 'Model' },
@@ -151,6 +153,7 @@ function WorkflowIcon({ name }: { name: WorkflowIconName }) {
     {name === 'project' && <><rect {...common} x="4" y="5" width="16" height="14" rx="3"/><path {...common} d="M8 9h8M8 13h5"/></>}
     {name === 'room' && <><path {...common} d="M4 11 12 5l8 6v8H4z"/><path {...common} d="M9 19v-5h6v5"/></>}
     {name === 'constraints' && <><circle {...common} cx="7" cy="7" r="2"/><circle {...common} cx="17" cy="17" r="2"/><path {...common} d="M9 7h8M17 9v6M7 9v8h8"/></>}
+    {name === 'search' && <><circle {...common} cx="11" cy="11" r="6"/><path {...common} d="m16 16 4 4M8 11h6M11 8v6"/></>}
     {name === 'measure' && <><path {...common} d="M5 17V7M9 17V4M13 17v-7M17 17V6"/><path {...common} d="M4 19h16"/></>}
     {name === 'compare' && <><path {...common} d="M5 8h11M13 5l3 3-3 3M19 16H8M11 13l-3 3 3 3"/></>}
     {name === 'model' && <><path {...common} d="m12 4 7 4-7 4-7-4zM5 12l7 4 7-4M5 16l7 4 7-4"/></>}
@@ -648,6 +651,7 @@ export default function App() {
       </section>
 
       <PlacementConstraintPanel projectId={projectId} context={activeContext} />
+      <SearchSpacePanel projectId={projectId} context={activeContext} />
 
       <section className="panel" id="measure">
         <div className="section-title"><h2>Measurements</h2><span>原本 + quality snapshot</span></div>

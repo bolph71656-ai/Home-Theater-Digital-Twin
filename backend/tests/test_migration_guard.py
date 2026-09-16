@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from htdt.database import SCHEMA_VERSION, Store
+from htdt.database import SCHEMA_VERSION, Store, canonical_json_sha256
 from htdt.migration_guard import MigrationOpenError
 
 
@@ -87,6 +87,23 @@ def _create_v3_root(root: Path) -> Path:
     return root
 
 
+def _create_v4_root(root: Path, *, hashless_constraint_set: bool = False) -> Path:
+    root = _create_v3_root(root)
+    db = sqlite3.connect(root / 'htdt.sqlite3')
+    try:
+        if hashless_constraint_set:
+            db.execute("CREATE TABLE constraint_sets (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), context_id TEXT NOT NULL REFERENCES contexts(id), name TEXT, spec_json TEXT NOT NULL, created_at TEXT NOT NULL)")
+            db.execute("INSERT INTO contexts(id, project_id, revision_number, parent_context_id, created_at, payload_json) VALUES ('c1','p1',1,NULL,'2026-09-15T00:00:00+00:00','{}')")
+            db.execute("INSERT INTO constraint_sets VALUES ('cs1','p1','c1','legacy','{\"engine_version\":\"placement-constraints-1\",\"constraints\":[],\"entity_profiles\":[]}','2026-09-15T00:00:00+00:00')")
+        else:
+            db.execute("CREATE TABLE constraint_sets (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), context_id TEXT NOT NULL REFERENCES contexts(id), name TEXT, spec_json TEXT NOT NULL, spec_sha256 TEXT NOT NULL, created_at TEXT NOT NULL)")
+        db.execute("UPDATE metadata SET value='4' WHERE key='schema_version'")
+        db.commit()
+    finally:
+        db.close()
+    return root
+
+
 def _schema_version(root: Path) -> int:
     db = sqlite3.connect(root / 'htdt.sqlite3')
     try:
@@ -100,7 +117,7 @@ def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> 
 
     store = Store(root)
 
-    assert SCHEMA_VERSION == 4
+    assert SCHEMA_VERSION == 5
     assert _schema_version(root) == SCHEMA_VERSION
     assert store.migrated_from_schema_version == 1
     assert store.pre_migration_backup.is_file()
@@ -155,7 +172,7 @@ def test_v3_open_adds_empty_constraint_sets_table_after_pre_migration_backup(tmp
 
     store = Store(root)
 
-    assert _schema_version(root) == SCHEMA_VERSION == 4
+    assert _schema_version(root) == SCHEMA_VERSION == 5
     assert store.migrated_from_schema_version == 3
     assert store.list_constraint_sets('p1') == []
     with store.connect() as db:
@@ -164,7 +181,7 @@ def test_v3_open_adds_empty_constraint_sets_table_after_pre_migration_backup(tmp
 
     with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
         manifest = json.loads(archive.read('manifest.json'))
-        assert manifest == {'reason': 'pre_migration', 'schema_version': 3, 'target_schema_version': 4}
+        assert manifest == {'reason': 'pre_migration', 'schema_version': 3, 'target_schema_version': SCHEMA_VERSION}
         snapshot = tmp_path / 'snapshot-v3.sqlite3'
         snapshot.write_bytes(archive.read('htdt.sqlite3'))
     snapshot_db = sqlite3.connect(snapshot)
@@ -173,6 +190,40 @@ def test_v3_open_adds_empty_constraint_sets_table_after_pre_migration_backup(tmp
         assert snapshot_db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='constraint_sets'").fetchone() is None
     finally:
         snapshot_db.close()
+
+
+def test_v4_open_adds_empty_search_specs_after_pre_migration_backup(tmp_path: Path) -> None:
+    root = _create_v4_root(tmp_path / 'legacy-v4')
+    store = Store(root)
+    assert _schema_version(root) == SCHEMA_VERSION == 5
+    assert store.migrated_from_schema_version == 4
+    assert store.list_search_specs('p1') == []
+    with store.connect() as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert 'search_specs' in tables
+    with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert manifest == {'reason': 'pre_migration', 'schema_version': 4, 'target_schema_version': 5}
+
+
+def test_v4_hashless_constraint_set_is_normalized_before_v5_integrity_check(tmp_path: Path) -> None:
+    root = _create_v4_root(tmp_path / 'legacy-v4-hashless', hashless_constraint_set=True)
+    store = Store(root)
+    record = store.get_constraint_set('p1', 'cs1')
+    assert record is not None and record['integrity_valid'] is True
+    assert record['spec_sha256'] == canonical_json_sha256(record['spec'])
+    with store.connect() as db:
+        columns = {row[1] for row in db.execute('PRAGMA table_info(constraint_sets)')}
+    assert 'spec_sha256' in columns
+    with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
+        snapshot = tmp_path / 'hashless-v4.sqlite3'
+        snapshot.write_bytes(archive.read('htdt.sqlite3'))
+    legacy = sqlite3.connect(snapshot)
+    try:
+        legacy_columns = {row[1] for row in legacy.execute('PRAGMA table_info(constraint_sets)')}
+        assert 'spec_sha256' not in legacy_columns
+    finally:
+        legacy.close()
 
 
 def test_failed_migration_restores_v1_database_and_raw_assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

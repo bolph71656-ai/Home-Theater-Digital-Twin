@@ -20,10 +20,10 @@ from .rew_api import RewFrequencyResponseSnapshot
 from .rew_parser import parse_rew_frequency_response
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 REW_API_SNAPSHOT_FORMAT = 'htdt-rew-api-frequency-response-snapshot-1'
 REW_API_ADAPTER_VERSION = 'rew-api-snapshot-1'
-SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3, 4}
+SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3, 4, 5}
 
 
 def utc_now() -> str:
@@ -99,6 +99,12 @@ class Store:
                     context_id TEXT NOT NULL REFERENCES contexts(id), name TEXT, spec_json TEXT NOT NULL,
                     spec_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS search_specs (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+                    context_id TEXT NOT NULL REFERENCES contexts(id),
+                    constraint_set_id TEXT NOT NULL REFERENCES constraint_sets(id),
+                    name TEXT, spec_json TEXT NOT NULL, spec_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS assets (
                     sha256 TEXT PRIMARY KEY, relative_path TEXT NOT NULL, original_filename TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL, created_at TEXT NOT NULL
@@ -139,6 +145,15 @@ class Store:
             for name, sql in migrations:
                 if name not in columns:
                     db.execute(sql)
+            constraint_columns = _column_names(db, 'constraint_sets')
+            if 'spec_sha256' not in constraint_columns:
+                db.execute('ALTER TABLE constraint_sets ADD COLUMN spec_sha256 TEXT')
+                for row in db.execute('SELECT id, spec_json FROM constraint_sets').fetchall():
+                    spec = json.loads(row['spec_json'])
+                    db.execute(
+                        'UPDATE constraint_sets SET spec_sha256 = ? WHERE id = ?',
+                        (canonical_json_sha256(spec), row['id']),
+                    )
             db.execute('INSERT INTO metadata(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', ('schema_version', str(SCHEMA_VERSION)))
             db.commit()
 
@@ -269,6 +284,68 @@ class Store:
         return {
             'id': row['id'], 'project_id': row['project_id'], 'context_id': row['context_id'], 'name': row['name'],
             'spec': spec, 'spec_sha256': row['spec_sha256'], 'integrity_valid': digest == row['spec_sha256'],
+            'created_at': row['created_at'],
+        }
+
+    def create_search_spec(self, project_id: str, context_id: str, constraint_set_id: str, name: str | None, spec: dict[str, Any]) -> dict[str, Any]:
+        record = {
+            'id': str(uuid4()), 'project_id': project_id, 'context_id': context_id,
+            'constraint_set_id': constraint_set_id,
+            'name': name.strip() if name and name.strip() else None, 'spec': spec,
+            'spec_sha256': canonical_json_sha256(spec), 'created_at': utc_now(),
+        }
+        with self.connect() as db:
+            row = db.execute(
+                'SELECT context_id FROM constraint_sets WHERE id = ? AND project_id = ?',
+                (constraint_set_id, project_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError('constraint_set_not_found')
+            if row['context_id'] != context_id:
+                raise ValueError('SearchSpec context must match ConstraintSet context')
+            db.execute(
+                'INSERT INTO search_specs(id, project_id, context_id, constraint_set_id, name, spec_json, spec_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (record['id'], project_id, context_id, constraint_set_id, record['name'],
+                 json.dumps(spec, ensure_ascii=False, sort_keys=True), record['spec_sha256'], record['created_at']),
+            )
+            db.commit()
+        return record
+
+    def list_search_specs(self, project_id: str, context_id: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            if context_id is None:
+                rows = db.execute('SELECT * FROM search_specs WHERE project_id = ? ORDER BY created_at DESC', (project_id,)).fetchall()
+            else:
+                rows = db.execute(
+                    'SELECT * FROM search_specs WHERE project_id = ? AND context_id = ? ORDER BY created_at DESC',
+                    (project_id, context_id),
+                ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            spec = json.loads(row['spec_json'])
+            result.append({
+                'id': row['id'], 'project_id': row['project_id'], 'context_id': row['context_id'],
+                'constraint_set_id': row['constraint_set_id'], 'name': row['name'], 'spec': spec,
+                'spec_sha256': row['spec_sha256'],
+                'integrity_valid': canonical_json_sha256(spec) == row['spec_sha256'],
+                'created_at': row['created_at'],
+            })
+        return result
+
+    def get_search_spec(self, project_id: str, search_spec_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                'SELECT * FROM search_specs WHERE id = ? AND project_id = ?',
+                (search_spec_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        spec = json.loads(row['spec_json'])
+        return {
+            'id': row['id'], 'project_id': row['project_id'], 'context_id': row['context_id'],
+            'constraint_set_id': row['constraint_set_id'], 'name': row['name'], 'spec': spec,
+            'spec_sha256': row['spec_sha256'],
+            'integrity_valid': canonical_json_sha256(spec) == row['spec_sha256'],
             'created_at': row['created_at'],
         }
 
@@ -544,6 +621,15 @@ class Store:
                         continue
                     if canonical_json_sha256(spec) != row['spec_sha256']:
                         problems.append(f'constraint_set_hash_mismatch:{row["id"]}')
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_specs'").fetchone() is not None:
+                for row in connection.execute('SELECT id, spec_json, spec_sha256 FROM search_specs'):
+                    try:
+                        spec = json.loads(row['spec_json'])
+                    except (TypeError, json.JSONDecodeError):
+                        problems.append(f'invalid_search_spec_json:{row["id"]}')
+                        continue
+                    if canonical_json_sha256(spec) != row['spec_sha256']:
+                        problems.append(f'search_spec_hash_mismatch:{row["id"]}')
         finally:
             connection.close()
         return problems

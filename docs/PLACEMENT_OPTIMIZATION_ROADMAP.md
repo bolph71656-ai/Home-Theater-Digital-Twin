@@ -75,7 +75,7 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 | G00 | Room Geometry v2 | polygon-prism実室、reference box、座標契約 | 8頂点・凹polygonを保存/再読込し、自己交差や室外点を拒否できる |
 | G10 | Placement Constraint Engine | entity別allowed region、禁止領域、壁離隔、相互離隔、連動拘束 | hard constraint違反候補を生成せず、拒否理由を機械的に説明できる |
 | O00 | 探索前提 | 同条件再測定、配置A/B、S01モデル契約、G00 | 測定ばらつきと予測モデルの適用条件を表示できる |
-| O10 | Search Space | O00、G10 | 可動範囲、刻み/seed、連動、禁止領域、最小離隔から同一feasible候補集合を再生成できる |
+| O10 | Search Space | O00、G10 | **ソフトウェア実装済み**。同一feasible候補集合を再生成可能。実測運用はO00の測定前提が満たされるまで推薦へ使わない |
 | O20 | Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはS03通過後 | 中断・再開可能で、予測を実測として保存せず、同一入力で再現できる。矩形近似は近似ラベルを保持 |
 | O30 | Objective Vector | 帯域別偏差、ピーク/谷、左右差、席間差、移動量などの独立指標 | 合成データで各指標を検証し、算法版と評価条件を保存する |
 | O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | 支配される候補をPareto集合へ含めず、探索条件から結果を再現できる |
@@ -115,8 +115,8 @@ G00でpolygon演算にShapely 2.1.2をpinした。CPython 3.12 / Windows x86-64 
 | C03 | Wall clearance | wall edgeごとのmin/max距離 | 指定edgeまでの最短clearance。G10実装済み |
 | C04 | Cabinet clearance | speaker footprint/radius + 安全余白 | point中心だけで判定しない。G10実装済み |
 | C05 | Pair distance | FL-FR、speaker-MLP等のmin/max | center/envelope clearance。G10実装済み |
-| C06 | Linked placement | 左右鏡映、等Y、同時前後移動 | G10で関係判定、master→slave生成はO10 |
-| C07 | Axis/height | x/y/z固定または範囲 | G10で範囲判定、量子化はO10 |
+| C06 | Linked placement | 左右鏡映、等Y、同時前後移動 | G10関係判定 + O10 master→slave生成を実装済み |
+| C07 | Axis/height | x/y/z固定または範囲 | G10範囲判定 + O10 deterministic grid量子化を実装済み |
 | C08 | Movement budget | 現在位置からの最大移動 | hard上限として候補除外。G10実装済み |
 
 各候補は`accepted/rejected`だけでなく、拒否したconstraint IDと実測値/閾値を保存する。これにより「なぜその位置を探索しなかったか」を後から再現できる。
@@ -163,7 +163,7 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 
 - RoomGeometry: polygon-prism頂点列、高さ、座標系、reference box、geometry版。
 - ConstraintSet: entity別allowed/exclusion polygon、壁離隔、筐体余白、相互離隔、連動拘束。
-- SearchSpec: 探索対象、制約、帯域、算法、seed。
+- SearchSpec: O10 schema v5でContext/ConstraintSet SHA、可動軸min/max/step、linked derivation、算法版、candidate limitを不変保存。乱数算法導入時はseedを追加する。
 - PlacementCandidate: 候補座標と元Context revision。
 - PredictionRun: 使用モデル、モデル版、入力、出力、警告。
 - ObjectiveVector: 評価値、目的定義、算法版。
