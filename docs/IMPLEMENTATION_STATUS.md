@@ -28,13 +28,15 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 - M07: Dataset/Context版を固定した比較履歴
 - M08: DB + RawAsset ZIPバックアップ/復元
 - M09: Plotly FRグラフと最小3D
+- M10: Windows合成E2Eと実機受入手順
 - A01: 矩形室モードと6面の一次image-source反射候補。結果は`predicted_geometry_candidate`
 - schema v2: 測定品質、再測定グループ、Raw添付、整合性検査、A/B confounder分離
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
-- A03: localhost限定・GET専用のREW 5.40 APIアダプター
+- A03 backend: localhost限定・GET専用のREW 5.40 APIアダプター
 - A04: 96 PPO特徴検出、room mode/一次反射の候補対応、quality/evidence gate、UI
 - R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
 - V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
+- V02: schema移行前ZIP、移行後整合性検査、失敗時DB/RawAssetロールバック
 
 ## A03 — 読取専用REW API
 
@@ -51,11 +53,23 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - REW未起動時は`/api/rew/status`だけconnected=falseを返し、保存済みHTDTデータは通常利用可能
 - REWへのPOST/PUT/DELETE、Generator、測定開始は実装しない
 
-実REW接続がないため、完了条件のうち「オフラインへ戻れる」「REW変更/発音を起こさない」はmock/コード境界で検証し、実機での最終受入だけを保留する。
+### A03 UI
+
+REW読取APIをブラウザUIから確認できる補助パネルを追加中。
+
+- 初期表示と手動再確認で`/api/rew/status`を取得
+- offlineはエラー終了ではなく正常な利用状態として表示
+- connected時だけ測定一覧をGETしてUUIDを持つ項目を選択可能にする
+- 選択測定のFRをPPO/unit/smoothing指定でGETし、log周波数軸の軽量SVGでプレビュー
+- requested値とREW returned値を別表示し、平滑化やPPOの来歴を混同しない
+- 取得した曲線はプレビュー専用で、HTDT Measurement/Datasetへ自動保存しない
+- REW変更、発音、測定開始を行うUIは作らない
+
+実REW接続がないため、所有PC上での接続・実測曲線との一致だけを最終受入として保留する。
 
 ## A04 — ピーク/ディップと幾何候補対応
 
-周波数応答をHTDT内部の96 PPO / log2補間へ再標本化し、固定パラメータを返す特徴検出を実装した。
+周波数応答をHTDT内部の96 PPO / log2補間へ再標本化し、固定パラメータを返す特徴検出を実装済み。
 
 - 既定評価帯域: 20–300 Hz（API/UIで変更可能）
 - baseline: log周波数上の移動平均、既定1/3 octave幅
@@ -67,61 +81,18 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - `invalid`測定と非`measured`データでは自動候補照合を無効化
 - `warning` / `unknown`品質は候補照合を許すが、手動確認が必要な警告を返す
 - 検出・照合のPPO、帯域、prominence、baseline幅、最小間隔、照合許容差、音速、算法版を結果に保持
-- UIでDatasetを選び、peak/dip・baseline偏差・候補周波数・log周波数距離・品質警告を同じパネルで表示
 
-合成FRでは既知の狭いpeak/dipを検出し、既知周波数の矩形室モード/一次反射候補との対応をテスト済み。実測での妥当な閾値は実REW測定取得後に再評価する。
+## R01 / V01 / V02 / M10
 
-## R01 — 比較レポート
-
-保存済みComparisonを唯一の入力として、再計算せずに自己完結レポートを生成する。
-
-- `GET /api/projects/{project_id}/comparisons/{comparison_id}/report.json`
-- `GET /api/projects/{project_id}/comparisons/{comparison_id}/report.html`
-- JSONにProject、ComparisonSpec、保存済みAnalysisResult、測定/Context ID、quality、intended changes、confounders、算法版を同梱
-- HTMLに保存済みA/B配列から生成したインラインSVGグラフを埋込
-- HTMLは外部CDN、外部JavaScript、外部画像なしで単体表示可能
-- 完全なJSONスナップショットをHTML内の`application/json`としても埋込
-- 原因・最適性を自動証明しない解釈境界をレポートに固定
-- UIに保存済み比較一覧とHTML/JSONの直接ダウンロード導線を追加
-
-保存済みComparisonを使うため、後から現在の配置や条件を編集しても旧レポートの入力根拠は変わらない。Windows CIでrenderer/API/backend回帰/frontend buildまで受入済み。
-
-## V01 — 実測配置の比較一覧
-
-新しい解析APIは増やさず、既存のProject / Context / Measurement / Comparison APIをUIで構成して一覧化した。
-
-- measured Datasetのみを対象にchannel roleとmeasurement pointで絞込
-- 1つのDatasetをreferenceとして選択
-- 各配置版のContext revision、quality、repeat groupを表示
-- referenceからのMLP移動量を表示
-- speaker_idが一致する既知座標について最大スピーカー移動量を表示
-- Room snapshot / AVR snapshotがreferenceと異なる場合を明示
-- referenceとの保存済みA/B Comparisonがある場合だけ、保存済み帯域、RMS、shape RMS、confounder数、warning数を表示
-- 保存済みComparisonがなければ「未比較」と表示し、一覧表示のために勝手に解析を実行しない
-- Comparison reportへ直接移動可能
-- `measured_layout_overview_not_ranking`の考え方をUI文言で維持し、この一覧自体はbest/worstを決めない
-
-初回CIで`ContextPayload`の表示型不足を検出し、後方互換の拡張型へ修正。Windowsでbackend 40テストとfrontend buildが成功した状態をmainへ反映済み。
-
-## 実装中 — V02 更新・復元の安定化
-
-既存schema v1をschema v2へ開く経路に、移行前バックアップと失敗時ロールバックを追加する。
-
-- 既存DBを開く前に`metadata.schema_version`を読み、アプリより新しいschemaは変更せず拒否
-- 旧schemaだけを対象にSQLite `integrity_check`、foreign key、RawAsset参照を検証
-- 検証後、DBと`assets/`を`backups/pre-migration-v1-to-v2-*.zip`へ保存
-- manifestには`schema_version`、`target_schema_version`、`reason=pre_migration`を固定
-- バックアップ完了後に既存Store migrationを実行
-- 移行後にschema versionとRawAsset整合性を再検証
-- 移行処理または移行後検証が失敗した場合、pre-migration ZIPからDBとRawAssetを旧状態へ復元
-- rollback後もpre-migration ZIP自体は残し、手動復旧にも使えるようにする
-- 原本欠損がある旧DBは移行を開始せず、schema versionも変更しない
-- F10相当として、移行途中にDB versionとRawAssetを故意に破壊して例外を起こし、v1 DBと原本バイト列へ戻ることをテストする
+- R01: 保存済みComparisonのみから自己完結HTML/JSONレポートを生成し、外部CDN/JavaScriptなしで再表示可能。
+- V01: 同一channel/measurement pointの複数実測配置を横並び表示し、移動量・品質・Room/AVR差・保存済み比較有無を確認。ランキングはしない。
+- V02: 旧schemaを開く前にDB＋assetsをpre-migration ZIPへ退避し、移行失敗または移行後整合性失敗時にSQLite backup APIとassets復元で旧状態へ戻す。Windows CIで44 backendテスト成功。
+- M10: Project→R1→測定/再測定→Raw添付→R2→A/B→report→再open→backup→別フォルダrestore→integrityまでをWindows合成E2Eで固定。実機受入は`docs/WINDOWS_ACCEPTANCE.md`へ分離。
 
 ## 未検証・保留
 
 - 実REW安定版テキストとの互換性
-- REW 5.40 APIの所有PC上での実接続
+- REW 5.40 APIの所有PC上での実接続とA03 UI実機確認
 - 測定マイク校正・絶対SPL
 - RX-A4A HDMIチャンネル割当
 - 高さチャンネルの個別励振
@@ -132,8 +103,8 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 ## 次
 
-1. V02をWindows CIで受入し、mainへ反映する。
-2. M10に向け、Windowsで初回作成→配置版→測定取込→A/B→レポート→バックアップ→復元の合成E2Eを自動化する。
-3. REW API取得をHTDT Datasetへ保存する場合は、API response/queryの来歴をRawAsset/metadataへ固定する。実API確認前にmeasuredへ自動分類しない。
-4. IR/ETCは実IRサンプル取得後にA02として開始する。
-5. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
+1. A03 read-only UIをWindows CIで受入しmainへ反映する。
+2. REW API取得をHTDT Datasetへ保存する機能は、実API確認後にresponse/query来歴をRawAsset/metadataへ固定して実装する。実API確認前に`measured`へ自動分類しない。
+3. IR/ETCは実IRサンプル取得後にA02として開始する。
+4. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
+5. 実マイク導入後、`docs/WINDOWS_ACCEPTANCE.md`の実機最終受入を実施する。
