@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from htdt.database import SCHEMA_VERSION
 from htdt.main import create_app
 
 
@@ -15,7 +16,7 @@ def test_health_endpoint(tmp_path: Path) -> None:
         'platform_target': 'Windows 11 x64',
         'rew_required': False,
         'measurement_hardware_required': False,
-        'schema_version': 2,
+        'schema_version': SCHEMA_VERSION,
     }
 
 
