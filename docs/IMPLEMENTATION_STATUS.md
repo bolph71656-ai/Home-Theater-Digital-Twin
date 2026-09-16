@@ -1,25 +1,24 @@
 # 実装ステータス
 
-> 更新: 2026-09-16 / CAD-first計画レビュー反映
-> 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。以下の旧UI実績をnative GUI完了と扱わない。
+> 更新: 2026-09-16 / N05縦断試作・Windows A01/A02受入反映
+> 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧UI/旧PoCをnative CAD完了とは扱わない。
 
 ## Native CADの状態
 
-**2026-09-16整理後:** 旧Issue #36 / #38とPR #37は旧仕様で置換済みとしてclose。PR #37は未マージで、branch/commitは保存。現在の後継は[Issue #41 — N05](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41)。実装一時停止を継続し、今回アプリコードは変更していない。
+**N05 — 技術の縦断試作はPR #43で実装・実機受入済み。** `SceneDocument / WorkingDocument / SceneRevision`境界、Qt/PyVista native shell、共通selection、speaker axis drag、Inspector数値編集、Esc cancel、Undo/Redo、immutable Save/reopen、Windows standalone packageまで通した。旧Issue #36/#38と旧PR #37は履歴として保持する。
 
-レビュー基準: main `1b510206e7c2fe84ff15fe544a6e3fe2d896dc84`、[旧PR #37（closed）](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37) 初回head `9724f4b84aa34b32a77a169b73ce68290de69fdd`、追加確認head `035376816c755f2917119a730c415c31f9ea0d6e`。
-
-| 区分 | 確認できた内容 |
+| 区分 | 現在の状態 |
 |---|---|
-| main | native CAD方針・ロードマップ・ADR。実装は既存Python/backendとbrowser UI |
-| PR #37のtracked code | ContextDraft/snap/aim/undo試作に加え、`0353768`でnative shell、Scene/viewport選択同期、読取Inspector、view切替、`run-native.ps1`と直接依存の版固定。main未反映 |
-| 過去のPR進捗文書にある報告 | Windows/Python 3.12、PySide6 6.11.2、PyVista 0.49.0、PyVistaQt 0.13.1、VTK 9.7.0でnative描画・AffineWidget3D操作 |
-| 未完/未確認 | GUIでの変形・数値編集・Save/Undo接続、全依存の再現性、standalone package、実機性能、N05〜N40受入 |
-| 今回の変更 | 仕様・計画・OSSコード調査・受入条件の改訂。アプリ実装やWindows再検証ではない |
+| 実装branch / PR | `feat/n05-cad-vertical-slice` / PR #43 |
+| 実装基準 | base `baafc039c3ab13d878796c4cd8d9906cbc27bcf5`、実機受入対象コード `c4ee5c8d3856d7cf1ec05d590775d66e67ef244b` |
+| A01 | Windows実マウスでpick→axis drag→数値編集→Esc cancel→Undo→Save→reopenを通過。unknown aim保持 |
+| A02 | PyInstaller onedirをisolated buildし、開発`.venv`を利用不能にしても起動・正常終了。新規browser起動なし |
+| DPI | 実OS 200%でpass。100%/150%は同一実機のQt scale-factor相当検証でpass。実OS設定としては未実施 |
+| reproducibility | Python 3.12.10 / Windows x64の55依存を`backend/requirements-n05-windows.lock`へfreeze |
+| CI | PR #43のN05実装headでWindows CI成功。最終doc更新後に再確認する |
+| 次工程 | N10 — editor shell / 保存。復旧最小版とA03/A04を追加し、N20へ進む条件を固める |
 
-過去のPoC報告は[PR #37の進捗文書](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/blob/9724f4b84aa34b32a77a169b73ce68290de69fdd/docs/NATIVE_3D_UI_PROGRESS.md)に残る。`0353768`の既存windows CIは成功しているが、報告版の数字やCIだけでN05の通し操作・package合格を代用しない。
-
-再開時はIssue #41に従い、N05の縦断試作をGitHub上に実装する。細分化した作業と判定は[編集契約](CAD_EDITOR_SPEC.md)と[受入仕様](CAD_EDITOR_ACCEPTANCE.md)。
+詳細な実機条件・手順・既知事項は[N05 Windows acceptance](N05_ACCEPTANCE_2026-09-16.md)。N05で確認した内容をN10以降の全CAD機能完成と読み替えない。
 
 ## 確定した実環境
 
