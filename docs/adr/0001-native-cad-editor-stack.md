@@ -1,117 +1,47 @@
-# ADR-0001: HTDTをネイティブ3D CADライク・エディタへ再設計する
+# ADR-0001: Native CAD editorの第一構成と採用gate
 
-- Status: **Accepted**
-- Date: 2026-09-16
-- Decision owners: HTDT project
-- Supersedes: browser-first GUIを前提にした従来のUI方針
-- Related: [CAD_EDITOR_OSS_RESEARCH.md](../CAD_EDITOR_OSS_RESEARCH.md), [IMPLEMENTATION_ROADMAP.md](../IMPLEMENTATION_ROADMAP.md)
+- Status: **Accepted — first implementation direction; acceptance pending**
+- Date / reviewed: 2026-09-16
+- Supersedes: browser-first GUI、旧形式の互換必須、browserとのfeature parity
+- Related: [Roadmap](../IMPLEMENTATION_ROADMAP.md)、[OSSコード調査](../CAD_EDITOR_OSS_RESEARCH.md)、[編集契約](../CAD_EDITOR_SPEC.md)、[受入](../CAD_EDITOR_ACCEPTANCE.md)
 
 ## Context
 
-HTDTの価値は、測定値や比較表を表示するだけではなく、ユーザーが実際の部屋、スピーカー、座席、スクリーン、家具、測定点、配置制約を空間として構築し、その状態と測定・予測・最適化結果を一体で理解できることにある。
+HTDTはmouseで部屋・配置を作り、測定と予測を同じ空間で確認するソフトウェアへ移行する。従来のフォーム中心UIは操作とstateを根本から見直す。旧版の互換、既存言語、既存画面構造は採用を拘束しない。
 
-従来のbrowser-first UIは、数値入力と簡易3D表示には適していたが、3D CADのようなmouse-first editingを中心操作へ据えるには構造的な負債が大きい。互換性維持を優先すると今後の編集ツール、snapping、gizmo、selection、undo/redo、analysis overlayの実装効率が低下するため、UI/interaction layerは全面再設計する。
+既にnative Qt/VTK PoCの報告がある。2026-09-16の追加レビューでは13のOSSの選定したソースを確認した。gizmoの存在とCAD editorとしての操作品質を区別し、再現可能なcode/lock/packageと実機gateを先行させる必要がある。
 
 ## Decision
 
-### 1. GUIをnative desktop applicationとする
+1. **Python 3.12 x64、PySide6/Qt Widgets、PyVista/VTK/PyVistaQtを第一実装とする。** N05でWindows用依存をlockする。理由はPython科学計算とnative Qt/科学可視化の統合の簡潔さであり、他言語やWeb技術の排除ではない。
+2. **Documentとrendererを分離する。** SceneRevisionは部屋と物体集合の不変snapshot。測定Contextはそのrevisionと測定条件を参照する。現在の一測定点Contextをeditor全体のmodelにしない。
+3. **操作の正本はToolController/CommandHistory。** dragはpreview、確定で1 command、取消で全復元。actor行列、Qt widget、QUndoStackを別正本にしない。
+4. **selection、snap、view stateを独立させる。** entity IDを用い、同じcommand/validationをviewportとInspectorから呼ぶ。表示hide/lockと物理条件を分ける。
+5. **UIをblockする計算を避ける。** Qt/VTKはGUI thread、I/O/計算は必要に応じworker。不変入力とgenerationで古い結果の適用を防ぐ。
+6. **新schemaは旧形式と分離可能。** 自動migrationや機能同等性は不要。再利用するdomain/REW/比較資産だけadapterへ抽出し、測定原本は保持する。
+7. **汎用CAD kernelを必須にしない。** 一室polygon prismと剛体配置から開始し、wall/opening参照を明示管理する。高度importは要求が生じた時にadapter化する。
+8. **配布・保存・操作を先に検証する。** N05で縦断操作とstandalone package、N10で保存/復旧、N20でCAD品質。N90まで基礎的な配布問題を先送りしない。
 
-Windows 11 x64を第一対象とし、PySide6/Qtをapplication shellに採用する。Web browserは主UIではない。
+## Source-driven consequences
 
-### 2. 3D viewportはPyVista/VTKを採用する
+PyVistaの確認commitではinteract callbackが新matrixのactor代入より前で、press/releaseがinteraction styleを変更する。AffineWidget3Dをそのまま永続保存へ接続しない。最終値・cancel・DPI・observer解放はadapterの責務とし、wrapperが複雑になりすぎる場合は最小VTK handleへ置換する。
 
-理由:
+新Sceneでは安定wall ID、opening参照、複数seat/measurement pointを設計する。既存G00/G10は有用な実装資産だが、新editor schemaの形を拘束しない。幾何計算の再利用は境界adapterで行う。
 
-- native Qt embedding
-- actor/mesh/point/face picking
-- transform widgets
-- orthographic/perspective camera
-- scalar field、volume、slice、point cloud等の科学可視化
-- Pythonの音響解析・最適化スタックとの低コスト統合
+Qt標準widgetだけで洗練されたUXが完成するわけではない。viewport比率、contextual Inspector、直接handle、DPI、初見操作を受入にする。Pythonの統一による実装効率と、Qt/VTK入力を作り込む費用を両方認める。
 
-### 3. Documentをrendererから独立させる
+## Alternatives and reconsideration
 
-VTK actor / PyVista mesh / Qt widgetを保存modelの正本にしない。
+- **Godot runtime**: scene/editor実装は有益な参考。ただしeditor専用gizmoやUndoManagerはruntime製品へ自動搭載されない。Python境界と科学場表示を含め比較する。
+- **C#＋Helix Toolkit**: Windows UI/manipulatorの候補。WPF版を読んだ結果を別backendへ一般化しない。
+- **TypeScript＋Three.js/Babylon＋desktop shell**: CAD操作部品がある有力代替。Web技術だからという理由で却下しない。
+- **C++＋Qt/VTK/OCCT**: 性能や高度CADで必要な箇所へ導入できる。全面rewriteは計測した問題がある場合に評価。
+- **FreeCAD/Blender/CQ-editor拡張**: 完成app/frameworkへの依存とHTDT向けUXの縮約コストがあるため、当面は局所設計参照。
 
-Canonical hierarchy:
+N05/N20で構造的な問題が一回の改善slice後も残る場合、失敗原因に合う候補を同じfixtureで比較する。Godotを無条件の第一fallbackに固定しない。domainを保ちながら該当するrender/interaction/shell層を再選定し、結果を新ADRまたは本書の改訂へ残す。
 
-```text
-HTDT Document
-  Room
-  Openings
-  Furniture
-  Screen
-  Speakers
-  Listening positions / Seats
-  Measurement points
-  AV equipment
-  Constraints
-  Analysis references
-  Metadata
-```
+## Validation
 
-RendererはDocumentのprojectionである。
+A01/A02で再現可能な縦断操作とpackage、A05〜A07でmove/rotate/snap/cancel/Undo、DPIとF4性能を検証する。明示した数値は目標であり実測値ではない。
 
-### 4. 変更はCommandとして表現する
-
-mouse drag中はpreview state、操作確定時に1つのCommandとしてcommitする。Undo/RedoはCommand historyを正本とする。
-
-保存時はWorking Documentから新しいimmutable Context/Scene revisionを生成する。
-
-### 5. Tool state machineを採用する
-
-Select / Move / Rotate / Room Sketch / Vertex Edit / Place Speaker / Place Seat / Measure等を独立Toolとして実装し、viewportへ巨大なmouse event分岐を書かない。
-
-### 6. SelectionとSnappingを独立serviceとする
-
-Selectionはentity ID集合として保持する。Scene tree、Inspector、Viewport、Status barは同じSelectionStateへ同期する。
-
-Snap engineはgrid、axis、angle、vertex、edge、midpoint、wall projection、alignment、symmetry等のcandidateをrenderer非依存で評価する。
-
-### 7. 汎用CAD kernelをcore requirementにしない
-
-HTDTの中心形状はpolygon/extrusion/transformで表現できる。Open CASCADE等のB-repはSTEP/IGESや高度形状が実要件になった場合にadapterとして追加する。
-
-### 8. 旧browser UIとの互換性は要件としない
-
-既存backend/dataは価値があるものだけ移植・再利用する。既存frontend API契約やscreen layoutを守るために新Document/GUI設計を歪めない。
-
-## Consequences
-
-### Positive
-
-- viewportを中心にしたCAD的UXを最初から設計できる
-- mouse manipulation、selection、snap、numeric editを同じ操作体系にできる
-- acoustic analysisを3D visualization layerとして自然に追加できる
-- Python計算資産と同一process/言語で連携できる
-- rendererを交換してもDocument schemaを維持できる
-
-### Negative
-
-- Qt/VTK interactionをHTDT向けに作り込む必要がある
-- browser frontendとの二重保守期間を短期間持つ可能性がある
-- VTK標準gizmoだけで理想UXへ届かない場合はcustom overlayが必要
-
-## Rejected primary alternatives
-
-- FreeCAD fork/workbench: frameworkが広すぎ、HTDT固有UXを拘束する
-- Blender add-on: DCC中心のinteraction/data modelが利用目的と異なる
-- Godot: editor能力は高いがPython scientific stackとのruntime/language boundaryが増える
-- Open CASCADE-only: B-repには強いがacoustic field visualizationを別途要する
-- Three.js/R3F/Babylon.js browser app: desktop-first方針と逆
-- Rust/wgpu/Bevy/egui: foundational code量が大きく、価値提供まで遠い
-
-## Validation gates
-
-このADRは無条件に技術へ固執するものではない。以下をN20で確認する。
-
-- select/hover responseが即時である
-- speaker/seat/furnitureをgizmoでmove/rotateできる
-- grid/axis/angle/wall snapが視覚的に理解できる
-- dragをEscで完全cancelできる
-- mouse-upで履歴が1 Commandになる
-- Inspector数値編集とviewport操作が同じCommand/validation経路を通る
-- top/front/side/perspective viewが同一Documentを扱う
-- 1000程度のscene entity/analysis markersでも操作感を維持する
-
-満たせない場合は、Godot 4 .NETを第一fallbackとして同じDocument/Command contractでPoCし、renderer/application shellのみ再評価する。
+このADRのAcceptedは実装方針の採択を意味する。N05/N10/N20やGUIの完成・性能合格を意味しない。

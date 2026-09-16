@@ -1,455 +1,116 @@
-# CAD-like 3D Editor — OSS調査と技術選定
+# 3D CAD editor — OSSコード調査と技術比較
 
-> 調査日: 2026-09-16  
-> 状態: **採用判断済み**  
-> 対象: Windows 11 x64 / 個人利用 / HTDTの3D CADライクGUI全面再設計  
-> 関連: [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md), [ADR-0001](adr/0001-native-cad-editor-stack.md)
+> 調査: 2026-09-16 / main `1b510206`、PR #37 `9724f4b`、追加commit `0353768` をレビュー
+> **13プロジェクトの選定したソースを読んだ設計レビュー。アプリ全体の監査・比較ベンチマークではない。**
+> 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)、反映する契約は[SPEC](CAD_EDITOR_SPEC.md)。
 
 ## 1. 結論
 
-HTDTのGUIは、従来のブラウザ中心UIとの互換性を要求せず、**ネイティブデスクトップの3D CADライク・ワークスペース**として再構築する。
+第一実装はPython 3.12＋PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを維持する。理由は、mouse操作を作れるだけでなく、Pythonの測定・幾何・科学計算とmesh/field/slice/volume表示を同じアプリにまとめやすいため。
 
-主実装は次を採用する。
+ただし標準gizmoはCAD editorの完成品ではない。selection、preview/commit/cancel、Undo、wall参照、数値編集、snap競合をHTDTが管理する。UIの使いやすさはN05/N20の実機gateで証明する。過去のWindows PoC報告は有益だが、再現可能なtracked code/lock/packageと性能計測は別途必要。
 
-- **Python 3.12+**: ドメイン、音響解析、データI/O、アプリケーションロジック。
-- **PySide6 / Qt 6 Widgets**: ネイティブWindow、Dock、Action、Inspector、Outliner、ショートカット、ファイル操作。
-- **PyVista + VTK + PyVistaQt**: 3D viewport、picking、mesh/actor管理、transform widget、scalar/volume/point-cloud可視化。
-- **Pydantic + SQLite**: 保存境界と不変Revision。編集途中はWorking Documentとして分離。
-- **Shapely**: 2D room footprint、allowed/exclusion region、幾何判定。現在のG00/G10資産を継続利用する。
-- **NumPy / SciPy**: 数値計算。
-- **glTFを主要な汎用3D交換形式**とし、STEP/IGES/IFC等は必要になった時点でadapterとして追加する。
+**不採用理由を「Webだから不適」「Python資産があるから他言語不可」としない。** TypeScript＋desktop shell、C#、Godotも同じfixtureで比較できる選択肢である。既存コード量を守ることは選定目的にしない。
 
-この選択は「既存Pythonコードを捨てたくないから」ではない。**HTDT固有の将来要件が、機械CADのB-rep編集よりも、部屋・配置の編集と音響場・測定値・候補群・反射経路の科学可視化を同じviewportへ重ねることにある**ためである。VTKはこの後半の要求に非常に強く、PySide6とPython科学計算スタックの境界コストが小さい。
+## 2. 調査方法と範囲
 
-Godot、Open CASCADE、FreeCAD、Blender等は重要な参照元だが、主ランタイムにはしない。設計パターンは積極的に参考にし、ライセンス上問題のあるコードはコピーしない。
+GitHub APIでdefault branchのcommit SHAを取得し、そのSHAのファイルを読んだ。以下のpermalinkは調査内容の固定点であり、製品依存を開発headへ固定する提案ではない。採用release版をlockする際に差分を確認する。
 
-## 2. 選定基準
+重点は入力とcameraの競合、操作開始/終了、取消、履歴、selection通知、observer寿命、DPI変換、Qt embedding、グラフ。OS実行、GPU比較、全issue履歴、全submoduleのlicense監査は行っていない。
 
-優先順位は次の通り。
+| 対象 | 確認したファイル / symbol | コードから確認した点 | HTDTへの反映 |
+|---|---|---|---|
+| PyVista | [pyvista/plotting/affine_widget.py](https://github.com/pyvista/pyvista/blob/5cb68204922cac06b18dd3587b92db05163a72be/pyvista/plotting/affine_widget.py) / AffineWidget3D、_move_callback、_release_callback、disable | actor.user_matrixを更新。interact callbackがその代入より先。releaseでcache更新、interaction style変更 | wrapper/ToolControllerにtransaction責務。最終値再取得とcancel復元 |
+| PyVistaQt | [pyvistaqt/plotting.py](https://github.com/pyvista/pyvistaqt/blob/aa091ec97e225da8ec8cf43074bfe565a943f839/pyvistaqt/plotting.py) / QtInteractor.render、close | render_signal、timer、close後renderの抑止と解放処理 | 自前QMainWindowにQtInteractorを埋込み、終了と再openを検証 |
+| VTK | [Wrapping/Python/vtkmodules/qt/QVTKRenderWindowInteractor.py](https://github.com/Kitware/VTK/blob/62f6ed6404031187b13654a78c7a401f5b08f368/Wrapping/Python/vtkmodules/qt/QVTKRenderWindowInteractor.py) / _setEventInformation、Finalize | Qt位置をDPI倍率でdevice座標へ変換しY反転。終了でRenderWindowをFinalize | 二重DPI変換を防ぐ。100/150/200%と画面外releaseをgate化 |
+| VTK | [Interaction/Widgets/vtkBoxWidget2.cxx](https://github.com/Kitware/VTK/blob/62f6ed6404031187b13654a78c7a401f5b08f368/Interaction/Widgets/vtkBoxWidget2.cxx) | widgetのinteraction eventとrepresentationを分離 | 必要なら最小VTK handleのadapter。汎用widget forkは先行しない |
+| FreeCAD | [src/Gui/Selection/Selection.cpp](https://github.com/FreeCAD/FreeCAD/blob/a4ce44d33b7e42e16cb8156058a1894237042ab4/src/Gui/Selection/Selection.cpp) / SelectionSingleton::notify、addSelection | selection変更の集約・通知・gate | entity IDのSelectionServiceを正本にする。実装全体は取り込まない |
+| CQ-editor | [cq_editor/widgets/object_tree.py](https://github.com/CadQuery/CQ-editor/blob/3e8ef6b9b9af8cdf58fc1375a1b9f7b86409ecf8/cq_editor/widgets/object_tree.py) / handleSelection、handleGraphicalSelection と [cq_editor/main_window.py](https://github.com/CadQuery/CQ-editor/blob/3e8ef6b9b9af8cdf58fc1375a1b9f7b86409ecf8/cq_editor/main_window.py) | tree選択からviewer/Inspectorへsignal、逆選択、Qt shell構成 | dock/双方向選択の参考。AIS shapeやQt itemをHTDT identityにしない |
+| Godot | [editor/editor_undo_redo_manager.cpp](https://github.com/godotengine/godot/blob/dfa06cafb4546eac47d863dfa12aec54e4efa586/editor/editor_undo_redo_manager.cpp) / create_action、commit_action | do/undo操作、redo破棄、saved_versionとの関係 | 保存後Undo/新規分岐のdirty判定を明示 |
+| Godot | [editor/scene/3d/node_3d_editor_plugin.cpp](https://github.com/godotengine/godot/blob/dfa06cafb4546eac47d863dfa12aec54e4efa586/editor/scene/3d/node_3d_editor_plugin.cpp) / update_transform_gizmo、snap設定 | editor内でgizmo、選択、snap、view設定を統合 | 操作仕様の参考。runtime exportでeditor機能が自動提供されるとは扱わない |
+| Three.js | [examples/jsm/controls/TransformControls.js](https://github.com/mrdoob/three.js/blob/eabc262db760c5e85bd890a6dc627ba14e70e8c3/examples/jsm/controls/TransformControls.js) / pointerDown、pointerUp、reset | 開始poseの退避、translation/rotation snap、開始/終了通知、reset | renderer-independent transaction設計の参考。TS案の具体的比較部品 |
+| Babylon.js | [packages/dev/core/src/Gizmos/gizmoManager.ts](https://github.com/BabylonJS/Babylon.js/blob/1c0985aa179a186d955fae1ed218d7d43aca49dc/packages/dev/core/src/Gizmos/gizmoManager.ts) / attachToMesh、dispose | attach対象限定、pointer observer、utility layer、解除 | gizmoと通常pickを分離。observerを生存期間で管理 |
+| Helix Toolkit | [Source/HelixToolkit.Wpf/Visual3Ds/Manipulators/CombinedManipulator.cs](https://github.com/helix-toolkit/helix-toolkit/blob/2b94a3cd030e311a92998306297d2a8a87fd2f66/Source/HelixToolkit.Wpf/Visual3Ds/Manipulators/CombinedManipulator.cs) / Bind、UnBind、Pivot | 軸別move/rotate許可、pivot、WPF bindingと解除 | C#案の具体候補。読んだWPF版の性質をSharpDX版へそのまま一般化しない |
+| napari | [src/napari/components/layerlist.py](https://github.com/napari/napari/blob/18ffd37dcff853f6ac9bc5211fdead979dc5dabd/src/napari/components/layerlist.py) / _process_delete_item、remove_selected | selection event、locked layerの削除制御、削除時disconnect/unlink | layerとselection寿命の参考。医用/画像viewerを主shellにはしない |
+| 3D Slicer | [Libs/MRML/DisplayableManager/vtkMRMLAbstractWidget.cxx](https://github.com/Slicer/Slicer/blob/4eafce4f2e3f2d5ca19d52f5fa924c9fa9b4ffe0/Libs/MRML/DisplayableManager/vtkMRMLAbstractWidget.cxx) / SetEventTranslationClickAndDrag | 状態別のpress/move/release、keyboard event translation | VTKでもtool状態機械を独立させる設計参照 |
+| PyQtGraph | [pyqtgraph/graphicsItems/PlotDataItem.py](https://github.com/pyqtgraph/pyqtgraph/blob/ca90db2c6299a11922012d8ffe69d2070c919c82/pyqtgraph/graphicsItems/PlotDataItem.py) / setLogMode、setDownsampling、connect | log軸、表示downsampling、非有限値で接続を切る設定 | N60のFR dock第一候補。数値解析は元Datasetを使う |
+| Blender | [source/blender/editors/transform/transform_ops.cc](https://github.com/blender/blender/blob/325bb9d27dbfa9f7ee8db95db02e02f097f0ed74/source/blender/editors/transform/transform_ops.cc) / transform_modal、transform_cancel | modal操作、navigationとの処理分担、cancel時の状態遷移 | 操作仕様のみ参考。GPLコードは今回コピーしない |
 
-1. **マウス中心でCADのように空間を構築・確認できること**
-2. 3D viewportをアプリの中心にできること
-3. 選択、hover、gizmo、snap、数値入力、orthographic view、undo/redoを一貫した操作モデルにできること
-4. 部屋、家具、座席、スクリーン、スピーカー、測定点、AV機器を同じDocumentで扱えること
-5. 将来の音圧場、予測結果、候補点群、反射経路、heatmap、slice、volume等を重畳できること
-6. Pythonの音響・科学計算エコシステムとの統合が容易であること
-7. Windowsで配布・デバッグしやすいこと
-8. 特定CADカーネルへDocumentモデルが拘束されないこと
-9. GUI実装が長期的に分割・テスト可能であること
-10. ライセンスと保守性が明確であること
+napariは調査時点で `src/napari/`、FreeCADのSelectionは `src/Gui/Selection/` にある。以前のpathだけを列挙する調査から、実際に取得できたpathへ修正した。
 
-## 3. 採用スタック
+## 3. 具体的に発見した統合リスク
 
-| レイヤ | 採用 | 理由 |
+### AffineWidget3Dのcallbackをそのまま保存へ接続しない
+
+読んだPyVista commitでは、_move_callbackでuser callbackを呼んだ後に今回のmatrixをactorへ代入する。そのためcallback引数を「今回の確定値」と仮定するとpreviewが遅れたりsnap結果を上書きしたりし得る。_release_callbackはcache更新後にrelease callbackを呼ぶ。
+
+さらにpress/releaseでinteraction styleを切り替える。HTDTのcamera/tool設定、Esc/capture loss、multi-select、unknown aim、DB保存はwidget任せにできない。
+
+対策はSPEC §5/7。gestureをHTDTが所有し、adapterの出力を検証、final matrixを確定時に読み直す。callback順序に依存しないpreview経路を作り、標準widgetを使いにくい場合だけ最小VTK handleへ替える。**この所見は固定commitのコード読解であり、報告済みPoCの全版で障害が再現したという意味ではない。**
+
+### Qt/VTKはDPIと寿命まで含めて検証する
+
+QVTKRenderWindowInteractorは既にpixel ratioを使っている。Qt overlayの座標をさらに同じ倍率で変換するとずれる。mapper/actorの変更もGUI threadへ戻す。PyVistaQtにrender_signalがあることは、任意のVTK操作がthread safeである証拠にならない。[Qtのthread規則](https://doc.qt.io/qt-6/threads-qobject.html)
+
+### Godotのeditorコードと配布runtimeを区別する
+
+Node3DEditorとEditorUndoRedoManagerはeditor側の実装。Godotを採用しても、HTDT用runtime UI、gizmo、保存、Pythonとの境界を設計する作業が残る。EditorNode3DGizmoはeditor用の拡張口であり、製品runtimeにCAD editorが付属すると数えない。[公式EditorNode3DGizmo](https://docs.godotengine.org/en/stable/classes/class_editornode3dgizmo.html)
+
+### 旧ContextDraftの成果を製品完成と数えない
+
+PR #37のContextDraftは全payloadのcopy履歴、is_dirty=index判定、既存ContextCreateでvalidationする試作。保存後のclean基準、家具/複数測定点、wall ID、cancel transaction、非同期結果の世代管理は別途必要。試作の短さを理由に現行Contextへ新editor全体を詰め込まない。
+
+レビュー中にPRへ追加された `0353768`ではnative shellと起動スクリプト、直接依存の版固定を確認した。tree/viewport選択と読取Inspectorはあるが、編集/Save/UndoのGUI接続とpackage受入は未完。単なるviewerと完成したeditorを区別する。
+
+## 4. スタック比較
+
+以下は上記コードと公式資料を元にした**設計評価**。数値スコア、FPS、開発日数は測定していない。
+
+| 構成 | 有利な点 | HTDTで残る主要作業 | 判断 |
+|---|---|---|---|
+| Python＋Qt Widgets＋VTK | Qt embedding、Python計算、科学可視化、同一言語のservice | CAD入力/handle、外観、package/DPI | 第一実装。N05/N20で操作を検証 |
+| C++＋Qt＋VTK/OCCT | native統合、低level制御、CAD kernelへの接続 | binding/build、Python計算境界、所有者が保守する量 | 実測したhot pathに限定導入。最初の全面rewriteは根拠不足 |
+| Godot 4 runtime（C#/GDScript）＋Python worker | scene/gizmo設計の参考、3D描画とUI | editor機能のruntime化、IPC、科学場表示、配布 | 操作/描画が構造的に未達なら比較 |
+| C#＋WPF/Helix Toolkit＋Python worker | Windows desktop、manipulator、.NET UI | scientific field、Python配布/IPC、選択render backendの確認 | Windows操作/配布問題が主因なら比較 |
+| TypeScript＋Three.js/Babylon＋desktop shell | transform部品、UI構成、可視化の選択肢 | Python境界、desktop shell配布、科学場pipeline | 有力な代替。Web技術という理由だけで除外しない |
+| Qt Quick/QML＋Qt Quick 3D | declarative UI、2D/3D構成 | VTKとの統合または独自field描画、moduleごとの配布条件 | 現段階でWidgetsと二重UI基盤を持たない |
+| FreeCAD workbench/fork / CQ-editor拡張 | CAD framework、OCCT、tree/selection | HTDT向けUXの縮約、測定/field統合、依存 | 操作・設計参考。主shellにはしない |
+| Blender add-on / Sweet Home 3D拡張 | 成熟した空間編集・住宅配置操作 | 主model/UXの適合、測定・科学表示、配布 | UX参考。汎用appを改造する規模を避ける |
+| napari / Slicer拡張 | layer、科学可視化、Qt/VTK設計例 | ホームシアターCADのtoolと製品導線 | 局所設計参照。画像/医用domainを引き継がない |
+| Rust＋wgpu/egui/Bevy | renderer/型/性能を細かく制御可能 | editor部品、科学可視化、Python境界の新規実装 | 今回コード精査/benchは未実施。低level再開発の必要性が出た時に比較 |
+
+Qt Quick 3Dは独立した選択肢であり、PySide6を選んだだけで同じmodule条件とみなさない。[公式Qt Quick 3D](https://doc.qt.io/qt-6/qtquick3d-index.html)
+
+## 5. 今回深入りしないOSS
+
+前回挙がったOCCT、SolveSpace、IfcOpenShell、Clipper2、OpenSCAD、BRL-CAD、SALOMEは、今回その実装を新規精査していない。用途を限定し、調査済み/採用済みと過大表示しない。
+
+- OCCT/CadQuery: 正確なSTEP/B-rep importが必要になった時のadapter候補。room polygon/配置のためだけにkernelを持ち込まない。
+- SolveSpace/FreeCAD solver: 一般拘束解法が実要件になった時の候補。寸法編集・axis/snapのために先行導入しない。
+- IfcOpenShell: IFC import要求が出た時。内部DocumentをBIM schemaにしない。
+- Clipper2: 既存Shapelyのoffset/robustnessで具体的な問題が出た時に比較する。
+- OpenSCAD/BRL-CAD/SALOME: solid/mesh/solver workflowの候補であり、今回の主GUI基盤候補ではない。
+- Sweet Home 3D: 旧文書の `github.com/SweetHome3D/SweetHome3D` は今回404。公式サイトはSourceForgeのOSSと案内するが、今回PlanControllerソースは取得できなかった。room/furniture UXの候補として残し、コード確認済み一覧には含めない。[公式サイト](https://www.sweethome3d.com/)
+
+## 6. 依存利用・参考・移植を区別する
+
+| 対象 | 今回確認した根拠 | 扱い |
 |---|---|---|
-| Desktop shell | PySide6 / Qt 6 Widgets | CAD型Dock UI、Action/shortcut、native window、成熟したdesktop widget |
-| 3D renderer | VTK via PyVista | picking、large meshes、scientific scalar/volume/point-cloud visualization |
-| Qt/VTK bridge | PyVistaQt | Qt native widget内へviewportを埋め込みやすい |
-| Domain | Python typed model | 既存音響スタックと同一言語、renderer非依存に保てる |
-| Validation | Pydantic | file/API境界のschema validation |
-| Persistence | SQLite + immutable revisions | 測定・比較・配置履歴との整合性を維持 |
-| 2D geometry | Shapely | polygon room / feasibility engineで実績あり |
-| Numeric | NumPy/SciPy | 音響、最適化、補間、統計 |
-| Exchange | glTF first | scene asset交換に適し、rendererから独立 |
-| Optional CAD adapter | Open CASCADE / CadQuery系を後付け | STEP/IGES/B-repが本当に必要になった場合のみ |
+| PyVista / PyVistaQt | [MIT](https://github.com/pyvista/pyvista/blob/5cb68204922cac06b18dd3587b92db05163a72be/LICENSE) / [MIT](https://github.com/pyvista/pyvistaqt/blob/aa091ec97e225da8ec8cf43074bfe565a943f839/LICENSE) | 依存利用を第一候補。修正が必要な時だけ限定adapter/patch |
+| VTK | [BSD形式のCopyright.txt](https://github.com/Kitware/VTK/blob/62f6ed6404031187b13654a78c7a401f5b08f368/Copyright.txt) | 依存利用。必要なnoticeと同梱依存を採用版で確認 |
+| PySide6/Qt | [Qt for Python licenses](https://doc.qt.io/qtforpython-6/licenses.html) | 選んだmoduleと配布形態で確認。Qt全moduleを一つのlicense条件と扱わない |
+| CQ-editor / Babylon.js | [Apache-2.0](https://github.com/CadQuery/CQ-editor/blob/3e8ef6b9b9af8cdf58fc1375a1b9f7b86409ecf8/LICENSE) / [Apache-2.0](https://github.com/BabylonJS/Babylon.js/blob/1c0985aa179a186d955fae1ed218d7d43aca49dc/license.md) | 設計参考。CQ-editorのQt bindingまで無条件に引き継がない |
+| Godot / Three.js / Helix / PyQtGraph | [MIT](https://github.com/godotengine/godot/blob/dfa06cafb4546eac47d863dfa12aec54e4efa586/LICENSE.txt) / [MIT](https://github.com/mrdoob/three.js/blob/eabc262db760c5e85bd890a6dc627ba14e70e8c3/LICENSE) / [MIT](https://github.com/helix-toolkit/helix-toolkit/blob/2b94a3cd030e311a92998306297d2a8a87fd2f66/LICENSE) / [MIT](https://github.com/pyqtgraph/pyqtgraph/blob/ca90db2c6299a11922012d8ffe69d2070c919c82/LICENSE.txt) | 局所参考または評価候補。移植時は出典/変更/noticeを残す |
+| FreeCAD / Blender | 上記参照ファイルのSPDX: LGPL-2.1-or-later / GPL-2.0-or-later | 今回は設計参考のみ |
+| Slicer | [独自のBSD型license](https://github.com/Slicer/Slicer/blob/4eafce4f2e3f2d5ca19d52f5fa924c9fa9b4ffe0/License.txt) | event設計参考。単純なBSD-3と同一視しない |
+| napari | layerlistのみ精査 | 今回は設計参考。移植/依存を選ぶ時点で採用版licenseを確認 |
 
-### Windows PoCの確認済み事項
+今回、他projectの実装コードをHTDTへコピーしていない。実装PRでは依存追加かコード移植か設計参考かを明記する。移植する場合はupstream commit、path、変更内容、copyright/license/NOTICEを必要に応じ添付する。ライセンス名だけを根拠に無条件のcopy可としない。
 
-PR #37 の試作で、Windows上の以下を確認済み。
+## 7. 次の比較を実行可能にする
 
-- PySide6 6.11.2
-- PyVista 0.49.0
-- PyVistaQt 0.13.1
-- VTK 9.7.0
-- Python 3.12
-- 8頂点の凹polygon roomをnative Qt windowへ描画
-- FL/C/FRとMLPの描画
-- PyVista `AffineWidget3D` を用いたspeaker actorの移動/回転操作
-- `ContextDraft` のsnap、undo/redo、位置変更とaim情報の分離
+[受入仕様](CAD_EDITOR_ACCEPTANCE.md)のF1/F4を共通入力とし、A01/A02/A05〜A07を同条件で比較する。N05でQt/VTKの最小packageを試し、N20で操作・DPI・cancel・snapを評価する。
 
-バージョン番号はPoC記録であり、正式依存は実装PRでlockする。
+第一候補の問題は一回の改善sliceで切り分け、callback接続/入力設計の問題ならその層を直す。構造的な問題が残る時だけ、原因に合う代替を1〜2案選び、同じDocument/Command契約で試す。候補の個数やstar数では採用を決めない。
 
-## 4. OSS調査結果
-
-### 4.1 PyVista / VTK — **主採用**
-
-**用途**: viewport、picking、transform interaction、mesh/scalar/volume/point-cloud表示。
-
-参考対象:
-
-- PyVista: plotting / picking / widgets / actor management
-- PyVistaQt: QtInteractor / BackgroundPlotter integration
-- VTK: renderer / picker / interaction style / widgets / transforms / volume rendering
-
-HTDTで取り込む考え方:
-
-- rendererのactorをDocumentの正本にしない。
-- `entity_id -> RenderProxy/Actor` のregistryを持つ。
-- selectionはactorではなくentity IDで保持する。
-- transform widget操作中はpreview transform、確定時だけCommandをcommitする。
-- acoustic resultはeditable entityとは別のVisualization Layerとして扱う。
-
-### 4.2 Qt / PySide6 — **主採用**
-
-**用途**: application shell、dock、inspector、outliner、actions、menus、shortcuts、native dialogs。
-
-参考パターン:
-
-- `QMainWindow` + central 3D viewport
-- left dock: Scene / Add / Layers
-- right dock: Inspector / Constraints / Analysis
-- top: mode-aware toolbar
-- bottom/status: cursor world position、snap mode、selection summary、operation hint
-- `QUndoStack`の思想は参考にするが、永続DocumentのCommand historyはHTDT側で明示定義する。
-
-### 4.3 CQ-editor / CadQuery — **UI構成を参考**
-
-CQ-editor系は、Qt desktop shell + object tree + OpenCascade viewer + console/inspectorというCADアプリの典型構造を持つ。
-
-HTDTではOpenCascade viewer自体は主採用しないが、以下を参考にする。
-
-- object treeとviewport selectionの双方向同期
-- dockable tool panes
-- view presets / fit / shaded-wireframe切替
-- editor shellとgeometry backendの分離
-
-### 4.4 FreeCAD — **アーキテクチャを参考。主ランタイムにはしない**
-
-FreeCADはDocument/Application/Gui/Command/Selectionを明示的に分けた成熟CADであり、HTDTの設計参照として非常に重要。
-
-主な参照箇所:
-
-- `src/App/Document.cpp` — Document/transaction/recomputeの考え方
-- `src/Gui/Command.cpp` — Command登録とUI actionの分離
-- `src/Gui/Selection.cpp` — model selectionとGUI selection
-- `src/Mod/Sketcher/App/` — constraint-driven parametric editing
-- `src/Mod/Sketcher/App/planegcs/` — geometric constraint solver
-
-HTDTで採用する思想:
-
-- Documentはrendererから独立
-- Undo/RedoはDocument transaction/Commandとして扱う
-- UI commandとdomain mutationを分ける
-- parametric entityとrender meshを分離する
-
-採用しない理由:
-
-- HTDTには汎用機械CAD全体が不要
-- 独自UXを作る際にFreeCAD UI/frameworkへ拘束される
-- 音響scalar/volume可視化は別系統が必要になる
-
-### 4.5 Blender — **transform / snapping / tool状態機械を参考。コードはコピーしない**
-
-Blenderの`source/blender/editors/transform/`は、CAD/DCC型のtransform systemを設計するうえで重要な参照元。
-
-主な参照箇所:
-
-- `source/blender/editors/transform/transform.hh`
-- `source/blender/editors/transform/transform_ops.cc`
-- `source/blender/editors/transform/transform_constraints.*`
-- `source/blender/editors/space_view3d/`
-
-参考にする設計:
-
-- transform中のmodal state
-- axis/plane constraint
-- snap source / snap targetの分離
-- precision modifier
-- operation開始時snapshot、preview、confirm/cancel
-- 数値入力とマウスdragを同一transformへ流す
-
-BlenderはGPL-2.0-or-laterのため、**設計思想のみ参照し、実装コードをHTDTへコピーしない**。
-
-### 4.6 Godot Engine — **gizmo / scene editor / undo設計を参考。主ランタイムにはしない**
-
-GodotはMITで、3D editor、node tree、gizmo、inspector、UndoRedo、scene serializationの参照元として優秀。
-
-参考領域:
-
-- 3D editor plugin / gizmo system
-- `EditorUndoRedoManager`
-- Node/Scene tree
-- Inspector plugin system
-- Input event routing
-
-良い点:
-
-- editor interactionが標準化されている
-- native desktop rendering/UIを一体で作れる
-- MITで参照しやすい
-
-主採用しない理由:
-
-- HTDTの科学計算・測定・最適化はPython ecosystem中心
-- Godot C#/GDScriptとのruntime boundaryが増える
-- acoustic field/volume/point-cloud解析ではVTKがより直接的
-- HTDTはgame runtimeよりengineering/scientific desktop toolに近い
-
-ただし、VTKで操作性の受入基準を満たせない場合の**第一fallback候補**とする。
-
-### 4.7 Open CASCADE Technology (OCCT) — **高度CAD adapter候補**
-
-OCCTはB-rep/NURBS/boolean/STEP/IGES/interactive CAD表示に強い。
-
-参考対象:
-
-- `AIS_InteractiveContext`
-- `AIS_Manipulator`
-- `TopoDS_*`
-- `BRepBuilderAPI_*`
-- `BRepAlgoAPI_*`
-
-HTDTで主採用しない理由:
-
-- room/speaker/seat配置の大半は2D polygon + extrusion + transformで表現可能
-- B-rep kernelをDocument中心にすると実装量と依存が急増する
-- acoustic scalar field/volume表示には別rendererが必要
-
-STEP/IGES等の正確なCAD importが必要になった時点で、独立adapter/serviceとして採用を検討する。
-
-### 4.8 SolveSpace — **constraint solverの設計参照**
-
-SolveSpaceは軽量なparametric CADとして、2D/3D幾何constraintの設計参照に有用。
-
-参考対象:
-
-- `src/constraint.cpp`
-- `src/entity.cpp`
-- `src/modify.cpp`
-- `src/graphicswin.cpp`
-
-GPLv3のため、solverコードを直接取り込む場合はライセンス影響が大きい。HTDTではまず必要なconstraintを限定実装し、一般constraint solverが必要と判明してから再検討する。
-
-### 4.9 Sweet Home 3D — **room/furniture UXを参考**
-
-住宅の平面図・家具配置・3D確認というドメインがHTDTに近い。
-
-参考領域:
-
-- `model`
-- `viewcontroller`
-- `j3d`
-- `PlanController`
-- `HomePieceOfFurniture3D`
-- `Wall3D`
-- `DimensionLine3D`
-
-参考にする点:
-
-- catalogからsceneへ配置する操作
-- wall/furnitureのdomain model
-- 2D planと3D viewの同期
-- dimension表示
-
-主採用しない理由:
-
-- Java/Java3D中心
-- UI/rendererをそのまま流用するより設計参照価値が高い
-- GPL系のためコードコピーは避ける
-
-### 4.10 Three.js / React Three Fiber / Babylon.js — **Web版の参照・fallback**
-
-Web 3Dとしては成熟している。
-
-参考箇所:
-
-- Three.js `examples/jsm/controls/TransformControls.js`
-- Three.js `Raycaster`
-- Babylon.js `GizmoManager`
-- Babylon.js pointer drag behavior
-- R3F / drei transform controls and declarative scene composition
-
-主採用しない理由:
-
-- HTDTの主対象がWindows desktopであり、WebView/browser lifecycleを持ち込む価値が小さい
-- native filesystem / window / multi-panel desktop UXはQtが直接的
-- Python scientific stackとの境界を設ける必要がある
-
-ただし、将来viewer-onlyの共有版を作る場合には有力。
-
-### 4.11 OpenSCAD / BRL-CAD / SALOME — **モデリング設計の参照**
-
-- OpenSCAD: declarative CSG / parametric regenerationの参照
-- BRL-CAD: CSG tree / geometry databaseの参照
-- SALOME: CAD/mesh/solver workflowの参照
-
-HTDTは汎用solid modellerではないため、これらをapplication shellやcore kernelとして採用しない。
-
-### 4.12 IfcOpenShell / BIM系 — **将来import adapter**
-
-建築BIM/IFCを読み込む必要が出た場合に使用候補。初期DocumentをIFC中心にしない。
-
-理由:
-
-- HTDTの編集対象はホームシアター設置と音響でありBIM全体ではない
-- IFC schemaを内部モデルにすると操作と履歴が過剰に複雑になる
-
-### 4.13 Clipper2 — **必要時のpolygon offset/boolean候補**
-
-Clipper2はBoost Software License 1.0で、整数座標ベースのrobustなpolygon clipping/offsetに有用。
-
-現在はShapelyでG00/G10を実装済みのため直ちに置換しない。offset robustnessやWindows配布上の問題が明確になった場合のみ比較PoCする。
-
-## 5. CADライク操作へ取り込む設計パターン
-
-### 5.1 Command + transaction
-
-全ての永続変更はCommandとして表現する。
-
-例:
-
-- `MoveEntityCommand`
-- `RotateEntityCommand`
-- `ResizeEntityCommand`
-- `MoveRoomVertexCommand`
-- `InsertRoomVertexCommand`
-- `DeleteRoomVertexCommand`
-- `SetPropertyCommand`
-- `CreateEntityCommand`
-- `DeleteEntityCommand`
-- `GroupEntitiesCommand`
-
-pointer moveのたびに履歴を増やさない。drag開始時にbefore stateを取り、drag中はpreview、mouse-upで1 Commandへcoalesceする。
-
-### 5.2 Tool state machine
-
-viewportは巨大なmouse event handlerにしない。
-
-最低限のTool:
-
-- Select
-- Move
-- Rotate
-- Room Sketch
-- Room Vertex Edit
-- Place Speaker
-- Place Seat / Listening Point
-- Place Screen
-- Place Furniture
-- Measure
-- Orbit/Pan temporary navigation
-
-Toolは`activate -> pointer_down -> pointer_move -> pointer_up -> cancel/deactivate`を持つ。
-
-### 5.3 Selection service
-
-Selectionはviewport actorやQt tree rowに保持しない。
-
-`SelectionState`を正本とし、以下がsubscribeする。
-
-- viewport highlight
-- scene tree
-- inspector
-- status bar
-- command enable/disable
-
-### 5.4 Snap engine
-
-Snapをrendererやgizmo内部へ埋め込まない。
-
-候補:
-
-- grid
-- axis lock
-- angle increment
-- vertex
-- edge
-- edge midpoint
-- wall projection
-- room boundary
-- alignment with other entities
-- speaker symmetry axis
-- user-defined clearance
-
-各candidateはtype / world point / distance / priority / source entityを返す。UIは現在採用中のsnap targetを視覚表示する。
-
-### 5.5 Render proxy
-
-Document entityからVTK actorを直接参照しない。
-
-```text
-Document Entity
-  -> SceneProjection
-    -> RenderProxy
-      -> one or more VTK Actors
-```
-
-render actorの再生成・LOD・highlightはDocument identityを壊さない。
-
-## 6. ライセンス方針
-
-- MIT/BSD/Apache/Boost系は、必要なら依存または実装参考にできる。
-- LGPL系は動的リンク/依存条件を確認して利用する。
-- GPL系（Blender、SolveSpace、Sweet Home 3D等）は**設計参照のみ**を原則にする。
-- GPLコードをHTDTへコピーする判断は、プロジェクト全体のライセンス方針を変更するため、個別ADRなしでは行わない。
-- 参考にしたOSS、バージョン、ファイル、ライセンスは実装PRの記録へ残す。
-
-## 7. 採用しない主候補と理由
-
-| 候補 | 主採用しない理由 |
-|---|---|
-| FreeCAD fork / workbench | HTDT UXをFreeCAD frameworkへ拘束しすぎる |
-| Blender addon | DCC UI/データモデルがHTDT利用者の中心操作と合わない |
-| Godot app | Python scientific stackとのruntime/language境界が増える |
-| OCCT-only app | B-repには強いが音響field/volume可視化には追加rendererが必要 |
-| Three.js/R3F/Babylon browser app | native Windows desktopを第一対象にする今回方針と逆 |
-| Rust + wgpu + egui | 低レベル実装量が多く、HTDT固有価値に到達するまでが長い |
-| Bevy | editor application frameworkとしてはHTDTで必要な成熟度/desktop toolingを自前補完する範囲が大きい |
-| Unity/Unreal | engine規模、ライセンス、配布サイズ、engineering appとの不一致 |
-
-## 8. リスクとescape hatch
-
-### R1: VTKのgizmoがCAD操作として不足
-
-対策:
-
-- custom overlay handles / Qt overlay / VTK widgetsで補う。
-- N20 acceptanceで、selection、move/rotate、snap、numeric input、cancel/confirmを評価する。
-- 満たせない場合はGodot 4 .NET PoCを第一fallbackとして比較する。
-
-### R2: scene規模増大でactor管理が重い
-
-対策:
-
-- RenderProxy cache
-- static/dynamic layer分離
-- glyph/instancing
-- dirty-region更新
-- analysis layerのdecimation/LOD
-
-### R3: Documentとrendererが密結合する
-
-対策:
-
-- renderer importをDomain packageで禁止
-- entity ID / event / projection boundaryで接続
-- 保存schemaはVTK class名やactor stateを含めない
-
-### R4: 汎用CAD要求が膨張する
-
-対策:
-
-- HTDTは「ホームシアター空間編集CAD」であり汎用CADにはしない。
-- B-rep、fillet、NURBS sketcher等は実要件発生まで作らない。
-- importはadapterで解決する。
-
-## 9. 参考情報
-
-調査時点で確認した主要ソース:
-
-- Godot license: https://godotengine.org/license/
-- Godot C# docs: https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/
-- VTK: https://github.com/Kitware/VTK
-- PyVista: https://github.com/pyvista/pyvista
-- PyVistaQt: https://github.com/pyvista/pyvistaqt
-- FreeCAD: https://github.com/FreeCAD/FreeCAD
-- Blender: https://github.com/blender/blender
-- Open CASCADE: https://github.com/Open-Cascade-SAS/OCCT
-- SolveSpace: https://github.com/solvespace/solvespace
-- Sweet Home 3D: https://github.com/SweetHome3D/SweetHome3D
-- Three.js: https://github.com/mrdoob/three.js
-- Babylon.js: https://github.com/BabylonJS/Babylon.js
-- IfcOpenShell: https://github.com/IfcOpenShell/IfcOpenShell
-- Clipper2: https://github.com/AngusJohnson/Clipper2
-
-この文書は候補比較の記録であり、**実装順と完了条件の正本は `IMPLEMENTATION_ROADMAP.md`** とする。
+配布はまず `pyside6-deploy` のstandalone modeをN05で評価する。公式にはNuitkaを使用するが、VTKを含むHTDTの配布成功は未確認である。失敗箇所を記録し、必要時にPyInstallerのdirectory形式と比較する。installerや自動更新の作り込みはN90。[公式deployment資料](https://doc.qt.io/qtforpython-6/deployment/deployment-pyside6-deploy.html)

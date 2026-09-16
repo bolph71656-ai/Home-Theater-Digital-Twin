@@ -4,7 +4,7 @@ HTDTは、Windows上で**部屋・ホームシアター配置・測定・予測�
 
 ## 現在の開発方針
 
-2026-09-16にGUI方針を全面改訂しました。
+2026-09-16にGUI方針を全面改訂し、OSSコードと計画の追加レビューを反映しました。
 
 従来のbrowser-first UIとの互換性は要件とせず、今後は**3D CADのようにmouseで部屋とセッティングを直接構築・編集できるnative desktop editor**を製品の中心にします。
 
@@ -58,9 +58,7 @@ HTDTでは、数値フォームを先に埋めるのではなく、3D空間を�
 
 ## Native CAD editor track
 
-Draft PR #37で、native GUIのWindows PoCを進めています。
-
-確認済み:
+[Draft PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37)が実装trackです。過去の進捗文書には、以下のWindows PoC確認が報告されています（今回のレビューで実機再検証はしていません）。
 
 - PySide6 + PyVista/VTK + PyVistaQtのnative Qt window
 - 8頂点の凹polygon room描画
@@ -68,7 +66,9 @@ Draft PR #37で、native GUIのWindows PoCを進めています。
 - `AffineWidget3D`によるspeaker actorのmove/rotate interaction
 - initial snap / undo-redo / immutable Context draft semantics
 
-今後はRoadmapのN10〜N40で、Scene tree、Inspector、SelectionService、CommandHistory、gizmo、snapping、room CAD、speaker/seat/screen/furniture placementを完成させます。
+PR #37の追加commit `0353768`ではnative shell、Scene/viewport選択同期、読取Inspector、view切替、起動スクリプトと直接依存の版固定が追加されています。編集gizmo・数値変更・Save/UndoのGUI接続とpackage受入は未完です。次は**N05: 選択→移動→取消/Undo→保存/再openとstandalone packageの縦断試作**をGitHub上のコードから再現し、その後N10〜N40でCAD基盤を完成させます。
+
+操作・保存・wall/opening参照は[編集契約](docs/CAD_EDITOR_SPEC.md)、Windows/DPI/性能の判定は[受入仕様](docs/CAD_EDITOR_ACCEPTANCE.md)へ具体化しました。旧GUI/API/DBとの互換や機能同等性は完成条件にしません。
 
 ## 対象環境
 
@@ -104,6 +104,10 @@ python -m htdt
 | 文書 | 内容 |
 |---|---|
 | [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | **今後の実装順・milestone・受入条件の正本** |
+| [CAD_EDITOR_SPEC.md](docs/CAD_EDITOR_SPEC.md) | Scene/測定Context分離、操作、保存、座標、wall/opening、非同期契約 |
+| [CAD_EDITOR_ACCEPTANCE.md](docs/CAD_EDITOR_ACCEPTANCE.md) | fixture、操作/DPI/性能、packageの受入 |
+| [UI_DESIGN.md](docs/UI_DESIGN.md) | native CADの画面・mouse/keyboard設計 |
+| [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | CAD-first製品スコープとrelease方針 |
 | [CAD_EDITOR_OSS_RESEARCH.md](docs/CAD_EDITOR_OSS_RESEARCH.md) | 3D CAD/OSS調査、採用・不採用理由、参照コード |
 | [ADR-0001](docs/adr/0001-native-cad-editor-stack.md) | native CAD editor技術決定 |
 | [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | mainへ反映済みの実装事実 |

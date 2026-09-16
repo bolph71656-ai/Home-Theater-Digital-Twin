@@ -1,6 +1,7 @@
 # データ、比較計算、音響モデルの設計
 
-> 2026-09-15 / 実装前の契約。値や許容差は計画上の定義であり検証済みではない。
+> 初版: 2026-09-15 / 測定・比較データの設計契約。個別項目の実装・検証状態は[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md)を参照。
+> 2026-09-16追記: native editorのSceneRevision/AcquisitionContext分離とVTK座標変換は[CAD_EDITOR_SPEC](CAD_EDITOR_SPEC.md)を正本とする。以下のThree.js変換は旧browser実装用でありnative rendererへ流用しない。
 > 取込元ごとの条件は[測定・連携仕様](MEASUREMENT_WORKFLOW.md)、検証方法は[ロードマップ](IMPLEMENTATION_ROADMAP.md)を参照。
 
 ## 1. 履歴モデル
