@@ -5,7 +5,9 @@
 
 ## Native CADの状態
 
-レビュー基準: main `1b510206e7c2fe84ff15fe544a6e3fe2d896dc84`、[Draft PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37) 初回head `9724f4b84aa34b32a77a169b73ce68290de69fdd`、追加確認head `035376816c755f2917119a730c415c31f9ea0d6e`。
+**2026-09-16整理後:** 旧Issue #36 / #38とPR #37は旧仕様で置換済みとしてclose。PR #37は未マージで、branch/commitは保存。現在の後継は[Issue #41 — N05](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41)。実装一時停止を継続し、今回アプリコードは変更していない。
+
+レビュー基準: main `1b510206e7c2fe84ff15fe544a6e3fe2d896dc84`、[旧PR #37（closed）](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37) 初回head `9724f4b84aa34b32a77a169b73ce68290de69fdd`、追加確認head `035376816c755f2917119a730c415c31f9ea0d6e`。
 
 | 区分 | 確認できた内容 |
 |---|---|
@@ -17,7 +19,7 @@
 
 過去のPoC報告は[PR #37の進捗文書](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/blob/9724f4b84aa34b32a77a169b73ce68290de69fdd/docs/NATIVE_3D_UI_PROGRESS.md)に残る。`0353768`の既存windows CIは成功しているが、報告版の数字やCIだけでN05の通し操作・package合格を代用しない。
 
-次はN05の縦断試作をGitHub上に実装する。細分化した作業と判定は[編集契約](CAD_EDITOR_SPEC.md)と[受入仕様](CAD_EDITOR_ACCEPTANCE.md)。
+再開時はIssue #41に従い、N05の縦断試作をGitHub上に実装する。細分化した作業と判定は[編集契約](CAD_EDITOR_SPEC.md)と[受入仕様](CAD_EDITOR_ACCEPTANCE.md)。
 
 ## 確定した実環境
 

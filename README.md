@@ -56,9 +56,11 @@ HTDTでは、数値フォームを先に埋めるのではなく、3D空間を�
 
 実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) を正本とします。
 
-## Native CAD editor track
+## Native CAD editorの計画と保存済み試作
 
-[Draft PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37)が実装trackです。過去の進捗文書には、以下のWindows PoC確認が報告されています（今回のレビューで実機再検証はしていません）。
+今後の追跡先は[Issue #41 — N05](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41)です。旧Issue #36 / #38と旧PR #37は、新ロードマップによる置換としてcloseしました。PR #37のbranchと試作コードは保持しています。実装は一時停止中で、今回の変更は計画と追跡先の整理です。
+
+過去の進捗文書には、以下のWindows PoC確認が報告されています（今回のレビューで実機再検証はしていません）。
 
 - PySide6 + PyVista/VTK + PyVistaQtのnative Qt window
 - 8頂点の凹polygon room描画

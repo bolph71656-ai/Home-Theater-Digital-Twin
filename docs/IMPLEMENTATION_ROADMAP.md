@@ -23,6 +23,8 @@ PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持�
 | [PLACEMENT_OPTIMIZATION_ROADMAP](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 予測・最適化の算法詳細。作業順は本書に従う |
 | [PLAN_REVIEW](PLAN_REVIEW.md) | 指摘・修正・検証記録 |
 
+Issue/PRは本書を具体的な作業へ落とす追跡票とし、本書と矛盾する独立仕様にしない。仕様変更は対応する正本文書も同じPRで更新する。
+
 旧文書のbrowser-first方針、旧v0.x実装順、PR #37内のfeature parity方針は本書で置換する。現行G00/G10/O10の実装契約と新Sceneの設計を混同しない。新Sceneへの変更はSPECと対応adapterで明示する。
 
 ## 1. 完成像と最初のrelease
@@ -145,10 +147,12 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 - domain/adapterの追加時に対応する仕様とstatusを同じPRで更新する。
 - 作業正本はGitHub。所有PCの `C:\Users\ka092\Desktop\HTDT\` は必要な実機検証に使い、不要な一時物は残さない。
 
-## 7. PR #37と現在地
+## 7. 正本化後の追跡先
 
-[Draft PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37)を最初の実装trackとして継続する。初回レビューheadは `9724f4b`、追加確認headは `0353768`。
+2026-09-16、旧仕様のIssue #36 / #38とDraft PR #37を**新仕様で置換済みとしてclose**した。実装完了やマージを意味しない。
 
-同branchの `spatial_editor.py` はsnapshot-copy型ContextDraftの試作。追加commitでは `native_editor.py`、`run-native.ps1`、直接依存の版固定が入り、QMainWindow/viewport/tree選択同期・読取Inspector・view切替まで確認できた。まだGUIの変形・数値編集・Save/Undo接続、standalone package、N05の通し受入は未完。したがってN05/N10/N20を完了とはしない。Windows描画とAffineWidget3Dの過去PoC報告も、今回の実機再検証とは区別する。
+現在の後継は[Issue #41 — N05](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41)。実装は一時停止中であり、今回の整理ではアプリコードを変更していない。再開時の最初の作業はN05の縦断試作とA01/A02受入とする。新しい実装PRは更新されたmainから作成し、milestoneとこの正本、Issue #41を参照する。
 
-次PRではmainの本改訂を取り込み、PR内の旧「feature parity」「G00/G10/O10を無変更で正本化」の記述を整理する。まずN05の再現可能な縦断試作をGitHubへ置き、N10/N20へ進む。O20のbackend拡張を先行させない。
+[旧PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37)のbranch `feat/native-3d-cad-ui` と[固定snapshot 0353768](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/tree/035376816c755f2917119a730c415c31f9ea0d6e)を保存する。QMainWindow/viewport/tree選択同期、読取Inspector、view切替、起動script、直接依存pinは再利用候補。snapshot-copy型ContextDraftと旧保存経路は新Scene契約へ適合させてから使用する。
+
+旧PR/IssueのContext中心保存、旧N10一括受入、既存契約の無変更維持は今後の作業指示として使わない。O20先行拡張も保留し、作業順は本書のN05〜N90へ一本化する。閉じた作業と理由は[レビュー記録](PLAN_REVIEW.md)に残す。
