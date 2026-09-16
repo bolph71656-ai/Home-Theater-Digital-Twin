@@ -105,6 +105,29 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
         except RewApiError as exc:
             raise HTTPException(status_code=502, detail=f'Unexpected REW API response: {exc}') from exc
 
+
+    @app.get('/api/rew/roomsim/state')
+    def rew_roomsim_state() -> dict:
+        try:
+            return RewApiClient.roomsim_snapshot_payload(rew.get_roomsim_snapshot())
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'Unexpected REW Room Simulator response: {exc}') from exc
+
+    @app.get('/api/rew/roomsim/frequency-response')
+    def rew_roomsim_frequency_response(
+        mic_position: str = Query(default='Main', min_length=1, max_length=100),
+        source: str | None = Query(default=None, max_length=100),
+    ) -> dict:
+        try:
+            response = rew.get_roomsim_frequency_response(mic_position=mic_position, source_name=source)
+            return RewApiClient.roomsim_response_payload(response)
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'Unexpected REW Room Simulator response: {exc}') from exc
+
     @app.get('/api/rew/measurements')
     def rew_measurements() -> list[dict]:
         try:
