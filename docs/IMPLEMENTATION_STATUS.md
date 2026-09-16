@@ -12,7 +12,7 @@
 | スピーカー構成 | 現在3.0.2 | 役割・本数は可変 |
 | サブウーファー | なし | 現在の主要シナリオ。将来追加可能 |
 | 測定マイク | 未所有 | 実装ブロッカーにしない |
-| REW | 未導入 | 合成fixtureで実装し、実REW出力での互換性受入は保留 |
+| REW | 未導入 | ファイル/APIともmock・合成fixtureで実装し、実機互換性受入は保留 |
 
 ## 中心目標
 
@@ -29,22 +29,30 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 - M08: DB + RawAsset ZIPバックアップ/復元
 - M09: Plotly FRグラフと最小3D
 - A01: 矩形室モードと6面の一次image-source反射候補。結果は`predicted_geometry_candidate`
+- schema v2: 測定品質、再測定グループ、Raw添付、整合性検査、A/B confounder分離
+- UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
 
-## v0.1補完 — schema v2
+## A03 — 読取専用REW API
 
-- schema v1を起動時に加算的にv2へ移行
-- Measurementへ`quality_status`（usable / warning / invalid / unknown）、理由、確認元、再測定グループ、routing evidenceを保存
-- 有限なFRを自動でusableに昇格させない。実データ未確認時はunknownを既定にする
-- 同じRawAsset SHA-256でもMeasurement/Datasetは自動統合せず、重複候補として通知する
-- `.mdat`、マイク校正、AVR設定、画像等をProject / Context / MeasurementへRawAsset添付できるAPIを追加
-- バックアップ前と復元時に外部キーと全RawAssetの実在を検証し、欠損を成功扱いしない
-- A/B結果へ両測定の品質スナップショットを保存
-- Context差分を保存し、`expected_change_paths`に一致する意図した変更と、それ以外のconfounderを分離
-- 同じ`repeat_group`同士の比較は`repeatability`として分類
+REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを実装する。
+
+- 既定 `http://127.0.0.1:4735`、localhost以外を拒否
+- `GET /measurements` と measurement UUID参照
+- `GET /measurements/{uuid}/frequency-response`
+- 32-bit float Base64を公式仕様どおりbig-endianで復号
+- `startFreq + ppo` または `startFreq + freqStep` から周波数軸を復元
+- requested PPO/unit/smoothingとREW返却PPO/unit/smoothingを分離
+- 測定一覧のlist/object-keyed形状を正規化
+- 壊れたBase64、NaN/Inf、空配列、spacing欠損、phase長不一致を拒否
+- REW未起動時は`/api/rew/status`だけconnected=falseを返し、保存済みHTDTデータは通常利用可能
+- REWへのPOST/PUT/DELETE、Generator、測定開始は実装しない
+
+実REW接続がないため、完了条件のうち「オフラインへ戻れる」「REW変更/発音を起こさない」はmock/コード境界で検証し、実機での最終受入だけを保留する。
 
 ## 未検証・保留
 
 - 実REW安定版テキストとの互換性
+- REW 5.40 APIの所有PC上での実接続
 - 測定マイク校正・絶対SPL
 - RX-A4A HDMIチャンネル割当
 - 高さチャンネルの個別励振
@@ -53,7 +61,7 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 
 ## 次
 
-1. REW 5.40系の公式REST API仕様に沿ったGET専用アダプターを追加する。REW未起動/5.31系でもHTDTはオフライン動作を維持する。
-2. API由来FRのsmoothing/PPO/単位を来歴として保存し、HTDT内部96 PPO再標本化と分離する。
-3. A04としてピーク/ディップ検出条件を固定し、モード/一次反射との候補対応を実装する。原因確定とは表示しない。
-4. IR/ETCは実IRサンプル取得後にA02として開始する。
+1. A04としてピーク/ディップ検出条件を固定し、モード/一次反射との候補対応を実装する。原因確定とは表示しない。
+2. REW API取得をHTDT Datasetへ保存する場合は、API response/queryの来歴をRawAsset/metadataへ固定する。実API確認前にmeasuredへ自動分類しない。
+3. IR/ETCは実IRサンプル取得後にA02として開始する。
+4. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
