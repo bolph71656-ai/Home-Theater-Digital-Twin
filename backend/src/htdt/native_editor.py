@@ -416,8 +416,7 @@ class NativeEditorWindow(QMainWindow):
         if persist:
             self._persist_view_state()
         self._update_actions()
-        if self.gizmo is None:
-            self.viewport.render()
+        self.viewport.render()
 
     def _selection_pivot(self) -> Position3 | None:
         if self.working is None or not self.view_state.selection:
