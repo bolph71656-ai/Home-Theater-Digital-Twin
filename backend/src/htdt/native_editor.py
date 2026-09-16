@@ -322,7 +322,7 @@ class NativeEditorWindow(QMainWindow):
 
     def _picked(self, actor: Any) -> None:
         entity_id = self.actor_ids.get(id(actor))
-        if entity_id:
+        if entity_id and entity_id != self.selected_id:
             self._select(entity_id)
 
     def _tree_selected(self) -> None:
