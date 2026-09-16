@@ -1,199 +1,655 @@
-# 実装ロードマップと受入条件
+# HTDT 実装ロードマップ — CAD-first 正本
 
-> 2026-09-16 / v0.1基盤の実装状況はIMPLEMENTATION_STATUSを正本とする。
-> 本書は今後の作業順と受入条件を定義し、配置探索は独立した長期トラックとして追加する。
+> 改訂: 2026-09-16  
+> 状態: **今後の実装ロードマップの正本**  
+> 対象: Windows 11 x64 / 個人利用  
+> 技術決定: [ADR-0001](adr/0001-native-cad-editor-stack.md)  
+> OSS調査: [CAD_EDITOR_OSS_RESEARCH.md](CAD_EDITOR_OSS_RESEARCH.md)
 
-## 1. 進め方
+## 0. この文書の位置付け
 
-基盤を全部作ってから使える画面を作るのではなく、「一つの実ファイルを取り込み、保存して、比較を再現する」縦断実装から始める。各作業単位は関連する文書・受入条件と一緒に短いブランチ/PRにする。手順のためだけの大量チケットや承認工程は設けない。
+**2026-09-16以降、実装の優先順位・段階・受入条件は本書を正本とする。**
 
-設計の正本は[全体計画](PROJECT_PLAN.md)、[測定・連携](MEASUREMENT_WORKFLOW.md)、[データ・解析](DATA_AND_ANALYSIS.md)。配置探索・シミュレーション・適応測定の正本は[配置探索ロードマップ](PLACEMENT_OPTIMIZATION_ROADMAP.md)。
+旧ロードマップで進めたREW取込、測定履歴、Room Geometry v2、Placement Constraints、Search Space等は有効な実装資産として保持するが、今後の製品中心は「フォーム/グラフ中心のbrowser tool」ではなく、**3D CADのように部屋とホームシアターを直接構築・編集・確認できるnative spatial editor**へ移す。
 
-## 2. 実装前に確かめる最小セット
+互換性維持は要件ではない。既存実装は、新アーキテクチャへ適合し将来の開発効率を上げるものだけ再利用する。
 
-| ID | 確認事項 | 成果物 | 未確認時の進め方 |
-|---|---|---|---|
-| P0-01 | OS/PC、UMIK-1、AVR、配線、REW版 | 環境表とチャンネル対応表 | 所有機種を仮定せず、汎用データ設計を維持 |
-| P0-02 | 対象REW版の出力 | 同条件FL/FRと再測定、可能なら設定A/Bのテキスト | 合成データで進めても、REW互換性を受入済みにしない |
-| P0-03 | 校正・単位・平滑化・窓・位相有効性・測定品質 | 出力設定のメモ/画像、原本、REW警告 | 不明項目の表現を先に確認 |
-| P0-04 | 部屋と位置 | 概略寸法、FL/FRとマイクの座標 | 非矩形なら音響計算の適用制限を設定 |
-| P0-05 | 最初に答えたい問い | 例: EQ条件A/Bの60–200 Hz差 | 仮の問いと明記しスコープを増やさない |
+文書の正本関係:
 
-すべての高度な機能の前提をここで確定しない。IR、API、シミュレーターのサンプルはそれぞれの段階の直前に集める。
-
-## 3. v0.1の作業分解
-
-| ID | 作業・成果 | 依存 | 完了条件 |
-|---|---|---|---|
-| M01 | Windows開発環境、最小起動、依存版固定 | P0-01 | PythonとUIが起動し、localhostで画面が表示できる |
-| M02 | 実テキストの調査、初期parser、原本・単位契約 | P0-02/03、M01 | 元の行・数値を保持し、位相ゼロ列を有効と断定せず、非対応形式を説明できる |
-| M03 | Project/Revision/Context/Measurement、RawAssetとSQLite | M02 | 不変版、schema_version、原本と添付の参照を保存。再起動後も一致し、失敗時に完成測定を残さない |
-| M04 | 周波数グラフと比較契約 | M03 | A/Bごとの帯域・有効点・調整を保存し、訂正後も旧版と保存済み結果を再現 |
-| M05 | 部屋・スピーカー・測定点の数値編集と平面図 | M03、P0-04 | 配置版を複製し、旧測定の座標を保持 |
-| M06 | 取込プレビュー、分類、条件・添付・重複の割当 | M04、M05 | 実測/演算/予測/不明を区別し、再出力は別Dataset、条件訂正は別版として保持 |
-| M07 | 実際のA/B比較、条件差・品質表示、履歴一覧 | M06、M08の最小復元 | 意図した変更、交絡要因、同条件の繰返し差を表示。不良測定は品質指標から除く |
-| M08 | バックアップ・別フォルダ復元 | M03 | DB、数値原本、任意添付を含めて復元。欠損を成功扱いせず元ファイル移動後も使用可能 |
-| M09 | 最小3Dと測定選択の連動 | M05、M07 | 非対称配置で左右・高さ・向きが一致し、2Dでも操作可能 |
-| M10 | Windowsで全手順を確認、手順書 | M01–M08、M09は品質を満たせば含む | 初回作成から比較・復元まで手順に従って完了 |
-
-M09に課題が残る場合は簡易平面図を正式なv0.1 UIとして出せる。3Dを理由に測定管理の完成を止めない。先に汎用シーングラフ、プラグイン基盤、任意形式インポーターを作らない。
-
-IDは実施順の番号ではない。M03の直後にM08の最小保存・復元を通し、それから貴重な実測の蓄積へ進む。M04–M06の画面開発と独立して作業でき、M07の完成を復元設計の前提にしない。M10で比較設定も含む全体復元を確認する。
-
-### v0.1の実利用シナリオ
-
-1. サブウーファーなしのプロジェクトを作る。
-2. 配置R1、マイク点P1、AVR条件C1を保存する。
-3. FL/FRと同条件の再測定を取り込む。
-4. R1をR2へ複製して座標を変更する。R1の測定の表示位置が変わらない。
-5. 条件A/Bを比較し、レベル調整の有無と変更条件を保存する。
-6. アプリとREWを終了し、再起動後も同じ比較を再現する。
-7. バックアップを別フォルダへ復元し、参照原本と曲線の一致を確認する。
-8. 条件の誤記を訂正し、新しい比較を作る。旧比較の条件・数値は変わらず、訂正版があることが分かる。
-9. 指定した.mdat・校正・設定添付も復元先で見つかり、同じ測定の再出力を追加しても二重取得として数えない。
-
-ここまでを実データで完了したらv0.1の価値を確認できたとする。シミュレーションやAPIは不要。
-
-## 4. v0.2以降の作業分解
-
-| ID | 段階・作業 | 開始条件 | 完了条件 |
-|---|---|---|---|
-| A01 | v0.2: モード・一次反射の数式 | M05 | 既知値検証と非矩形/開口の制限表示 |
-| A02 | v0.2: IR取込・ETC・相対時間 | IR実サンプル、M03 | 時間・振幅基準を保持し、合成反射で既知遅延を再現 |
-| A03 | v0.2: 読取専用REW API | 対象版OpenAPI、M06 | オフラインへ戻れて、REW側に変更・発音を起こさない |
-| A04 | v0.2: 谷/ピークと候補対応 | A01、比較契約 | 検出条件を記録し、候補と確定診断を分ける |
-| S01 | v0.5: REW Room Simulator矩形baseline | A03または手動結果取込 | GET契約、幾何変換、192 PPO出力、状態復元を実機検証し、非矩形ではrectangular approximationと明示 |
-| S02 | v0.5: 反射経路の3D表示 | A01、A02、M09 | 反射面内の経路だけ表示し、未対応形状を明示 |
-| S03 | v0.5: polygon-room predictor評価 | G00、REW矩形モデルでは不足する非矩形要件 | pyroomacoustics `from_corners()+extrude()`等をWindowsで独立検証し、8頂点実室fixtureと実測で適用帯域を固定 |
-| R01 | v0.5: 比較レポート | M07 | 画像・指標と測定ID/条件/処理設定を一緒に保存 |
-| V01 | v1.0: 実測配置の比較一覧 | 複数配置の実測 | 席・帯域・移動量を並べ、異なる条件を明示 |
-| V02 | v1.0: 更新・復元の安定化 | M08、移行が必要な変更 | 前版データをバックアップ後に開け、失敗時に戻せる |
-| G00 | 配置探索: Room Geometry v2 | M05 | 任意頂点polygon-prismをContextへ不変保存し、8頂点/凹形状/室外点を検証できる |
-| G10 | 配置探索: Placement Constraints | G00 | allowed/exclusion region、wall clearance、筐体余白、相互離隔、左右連動をhard constraintとして再現できる |
-| O00 | 配置探索: 前提とモデル契約 | 同条件再測定、V01、S01、G00 | 測定ばらつき、モデル適用帯域、入力/出力/版を固定して表示できる |
-| O10 | 配置探索: Search Space | O00、G10 | entity別可動polygon、刻み/seed、連動、禁止領域、離隔から同一feasible候補集合を再生成できる |
-| O20 | 配置探索: Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはS03通過後 | 候補ごとにモデル版・入力ハッシュ付き予測を保存し、中断や一部失敗を追跡できる。矩形近似は近似ラベルを保持 |
-| O30 | 配置探索: Objective Vector | O20、M04 | 帯域偏差、ピーク/谷、左右差、席間差、移動量等を別指標で保存し合成データで検証する |
-| O40 | 配置探索: Pareto Search | O30 | 非劣解、粗探索→局所探索、候補多様性を再現可能に生成し、単一総合点を必須にしない |
-| O50 | 配置探索: Measurement Loop | O40、M07 | 候補からContext revisionと測定計画を作り、REW実測と予測残差を同じ履歴へ結び付ける |
-| O60 | 配置探索: Model Validation | O50、複数実測配置 | 学習/調整用と保留検証用を分離し、順位・傾向が不安定なら推薦を停止する |
-| O70 | 配置探索: Adaptive Planner | O60通過 | surrogate/不確実性/取得関数を版管理し、次測定候補と根拠を保存できる |
-| O80 | 配置探索: Extended Search | 各追加変数のモデル検証 | 多席、toe-in、高さ、追加チャンネル等を検証済み範囲だけ有効化する |
-| X02 | 条件付き: AVR状態読取 | 機種と公開仕様が確定 | 取得できる値と手入力値・不明を区別 |
-| X03 | 条件付き: パッケージ化 | コマンド起動に具体的不便 | 対象Windowsで導入・終了・再起動・削除を確認 |
-
-APIとIRは独立した追加機能なので、一方の機器・データ待ちで他方を止めない。v0.2/v0.5の全項目はv1.0の前提ではなく、実利用で必要なものを選ぶ。v0.1を基にV01/V02へ進んでもよく、高度なシミュレーションや探索が未達でもv1.0は成立する。O10以降も独立トラックであり、O70はO60の独立検証を通過するまで開始しない。
-
-## 5. 必要な検証データ
-
-| Fixture ID | 内容 | 防ぐ問題 |
-|---|---|---|
-| F01 | 既知値のFR、同一曲線、B=A+3 dB | 差分の符号、RMS、レベル調整の取り違え |
-| F02 | 線形/対数周波数軸、異なる範囲、共通範囲なし | 不適切な補間・外挿 |
-| F03 | 位相あり/なし、BOM、CRLF、指数表記、ヘッダー差 | 書式を一種類だけとみなすparser |
-| F04 | 重複周波数、逆順、NaN/Inf、欠けた列、破損末尾 | 不正データの無言修復 |
-| F05 | 対象REW版のFL/FR、再測定、設定A/B | 実互換性・メタデータの再現 |
-| F06 | 48 kHz、直接音＋240 samples後の反射IR | ms/秒、サンプル原点、振幅尺度の誤り |
-| F07 | 正規化/非正規化、異なるt=0のIR出力 | 絶対SPLや遅延の誤推定 |
-| F08 | API応答の配列デコード、UUID重複、途中変更、タイムアウト | 誤対応・部分取込・上書き |
-| F09 | 非対称な部屋内3点とaim、矩形室のモード | 左右反転、単位・向き、数式ミス |
-| F09A | 8頂点の凸/凹polygon room、polygon外だがreference box内の点 | 非矩形境界を外接矩形として誤判定するミス |
-| F09B | allowed region、家具/通路exclusion、壁離隔、筐体余白、FL/FR連動 | 制約違反候補をスコアだけで残すミス |
-| F10 | 取込中断、DB移行失敗、原本欠損、復元先変更 | 履歴破損と復元不能 |
-| F11 | サブなし・Cの低音がフロントへ転送する条件 | 入力チャンネル＝音源という誤った推定 |
-| F12 | 位相なし由来のゼロ列、出所不明のゼロ列、確認済みゼロ位相 | 数値のゼロと情報欠如の混同 |
-| F13 | 不変Dataset/Contextの訂正、旧算法で保存した比較結果 | 最新版への追随で過去の比較が変わる問題 |
-| F14 | A/Bと帯域の狭い第三曲線、除外区間、有効点0/1、基準帯域なし | 重ね描きが指標を変える、欠測補間、空の平均計算 |
-| F15 | 同じ.mdatを参照する複数測定、校正添付、添付欠損 | バックアップに再解析原本が入らない問題 |
-| F16 | 同一ファイル再取込、同一測定の別出力、独立測定の同一内容 | ハッシュと測定IDの混同、二重登録、意図しない統合 |
-| F17 | クリップ/不明品質、REW演算結果/予測/不明のテキスト | 有限配列やREW出力を良好な実測とみなす問題 |
-| F18 | APIのppo指定と実際の平滑化、設定の異なるFR応答 | 内部再標本化とREWの追加処理の混同 |
-| F19 | 手計算可能な小探索空間、禁止領域、左右連動 | 候補漏れ、制約違反、非決定的な候補生成 |
-| F20 | 支配関係が既知の人工Objective Vector集合 | Pareto抽出ミス、単一スコアへの暗黙変換 |
-| F21 | 予測と実測を既知量だけずらした曲線、学習/保留配置 | 残差符号ミス、検証データ漏洩 |
-| F22 | seed固定の適応探索fixtureと単純基準 | 再現不能な推薦、基準より劣る探索を有効化する問題 |
-
-合成データは合成と明記する。実測を公開リポジトリへ入れる際は、その用途に用意したサンプルに限る。自宅の測定原本や校正ファイルを自動でコミットしない。今は収集リストを定義するだけで、実ファイルが存在すると扱わない。
-
-## 6. 数値検証と許容差
-
-下表は初期の受入基準案。実データの出力丸め・処理条件が異なる場合は根拠を記録して変更する。合成データの計算誤差と実室の再現性を同じ許容差にしない。
-
-| 検証 | 期待値/基準 |
+| 文書 | 正本とする内容 |
 |---|---|
-| テキスト数値の取込 | 元の数値表記が示す精度を保持。内部float64への変換誤差以外の丸めを追加しない |
-| 数値保存の往復 | 配列長、dtype、バイト列/ハッシュが一致 |
-| APIデコード | 自作の既知float32配列をbig-endianで符号化したfixtureと一致 |
-| 差分 | A=Bなら差・RMSが0。B=A+3ならA−Bは−3、RMSは3、形状RMSは0（誤差1e−9 dB以下） |
-| 補間 | log(f)に対して一次の合成曲線を誤差1e−9 dB以下で再現。範囲外は値を作らない |
-| 比較の独立性 | A/Bを固定したまま第三曲線を追加してもグリッド・指標は不変。除外区間をまたいで補間しない |
-| 空/不足帯域 | 評価点2未満なら平均/RMS不可。基準点2未満なら形状比較のみ不可。nullと理由を返し0にしない |
-| 履歴の再現 | 校正/条件/単位の訂正後も旧比較の入力版・警告・結果ハッシュは不変。再計算は新しい結果 |
-| 原本と添付 | 復元した全RawAssetのハッシュと参照が一致。参照中の添付欠損は完全バックアップの失敗として検出 |
-| 座標 | 往復誤差1e−9 m以下。既知の左右と正面を画面でも確認 |
-| 矩形室 | W=4、D=5、H=2.5 m、c=343: (1,0,0)=42.875、(0,1,0)=34.3、(0,0,1)=68.6 Hz。誤差1e−9 Hz以下 |
-| 前壁反射 | s=(1,1,1)、r=(1,3,1)、壁y=0: L0=2、Lr=4 m、delta_t=2/343 s、f0=85.75 Hz |
-| 側壁反射 | 同じs/r、壁x=0: delta_L=sqrt(8)−2 m。c/(4×1 m)を返してはならない |
-| IR時間軸 | 48 kHzで240 samples差=5 ms。サンプル単位の検出誤差は1 sample以内 |
-| ETC | 既知の孤立インパルス振幅比0.5を、同一定義・端点から離れた条件で約−6.0206 dBとして表示 |
-| REW出力との照合 | まず同じサンプル位置で元データに一致。別算法のグラフは単位・窓・正規化を揃えた上で個別許容差を設定 |
-| 実室再測定 | 帯域ごとの差と条件を報告。任意の「1 dB以内」を全帯域の普遍的な合格条件にしない |
-| モデル対実測 | 検証に使う配置を学習/調整用から分離し、適用帯域と外れた傾向を記録。小数点の一致を要求しない |
-| 探索空間 | 手計算fixtureで候補数、座標、禁止領域、連動制約が一致。同一SearchSpec/seedは同一候補を生成 |
-| Pareto集合 | 人工Objective Vectorの既知支配関係と一致し、支配される候補を非劣解へ含めない |
-| 予測残差 | 既知オフセットfixtureで符号と帯域集約が一致し、PredictionRunを再計算で上書きしない |
-| 適応探索 | 学習/保留データを分離し、seed・算法版・取得関数を保存。単純基準より有利と確認できない場合は推薦機能を有効化しない |
+| **本書** | 実装順、milestone、受入条件、移行方針 |
+| [ADR-0001](adr/0001-native-cad-editor-stack.md) | native CAD editorの技術・アーキテクチャ決定 |
+| [CAD_EDITOR_OSS_RESEARCH.md](CAD_EDITOR_OSS_RESEARCH.md) | OSS調査、採用/不採用理由、コード参照先 |
+| [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | mainへ反映済みの事実 |
+| [DATA_AND_ANALYSIS.md](DATA_AND_ANALYSIS.md) | 測定/比較データ契約 |
+| [MEASUREMENT_WORKFLOW.md](MEASUREMENT_WORKFLOW.md) | REW/マイク/AVRの測定境界 |
+| [PLACEMENT_OPTIMIZATION_ROADMAP.md](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 最適配置アルゴリズムの詳細。実装順は本書に従う |
 
-同じライブラリで計算した値とそのライブラリの出力を比較するだけでは独立検証にしない。モード・距離には手計算の既知値、保存には再起動・移動、比較には不変量を使う。
+矛盾する旧文書がある場合は、本書とADR-0001を優先する。
 
-## 7. Windowsでの性能と操作目標
+---
 
-測定用の参照PCを決めてから計測する。以下は合格済みの性能ではなく、初期予算。
+## 1. 完成像
 
-| 操作 | 初期条件・目標 | 未達時 |
-|---|---|---|
-| 取込 | 1ファイル最大20万FR点を基準にし、1秒以内に進捗/受付を表示 | バックグラウンド化、入力上限を明示 |
-| プロジェクトを開く | 100測定の索引を3秒以内に表示 | 配列の遅延ロード |
-| 重ね描き | 最大8曲線、各表示点数を必要に応じて縮小し、選択変更1秒以内 | 描画用間引き。解析は元配列を使用 |
-| グラフ操作 | 対数軸ズームとカーソルが実用的 | Plotly実装を調整し、未達ならEChartsを比較 |
-| 3D | 少数のスピーカー・席で30 fpsを目標 | 品質を下げる/平面図へ。解析精度は変更しない |
-| 候補生成 | 実行前に候補数を見積もり、過大な全列挙を警告/縮約できる | 粗格子・空間充填サンプリング・局所細分化へ切替 |
-| バッチ予測 | 進捗、キャンセル、一部失敗の理由を保持 | ワーカー分離。成功候補を失敗候補と混同しない |
+HTDTを起動すると、中央に大きな3D viewportがあり、ユーザーはCADと同様にmouseで空間を作る。
 
-描画の間引きで谷・ピークが消える場合は、区間min/maxを保つ方法を評価する。表示曲線と指標計算の入力を区別し、間引いた描画点を保存原本へ戻さない。
+### 1.1 基本操作
 
-## 8. CI・リポジトリ・配布
+- 空のsceneからroom footprintをclickして描く。
+- wall vertexをdragし、寸法を直接入力して正確に修正する。
+- wall thickness / room height / openingsを編集する。
+- speaker、seat、screen、furniture、AV equipmentをpaletteからdrag/dropする。
+- objectをclickして選択し、gizmoでmove/rotateする。
+- grid、axis、angle、wall、vertex、edge、alignmentへsnapする。
+- Top / Front / Side / Perspectiveを即時切替する。
+- Scene treeから選んでもviewportで選んでも同じselectionになる。
+- Inspectorで数値入力するとviewportへ即反映される。
+- `Ctrl+Z/Ctrl+Shift+Z`、Esc cancel、duplicate、delete、multi-select等が一貫して動く。
+- dimension、distance、angle、clearanceをscene上で確認できる。
 
-実装開始時に必要なものから作る。
+### 1.2 HTDT固有の重畳表示
 
-| 場所 | 役割 |
-|---|---|
-| backend/src/htdt/domain | ID・不変条件・比較契約 |
-| backend/src/htdt/importers | REWファイル解析 |
-| backend/src/htdt/storage | SQLite、原本、復元・移行 |
-| backend/src/htdt/analysis | 比較数式と小さな幾何計算 |
-| backend/src/htdt/optimization | O10以降の探索空間、目的ベクトル、Pareto、適応探索 |
-| backend/src/htdt/integrations | 後続のREW API/AVR/予測モデルアダプター |
-| backend/src/htdt/api | UIとの境界 |
-| frontend/src | 取込、比較、配置、履歴、任意3D |
-| backend/tests/fixtures | 来歴と対応版を示した小さなfixture |
-| docs | 設計と利用手順 |
+同じsceneへ次をlayerとして重ねる。
 
-CIはWindowsでparser、数式、保存/復元、フロントエンド型検査・ビルドを優先する。UI全要素の網羅試験は不要。REWの実機スイープをCIから自動起動しない。APIは保存したfixtureと任意の手動統合検証で確認する。
+- speaker radiation/aim
+- MLP / seat / microphone positions
+- measurement dataset markers
+- room modes / reflection paths
+- allowed / exclusion regions
+- placement search candidates
+- prediction response summaries
+- SPL/metric heatmap
+- scalar field / slice / volume visualization
+- measured-vs-predicted residual
 
-Python/Node/依存ライブラリは、実装時に互換性を確認した版をlockする。REWはユーザーが別途導入する前提で、ライセンス条件を確認せずインストーラーを同梱しない。SBOMや署名基盤、インストーラーはMVPで作らない。
+編集対象と解析表示は同一viewportに存在するが、Document上は別レイヤとして分離する。
 
-Windows手動確認には日本語を含む空白付きパス、元ファイル移動、DB/原本/ZIPの保存失敗、二重起動、Ctrl+C終了後の再起動を含める。ブラウザーを閉じてもプロセスは終了したとは扱わない。実測の継続利用を妨げる保存・起動の問題を優先して直す。
+---
 
-## 9. 決定を見直す条件
+## 2. 確定技術スタック
 
-| 暫定決定 | 見直す具体的な条件 | 既定の対応 |
-|---|---|---|
-| SQLite BLOB | 大きなIRにより保存/復元・メモリが実用範囲を超える | 数値配列だけ外部化する案を計測 |
-| Plotly.js | 定めた8曲線の操作性が調整後も未達 | 同じfixtureでEChartsを比較 |
-| 矩形の参照形状 | 実部屋の位置管理が困難 | まず平面図/注記を追加。一般音響ソルバーは別判断 |
-| pyroomacoustics | Windows導入や検証が成立しない | 任意機能を保留し、既存REWと一次反射を維持 |
-| 配置探索/適応探索 | 保留配置で傾向や順位が不安定、入力感度が高すぎる、単純基準より測定効率が改善しない | 自動ランキング/次候補推薦を停止し、予測値と実測候補の比較へ戻す |
-| ローカルブラウザー | 起動・ファイル選択に継続的な不便 | 起動ラッパーを先に改善し、シェルを後で検討 |
+### 2.1 Production direction
 
-計画変更は理由と影響する受入条件を文書へ反映する。ライブラリ比較のためだけに長期間の並行実装は行わない。
+- Python 3.12+
+- PySide6 / Qt 6 Widgets
+- PyVista / VTK / PyVistaQt
+- Pydantic
+- SQLite
+- Shapely
+- NumPy / SciPy
+
+### 2.2 原則
+
+- Qt WidgetやVTK ActorをDocument modelにしない。
+- Python domain packageからQt/VTKをimportしない。
+- rendererはDocumentのprojectionであり正本ではない。
+- viewport操作もInspector操作も同じCommand/validation経路を通す。
+- scene全体を巨大なmutable dictとして編集し続けない。
+- mouse moveごとにUndo historyを増やさない。
+- full CAD kernelは初期要件にしない。
+- physics engineで配置制約を代用しない。制約は決定論的geometryとして評価する。
+
+---
+
+## 3. 目標アーキテクチャ
+
+```text
+PySide6 Application Shell
+├─ Command/Action Registry
+├─ Scene Tree / Palette / Layers
+├─ 3D Viewport
+├─ Inspector / Constraints / Analysis
+└─ Status / Navigation
+          │
+          ▼
+Editor Application Layer
+├─ ToolController
+├─ SelectionService
+├─ SnapEngine
+├─ CommandHistory
+├─ WorkingDocument
+├─ Clipboard / Duplicate
+└─ ViewState
+          │
+          ▼
+Domain
+├─ Document / Revision
+├─ Room / Wall / Opening
+├─ Speaker / Seat / Screen / Furniture / AV Equipment
+├─ MeasurementPoint
+├─ ConstraintSet
+├─ AnalysisReference
+└─ Geometry / Validation
+          │
+          ├──────────────► Persistence / SQLite / RawAssets
+          │
+          ├──────────────► REW / Prediction / Optimization adapters
+          │
+          ▼
+SceneProjection
+├─ RenderProxyRegistry
+├─ EditableEntityLayer
+├─ AnalysisLayer
+├─ AnnotationLayer
+└─ Selection/Highlight Overlay
+          │
+          ▼
+PyVista / VTK
+```
+
+---
+
+## 4. Document設計
+
+### 4.1 正本はDocument
+
+Documentには少なくとも以下を持つ。
+
+- `document_id`
+- `revision_id`
+- units / coordinate system
+- room geometry
+- openings
+- furniture
+- screen(s)
+- speakers
+- seats/listening positions
+- measurement points
+- AV equipment
+- constraints
+- layer visibility metadata
+- references to measurements / predictions / optimization runs
+
+### 4.2 Entity identity
+
+全entityは安定したIDを持つ。display name、tree row、VTK actor ID、DB row indexをidentityにしない。
+
+### 4.3 Working Documentと保存Revision
+
+- editorを開いた時点のRevisionからWorking Documentを作る。
+- editing中のCommandはWorking Documentへ適用する。
+- Save時に新しいimmutable Revisionを生成する。
+- 過去のmeasurementが参照するRevisionを書き換えない。
+
+### 4.4 Renderer非依存
+
+保存schemaへ以下を入れない。
+
+- VTK actor pointer/ID
+- PyVista object
+- Qt widget state
+- camera内部class
+- renderer固有material object
+
+camera/view/layer visibility等はEditor View Stateとして分離保存できる。
+
+---
+
+## 5. Editor interaction設計
+
+### 5.1 Tool state machine
+
+最低限のTool:
+
+1. Select
+2. Move
+3. Rotate
+4. Room Sketch
+5. Room Vertex Edit
+6. Place Speaker
+7. Place Seat / Listening Point
+8. Place Screen
+9. Place Furniture
+10. Place Measurement Point
+11. Measure
+12. Orbit/Pan temporary navigation
+
+Tool APIの概念:
+
+```text
+activate(context)
+pointer_down(event)
+pointer_move(event)
+pointer_up(event)
+key_down(event)
+cancel()
+deactivate()
+```
+
+Tool固有の一時状態はDocumentへ直接保存しない。
+
+### 5.2 Transform transaction
+
+1. pointer downで対象とbefore stateを取得
+2. drag中はpreview
+3. snap engineへcandidate照会
+4. visual snap feedbackを表示
+5. pointer upで1 Commandをcommit
+6. Esc/right cancelでbefore stateへ完全復元
+
+### 5.3 Selection
+
+- single select
+- Ctrl/Shift multi-select
+- empty click deselect
+- scene tree ↔ viewport bidirectional sync
+- hidden/locked layer policy
+- selection outline / bounding box / gizmo
+
+### 5.4 Snapping
+
+N20で必須:
+
+- metric grid
+- axis constraint
+- angle increment
+- room vertex
+- wall edge projection
+- edge midpoint
+- object center/alignment
+
+後続:
+
+- symmetry axis
+- equal spacing
+- clearance snap
+- speaker toe-in target
+- screen centerline
+- seat row alignment
+
+Snap candidateにはtype、target、distance、priority、world positionを持たせ、採用中候補をviewportへ表示する。
+
+---
+
+## 6. UI/UX原則
+
+### 6.1 Layout
+
+標準layout:
+
+- **Center**: viewportを最大領域
+- **Left upper**: Scene tree
+- **Left lower**: Add / asset palette
+- **Right upper**: Inspector
+- **Right lower**: Constraints / Analysis / Properties
+- **Top**: context-sensitive toolbar + view controls
+- **Bottom**: world coordinates、snap、selection、operation hint
+
+### 6.2 説明文に依存しない
+
+- object種別はicon+shape+labelで区別
+- selectionしたら編集可能handleを直接表示
+- snap targetはhover/guideで示す
+- invalid placementはscene上で理由を指す
+- hidden/locked/analyzed stateをlayer/UIへ一貫表示
+- 操作前に長文説明を読ませない
+
+### 6.3 Progressive disclosure
+
+初期画面に全機能を並べない。
+
+- Beginner: Select / Add / Move / Rotate / Measure / Save
+- context selectionで必要なInspectorだけ表示
+- advanced constraints / analysisはlayer panelから開く
+
+### 6.4 Keyboard
+
+最低限:
+
+- `Ctrl+Z` undo
+- `Ctrl+Shift+Z` redo
+- `Delete` delete
+- `Esc` cancel
+- `F` frame selection
+- `1/3/7`等のview presetはPoCで評価し、Windows/CAD慣習に合う形で固定
+- modifierによるsnap invert / precision move
+
+---
+
+## 7. Milestones
+
+### N00 — Architecture reset / 正本化
+
+**目的**: browser-first互換性を捨て、native CAD editorを正式な開発軸にする。
+
+成果:
+
+- 本ロードマップ
+- ADR-0001
+- OSS調査
+- PR #37をnative editor implementation trackとして継続
+
+完了条件:
+
+- mainから本書へ辿れる
+- 旧ロードマップより本書が優先されることが明記される
+- GUI実装PRが本書のmilestone IDを使用する
+
+### N10 — Native editor shell
+
+成果:
+
+- PySide6 `QMainWindow`
+- central PyVistaQt viewport
+- Scene tree
+- Inspector
+- status bar
+- view presets
+- open/save working document
+
+完了条件:
+
+- Windowsでnative windowとして起動
+- 既存browserを開かず編集workspaceを表示
+- sample room + speakers + MLPをsceneへ描画
+- Scene treeとviewportの選択が同期
+
+### N20 — CAD transform foundation
+
+成果:
+
+- ToolController
+- SelectionService
+- CommandHistory
+- Move/Rotate tools
+- transform gizmo
+- numeric transform Inspector
+- grid/axis/angle/wall snap
+- confirm/cancel
+
+完了条件:
+
+- speakerをmouseで移動し、1操作=1 undoになる
+- Esc cancelで完全に元へ戻る
+- rotationを明示しない位置変更がunknown aimを発明しない
+- viewport/Inspectorが同じvalidation pathを通る
+- multiple selectionの基本transformが破綻しない
+
+### N30 — Room CAD
+
+成果:
+
+- room polygon sketch
+- insert/move/delete vertex
+- room height
+- wall visualization
+- opening model foundation
+- dimension display
+- top/front/side/perspective
+
+完了条件:
+
+- 凹polygon roomをmouseのみで作成できる
+- vertex dragと数値編集が一致
+- self-intersection等のinvalid geometryを保存しない
+- dimensionとstored valueが一致
+- G00 geometry contractを新Documentへ統合または明示移行
+
+### N40 — Home theater objects
+
+成果:
+
+- speaker
+- seat/listening point
+- screen
+- furniture primitive
+- AV equipment marker
+- measurement point
+- asset palette / drag-drop
+- duplicate/group/lock/hide
+
+完了条件:
+
+- 新規部屋を作り、3.0.2等の構成をmouse中心で組める
+- speaker role、position、aimをInspectorとviewportから編集できる
+- screen/seat/furnitureに寸法とtransformを持てる
+
+### N50 — Constraint visualization
+
+成果:
+
+- existing G10 constraintsをviewport layer化
+- allowed/exclusion area
+- clearance visualization
+- linked placement
+- rejected reason overlay
+- candidate preview
+
+完了条件:
+
+- placement candidateの可否をscene上で理解できる
+- invalid理由をtableではなく対象geometryと紐付けて示す
+- constraint editorがscene selectionと同期
+
+### N60 — Measurement integration
+
+成果:
+
+- existing measurement/REW assetsをnative UIへ統合
+- measurement point / Context / Datasetの選択同期
+- FR chart dock
+- measurement overlay
+- comparison layer
+
+完了条件:
+
+- sceneでspeaker/measurement pointを選ぶと関連実測を絞り込める
+- measurementからscene entityへ逆選択できる
+- 過去Revisionの測定位置を現在位置へ書き換えない
+
+### N70 — Prediction / acoustic visualization
+
+成果:
+
+- reflection path
+- room mode annotation
+- prediction candidate cloud
+- heatmap / scalar field
+- slice / volume表示基盤
+- measured/predicted differentiation
+
+完了条件:
+
+- editable geometryとprediction resultを明確に見分けられる
+- prediction layerをoffにしてもDocument編集へ影響しない
+- analysis data量が大きくてもinteraction threadを不必要にblockしない
+
+### N80 — Placement optimization workspace
+
+成果:
+
+- SearchSpec visual editing
+- candidate batch inspection
+- objective vector visualization
+- Pareto candidate comparison
+- measurement loop navigation
+
+完了条件:
+
+- O10以降の候補を3D scene上で選択・比較できる
+- candidate applyはWorking Documentへのpreviewとして扱える
+- predicted rankingとmeasured validationを同じworkflowで追跡できる
+
+### N90 — Productization
+
+成果:
+
+- installer/package
+- crash-safe save
+- layout persistence
+- performance profiling
+- release build
+- documentation/update flow
+
+完了条件:
+
+- 対象Windows PCでinstall / launch / save / reopen / uninstallが成立
+- user dataがapp binary更新で失われない
+- core workflowにbrowser frontendが不要
+
+---
+
+## 8. 既存実装の扱い
+
+### 8.1 再利用する
+
+- REW read-only integration
+- RawAsset provenance
+- measurement/comparison logic
+- SQLite migration/backupのうち新schemaにも価値がある部分
+- G00 polygon room knowledge
+- G10 hard placement constraints
+- O10 deterministic search concepts
+- NumPy/SciPy/Shapely系ロジック
+
+### 8.2 置換対象
+
+- browser中心のnavigation/layout
+- minimal 3D renderer
+- form-first room/placement editing
+- frontend stateを正本とする設計
+- 3D操作と別系統の数値編集経路
+
+### 8.3 互換性を要求しない
+
+必要ならDB/schema/APIをbreaking changeする。
+
+ただし破壊的移行を行うPRは、
+
+- 何を捨てるか
+- 何をmigrationするか
+- 既存データを保持しない場合の理由
+- rollback方法
+
+をPR本文へ記録する。
+
+---
+
+## 9. テスト戦略
+
+可逆的で低影響の変更に機械的なテストを増やさない。**意味のある不変条件だけを自動化する。**
+
+### 必須unit/domain test
+
+- snapping arithmetic
+- transform/coordinate conversion
+- Command apply/revert
+- undo/redo coalescing
+- invalid geometry rejection
+- room polygon rules
+- entity identity preservation
+- serialization round-trip
+- constraint deterministic evaluation
+- measurement revision linkage
+
+### 必要時integration test
+
+- Document -> RenderProxy mapping
+- viewport picking -> SelectionState
+- inspector edit -> Command -> render update
+- save -> reopen -> same Document
+
+### GUIテスト
+
+pixel-perfect screenshot testは主戦略にしない。
+
+Windows実機で以下をsmoke acceptanceする。
+
+- select
+- move
+- rotate
+- snap
+- undo/redo
+- cancel
+- room vertex edit
+- save/reopen
+- scene/inspector sync
+
+Qt/VTKのbackend差による不安定なテストを大量に作らない。
+
+---
+
+## 10. 性能目標
+
+初期受入の目安:
+
+- normal edit scene: mouse操作が視覚的に即応する
+- 1000程度のentity/markersでselectionとorbitが実用的
+- drag中にDB writeや重いacoustic solveをしない
+- analysis layerは必要に応じdecimation/LOD/instancing
+- expensive prediction/optimizationはeditor UI thread外で実行
+
+固定FPSを品質の唯一指標にせず、selection latency、drag latency、camera interaction、save latencyを個別に見る。
+
+---
+
+## 11. GitHub運用
+
+ローカル作業場所は `C:\Users\ka092\Desktop\HTDT\` とする。実機確認、Windows rendering、mouse interaction確認に使用する。
+
+ただし**作業の正本はGitHub**。
+
+各実装PRに最低限残す:
+
+- milestone ID (`N20`, `N30`等)
+- 目的
+- architecture decision
+- 参考OSSと該当source path
+- 実装内容
+- 手動/自動検証結果
+- Windows実機確認結果
+- 既知の制限
+- 次工程
+
+長期作業をローカルだけに保持しない。重要な設計変更はADRまたはroadmap更新を同じPRへ含める。
+
+---
+
+## 12. PR #37の扱い
+
+`WIP: native 3D CAD-style spatial editor` (#37) は、この正本に沿う**最初の実装track**として継続する。
+
+既に確認済み:
+
+- PySide6 + PyVista/VTK + PyVistaQt Windows PoC
+- concave polygon room描画
+- speaker/MLP描画
+- AffineWidget3D transform interaction
+- initial ContextDraft / snap / undo-redo semantics
+
+ただし現在のsnapshot-copy型`ContextDraft`はPoCとして扱い、N20でCommandHistory/transaction modelへ段階的に置換する。
+
+---
+
+## 13. 直近の実装順
+
+1. **N10**: PR #37でnative shellを完成
+2. **N20**: selection / command / gizmo / snapping foundation
+3. **N30**: room CAD
+4. **N40**: speaker/seat/screen/furniture placement
+5. **N50**: G10 constraint visualization
+6. **N60**: measurement/REW integration
+7. **N70**: acoustic visualization
+8. **N80**: placement optimization UI
+9. **N90**: package/release
+
+O20等の最適化backendを先に増やすより、**既存のgeometry/constraint/search結果を人間が3Dで理解・編集できる基盤を先に完成させる。**
+
+---
+
+## 14. Definition of Done — CAD foundation
+
+N10〜N40を通過した時点で、以下を満たせば「HTDTの新GUI基盤が成立」と判定する。
+
+- browserを使わずnative applicationだけでroomを作れる
+- mouseでspeaker/seat/screen/furnitureを配置できる
+- move/rotate gizmoが使える
+- snapと数値入力を併用できる
+- scene tree / viewport / inspectorが同期する
+- top/front/side/perspectiveで同じDocumentを編集できる
+- undo/redo/cancelが予測可能に動く
+- save/reopenで同じsceneが復元する
+- measurement/analysisを載せるためのrenderer非依存Documentが確立している
+
+この基盤を満たさない状態で、GUIの見栄えだけを仕上げたり、高度な最適化backendだけを増やしたりしない。
