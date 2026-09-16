@@ -114,7 +114,6 @@ class TranslationWidget3D:
                 plotter.iren.add_observer('LeftButtonReleaseEvent', self._release, interactor_style_fallback=False),
             )
         )
-        plotter.render()
 
     @property
     def active_axis_index(self) -> int | None:
@@ -277,7 +276,6 @@ class RotationWidget3D:
                 plotter.iren.add_observer('LeftButtonReleaseEvent', self._release, interactor_style_fallback=False),
             )
         )
-        plotter.render()
 
     @property
     def active_axis_index(self) -> int | None:
