@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
             threading.Thread(target=open_browser_when_ready, args=(port,), daemon=True).start()
 
         config = uvicorn.Config(
-            'htdt.main:app',
+            'htdt.server:app',
             host=HOST,
             port=port,
             reload=False,
