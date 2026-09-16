@@ -46,7 +46,21 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
 - V02: schema移行前ZIP、移行後整合性検査、失敗時DB/RawAssetロールバック
 - S01 backend: REW Room Simulator read-only state/FR契約、座標変換、実beta135 fixture。モデルは`rectangular_room_only`として明示
-- Geometry gap: 現行Contextは矩形/reference boxのみ。8頂点実室のexact geometryは未実装で、G00 polygon-prism + G10 placement constraintsを正式ロードマップ化
+- G00: Contextへ任意頂点polygon-prismをexact room geometryとして不変保存。8頂点/凹形状、wall edge ID、polygon内外判定、3D境界表示を実装。G10 placement constraintsは次段
+
+## G00 — Room Geometry v2
+
+非矩形実室をreference boxと分離し、`geometry_kind=polygon_prism`としてordered polygon + 一定天井高をContext revisionへ保存できる。
+
+- 各頂点に一意な`vertex_id`を持たせ、隣接頂点から安定したwall edge IDを導出。
+- Shapely 2.1.2でsimple polygon validityと境界込み`covers`を使用。
+- 自己交差、重複頂点/ID、非有限座標、reference box外への突出を拒否。
+- speaker/MLPがreference box内でもpolygon外ならContext保存を拒否。
+- `GET /api/projects/{project_id}/contexts/{context_id}/geometry`で面積、周長、bounds、凸/凹、wall edgesを返す。
+- UIで`vertex_id,x,y` ordered verticesを入力/複製し、3Dでpolygon-prism境界を表示。
+- A01矩形room mode/6面反射はpolygon/reference-box Contextでは実行不可。
+
+詳細契約は[Room Geometry contract](ROOM_GEOMETRY.md)を参照する。家具・通路・壁離隔・筐体寸法等はG10で別ConstraintSetとして実装する。
 
 ## A03 — 読取専用REW API / UI
 

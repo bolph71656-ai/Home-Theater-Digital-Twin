@@ -111,6 +111,7 @@ type SpeakerDraft = {
 }
 type ExcludedBand = { low_hz: number; high_hz: number }
 type MicOrientation = 'ceiling' | 'toward_speakers' | 'unknown'
+type RoomGeometryKind = 'rectangular' | 'reference_box' | 'polygon_prism'
 type ReadinessCheck = { key: string; passed: boolean; detail: string }
 type MeasurementReadiness = {
   classification: string
@@ -168,6 +169,19 @@ function parseList(text: string): string[] {
   return text.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean)
 }
 
+function parseRoomVertices(text: string): { vertex_id: string; x_m: number; y_m: number }[] {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  if (lines.length < 3) throw new Error('多角形roomは3頂点以上を入力してください')
+  const vertices = lines.map((line, index) => {
+    const parts = line.split(',').map((part) => part.trim())
+    if (parts.length !== 3 || !parts[0]) throw new Error(`頂点${index + 1}は vertex_id,x,y の形式で入力してください`)
+    return { vertex_id: parts[0], x_m: numeric(parts[1], `頂点${index + 1} X`), y_m: numeric(parts[2], `頂点${index + 1} Y`) }
+  })
+  if (new Set(vertices.map((vertex) => vertex.vertex_id)).size !== vertices.length) throw new Error('vertex_idは重複できません')
+  return vertices
+}
+
+
 function displayValue(value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'object') return JSON.stringify(value)
@@ -187,6 +201,8 @@ export default function App() {
 
   const [projectName, setProjectName] = useState('Home Theater')
   const [room, setRoom] = useState({ width: '', depth: '', height: '' })
+  const [roomGeometryKind, setRoomGeometryKind] = useState<RoomGeometryKind>('rectangular')
+  const [roomVerticesText, setRoomVerticesText] = useState('')
   const [mlp, setMlp] = useState({ x: '', y: '', z: '' })
   const [micOrientation, setMicOrientation] = useState<MicOrientation>('ceiling')
   const [micSerial, setMicSerial] = useState('')
@@ -293,6 +309,8 @@ export default function App() {
     if (!activeContext) return
     const payload = activeContext.payload
     setRoom({ width: String(payload.room.width_m), depth: String(payload.room.depth_m), height: String(payload.room.height_m) })
+    setRoomGeometryKind(payload.room.geometry_kind ?? 'rectangular')
+    setRoomVerticesText(payload.room.footprint_vertices?.map((vertex) => `${vertex.vertex_id},${vertex.x_m},${vertex.y_m}`).join('\n') ?? '')
     setMlp({
       x: String(payload.measurement_point.position.x_m),
       y: String(payload.measurement_point.position.y_m),
@@ -320,7 +338,11 @@ export default function App() {
     try {
       if (!projectId) throw new Error('先にプロジェクトを作成してください')
       const payload = {
-        room: { width_m: numeric(room.width, '部屋幅'), depth_m: numeric(room.depth, '部屋奥行'), height_m: numeric(room.height, '部屋高さ') },
+        room: {
+          width_m: numeric(room.width, '部屋幅'), depth_m: numeric(room.depth, '部屋奥行'), height_m: numeric(room.height, '部屋高さ'),
+          geometry_kind: roomGeometryKind,
+          ...(roomGeometryKind === 'polygon_prism' ? { footprint_vertices: parseRoomVertices(roomVerticesText) } : {}),
+        },
         speakers: speakers.map(speakerPayload),
         measurement_point: {
           point_id: 'MLP',
@@ -466,6 +488,7 @@ export default function App() {
   async function runAcoustics() {
     try {
       if (!projectId || !activeContext) throw new Error('配置版を選択してください')
+      if ((activeContext.payload.room.geometry_kind ?? 'rectangular') !== 'rectangular') throw new Error('現在のA01幾何解析は矩形室専用です。polygon室では実行しません')
       const maxHz = numeric(maxModeHz, 'モード上限')
       const speed = numeric(soundSpeed, '音速')
       const result = await api<AcousticAnalysis>(`/api/projects/${projectId}/contexts/${activeContext.id}/acoustics?max_hz=${encodeURIComponent(maxHz)}&sound_speed_m_s=${encodeURIComponent(speed)}`)
@@ -528,6 +551,11 @@ export default function App() {
             <label>奥行 Y (m)<input value={room.depth} onChange={(event) => setRoom({ ...room, depth: event.target.value })} /></label>
             <label>高さ Z (m)<input value={room.height} onChange={(event) => setRoom({ ...room, height: event.target.value })} /></label>
           </div>
+          <div className="grid2">
+            <label>Room geometry<select value={roomGeometryKind} onChange={(event) => setRoomGeometryKind(event.target.value as RoomGeometryKind)}><option value="rectangular">矩形（exact）</option><option value="polygon_prism">多角形prism（exact footprint）</option><option value="reference_box">reference boxのみ（形状unknown）</option></select></label>
+            {roomGeometryKind === 'polygon_prism' && <label>Footprint vertices (vertex_id,x,y)<textarea rows={8} value={roomVerticesText} onChange={(event) => setRoomVerticesText(event.target.value)} placeholder={'v0,0,0\nv1,4,0\nv2,4,5\n…'} /></label>}
+          </div>
+          {roomGeometryKind === 'polygon_prism' && <p className="hint">頂点はX=右/Y=後方の順序付き境界です。最初の頂点を末尾へ重複入力しません。8角形なら8行入力します。</p>}
           <h3>MLP</h3>
           <div className="grid3">
             <label>X<input value={mlp.x} onChange={(event) => setMlp({ ...mlp, x: event.target.value })} /></label>
@@ -666,8 +694,9 @@ export default function App() {
         <div className="grid3">
           <label>Room mode上限 (Hz)<input value={maxModeHz} onChange={(event) => setMaxModeHz(event.target.value)} /></label>
           <label>音速 (m/s)<input value={soundSpeed} onChange={(event) => setSoundSpeed(event.target.value)} /></label>
-          <div className="field-action"><button disabled={!activeContext} onClick={() => void runAcoustics()}>選択版を解析</button></div>
+          <div className="field-action"><button disabled={!activeContext || (activeContext.payload.room.geometry_kind ?? 'rectangular') !== 'rectangular'} onClick={() => void runAcoustics()}>選択版を解析</button></div>
         </div>
+        {activeContext && (activeContext.payload.room.geometry_kind ?? 'rectangular') !== 'rectangular' && <p className="hint">このA01解析は矩形専用です。polygon/reference box Contextへ矩形モード・6面反射を誤適用しません。</p>}
         {acoustics && <>
           <div className="analysis-banner"><strong>{acoustics.classification}</strong><span>{acoustics.algorithm_version}</span><span>c={acoustics.sound_speed_m_s} m/s</span></div>
           {acoustics.skipped_speaker_ids.length > 0 && <p className="hint">座標未入力のため反射計算を省略: {acoustics.skipped_speaker_ids.join(', ')}</p>}

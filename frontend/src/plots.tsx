@@ -9,7 +9,13 @@ export type Speaker = {
 }
 
 export type ContextPayload = {
-  room: { width_m: number; depth_m: number; height_m: number }
+  room: {
+    width_m: number
+    depth_m: number
+    height_m: number
+    geometry_kind?: 'rectangular' | 'reference_box' | 'polygon_prism'
+    footprint_vertices?: { vertex_id: string; x_m: number; y_m: number }[] | null
+  }
   speakers: Speaker[]
   measurement_point: {
     label: string
@@ -75,6 +81,30 @@ export function FrequencyPlot({ result }: { result: ComparisonResult }) {
 }
 
 export function RoomPlot({ context }: { context: ContextPayload }) {
+  const polygonVertices = context.room.geometry_kind === 'polygon_prism' && context.room.footprint_vertices?.length
+    ? context.room.footprint_vertices
+    : [
+        { vertex_id: 'front_left', x_m: 0, y_m: 0 },
+        { vertex_id: 'front_right', x_m: context.room.width_m, y_m: 0 },
+        { vertex_id: 'rear_right', x_m: context.room.width_m, y_m: context.room.depth_m },
+        { vertex_id: 'rear_left', x_m: 0, y_m: context.room.depth_m },
+      ]
+  const closedBoundary = [...polygonVertices, polygonVertices[0]]
+  const boundaryName = context.room.geometry_kind === 'reference_box' ? 'Reference box' : 'Room boundary'
+  const boundaryTraces: Data[] = [0, context.room.height_m].map((height, index) => ({
+    type: 'scatter3d', mode: 'lines', name: boundaryName,
+    x: closedBoundary.map((point) => point.x_m),
+    y: closedBoundary.map(() => height),
+    z: closedBoundary.map((point) => point.y_m),
+    showlegend: index === 0,
+  }))
+  polygonVertices.forEach((point) => boundaryTraces.push({
+    type: 'scatter3d', mode: 'lines', name: boundaryName,
+    x: [point.x_m, point.x_m],
+    y: [0, context.room.height_m],
+    z: [point.y_m, point.y_m],
+    showlegend: false,
+  }))
   const positioned = context.speakers.filter((speaker) => speaker.position)
   const speakerTrace: Data = {
     type: 'scatter3d',
@@ -111,6 +141,6 @@ export function RoomPlot({ context }: { context: ContextPayload }) {
     },
     legend: { orientation: 'h' },
   }
-  const ref = usePlot([speakerTrace, listenerTrace], layout)
+  const ref = usePlot([...boundaryTraces, speakerTrace, listenerTrace], layout)
   return <div ref={ref} className="plot" aria-label="Room spatial plot" />
 }
