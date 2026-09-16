@@ -50,3 +50,6 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: Smoke test built local app
+        run: python -m pytest backend\tests\test_built_frontend.py -q
