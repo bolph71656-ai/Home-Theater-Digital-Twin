@@ -71,13 +71,7 @@ class TranslationWidget3D:
         )
         for axis, color in zip(self.axes, colors, strict=True):
             handle = plotter.add_mesh(
-                pv.Arrow(
-                    start=self.origin,
-                    direction=axis,
-                    tip_radius=0.14,
-                    shaft_radius=0.075,
-                    scale=self.actor_length * 0.75,
-                ),
+                pv.Arrow(start=self.origin, direction=axis, scale=self.actor_length * 0.75),
                 color=color,
                 lighting=False,
                 pickable=True,
