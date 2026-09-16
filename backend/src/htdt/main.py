@@ -21,6 +21,7 @@ from .database import SCHEMA_VERSION, Store
 from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
 from .geometry import room_geometry_payload
 from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, RewApiSnapshotImportRequest, SessionCreate
+from .placement_constraints import ConstraintSetCreate, PlacementEvaluationRequest, evaluate_constraint_set, validate_constraint_set_for_context
 from .readiness import evaluate_measurement_readiness
 from .report import build_report_payload, render_report_html
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
@@ -199,6 +200,45 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
             return store.create_context(project_id, request.model_dump(mode='json'), request.parent_context_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/projects/{project_id}/constraint-sets')
+    def list_constraint_sets(project_id: str, context_id: str | None = Query(default=None)) -> list[dict]:
+        return store.list_constraint_sets(project_id, context_id)
+
+    @app.post('/api/projects/{project_id}/constraint-sets', status_code=201)
+    def create_constraint_set(project_id: str, request: ConstraintSetCreate) -> dict:
+        context = store.get_context(project_id, request.context_id)
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            spec = validate_constraint_set_for_context(request, context['payload'])
+            return store.create_constraint_set(project_id, request.context_id, request.name, spec)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get('/api/projects/{project_id}/constraint-sets/{constraint_set_id}')
+    def get_constraint_set(project_id: str, constraint_set_id: str) -> dict:
+        record = store.get_constraint_set(project_id, constraint_set_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail='ConstraintSet not found')
+        return record
+
+    @app.post('/api/projects/{project_id}/constraint-sets/{constraint_set_id}/evaluate')
+    def evaluate_placement(project_id: str, constraint_set_id: str, request: PlacementEvaluationRequest) -> dict:
+        record = store.get_constraint_set(project_id, constraint_set_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail='ConstraintSet not found')
+        if not record['integrity_valid']:
+            raise HTTPException(status_code=409, detail='ConstraintSet integrity check failed')
+        context = store.get_context(project_id, record['context_id'])
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            result = evaluate_constraint_set(context['payload'], record['spec'], request)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {**result, 'constraint_set_id': record['id'], 'constraint_set_spec_sha256': record['spec_sha256'],
+                'context_id': record['context_id']}
 
     @app.get('/api/projects/{project_id}/contexts/{context_id}/measurement-readiness')
     def measurement_readiness(project_id: str, context_id: str) -> dict:

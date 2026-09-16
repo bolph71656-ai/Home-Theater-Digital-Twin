@@ -143,7 +143,7 @@ export function PlacementOverviewPanel() {
   return (
     <main className="shell">
       <section className="panel">
-        <div className="section-title"><h2>9. Measured layout overview</h2><span>履歴一覧 · ランキングしない</span></div>
+        <div className="section-title"><h2>Layout History</h2><span>履歴一覧 · ランキングしない</span></div>
         <p className="hint">同じchannel / measurement pointの実測を配置版ごとに並べます。移動量、品質、AVR/部屋/MLP差、保存済みA/B比較を確認できます。この一覧自体は「最良配置」を選びません。</p>
         <div className="grid4">
           <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">選択</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>

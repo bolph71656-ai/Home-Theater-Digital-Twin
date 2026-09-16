@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { api, fileToBase64 } from './api'
 import { FeatureCandidatePanel } from './FeatureCandidates'
+import { PlacementConstraintPanel } from './PlacementConstraints'
 import { FrequencyPlot, RoomPlot, type ComparisonResult, type ContextPayload, type Speaker } from './plots'
 
 type Health = {
@@ -124,6 +125,18 @@ type MeasurementReadiness = {
   notice: string
 }
 
+const workflowNav = [
+  { href: '#project', icon: 'project', label: 'Project' },
+  { href: '#room', icon: 'room', label: 'Room' },
+  { href: '#constraints', icon: 'constraints', label: 'Constraints' },
+  { href: '#measure', icon: 'measure', label: 'Measure' },
+  { href: '#compare', icon: 'compare', label: 'Compare' },
+  { href: '#model', icon: 'model', label: 'Model' },
+  { href: '#features', icon: 'features', label: 'Features' },
+] as const
+
+type WorkflowIconName = typeof workflowNav[number]['icon']
+
 const initialSpeakers: SpeakerDraft[] = [
   { speaker_id: 'FL', role: 'front_left', model: '', x: '', y: '', z: '' },
   { speaker_id: 'C', role: 'front_center', model: '', x: '', y: '', z: '' },
@@ -131,6 +144,19 @@ const initialSpeakers: SpeakerDraft[] = [
   { speaker_id: 'HL', role: 'height_front_left', model: '', x: '', y: '', z: '' },
   { speaker_id: 'HR', role: 'height_front_right', model: '', x: '', y: '', z: '' },
 ]
+
+function WorkflowIcon({ name }: { name: WorkflowIconName }) {
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  return <svg viewBox="0 0 24 24" aria-hidden="true">
+    {name === 'project' && <><rect {...common} x="4" y="5" width="16" height="14" rx="3"/><path {...common} d="M8 9h8M8 13h5"/></>}
+    {name === 'room' && <><path {...common} d="M4 11 12 5l8 6v8H4z"/><path {...common} d="M9 19v-5h6v5"/></>}
+    {name === 'constraints' && <><circle {...common} cx="7" cy="7" r="2"/><circle {...common} cx="17" cy="17" r="2"/><path {...common} d="M9 7h8M17 9v6M7 9v8h8"/></>}
+    {name === 'measure' && <><path {...common} d="M5 17V7M9 17V4M13 17v-7M17 17V6"/><path {...common} d="M4 19h16"/></>}
+    {name === 'compare' && <><path {...common} d="M5 8h11M13 5l3 3-3 3M19 16H8M11 13l-3 3 3 3"/></>}
+    {name === 'model' && <><path {...common} d="m12 4 7 4-7 4-7-4zM5 12l7 4 7-4M5 16l7 4 7-4"/></>}
+    {name === 'features' && <><path {...common} d="M4 15h3l2-7 3 10 2-6 2 3h4"/></>}
+  </svg>
+}
 
 function numeric(value: string, label: string): number {
   const result = Number(value)
@@ -198,6 +224,7 @@ export default function App() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [helpVisible, setHelpVisible] = useState(false)
 
   const [projectName, setProjectName] = useState('Home Theater')
   const [room, setRoom] = useState({ width: '', depth: '', height: '' })
@@ -287,6 +314,11 @@ export default function App() {
     setAcoustics(null)
     setReadiness(null)
   }, [selectedContextId])
+
+  useEffect(() => {
+    document.body.classList.toggle('help-visible', helpVisible)
+    return () => document.body.classList.remove('help-visible')
+  }, [helpVisible])
 
   function notify(text: string) {
     setMessage(text)
@@ -527,10 +559,15 @@ export default function App() {
         </div>
       </header>
 
+      <nav className="workflow-nav" aria-label="Workflow">
+        <div className="workflow-links">{workflowNav.map((item) => <a key={item.href} href={item.href}><WorkflowIcon name={item.icon} />{item.label}</a>)}</div>
+        <button type="button" className={helpVisible ? "help-toggle active" : "help-toggle"} aria-pressed={helpVisible} onClick={() => setHelpVisible(!helpVisible)}>?</button>
+      </nav>
+
       {(message || error) && <div className={error ? 'notice error' : 'notice'}>{error || message}</div>}
 
-      <section className="panel">
-        <div className="section-title"><h2>1. Project</h2><span>ローカル保存</span></div>
+      <section className="panel" id="project">
+        <div className="section-title"><h2>Project</h2><span>ローカル保存</span></div>
         <form className="row" onSubmit={createProject}>
           <input value={projectName} onChange={(event) => setProjectName(event.target.value)} aria-label="Project name" />
           <button type="submit">新規作成</button>
@@ -543,8 +580,8 @@ export default function App() {
         </form>
       </section>
 
-      <section className="panel">
-        <div className="section-title"><h2>2. Room / Layout / AVR snapshot</h2><span>{contexts.length ? `${contexts.length} revisions` : '未登録'}</span></div>
+      <section className="panel" id="room">
+        <div className="section-title"><h2>Room & Layout</h2><span>{contexts.length ? `${contexts.length} revisions` : '未登録'}</span></div>
         <form onSubmit={saveContext}>
           <div className="grid3">
             <label>幅 X (m)<input value={room.width} onChange={(event) => setRoom({ ...room, width: event.target.value })} /></label>
@@ -610,8 +647,10 @@ export default function App() {
         </>}
       </section>
 
-      <section className="panel">
-        <div className="section-title"><h2>3. REW text import</h2><span>原本 + quality snapshot</span></div>
+      <PlacementConstraintPanel projectId={projectId} context={activeContext} />
+
+      <section className="panel" id="measure">
+        <div className="section-title"><h2>Measurements</h2><span>原本 + quality snapshot</span></div>
         <div className="grid2">
           <label>測定ファイル<input type="file" accept=".txt,.dat,.frd" onChange={(event) => void chooseMeasurementFile(event.target.files?.[0] ?? null)} /></label>
           <label>条件版<select value={selectedContextId} onChange={(event) => setSelectedContextId(event.target.value)}><option value="">選択</option>{contexts.map((context) => <option key={context.id} value={context.id}>R{context.revision_number}</option>)}</select></label>
@@ -637,8 +676,8 @@ export default function App() {
         </div>
       </section>
 
-      <section className="panel">
-        <div className="section-title"><h2>4. Raw attachments</h2><span>.mdat / calibration / AVR settings</span></div>
+      <section className="panel" id="assets">
+        <div className="section-title"><h2>Source Files</h2><span>.mdat / calibration / AVR settings</span></div>
         <p className="hint">周波数応答テキストとは別に、再解析や復元に必要な原本をRawAssetとして保存します。自動解析はしません。</p>
         <div className="grid2">
           <label>添付ファイル<input type="file" onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)} /></label>
@@ -652,8 +691,8 @@ export default function App() {
         </div>
       </section>
 
-      <section className="panel">
-        <div className="section-title"><h2>5. A/B comparison</h2><span>96 PPO / log₂ interpolation / A−B</span></div>
+      <section className="panel" id="compare">
+        <div className="section-title"><h2>Compare</h2><span>96 PPO / log₂ interpolation / A−B</span></div>
         <div className="grid2">
           <label>A<select value={datasetA} onChange={(event) => setDatasetA(event.target.value)}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.quality_status} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
           <label>B<select value={datasetB} onChange={(event) => setDatasetB(event.target.value)}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.quality_status} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
@@ -688,8 +727,8 @@ export default function App() {
         {!activeComparison && comparisons[0] && <button className="ghost" onClick={() => setActiveComparison(comparisons[0])}>最新の保存済み比較を表示</button>}
       </section>
 
-      <section className="panel">
-        <div className="section-title"><h2>6. Geometry candidates</h2><span>予測候補 · 実測診断ではない</span></div>
+      <section className="panel" id="model">
+        <div className="section-title"><h2>Geometry</h2><span>予測候補 · 実測診断ではない</span></div>
         <p className="hint">矩形室の固有周波数と、各スピーカー→MLPの一次鏡像反射を計算します。壁の吸音率、反射位相、スピーカーの指向性、開口や家具はまだモデル化しません。</p>
         <div className="grid3">
           <label>Room mode上限 (Hz)<input value={maxModeHz} onChange={(event) => setMaxModeHz(event.target.value)} /></label>

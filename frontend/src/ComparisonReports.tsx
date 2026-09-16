@@ -37,7 +37,7 @@ export function ComparisonReportPanel() {
   return (
     <main className="shell">
       <section className="panel">
-        <div className="section-title"><h2>8. Saved comparison reports</h2><span>self-contained HTML / JSON</span></div>
+        <div className="section-title"><h2>Saved Comparisons</h2><span>self-contained HTML / JSON</span></div>
         <p className="hint">保存済みComparisonスナップショットからレポートを生成します。現在の配置や測定を再計算しないため、過去の比較根拠をそのまま持ち出せます。</p>
         <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">選択</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         {error && <div className="notice error">{error}</div>}
