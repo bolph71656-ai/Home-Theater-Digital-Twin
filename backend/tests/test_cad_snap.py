@@ -52,6 +52,7 @@ def _snap_candidate(stable_id: str, kind: str, x_m: float) -> SnapCandidate:
         kind=kind,  # type: ignore[arg-type]
         entity_id='target',
         target=Position3(x_m=x_m, y_m=0.0, z_m=0.0),
+        screen_anchor=Position3(x_m=x_m, y_m=0.0, z_m=0.0),
         axis='x',
         label=stable_id,
     )

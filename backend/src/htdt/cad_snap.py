@@ -24,6 +24,7 @@ class SnapCandidate:
     kind: SnapKind
     entity_id: str
     target: Position3
+    screen_anchor: Position3
     axis: AxisName
     label: str
 
@@ -60,7 +61,7 @@ class SnapSelector:
         project: ScreenProjector,
     ) -> SnapSelection | None:
         probe_screen = project(probe)
-        scored = [(candidate, _screen_distance(project(candidate.target), probe_screen)) for candidate in candidates]
+        scored = [(candidate, _screen_distance(project(candidate.screen_anchor), probe_screen)) for candidate in candidates]
         if self._retained_id is not None:
             for candidate, distance in scored:
                 if candidate.stable_id == self._retained_id and distance <= self.retain_radius_dip:
@@ -190,6 +191,7 @@ def _candidate(
         kind=kind,
         entity_id=entity.entity_id,
         target=_with_axis(probe, axis, value),
+        screen_anchor=feature_position,
         axis=axis,
         label=f'{kind} · {entity.name} · {axis.upper()}={value:.3f} m',
     )

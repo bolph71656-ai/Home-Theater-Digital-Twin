@@ -580,7 +580,7 @@ class NativeEditorWindow(QMainWindow):
         if not isinstance(self.gizmo, TranslationWidget3D):
             return
         if not self.working.has_preview:
-            self.drag_base_position = self.working.committed_document.entity(self.selected_id).position
+            self.drag_base_position = self._selection_pivot()
             self.working.begin_group_move(selection)
             self.snap_selector.reset()
             self.capture_watch.start()
