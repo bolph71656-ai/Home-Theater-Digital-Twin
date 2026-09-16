@@ -82,12 +82,29 @@ def test_snap_selector_reuses_static_anchor_projections_until_reset() -> None:
         return (position.x_m * 10.0, 0.0)
 
     selector.select(candidates, Position3(x_m=1.1, y_m=0.0, z_m=0.0), project)
-    assert calls == 3  # probe + 2 anchors
+    assert calls == 7  # 4 projection-signature sentinels + probe + 2 anchors
     selector.select(candidates, Position3(x_m=1.2, y_m=0.0, z_m=0.0), project)
-    assert calls == 4  # only the new probe is projected
+    assert calls == 12  # signature + probe; retained anchor remains cached
     selector.reset()
     selector.select(candidates, Position3(x_m=1.2, y_m=0.0, z_m=0.0), project)
-    assert calls == 7
+    assert calls == 19
+
+
+def test_snap_selector_invalidates_projection_cache_when_camera_mapping_changes() -> None:
+    selector = SnapSelector(acquire_radius_dip=8.0, retain_radius_dip=12.0)
+    candidates = (_snap_candidate('a', 'vertex', 1.0),)
+    scale = 10.0
+
+    def project(position: Position3) -> tuple[float, float]:
+        return (position.x_m * scale, position.y_m * scale)
+
+    acquired = selector.select(candidates, Position3(x_m=1.05, y_m=0.0, z_m=0.0), project)
+    assert acquired is not None and acquired.candidate.stable_id == 'a'
+
+    scale = 20.0
+    retained = selector.select(candidates, Position3(x_m=1.5, y_m=0.0, z_m=0.0), project)
+    assert retained is not None and retained.candidate.stable_id == 'a'
+    assert retained.distance_dip == pytest.approx(10.0)
 
 
 def test_snap_priority_precedes_distance_and_stable_id_breaks_ties() -> None:
