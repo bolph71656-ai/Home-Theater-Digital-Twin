@@ -70,8 +70,8 @@ def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> 
         assert manifest == {'reason': 'pre_migration', 'schema_version': 1, 'target_schema_version': 2}
         snapshot = tmp_path / 'snapshot.sqlite3'
         snapshot.write_bytes(archive.read('htdt.sqlite3'))
-        assert archive.read(next(name for name in archive.namelist() if name.startswith('assets/') and name != 'assets/')) == asset_bytes
-    assert _schema_version(snapshot.parent / snapshot.name) if False else True
+        asset_name = next(name for name in archive.namelist() if name.startswith('assets/') and name != 'assets/')
+        assert archive.read(asset_name) == asset_bytes
     snapshot_db = sqlite3.connect(snapshot)
     try:
         assert int(snapshot_db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]) == 1
