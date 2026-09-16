@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from htdt.security import install_local_request_boundary, is_allowed_host, is_allowed_origin
+
+
+def make_client(*, allow_testserver: bool = False) -> TestClient:
+    app = FastAPI()
+    install_local_request_boundary(app, allow_testserver=allow_testserver)
+
+    @app.get('/read')
+    def read() -> dict[str, bool]:
+        return {'ok': True}
+
+    @app.post('/write')
+    def write() -> dict[str, bool]:
+        return {'ok': True}
+
+    return TestClient(app, base_url='http://127.0.0.1:8765')
+
+
+def test_loopback_host_and_origin_are_allowed() -> None:
+    client = make_client()
+    assert client.get('/read').status_code == 200
+    assert client.post('/write', headers={'Origin': 'http://127.0.0.1:8765'}).status_code == 200
+    assert client.post('/write', headers={'Origin': 'http://localhost:5173'}).status_code == 200
+
+
+def test_non_loopback_host_is_rejected_even_for_get() -> None:
+    client = make_client()
+    response = client.get('/read', headers={'Host': 'example.test'})
+    assert response.status_code == 400
+    assert response.json()['detail'] == 'Host must be localhost or loopback'
+
+
+def test_non_loopback_origin_is_rejected_for_write() -> None:
+    client = make_client()
+    response = client.post('/write', headers={'Origin': 'https://example.test'})
+    assert response.status_code == 403
+    assert response.json()['detail'] == 'Origin must be localhost or loopback'
+
+
+def test_write_without_origin_remains_available_to_local_clients() -> None:
+    client = make_client()
+    assert client.post('/write').status_code == 200
+
+
+def test_https_loopback_origin_is_rejected_because_htdt_is_http_only() -> None:
+    assert is_allowed_origin('https://127.0.0.1:8765') is False
+
+
+def test_testserver_is_only_allowed_when_explicitly_enabled() -> None:
+    assert is_allowed_host('testserver') is False
+    assert is_allowed_host('testserver', allow_testserver=True) is True
+
+
+def test_ipv6_loopback_authority_is_supported() -> None:
+    assert is_allowed_host('[::1]:8765') is True
+    assert is_allowed_origin('http://[::1]:8765') is True
