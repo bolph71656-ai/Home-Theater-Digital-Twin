@@ -17,6 +17,13 @@ SNAP_PRIORITY: dict[SnapKind, int] = {
     'alignment': 3,
 }
 
+_PROJECTION_SENTINELS: tuple[Position3, ...] = (
+    Position3(x_m=0.0, y_m=0.0, z_m=0.0),
+    Position3(x_m=1.0, y_m=0.0, z_m=0.0),
+    Position3(x_m=0.0, y_m=1.0, z_m=0.0),
+    Position3(x_m=0.0, y_m=0.0, z_m=1.0),
+)
+
 
 @dataclass(frozen=True)
 class SnapCandidate:
@@ -50,6 +57,7 @@ class SnapSelector:
             str,
             tuple[tuple[float, float, float], tuple[float, float]],
         ] = {}
+        self._projection_signature: tuple[float, ...] | None = None
 
     @property
     def retained_id(self) -> str | None:
@@ -58,6 +66,20 @@ class SnapSelector:
     def reset(self) -> None:
         self._retained_id = None
         self._projection_cache.clear()
+        self._projection_signature = None
+
+    def _sync_projection_cache(self, project: ScreenProjector) -> None:
+        # Candidate screen anchors are static only while the camera/projection is
+        # static. Four non-coplanar sentinels cheaply fingerprint that mapping so
+        # zoom/pan/view changes invalidate cached screen coordinates immediately.
+        signature = tuple(
+            round(value, 6)
+            for point in _PROJECTION_SENTINELS
+            for value in project(point)
+        )
+        if signature != self._projection_signature:
+            self._projection_cache.clear()
+            self._projection_signature = signature
 
     def _project_candidate(self, candidate: SnapCandidate, project: ScreenProjector) -> tuple[float, float]:
         anchor_key = (
@@ -78,6 +100,7 @@ class SnapSelector:
         probe: Position3,
         project: ScreenProjector,
     ) -> SnapSelection | None:
+        self._sync_projection_cache(project)
         probe_screen = project(probe)
 
         # Hysteresis is the common case while dragging along an acquired feature.
