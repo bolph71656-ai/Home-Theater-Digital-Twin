@@ -28,6 +28,8 @@ def _release_mouse(plotter: pv.Plotter) -> None:
 def _event_inside_renderer(plotter: pv.Plotter, interactor) -> bool:
     x, y = interactor.GetEventPosition()
     renderer = plotter.iren.get_poked_renderer()
+    if renderer is None:
+        return False
     ox, oy = renderer.GetOrigin()
     width, height = renderer.GetSize()
     return ox <= x < ox + width and oy <= y < oy + height
