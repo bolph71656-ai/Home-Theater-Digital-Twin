@@ -17,6 +17,7 @@ from .acoustics import analyze_rectangular_context
 from .comparison import ComparisonError, compare_frequency_responses
 from .conditions import classify_differences, context_differences
 from .database import SCHEMA_VERSION, Store
+from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
 from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
 from .rew_parser import RewParseError, parse_rew_frequency_response
@@ -167,6 +168,84 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/projects/{project_id}/datasets/{dataset_id}/feature-candidates')
+    def feature_candidates(
+        project_id: str,
+        dataset_id: str,
+        low_hz: float = Query(default=20.0, gt=0, lt=2000),
+        high_hz: float = Query(default=300.0, gt=0, le=2000),
+        prominence_db: float = Query(default=3.0, gt=0, le=30),
+        baseline_window_octaves: float = Query(default=1 / 3, gt=0, le=2),
+        min_spacing_octaves: float = Query(default=1 / 12, ge=0, le=1),
+        match_tolerance_octaves: float = Query(default=1 / 12, gt=0, le=1),
+        sound_speed_m_s: float = Query(default=343.0, gt=250, lt=400),
+    ) -> dict:
+        if high_hz <= low_hz:
+            raise HTTPException(status_code=422, detail='high_hz must be greater than low_hz')
+        try:
+            descriptor = store.get_dataset_descriptor(dataset_id)
+            if descriptor['project_id'] != project_id:
+                raise KeyError('dataset_not_found')
+            response = store.get_frequency_response(dataset_id)
+            detection = detect_frequency_features(
+                response,
+                low_hz=low_hz,
+                high_hz=high_hz,
+                prominence_db=prominence_db,
+                baseline_window_octaves=baseline_window_octaves,
+                min_spacing_octaves=min_spacing_octaves,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except FeatureDetectionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        warnings: list[str] = []
+        if descriptor['quality_status'] == 'invalid':
+            warnings.append('Measurement is marked invalid; geometry candidate matching is disabled')
+        elif descriptor['quality_status'] == 'warning':
+            warnings.append('Measurement has quality warnings; candidate matches require manual review')
+        elif descriptor['quality_status'] == 'unknown':
+            warnings.append('Measurement quality is unknown; candidate matches are provisional')
+        if descriptor['evidence_type'] != 'measured':
+            warnings.append(f"evidence_type is {descriptor['evidence_type']}; automatic geometry candidate matching is disabled")
+
+        eligible = descriptor['evidence_type'] == 'measured' and descriptor['quality_status'] != 'invalid'
+        matches: list[dict] = []
+        geometry_algorithm_version: str | None = None
+        if eligible:
+            try:
+                geometry = analyze_rectangular_context(descriptor['context_payload'], max_hz=high_hz, sound_speed_m_s=sound_speed_m_s)
+                geometry_algorithm_version = geometry['algorithm_version']
+                matches = match_geometry_candidates(
+                    detection['features'], geometry, tolerance_octaves=match_tolerance_octaves
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                warnings.append(f'Geometry candidate matching unavailable: {exc}')
+
+        return {
+            'classification': 'candidate_association_not_causal_diagnosis',
+            'dataset_id': dataset_id,
+            'measurement': {
+                'measurement_id': descriptor['measurement_id'],
+                'context_id': descriptor['context_id'],
+                'channel_role': descriptor['channel_role'],
+                'evidence_type': descriptor['evidence_type'],
+                'quality_status': descriptor['quality_status'],
+                'quality_reasons': descriptor['quality_reasons'],
+                'quality_source': descriptor['quality_source'],
+            },
+            'feature_detection': detection,
+            'eligible_for_candidate_matching': eligible,
+            'candidate_matches': matches,
+            'match_parameters': {
+                'tolerance_octaves': match_tolerance_octaves,
+                'sound_speed_m_s': sound_speed_m_s,
+                'geometry_algorithm_version': geometry_algorithm_version,
+            },
+            'warnings': warnings,
+        }
 
     @app.get('/api/projects/{project_id}/attachments')
     def list_attachments(project_id: str) -> list[dict]:
