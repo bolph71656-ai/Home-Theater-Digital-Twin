@@ -25,6 +25,8 @@ v0.1の中核であるプロジェクト保存、配置/条件スナップショ
 
 - 既定は`127.0.0.1:8765`
 - 8765が使用中ならloopback上の空きポートへ自動フォールバック
+- 同じHTDTデータ領域では1プロセスだけが起動し、二重起動時は新しいserverを作らず既存UIを開く
+- staleなinstance metadataはOSの排他ロックを取得できれば上書きされるため、異常終了後も再起動可能
 - 終了は起動したPowerShellで`Ctrl+C`
 - ブラウザを自動起動しない場合: `.\scripts\run-local.ps1 -NoBrowser`
 - 既に`frontend/dist`が最新でbuildを省略したい場合: `.\scripts\run-local.ps1 -SkipFrontendBuild`
@@ -42,7 +44,7 @@ python -m pip install -e ".\backend[dev]"
 python -m htdt
 ```
 
-`python -m htdt`は8765を優先し、使用中なら空きポートを選びます。ブラウザを開かない場合は`python -m htdt --no-browser`、優先ポートを変える場合は`python -m htdt --port 9000`のように指定できます。
+`python -m htdt`は8765を優先し、使用中なら空きポートを選びます。同じデータ領域ですでにHTDTが動いていれば二重起動せず、その既存URLを利用します。ブラウザを開かない場合は`python -m htdt --no-browser`、優先ポートを変える場合は`python -m htdt --port 9000`のように指定できます。
 
 API docsは起動URLの`/api/docs`です。
 
