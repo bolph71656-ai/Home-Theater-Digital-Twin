@@ -17,6 +17,7 @@ from .acoustics import analyze_rectangular_context
 from .comparison import ComparisonError, compare_frequency_responses
 from .database import Store
 from .models import BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate
+from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
 from .rew_parser import RewParseError, parse_rew_frequency_response
 
 
@@ -36,14 +37,42 @@ def _default_data_dir() -> Path:
     return Path.home() / '.home-theater-digital-twin'
 
 
-def create_app(data_dir: Path | None = None) -> FastAPI:
+def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = None) -> FastAPI:
     store = Store(data_dir or _default_data_dir())
+    rew = rew_client or RewApiClient(os.environ.get('HTDT_REW_API_URL', DEFAULT_REW_API_URL))
     app = FastAPI(title='Home Theater Digital Twin', version=__version__, docs_url='/api/docs', redoc_url=None, openapi_url='/api/openapi.json')
     app.state.store = store
+    app.state.rew = rew
 
     @app.get('/api/health', response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(status='ok', version=__version__, platform_target='Windows 11 x64', rew_required=False, measurement_hardware_required=False, schema_version=1)
+
+    @app.get('/api/rew/status')
+    def rew_status() -> dict:
+        return rew.status()
+
+    @app.get('/api/rew/measurements')
+    def rew_measurements() -> list[dict]:
+        try:
+            return rew.list_measurements()
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'Unexpected REW API response: {exc}') from exc
+
+    @app.get('/api/rew/measurements/{measurement_id}/frequency-response')
+    def rew_frequency_response(
+        measurement_id: str,
+        ppo: int = Query(default=96, ge=1, le=384),
+        unit: str = Query(default='SPL', min_length=1, max_length=32),
+    ) -> dict:
+        try:
+            return RewApiClient.response_payload(rew.get_frequency_response(measurement_id, ppo=ppo, unit=unit))
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'Unexpected REW API response: {exc}') from exc
 
     @app.get('/api/projects')
     def list_projects() -> list[dict]:
