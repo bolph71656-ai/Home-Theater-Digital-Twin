@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from pyvistaqt import QtInteractor
+from vtkmodules.vtkRenderingCore import vtkPropPicker
 
 from .cad_document import EditorViewState, WorkingDocument
 from .cad_gizmo import RotationWidget3D, TranslationWidget3D
@@ -80,12 +81,10 @@ class NativeEditorWindow(QMainWindow):
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
-        self.viewport.enable_mesh_picking(
-            self._picked,
-            show=False,
-            show_message=False,
-            left_clicking=True,
-            use_actor=True,
+        self.scene_picker = vtkPropPicker()
+        self.scene_picker.PickFromListOn()
+        self.scene_pick_observer: int | None = self.viewport.iren.interactor.AddObserver(
+            'LeftButtonPressEvent', self._scene_left_press, -1.0
         )
         self.viewport.add_key_event('Escape', self.cancel_preview)
 
@@ -275,6 +274,7 @@ class NativeEditorWindow(QMainWindow):
         self.tree.clear()
         self.actors.clear()
         self.actor_ids.clear()
+        self.scene_picker.InitializePickList()
         self.items.clear()
         document = self.working.committed_document
 
@@ -334,9 +334,27 @@ class NativeEditorWindow(QMainWindow):
         actor = self.viewport.add_mesh(mesh, name=f'entity:{entity.entity_id}', pickable=True)
         self.actors[entity.entity_id] = actor
         self.actor_ids[id(actor)] = entity.entity_id
+        self.scene_picker.AddPickList(actor)
+
+    def _scene_left_press(self, interactor: Any, _event: str) -> None:
+        if self.gizmo is not None and getattr(self.gizmo, 'pressing', False):
+            return
+        x, y = interactor.GetEventPosition()
+        self.scene_picker.Pick(int(x), int(y), 0, self.viewport.renderer)
+        actor = self.scene_picker.GetActor()
+        if actor is None:
+            if self.view_state.selection:
+                self._select(None)
+            return
+        self._picked(actor)
 
     def _picked(self, actor: Any) -> None:
         entity_id = self.actor_ids.get(id(actor))
+        if entity_id is None:
+            entity_id = next(
+                (candidate_id for candidate_id, candidate in self.actors.items() if candidate == actor),
+                None,
+            )
         if entity_id is None:
             return
         additive = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
@@ -994,6 +1012,9 @@ class NativeEditorWindow(QMainWindow):
         self._sync_recovery()
         self._persist_view_state()
         self._remove_gizmo()
+        if self.scene_pick_observer is not None:
+            self.viewport.iren.interactor.RemoveObserver(self.scene_pick_observer)
+            self.scene_pick_observer = None
         self.viewport.close()
         event.accept()
 
