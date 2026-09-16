@@ -79,26 +79,32 @@ class SnapSelector:
         project: ScreenProjector,
     ) -> SnapSelection | None:
         probe_screen = project(probe)
-        scored = [
-            (candidate, _screen_distance(self._project_candidate(candidate, project), probe_screen))
-            for candidate in candidates
-        ]
+
+        # Hysteresis is the common case while dragging along an acquired feature.
+        # Resolve the retained candidate first so stable drags do not score every
+        # scene feature on every mouse-move event.
         if self._retained_id is not None:
-            for candidate, distance in scored:
-                if candidate.stable_id == self._retained_id and distance <= self.retain_radius_dip:
-                    return SnapSelection(candidate, distance)
-        eligible = [
-            (candidate, distance)
-            for candidate, distance in scored
-            if distance <= self.acquire_radius_dip
-        ]
-        if not eligible:
+            retained = next(
+                (candidate for candidate in candidates if candidate.stable_id == self._retained_id),
+                None,
+            )
+            if retained is not None:
+                distance = _screen_distance(self._project_candidate(retained, project), probe_screen)
+                if distance <= self.retain_radius_dip:
+                    return SnapSelection(retained, distance)
+
+        best: tuple[tuple[int, float, str], SnapCandidate, float] | None = None
+        for candidate in candidates:
+            distance = _screen_distance(self._project_candidate(candidate, project), probe_screen)
+            if distance > self.acquire_radius_dip:
+                continue
+            key = (candidate.priority, distance, candidate.stable_id)
+            if best is None or key < best[0]:
+                best = (key, candidate, distance)
+        if best is None:
             self._retained_id = None
             return None
-        candidate, distance = min(
-            eligible,
-            key=lambda item: (item[0].priority, item[1], item[0].stable_id),
-        )
+        _, candidate, distance = best
         self._retained_id = candidate.stable_id
         return SnapSelection(candidate, distance)
 
