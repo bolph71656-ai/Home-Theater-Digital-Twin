@@ -1,0 +1,98 @@
+# REW API read-only integration
+
+> 状態: 実装済み・mock検証対象 / 実REW接続は未検証
+
+## 方針
+
+HTDTのREW API連携はファイル取込を置き換える必須経路ではなく、任意の読取省力化機能とする。初期アダプターにはHTTP **GETだけ**を実装し、REWの測定・設定・EQ・ファイルを変更するPOST/PUT/DELETEは実装しない。
+
+REW公式APIは既定で `http://127.0.0.1:4735`。HTDTも既定値をこれに固定し、接続先ホストは `127.0.0.1` または `localhost` のみ許可する。LAN上の別ホストへ向ける機能は作らない。
+
+必要なら環境変数 `HTDT_REW_API_URL` でlocalhost上の別ポートを指定できる。
+
+```powershell
+$env:HTDT_REW_API_URL = "http://127.0.0.1:4735"
+python -m htdt
+```
+
+## HTDT側のエンドポイント
+
+| HTDT endpoint | 動作 |
+|---|---|
+| `GET /api/rew/status` | REW APIへの到達可否と測定数を確認 |
+| `GET /api/rew/measurements` | REWに現在ロードされている測定summaryを読取 |
+| `GET /api/rew/measurements/{uuid}/frequency-response` | 指定測定の周波数応答を読取・デコード |
+
+REWのindex番号は測定の追加・削除・group変更で動き得るため、HTDTは永続参照にindexを使わずUUIDを使う。
+
+## 配列デコード契約
+
+REW APIの数値配列は32-bit floatのraw bytesをBase64化した文字列で、公式仕様ではbyte orderは**big-endian**。HTDTは `struct.unpack(">...f")` 相当で復号する。
+
+公式の検証例 `PgAAAD6AAAA+wAAAPwAAAA==` → `0.125, 0.25, 0.375, 0.5` を自動テストへ含める。
+
+FrequencyResponseについては次を扱う。
+
+- `startFreq`
+- `ppo` または `freqStep`
+- `magnitude`
+- optional `phase`
+- `unit`
+- `smoothing`
+
+log spacingでは `f[i] = startFreq * exp(i * ln(2) / ppo)`、linear spacingでは `f[i] = startFreq + i * freqStep` で周波数軸を復元する。
+
+## PPO / smoothingの来歴
+
+HTDTから`ppo=96`を要求しても、REWはsampling artefact回避のため追加smoothingを適用する場合がある。したがって以下を別々に返す。
+
+- requested_ppo / requested_unit / requested_smoothing: HTDTが要求した値
+- points_per_octave / unit / smoothing: REWが実際に返した値
+
+96 PPO取得を「未平滑化raw測定」とは呼ばない。
+
+## 防御
+
+REW 5.40 beta系ではAPIモデルが改訂され得るため、測定一覧は配列形式・object keyed形式を正規化する。一方、未知の形状は推測せずエラーにする。
+
+周波数応答は次を拒否する。
+
+- 壊れたBase64
+- 4 byte境界でない配列
+- NaN / Inf
+- 空のmagnitude
+- startFreqまたはspacing欠損
+- magnitude / phase長不一致
+
+## オフライン動作
+
+REW未起動・API未起動でもHTDTのProject、保存済み測定、比較、バックアップは通常利用できる。`GET /api/rew/status`はconnected=falseを返し、REWデータ取得エンドポイントだけ503となる。
+
+## 初期アダプターで実装しない操作
+
+- 自動スイープ開始
+- REW測定の削除・名称変更
+- EQ/Filter変更
+- Room Simulator設定変更
+- REWへのファイルimport
+- Generator操作・発音
+- AVR設定変更
+
+## 実機受入条件
+
+REWを導入したら次を確認する。
+
+1. REW APIをlocalhostで起動する。
+2. `/api/rew/status` がconnectedになる。
+3. FL/FRのsummary UUID・title・帯域がREW画面と一致する。
+4. 同一測定についてREW text exportとAPI取得を比較する。
+5. requested PPOとreturned smoothing/unitを保存して数値を照合する。
+6. REWを停止するとHTDTは保存済みデータを失わずAPIだけunavailableになる。
+7. テスト中にREW側の測定数・名称・設定・音声出力が変化しないことを確認する。
+
+ここまで通るまでは「REW API実機互換性確認済み」としない。
+
+## 公式資料
+
+- REW API: https://www.roomeqwizard.com/help/help/html/api.html
+- REW beta releases: https://www.roomeqwizard.com/beta.html
