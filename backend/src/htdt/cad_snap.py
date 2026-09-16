@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from math import floor, hypot, isfinite
 from typing import Callable, Literal
 
@@ -24,6 +25,12 @@ _PROJECTION_SENTINELS: tuple[Position3, ...] = (
     Position3(x_m=0.0, y_m=1.0, z_m=0.0),
     Position3(x_m=0.0, y_m=0.0, z_m=1.0),
 )
+_BOX_EDGE_INDEX_PAIRS: tuple[tuple[int, int], ...] = tuple(
+    (left, right)
+    for left in range(8)
+    for right in range(left + 1, 8)
+    if (left ^ right) in (1, 2, 4)
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,17 @@ class SnapCandidate:
 class SnapSelection:
     candidate: SnapCandidate
     distance_dip: float
+
+
+@dataclass(frozen=True)
+class _EdgeGeometry:
+    start: Position3
+    end: Position3
+    midpoint: Position3
+    dx: float
+    dy: float
+    dz: float
+    length2: float
 
 
 class SnapSelector:
@@ -148,13 +166,18 @@ def snap_scalar(value: float, step: float) -> float:
     return sign * floor(abs(value) / step + 0.5) * step
 
 
+def _position(x_m: float, y_m: float, z_m: float) -> Position3:
+    """Construct from already validated finite scene values in the snap hot path."""
+    return Position3.model_construct(x_m=float(x_m), y_m=float(y_m), z_m=float(z_m))
+
+
 def snap_position_axis(position: Position3, axis: AxisName, step_m: float) -> Position3:
     step_m = _validate_step(step_m, label='grid step')
     values = {'x': position.x_m, 'y': position.y_m, 'z': position.z_m}
     if axis not in values:
         raise ValueError(f'unsupported snap axis: {axis}')
     values[axis] = snap_scalar(values[axis], step_m)
-    return Position3(x_m=values['x'], y_m=values['y'], z_m=values['z'])
+    return _position(values['x'], values['y'], values['z'])
 
 
 def snap_angle_deg(angle_deg: float, step_deg: float) -> float:
@@ -169,9 +192,10 @@ def _axis_value(position: Position3, axis: AxisName) -> float:
 def _with_axis(position: Position3, axis: AxisName, value: float) -> Position3:
     values = {'x': position.x_m, 'y': position.y_m, 'z': position.z_m}
     values[axis] = float(value)
-    return Position3(x_m=values['x'], y_m=values['y'], z_m=values['z'])
+    return _position(values['x'], values['y'], values['z'])
 
 
+@lru_cache(maxsize=2048)
 def _entity_vertices(entity: SceneEntity) -> tuple[Position3, ...]:
     if entity.size_m is None:
         return (entity.position,)
@@ -186,39 +210,54 @@ def _entity_vertices(entity: SceneEntity) -> tuple[Position3, ...]:
                     sum(matrix[row][col] * local[col] for col in range(3))
                     for row in range(3)
                 )
-                result.append(Position3(
-                    x_m=entity.position.x_m + rotated[0],
-                    y_m=entity.position.y_m + rotated[1],
-                    z_m=entity.position.z_m + rotated[2],
+                result.append(_position(
+                    entity.position.x_m + rotated[0],
+                    entity.position.y_m + rotated[1],
+                    entity.position.z_m + rotated[2],
                 ))
     return tuple(result)
 
 
-def _box_edges(vertices: tuple[Position3, ...]) -> tuple[tuple[int, int], ...]:
+@lru_cache(maxsize=2048)
+def _entity_edges(entity: SceneEntity) -> tuple[_EdgeGeometry, ...]:
+    vertices = _entity_vertices(entity)
     if len(vertices) != 8:
         return ()
-    edges: list[tuple[int, int]] = []
-    for left in range(8):
-        for right in range(left + 1, 8):
-            if (left ^ right) in (1, 2, 4):
-                edges.append((left, right))
-    return tuple(edges)
+    result: list[_EdgeGeometry] = []
+    for left, right in _BOX_EDGE_INDEX_PAIRS:
+        start, end = vertices[left], vertices[right]
+        dx = end.x_m - start.x_m
+        dy = end.y_m - start.y_m
+        dz = end.z_m - start.z_m
+        result.append(_EdgeGeometry(
+            start=start,
+            end=end,
+            midpoint=_position(
+                (start.x_m + end.x_m) / 2.0,
+                (start.y_m + end.y_m) / 2.0,
+                (start.z_m + end.z_m) / 2.0,
+            ),
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            length2=dx * dx + dy * dy + dz * dz,
+        ))
+    return tuple(result)
 
 
-def _closest_point_on_segment(probe: Position3, start: Position3, end: Position3) -> Position3:
-    p = (probe.x_m, probe.y_m, probe.z_m)
-    a = (start.x_m, start.y_m, start.z_m)
-    b = (end.x_m, end.y_m, end.z_m)
-    direction = tuple(b[index] - a[index] for index in range(3))
-    length2 = sum(value * value for value in direction)
-    if length2 <= 1e-18:
-        return start
-    t = sum((p[index] - a[index]) * direction[index] for index in range(3)) / length2
+def _closest_point_on_edge(probe: Position3, edge: _EdgeGeometry) -> Position3:
+    if edge.length2 <= 1e-18:
+        return edge.start
+    t = (
+        (probe.x_m - edge.start.x_m) * edge.dx
+        + (probe.y_m - edge.start.y_m) * edge.dy
+        + (probe.z_m - edge.start.z_m) * edge.dz
+    ) / edge.length2
     t = max(0.0, min(1.0, t))
-    return Position3(
-        x_m=a[0] + direction[0] * t,
-        y_m=a[1] + direction[1] * t,
-        z_m=a[2] + direction[2] * t,
+    return _position(
+        edge.start.x_m + edge.dx * t,
+        edge.start.y_m + edge.dy * t,
+        edge.start.z_m + edge.dz * t,
     )
 
 
@@ -264,17 +303,11 @@ def generate_snap_candidates(
             for index, vertex in enumerate(vertices):
                 candidates.append(_candidate(entity, 'vertex', str(index), vertex, axis, probe))
         if entity.size_m is not None and ({'midpoint', 'edge'} & enabled):
-            for edge_index, (left, right) in enumerate(_box_edges(vertices)):
-                start, end = vertices[left], vertices[right]
+            for edge_index, edge in enumerate(_entity_edges(entity)):
                 if 'midpoint' in enabled:
-                    midpoint = Position3(
-                        x_m=(start.x_m + end.x_m) / 2.0,
-                        y_m=(start.y_m + end.y_m) / 2.0,
-                        z_m=(start.z_m + end.z_m) / 2.0,
-                    )
-                    candidates.append(_candidate(entity, 'midpoint', str(edge_index), midpoint, axis, probe))
+                    candidates.append(_candidate(entity, 'midpoint', str(edge_index), edge.midpoint, axis, probe))
                 if 'edge' in enabled:
-                    closest = _closest_point_on_segment(probe, start, end)
+                    closest = _closest_point_on_edge(probe, edge)
                     candidates.append(_candidate(entity, 'edge', str(edge_index), closest, axis, probe))
         if 'alignment' in enabled:
             candidates.append(_candidate(entity, 'alignment', 'origin', entity.position, axis, probe))
