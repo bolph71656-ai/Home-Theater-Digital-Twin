@@ -23,8 +23,25 @@ python -m htdt
 | `GET /api/rew/measurements` | REWに現在ロードされている測定summaryを読取 |
 | `GET /api/rew/audio-preflight` | driver/sample rate/Java入力・出力device/input cal/EXCL候補/ch数/mappingをGETだけで確認 |
 | `GET /api/rew/measurements/{uuid}/frequency-response` | 指定測定の周波数応答を読取・デコード |
+| `POST /api/projects/{project_id}/rew-snapshots` | HTDT側へsnapshot保存。REW通信は内部でGETのみ |
 
 REWのindex番号は測定の追加・削除・group変更で動き得るため、HTDTは永続参照にindexを使わずUUIDを使う。
+
+
+## Snapshot保存契約
+
+REW measurementをHTDTへ保存するときもREW側はGET-onlyを維持する。保存処理は次の順で行う。
+
+1. HTDTのProject/Context/Session参照を先に検証する。
+2. `GET /measurements` で対象UUIDが現在ちょうど1件であることを確認する。
+3. `GET /measurements/{uuid}` を取得する。
+4. `GET /measurements/{uuid}/frequency-response` を指定unit/PPO/smoothingで取得する。
+5. 同じmeasurement summaryを再GETし、before/afterが一致しなければ保存を中断する。
+6. raw JSONをcanonical UTF-8 JSON RawAssetとして保存し、decoded FRをdouble BLOB Datasetへ保存する。
+
+RawAsset wrapperは`htdt-rew-api-frequency-response-snapshot-1`で、measurement summary、実際のquery、REWのfrequency-response JSONを保持する。Base64 magnitude/phase文字列は変更しない。取得時刻はRawAssetへ混ぜずDB側の`imported_at`で保持するため、同一response/queryは同一SHA-256になる。
+
+同じRawAsset SHAが既に存在してもMeasurement/Datasetを自動mergeしない。REW UUIDも永続的な「同一測定」判定には単独使用しない。API取得だけではquality/evidence/routingを昇格せず、既定はすべて`unknown`とする。
 
 ## 配列デコード契約
 
@@ -91,8 +108,8 @@ REWを導入したら次を確認する。
 6. REWを停止するとHTDTは保存済みデータを失わずAPIだけunavailableになる。
 7. テスト中にREW側の測定数・名称・設定・音声出力が変化しないことを確認する。
 
-2026-09-16時点で1、2、および合成FRを使った5の数値デコード確認まで所有PCで完了した。
-同一measurementのtext exportとの照合、実測FL/FR、RX-A4A routing確認が残るため、実測ワークフロー全体はまだ完了扱いにしない。
+2026-09-16時点で1、2、合成FRを使った5の数値デコード確認に加え、実REWからのsnapshot保存、REW停止後の保存Dataset比較、RawAssetを含むbackup/restoreまで所有PCで完了した。
+同一measurementのtext exportとの照合、UMIK-1実測FL/FR、RX-A4A routing確認が残るため、実測ワークフロー全体はまだ完了扱いにしない。
 
 詳細は[実REW検証記録](REW_REAL_VALIDATION.md)を参照する。
 

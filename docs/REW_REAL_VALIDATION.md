@@ -110,3 +110,21 @@ HTDTは`GET /api/rew/audio-preflight`でREWのaudio状態を変更せず取得�
 ## 日本語device名の文字コード確認
 
 REW V5.40 beta 135のHTTP生バイトを確認した結果、Java audio device名はUTF-8として正しく返っている。Python/HTDT側では追加補正不要。PowerShell 5.1の`Invoke-RestMethod`経路でのみ表示上のmojibakeが発生したため、診断スクリプトはHTTP応答ストリームをUTF-8として明示デコードする。routing判定はdevice名だけには依存しない。
+
+## REW API snapshot保存の実機受入
+
+同じ`HTDT synthetic real-API fixture`を使い、HTDTのsnapshot保存経路を所有PCで実受入した。REW側への通信はmeasurement list/detail/frequency-responseのGETのみ。保存時にREW UUIDの現在一意性とdetail summaryのbefore/after一致を確認した。
+
+保存結果:
+
+- HTDT Dataset: 958 points / 20 Hz–20041.155831556098 Hz
+- requested: SPL / 96 PPO / smoothing指定なし
+- returned: SPL / 96 PPO / `1/48` smoothing
+- phase: absentのまま保存（zero phaseを生成しない）
+- evidence / quality / routing: すべて`unknown`のまま。API取得のみで昇格しない
+- 保存Datasetと保存直前の実REW GET値: 周波数軸最大差`0.0 Hz`、magnitude最大差`0.0 dB`
+- canonical RawAsset SHA-256: `38f00586c639ffff4fbe4916a4af4c31bd9cd470856c7d8fdbaaa77fe0bc698e`
+
+その後REWを終了し、REW APIがofflineである状態からHTDTだけで保存Measurementを列挙し、保存Dataset同士のcomparison APIを実行した。self-check comparisonは957 grid points、RMS difference `0.0 dB`で完了した。
+
+さらにsnapshot保存直後に作成したbackup ZIPから別Storeへrestoreし、958点のfrequency/magnitudeが完全一致し、RawAssetのSHA-256も上記値と一致、integrity problemsは0件だった。これによりREW停止後の保存データ利用とRawAssetを含むbackup/restoreを実機経路で確認した。

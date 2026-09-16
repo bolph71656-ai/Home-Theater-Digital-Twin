@@ -16,10 +16,13 @@ from uuid import uuid4
 import zipfile
 
 from .comparison import FrequencyResponse
+from .rew_api import RewFrequencyResponseSnapshot
 from .rew_parser import parse_rew_frequency_response
 
 
 SCHEMA_VERSION = 3
+REW_API_SNAPSHOT_FORMAT = 'htdt-rew-api-frequency-response-snapshot-1'
+REW_API_ADAPTER_VERSION = 'rew-api-snapshot-1'
 SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3}
 
 
@@ -164,6 +167,11 @@ class Store:
             db.commit()
         return session
 
+    def get_session(self, project_id: str, session_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM sessions WHERE id = ? AND project_id = ?', (session_id, project_id)).fetchone()
+            return dict(row) if row else None
+
     def list_sessions(self, project_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:
             rows = db.execute(
@@ -258,6 +266,109 @@ class Store:
                 'frequency_min_hz': parsed.frequency_hz[0], 'frequency_max_hz': parsed.frequency_hz[-1], 'phase_status': parsed.phase_status,
                 'warnings': list(parsed.warnings), 'duplicate_asset': already_known or existing_count > 0,
                 'existing_dataset_count': existing_count, 'quality_status': quality_status, 'session_id': session_id}
+
+    def import_rew_api_snapshot(
+        self,
+        project_id: str,
+        context_id: str,
+        snapshot: RewFrequencyResponseSnapshot,
+        *,
+        channel_role: str,
+        evidence_type: str = 'unknown',
+        source_speaker_ids: list[str] | None = None,
+        radiation_scope: str = 'unknown',
+        routing_evidence: str = 'unknown',
+        notes: str | None = None,
+        quality_status: str = 'unknown',
+        quality_reasons: list[str] | None = None,
+        quality_source: str = 'unknown',
+        repeat_group: str | None = None,
+        session_id: str | None = None,
+        api_base_url: str,
+    ) -> dict[str, Any]:
+        decoded = snapshot.decoded
+        phase_status = 'unknown' if decoded.phase_deg is not None else 'absent'
+        warnings: list[str] = []
+        if decoded.phase_deg is not None and all(value == 0 for value in decoded.phase_deg):
+            warnings.append('phase_all_zero_unverified')
+        wrapper = {
+            'format': REW_API_SNAPSHOT_FORMAT,
+            'measurement_uuid': decoded.measurement_id,
+            'query': snapshot.query,
+            'measurement_summary': snapshot.measurement_summary,
+            'frequency_response': snapshot.raw_frequency_response,
+        }
+        raw = json.dumps(wrapper, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        filename = f'rew-api-{decoded.measurement_id}.json'
+        asset_sha, asset_path, asset_created, already_known = self._store_asset(filename, raw)
+        measurement_id, dataset_id, imported_at = str(uuid4()), str(uuid4()), utc_now()
+        summary = snapshot.measurement_summary
+        captured_at = summary.get('date') if isinstance(summary.get('date'), str) and summary.get('date') else None
+        metadata = {
+            'source': 'rew_api',
+            'adapter_version': REW_API_ADAPTER_VERSION,
+            'raw_format': REW_API_SNAPSHOT_FORMAT,
+            'rew_measurement_uuid': decoded.measurement_id,
+            'requested': {
+                'unit': decoded.requested_unit,
+                'ppo': decoded.requested_ppo,
+                'smoothing': decoded.requested_smoothing,
+            },
+            'returned': {
+                'unit': decoded.unit,
+                'ppo': decoded.points_per_octave,
+                'freq_step_hz': decoded.frequency_step_hz,
+                'smoothing': decoded.smoothing,
+                'start_frequency_hz': decoded.start_frequency_hz,
+            },
+            'rew_version': summary.get('rewVersion') if isinstance(summary.get('rewVersion'), str) else None,
+            'raw_asset_sha256': asset_sha,
+            'phase_status': phase_status,
+            'warnings': warnings,
+            'api_base_url': api_base_url,
+        }
+        existing_count = 0
+        try:
+            with self.connect() as db:
+                if db.execute('SELECT id FROM contexts WHERE id = ? AND project_id = ?', (context_id, project_id)).fetchone() is None:
+                    raise KeyError('context_not_found')
+                if session_id is not None and db.execute('SELECT id FROM sessions WHERE id = ? AND project_id = ?', (session_id, project_id)).fetchone() is None:
+                    raise KeyError('session_not_found')
+                existing_count = int(db.execute('SELECT COUNT(*) FROM datasets WHERE asset_sha256 = ?', (asset_sha,)).fetchone()[0])
+                db.execute('INSERT OR IGNORE INTO assets(sha256, relative_path, original_filename, size_bytes, created_at) VALUES (?, ?, ?, ?, ?)',
+                           (asset_sha, str(asset_path.relative_to(self.root)), filename, len(raw), imported_at))
+                db.execute('''INSERT INTO measurements(id, project_id, context_id, session_id, channel_role, evidence_type, source_speaker_ids_json,
+                           radiation_scope, routing_evidence, captured_at, imported_at, notes, quality_status, quality_reasons_json,
+                           quality_source, repeat_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                           (measurement_id, project_id, context_id, session_id, channel_role, evidence_type, json.dumps(source_speaker_ids or []),
+                            radiation_scope, routing_evidence, captured_at, imported_at, notes, quality_status,
+                            json.dumps(quality_reasons or [], ensure_ascii=False), quality_source, repeat_group.strip() if repeat_group else None))
+                db.execute('''INSERT INTO datasets(id, measurement_id, asset_sha256, kind, frequency_blob, level_blob, phase_blob, metadata_json, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                           (dataset_id, measurement_id, asset_sha, 'frequency_response', _pack(decoded.frequency_hz), _pack(decoded.magnitude),
+                            _pack(decoded.phase_deg), json.dumps(metadata, ensure_ascii=False, sort_keys=True), imported_at))
+                db.commit()
+        except Exception:
+            if asset_created:
+                asset_path.unlink(missing_ok=True)
+            raise
+        return {
+            'measurement_id': measurement_id,
+            'dataset_id': dataset_id,
+            'asset_sha256': asset_sha,
+            'points': len(decoded.frequency_hz),
+            'frequency_min_hz': decoded.frequency_hz[0],
+            'frequency_max_hz': decoded.frequency_hz[-1],
+            'phase_status': phase_status,
+            'warnings': warnings,
+            'duplicate_asset': already_known or existing_count > 0,
+            'existing_dataset_count': existing_count,
+            'quality_status': quality_status,
+            'routing_evidence': routing_evidence,
+            'evidence_type': evidence_type,
+            'session_id': session_id,
+            'metadata': metadata,
+        }
 
     def list_measurements(self, project_id: str) -> list[dict[str, Any]]:
         with self.connect() as db:

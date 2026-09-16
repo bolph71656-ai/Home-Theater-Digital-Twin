@@ -19,7 +19,7 @@ from .comparison import ComparisonError, compare_frequency_responses
 from .conditions import classify_differences, context_differences
 from .database import SCHEMA_VERSION, Store
 from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
-from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, SessionCreate
+from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, RewApiSnapshotImportRequest, SessionCreate
 from .readiness import evaluate_measurement_readiness
 from .report import build_report_payload, render_report_html
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
@@ -209,6 +209,42 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
                 'points': len(parsed.frequency_hz), 'frequency_min_hz': parsed.frequency_hz[0], 'frequency_max_hz': parsed.frequency_hz[-1],
                 'phase_status': parsed.phase_status, 'level_reference': parsed.level_reference, 'warnings': list(parsed.warnings),
                 'header_lines': list(parsed.header_lines)}
+
+    @app.post('/api/projects/{project_id}/rew-snapshots', status_code=201)
+    def import_rew_snapshot(project_id: str, request: RewApiSnapshotImportRequest) -> dict:
+        if store.get_context(project_id, request.context_id) is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        if request.session_id is not None and store.get_session(project_id, request.session_id) is None:
+            raise HTTPException(status_code=404, detail='Session not found')
+        try:
+            snapshot = rew.get_frequency_response_snapshot(
+                request.measurement_uuid, ppo=request.ppo, unit=request.unit, smoothing=request.smoothing
+            )
+            return store.import_rew_api_snapshot(
+                project_id,
+                request.context_id,
+                snapshot,
+                channel_role=request.channel_role,
+                evidence_type=request.evidence_type,
+                source_speaker_ids=request.source_speaker_ids,
+                radiation_scope=request.radiation_scope,
+                routing_evidence=request.routing_evidence,
+                notes=request.notes,
+                quality_status=request.quality_status,
+                quality_reasons=request.quality_reasons,
+                quality_source=request.quality_source,
+                repeat_group=request.repeat_group,
+                session_id=request.session_id,
+                api_base_url=rew.base_url,
+            )
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'REW snapshot rejected: {exc}') from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get('/api/projects/{project_id}/measurements')
     def list_measurements(project_id: str) -> list[dict]:

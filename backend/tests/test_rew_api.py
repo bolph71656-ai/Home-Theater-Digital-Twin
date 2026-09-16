@@ -201,3 +201,54 @@ def test_audio_preflight_non_java_skips_java_endpoints() -> None:
     assert preflight['java'] is None
     assert any('not applicable' in warning for warning in preflight['warnings'])
     assert calls == ['/audio/status', '/audio/driver', '/audio/samplerate']
+
+
+def test_snapshot_requires_exactly_one_uuid_and_all_requests_are_get() -> None:
+    calls: list[tuple[str, str]] = []
+    summary = {'uuid': 'abc', 'title': 'FL', 'rewVersion': 'V5.40 beta 135'}
+
+    def opener(request: Request, timeout: float) -> FakeResponse:
+        calls.append((request.full_url, request.get_method()))
+        if request.full_url.endswith('/measurements'):
+            return FakeResponse({'1': summary})
+        if request.full_url.endswith('/measurements/abc'):
+            return FakeResponse(summary)
+        if '/measurements/abc/frequency-response?' in request.full_url:
+            return FakeResponse({'unit': 'SPL', 'smoothing': '1/48', 'startFreq': 20.0, 'ppo': 96, 'magnitude': encode([70.0, 71.0])})
+        raise AssertionError(request.full_url)
+
+    snapshot = RewApiClient(opener=opener).get_frequency_response_snapshot('abc', ppo=96, unit='SPL')
+    assert snapshot.measurement_summary == summary
+    assert snapshot.query == {'unit': 'SPL', 'ppo': 96}
+    assert snapshot.decoded.magnitude == pytest.approx((70.0, 71.0))
+    assert len(calls) == 4
+    assert all(method == 'GET' for _, method in calls)
+
+
+@pytest.mark.parametrize('listing', [{}, {'1': {'uuid': 'abc'}, '2': {'uuid': 'abc'}}])
+def test_snapshot_rejects_missing_or_duplicate_uuid(listing: object) -> None:
+    def opener(request: Request, timeout: float) -> FakeResponse:
+        if request.full_url.endswith('/measurements'):
+            return FakeResponse(listing)
+        raise AssertionError('detail endpoint must not be called')
+
+    with pytest.raises(RewApiError, match='not unique'):
+        RewApiClient(opener=opener).get_frequency_response_snapshot('abc')
+
+
+def test_snapshot_rejects_measurement_changed_between_reads() -> None:
+    detail_reads = 0
+
+    def opener(request: Request, timeout: float) -> FakeResponse:
+        nonlocal detail_reads
+        if request.full_url.endswith('/measurements'):
+            return FakeResponse({'1': {'uuid': 'abc', 'title': 'FL'}})
+        if request.full_url.endswith('/measurements/abc'):
+            detail_reads += 1
+            return FakeResponse({'uuid': 'abc', 'title': 'FL', 'notes': 'before' if detail_reads == 1 else 'after'})
+        if '/measurements/abc/frequency-response?' in request.full_url:
+            return FakeResponse({'startFreq': 20.0, 'ppo': 96, 'magnitude': encode([70.0, 71.0])})
+        raise AssertionError(request.full_url)
+
+    with pytest.raises(RewApiError, match='changed while'):
+        RewApiClient(opener=opener).get_frequency_response_snapshot('abc', ppo=96)

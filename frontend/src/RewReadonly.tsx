@@ -47,6 +47,23 @@ type RewMeasurement = Record<string, unknown> & {
   name?: string
 }
 
+type Project = { id: string; name: string; created_at: string }
+type ContextRecord = { id: string; revision_number: number; created_at: string }
+type SessionRecord = { id: string; purpose: string | null; started_at: string | null; created_at: string }
+type QualityStatus = 'usable' | 'warning' | 'invalid' | 'unknown'
+type RoutingEvidence = 'verified' | 'manual' | 'inferred' | 'unknown'
+type EvidenceType = 'measured' | 'derived' | 'predicted' | 'unknown'
+type SnapshotImportResult = {
+  measurement_id: string
+  dataset_id: string
+  asset_sha256: string
+  duplicate_asset: boolean
+  existing_dataset_count: number
+  quality_status: QualityStatus
+  routing_evidence: RoutingEvidence
+  evidence_type: EvidenceType
+}
+
 type RewFrequencyResponse = {
   measurement_id: string
   unit: string | null
@@ -151,8 +168,28 @@ export function RewReadonlyPanel() {
   const [unit, setUnit] = useState('SPL')
   const [smoothing, setSmoothing] = useState('')
   const [response, setResponse] = useState<RewFrequencyResponse | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectId, setProjectId] = useState('')
+  const [contexts, setContexts] = useState<ContextRecord[]>([])
+  const [contextId, setContextId] = useState('')
+  const [sessions, setSessions] = useState<SessionRecord[]>([])
+  const [sessionId, setSessionId] = useState('')
+  const [channelRole, setChannelRole] = useState('front_left')
+  const [sourceSpeakerIds, setSourceSpeakerIds] = useState('')
+  const [qualityStatus, setQualityStatus] = useState<QualityStatus>('unknown')
+  const [routingEvidence, setRoutingEvidence] = useState<RoutingEvidence>('unknown')
+  const [evidenceType, setEvidenceType] = useState<EvidenceType>('unknown')
+  const [repeatGroup, setRepeatGroup] = useState('')
+  const [saveResult, setSaveResult] = useState<SnapshotImportResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  async function refreshTargets() {
+    const rows = await api<Project[]>('/api/projects')
+    setProjects(rows)
+    setProjectId((current) => rows.some((item) => item.id === current) ? current : rows[0]?.id ?? '')
+  }
 
   async function refreshStatus() {
     setLoading(true)
@@ -206,7 +243,80 @@ export function RewReadonlyPanel() {
 
   useEffect(() => {
     void refreshStatus()
+    void refreshTargets().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'HTDT保存先の取得に失敗しました'))
   }, [])
+
+  useEffect(() => {
+    setSaveResult(null)
+    if (!projectId) {
+      setContexts([])
+      setSessions([])
+      setContextId('')
+      setSessionId('')
+      return
+    }
+    void Promise.all([
+      api<ContextRecord[]>(`/api/projects/${projectId}/contexts`),
+      api<SessionRecord[]>(`/api/projects/${projectId}/sessions`),
+    ]).then(([contextRows, sessionRows]) => {
+      setContexts(contextRows)
+      setSessions(sessionRows)
+      setContextId((current) => contextRows.some((item) => item.id === current) ? current : contextRows[0]?.id ?? '')
+      setSessionId((current) => sessionRows.some((item) => item.id === current) ? current : '')
+    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'HTDT保存先の取得に失敗しました'))
+  }, [projectId])
+
+  async function saveSnapshot() {
+    if (!selectedId) return
+    if (!projectId || !contextId) {
+      setError('保存先ProjectとContextを選択してください')
+      return
+    }
+    if (!channelRole.trim()) {
+      setError('channel roleを入力してください')
+      return
+    }
+    const speakerIds = sourceSpeakerIds.split(/[,;\n]+/).map((value) => value.trim()).filter(Boolean)
+    if (!speakerIds.length) {
+      setError('source speaker IDsを1件以上入力してください')
+      return
+    }
+    const parsedPpo = Number(ppo)
+    if (!Number.isInteger(parsedPpo) || parsedPpo < 1 || parsedPpo > 384) {
+      setError('PPOは1〜384の整数で指定してください')
+      return
+    }
+    setSaving(true)
+    setError('')
+    setSaveResult(null)
+    try {
+      const result = await api<SnapshotImportResult>(`/api/projects/${projectId}/rew-snapshots`, {
+        method: 'POST',
+        body: JSON.stringify({
+          measurement_uuid: selectedId,
+          context_id: contextId,
+          session_id: sessionId || null,
+          channel_role: channelRole.trim(),
+          evidence_type: evidenceType,
+          source_speaker_ids: speakerIds,
+          radiation_scope: 'unknown',
+          routing_evidence: routingEvidence,
+          quality_status: qualityStatus,
+          quality_reasons: [],
+          quality_source: qualityStatus === 'unknown' ? 'unknown' : 'manual',
+          repeat_group: repeatGroup.trim() || null,
+          unit: unit.trim() || 'SPL',
+          ppo: parsedPpo,
+          smoothing: smoothing.trim() || null,
+        }),
+      })
+      setSaveResult(result)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'REW snapshotの保存に失敗しました')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const selectableMeasurements = measurements.filter((measurement) => validMeasurementId(measurement) !== null)
 
@@ -220,10 +330,10 @@ export function RewReadonlyPanel() {
       <section className="panel">
         <div className="section-title">
           <h2>REW read-only browser</h2>
-          <span>localhost GET only · preview only</span>
+          <span>localhost GET only · snapshot writes HTDT only</span>
         </div>
         <p className="hint">
-          REW 5.40系の読取専用APIを確認する補助画面です。測定開始、Generator、REW設定変更、HTDT Datasetへの保存は行いません。
+          REW 5.40系の読取専用APIを確認し、選択したFRをHTDTへsnapshot保存できます。REW側にはHTTP GETしか行わず、測定開始・Generator・REW設定変更は行いません。
         </p>
         <div className="row action-row">
           <button type="button" className="ghost" disabled={loading} onClick={() => void refreshStatus()}>{loading ? '確認中…' : 'REW接続を再確認'}</button>
@@ -266,7 +376,7 @@ export function RewReadonlyPanel() {
             </div>}
             <div className="grid4 rew-controls">
               <label>Measurement
-                <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setResponse(null) }}>
+                <select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setResponse(null); setSaveResult(null) }}>
                   <option value="">選択</option>
                   {selectableMeasurements.map((measurement) => {
                     const id = validMeasurementId(measurement)!
@@ -300,7 +410,32 @@ export function RewReadonlyPanel() {
               <span>phase: {response.phase_deg ? `${response.phase_deg.length} points` : 'not returned'}</span>
             </div>
             <FrequencyPreview response={response} />
-            <p className="hint">この曲線はREWからその場でGETしたプレビューです。HTDTのMeasurement/Datasetには保存していません。</p>
+            <p className="hint">この曲線はREWからその場でGETしたプレビューです。保存操作ではプレビューを流用せず、REW measurementを再GETしてbefore/after summary一致を確認したsnapshotをHTDTへ保存します。</p>
+            <div className="preview">
+              <strong>HTDTへスナップショット保存</strong>
+              <span>保存先とprovenanceを明示してください。API取得だけでは measured / usable / routing verified に自動昇格しません。</span>
+              <div className="grid2 rew-snapshot-form">
+                <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">選択</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                <label>Context<select value={contextId} onChange={(event) => setContextId(event.target.value)}><option value="">選択</option>{contexts.map((context) => <option key={context.id} value={context.id}>R{context.revision_number}</option>)}</select></label>
+                <label>Session（任意）<select value={sessionId} onChange={(event) => setSessionId(event.target.value)}><option value="">なし</option>{sessions.map((session) => <option key={session.id} value={session.id}>{session.purpose || session.started_at || session.id.slice(0, 8)}</option>)}</select></label>
+                <label>Channel role<input value={channelRole} onChange={(event) => setChannelRole(event.target.value)} /></label>
+                <label>Source speaker IDs<input value={sourceSpeakerIds} onChange={(event) => setSourceSpeakerIds(event.target.value)} placeholder="FL, FR" /></label>
+                <label>Repeat group<input value={repeatGroup} onChange={(event) => setRepeatGroup(event.target.value)} placeholder="任意" /></label>
+                <label>Evidence<select value={evidenceType} onChange={(event) => setEvidenceType(event.target.value as EvidenceType)}><option value="unknown">unknown</option><option value="measured">measured</option><option value="derived">derived</option><option value="predicted">predicted</option></select></label>
+                <label>Quality<select value={qualityStatus} onChange={(event) => setQualityStatus(event.target.value as QualityStatus)}><option value="unknown">unknown</option><option value="usable">usable</option><option value="warning">warning</option><option value="invalid">invalid</option></select></label>
+                <label>Routing evidence<select value={routingEvidence} onChange={(event) => setRoutingEvidence(event.target.value as RoutingEvidence)}><option value="unknown">unknown</option><option value="manual">manual</option><option value="verified">verified</option><option value="inferred">inferred</option></select></label>
+              </div>
+              <div className="row action-row">
+                <button type="button" disabled={saving || !projectId || !contextId || !selectedId} onClick={() => void saveSnapshot()}>{saving ? '保存中…' : 'HTDTへスナップショット保存'}</button>
+                <span className="hint">REW UUIDだけで既存Measurementと自動統合しません。同一RawAssetでも新しいMeasurement/Datasetとして保存します。</span>
+              </div>
+              {saveResult && <div className="analysis-banner">
+                <strong>saved</strong>
+                <span>measurement {saveResult.measurement_id.slice(0, 8)} · dataset {saveResult.dataset_id.slice(0, 8)}</span>
+                <span>raw SHA {saveResult.asset_sha256.slice(0, 12)}… · duplicate raw: {saveResult.duplicate_asset ? `yes (${saveResult.existing_dataset_count} existing dataset(s))` : 'no'}</span>
+                <span>quality {saveResult.quality_status} · evidence {saveResult.evidence_type} · routing {saveResult.routing_evidence}</span>
+              </div>}
+            </div>
           </>
         )}
       </section>

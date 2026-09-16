@@ -39,6 +39,7 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
 - A03 backend: localhost限定・GET専用のREW 5.40系APIアダプター
 - A03 UI: offline表示、測定一覧、PPO/unit/smoothing指定FRプレビュー、requested/returned来歴表示
+- A03 snapshot import: REW measurementをGET-onlyで再取得し、stable summary確認後にcanonical JSON RawAsset + Measurement + Datasetとして保存
 - A03 preflight: REW audio ready/driver/sample rate/Java input+output/input cal/EXCL候補/hardware ch/mappingをread-only表示
 - A04: 96 PPO特徴検出、room mode/一次反射の候補対応、quality/evidence gate、UI
 - R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
@@ -59,10 +60,12 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 - 壊れたBase64、NaN/Inf、空配列、spacing欠損、phase長不一致を拒否
 - REW未起動時はofflineを正常状態として扱い、保存済みHTDTデータは通常利用可能
 - UIから測定一覧とFRをGETし、log周波数軸の軽量SVGでプレビュー
-- 取得曲線は現段階ではHTDT Measurement/Datasetへ自動保存しない
+- 選択曲線は明示操作でHTDT Measurement/Datasetへsnapshot保存できる。保存時はpreviewを流用せず、UUID一意性とbefore/after summary一致を再確認する
+- RawAssetはmeasurement summary/query/REW frequency-response raw JSON（Base64列を保持）をcanonical UTF-8 JSON化し、同一原本はSHA-256でdedupする一方Measurement/Datasetは自動統合しない
+- API取得だけでは`measured` / `usable` / routing `verified`へ自動昇格せず、既定は`unknown`
 - REWへのPOST/PUT/DELETE、Generator、測定開始、設定変更は実装しない
 
-所有PC上のREW V5.40 beta 135へ実接続し、合成FR 958点のGET・big-endian復号・96 PPO周波数軸復元を確認済み。同一measurementのREW text exportとの照合と実測データでの受入は継続する。
+所有PC上のREW V5.40 beta 135へ実接続し、合成FR 958点のGET・big-endian復号・96 PPO周波数軸復元に加え、REW API snapshot保存、REW停止後の保存Dataset比較、RawAsset入りbackup/restoreまで確認済み。同一measurementのREW text exportとの照合と実測データでの受入は継続する。
 
 ## A04 — ピーク/ディップと幾何候補対応
 
@@ -104,7 +107,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 2. UMIK-1導入後、48 kHz、天井向き、個体別90°校正ファイル、Windows/REW入力経路を記録する。
 3. RX-A4AでFL/FR/C/Heightの実発音経路を確認し、input roleと実音源を分離して記録する。
 4. `docs/WINDOWS_ACCEPTANCE.md`の実機最終受入を実行する。
-5. 実REW APIを確認できた後、API取得をHTDT Datasetへ保存する場合はresponse/query来歴をRawAsset/metadataへ固定し、実API確認前に`measured`へ自動分類しない。
+5. UMIK-1実測取得後、REW API snapshotとGUI text exportを同一measurement・同一spacing/smoothing条件で照合する。
 6. IR/ETCは実IRサンプル取得後にA02として開始する。
 
 現時点では、合成データだけで安全に進められるv0.1中核と周辺品質作業は実装済み。次の大きな情報増分は実REW/実測から得る。
