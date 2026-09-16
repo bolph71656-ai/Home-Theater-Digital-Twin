@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from dataclasses import asdict
 from datetime import datetime
 import os
@@ -19,6 +20,7 @@ from .conditions import classify_differences, context_differences
 from .database import SCHEMA_VERSION, Store
 from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
 from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, SessionCreate
+from .readiness import evaluate_measurement_readiness
 from .report import build_report_payload, render_report_html
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
 from .rew_parser import RewParseError, parse_rew_frequency_response
@@ -38,6 +40,22 @@ def _default_data_dir() -> Path:
     if local_app_data:
         return Path(local_app_data) / 'HomeTheaterDigitalTwin'
     return Path.home() / '.home-theater-digital-twin'
+
+
+def _small_file_sha256(path_value: str | None, *, max_bytes: int = 1024 * 1024) -> str | None:
+    if not path_value:
+        return None
+    try:
+        path = Path(path_value)
+        if not path.is_file() or path.stat().st_size > max_bytes:
+            return None
+        digest = hashlib.sha256()
+        with path.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(65536), b''):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
 
 
 def _comparison_warnings(a: dict, b: dict, confounder_count: int) -> list[str]:
@@ -147,6 +165,27 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
             return store.create_context(project_id, request.model_dump(mode='json'), request.parent_context_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/projects/{project_id}/contexts/{context_id}/measurement-readiness')
+    def measurement_readiness(project_id: str, context_id: str) -> dict:
+        context = store.get_context(project_id, context_id)
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            preflight = rew.get_audio_preflight()
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'Unexpected REW API response: {exc}') from exc
+        java = preflight.get('java') if isinstance(preflight.get('java'), dict) else None
+        cal_path = java.get('input_cal_file') if java and isinstance(java.get('input_cal_file'), str) else None
+        return evaluate_measurement_readiness(
+            context['payload'],
+            preflight,
+            store.list_attachments(project_id),
+            context_id=context_id,
+            current_calibration_sha256=_small_file_sha256(cal_path),
+        )
 
     @app.get('/api/projects/{project_id}/contexts/{context_id}/acoustics')
     def context_acoustics(project_id: str, context_id: str, max_hz: float = Query(default=300.0, gt=0, le=2000),

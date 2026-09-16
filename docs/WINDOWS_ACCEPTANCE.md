@@ -40,6 +40,7 @@ M10は「自動化できる保存・比較・復元契約」と「実REW/実測�
 
 1. 使用するREW安定版を記録し、同じ測定をtext exportと読取専用APIの双方で取得する。
 2. UMIK-1を48 kHzで接続し、ホームシアター基準では天井向き+個体別90°校正ファイルを選択して保存する。絶対SPLを使う場合は校正状態を確認する。
+   - HTDT measurement readinessでUMIK-1、48 kHz、REW選択中校正ファイルとRawAssetのSHA-256一致、REW input、EXCL多chを照合する。machine passでも物理向きとroutingは手動確認する。
 3. RX-A4Aへの実際のHDMI/チャンネル割当を確認し、FL/FR/C/高さのrouting evidenceを記録する。
 4. R1でFL/FRを各2回以上測定し、repeat groupとして取り込む。
 5. スピーカーまたはMLPを1項目だけ変更してR2を作り、同じ測定条件で再測定する。
