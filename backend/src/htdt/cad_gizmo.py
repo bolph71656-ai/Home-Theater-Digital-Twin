@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Callable
 from math import atan2, degrees
@@ -216,7 +216,7 @@ class RotationWidget3D:
                 normal=axis,
                 n_sides=96,
                 fill=False,
-            ).tube(radius=max(self.radius * 0.018, 0.004), n_sides=10)
+            ).tube(radius=max(self.radius * 0.040, 0.008), n_sides=12)
             handle = plotter.add_mesh(
                 ring,
                 color=color,
@@ -368,3 +368,4 @@ class RotationWidget3D:
         for handle in self.handles:
             self.plotter.remove_actor(handle, render=False)
         self.handles.clear()
+
