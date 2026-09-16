@@ -160,6 +160,24 @@ def rotate_orientation_world(
     return quaternion_multiply(quaternion_from_axis_angle(axis, angle_deg), orientation)
 
 
+def rotate_position_world(
+    position: Position3,
+    pivot: Position3,
+    axis: Literal['x', 'y', 'z'],
+    angle_deg: float,
+) -> Position3:
+    """Rotate a domain position about a world-axis pivot without changing handedness conventions."""
+
+    rotation = quaternion_to_matrix3(quaternion_from_axis_angle(axis, angle_deg))
+    delta = (position.x_m - pivot.x_m, position.y_m - pivot.y_m, position.z_m - pivot.z_m)
+    rotated = tuple(sum(rotation[row][col] * delta[col] for col in range(3)) for row in range(3))
+    return Position3(
+        x_m=pivot.x_m + rotated[0],
+        y_m=pivot.y_m + rotated[1],
+        z_m=pivot.z_m + rotated[2],
+    )
+
+
 class Size3(BaseModel):
     model_config = ConfigDict(frozen=True)
     x_m: float = Field(gt=0)

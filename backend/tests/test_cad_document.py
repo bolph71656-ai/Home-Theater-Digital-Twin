@@ -11,6 +11,7 @@ from htdt.cad_scene import (
     quaternion_to_euler_deg,
     render_delta_to_domain,
     rotate_orientation_world,
+    rotate_position_world,
 )
 
 
@@ -145,3 +146,74 @@ def test_domain_render_coordinate_mapping_is_explicit_and_reversible() -> None:
     assert domain_to_render(base) == (1.0, -2.0, 3.0)
     moved = render_delta_to_domain((0.25, -0.5, 0.75), base)
     assert moved == Position3(x_m=1.25, y_m=2.5, z_m=3.75)
+
+
+def test_ordered_multi_selection_tracks_primary_and_sanitizes() -> None:
+    document = make_f1_scene()
+    state = EditorViewState(selected_ids=['speaker-fl', 'speaker-c', 'speaker-fl'])
+    assert state.selection == ('speaker-fl', 'speaker-c')
+    assert state.selected_id == 'speaker-c'
+
+    state.toggle_selected('speaker-fr')
+    assert state.selection == ('speaker-fl', 'speaker-c', 'speaker-fr')
+    assert state.selected_id == 'speaker-fr'
+    state.toggle_selected('speaker-c')
+    assert state.selection == ('speaker-fl', 'speaker-fr')
+    assert state.selected_id == 'speaker-fr'
+
+    state.set_selection(['speaker-fl', 'missing', 'speaker-fr'], primary_id='speaker-fl')
+    state.sanitize(document)
+    assert state.selection == ('speaker-fl', 'speaker-fr')
+    assert state.selected_id == 'speaker-fl'
+
+
+def test_group_move_preserves_relative_placement_and_is_one_undo() -> None:
+    working = WorkingDocument(make_f1_scene())
+    ids = ('speaker-fl', 'speaker-c')
+    before = tuple(working.committed_document.entity(entity_id) for entity_id in ids)
+
+    working.begin_group_move(ids)
+    working.preview_group_move((0.20, -0.10, 0.05))
+    preview = tuple(working.document.entity(entity_id) for entity_id in ids)
+    for original, moved in zip(before, preview, strict=True):
+        assert moved.position.x_m == pytest.approx(original.position.x_m + 0.20)
+        assert moved.position.y_m == pytest.approx(original.position.y_m - 0.10)
+        assert moved.position.z_m == pytest.approx(original.position.z_m + 0.05)
+        assert moved.aim_xyz == original.aim_xyz
+
+    assert working.commit_preview()
+    assert working.history_length == 1
+    assert working.undo()
+    assert tuple(working.committed_document.entity(entity_id) for entity_id in ids) == before
+
+
+def test_group_rotate_uses_common_pivot_and_is_one_undo() -> None:
+    working = WorkingDocument(make_f1_scene())
+    ids = ('speaker-fl', 'speaker-c')
+    before = tuple(working.committed_document.entity(entity_id) for entity_id in ids)
+    pivot = Position3(
+        x_m=sum(entity.position.x_m for entity in before) / 2.0,
+        y_m=sum(entity.position.y_m for entity in before) / 2.0,
+        z_m=sum(entity.position.z_m for entity in before) / 2.0,
+    )
+
+    working.begin_group_rotate(ids)
+    working.preview_group_rotate('z', 90.0, pivot)
+    preview = tuple(working.document.entity(entity_id) for entity_id in ids)
+    for original, rotated in zip(before, preview, strict=True):
+        assert rotated.position == rotate_position_world(original.position, pivot, 'z', 90.0)
+        assert rotated.orientation == rotate_orientation_world(original.orientation, 'z', 90.0)
+        assert rotated.aim_xyz == original.aim_xyz
+
+    assert working.commit_preview()
+    assert working.history_length == 1
+    assert working.undo()
+    assert tuple(working.committed_document.entity(entity_id) for entity_id in ids) == before
+
+
+def test_noop_group_move_is_not_added_to_history() -> None:
+    working = WorkingDocument(make_f1_scene())
+    working.begin_group_move(('speaker-fl', 'speaker-c'))
+    working.preview_group_move((0.0, 0.0, 0.0))
+    assert not working.commit_preview()
+    assert working.history_length == 0
