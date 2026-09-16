@@ -29,8 +29,8 @@ def _flatten(value: Any, prefix: str = '') -> dict[str, Any]:
 
 
 def context_differences(payload_a: dict[str, Any], payload_b: dict[str, Any]) -> list[dict[str, Any]]:
-    relevant_a = {key: payload_a.get(key) for key in ('room', 'speakers', 'measurement_point', 'avr')}
-    relevant_b = {key: payload_b.get(key) for key in ('room', 'speakers', 'measurement_point', 'avr')}
+    relevant_a = {key: payload_a.get(key) for key in ('room', 'speakers', 'measurement_point', 'microphone', 'avr')}
+    relevant_b = {key: payload_b.get(key) for key in ('room', 'speakers', 'measurement_point', 'microphone', 'avr')}
     flat_a = _flatten(relevant_a)
     flat_b = _flatten(relevant_b)
     differences: list[dict[str, Any]] = []

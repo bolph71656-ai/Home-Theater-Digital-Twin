@@ -21,6 +21,8 @@
 
 HTDTの第一対象測定マイクはminiDSP UMIK-1とする。UMIK-1は48 kHzで使用し、個体serialから0°/90°の校正ファイルを取得する。ホームシアターの基準測定はマイクを天井へ向け、90°校正ファイルを使用する。単一スピーカーへ正対する0°測定は別条件として記録する。実serialと個体校正原本はローカルRawAssetとして保持し、公開リポジトリへ自動コミットしない。
 
+Contextにはマイク機種・serial・sample rate・calibration profileと`MeasurementPoint.aim_xyz`を保存する。校正ファイルのバイト列は別のRaw attachmentとして保存し、ファイル名だけを校正適用の証明にはしない。
+
 ## 2. Windowsと測定チャンネル
 
 REWのWindows向けJava出力で多チャンネルを扱う場合はWASAPI Exclusive（EXCL）デバイスを確認する。入力と出力を別デバイスにできるため、USBマイクとHDMIを組み合わせる候補になる。ASIOは利用可能なドライバーが必要な場合に評価し、ASIO4ALLの導入を初期必須条件にしない。[REW Soundcard Preferences](https://www.roomeqwizard.com/help/help_en-GB/html/soundcard.html)

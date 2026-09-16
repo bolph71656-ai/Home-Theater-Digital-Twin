@@ -44,3 +44,7 @@
 - https://www.minidsp.com/applications/acoustic-measurements/umik-1-setup-with-rew
 - https://www.minidsp.com/applications/acoustic-measurements/umik-1-hdmi-on-windows
 - https://www.roomeqwizard.com/betahelp/help/html/soundcard.html
+
+## HTDT Context記録
+
+ContextにはUMIK-1のmodel/serial/sample rate/calibration profile/filenameとMLPの`aim_xyz`を不変保存する。serial未入力は`null`のまま許可し、実機到着前に架空serialを作らない。90°基準時のaimは`[0,0,1]`、部屋正面へ向ける0°基準は`[0,-1,0]`とする。
