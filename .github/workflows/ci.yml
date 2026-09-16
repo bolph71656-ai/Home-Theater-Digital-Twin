@@ -23,6 +23,20 @@ jobs:
       - name: Test backend
         run: python -m pytest backend\tests
 
+      - name: Check backend launcher CLI
+        run: python -m htdt --help
+
+      - name: Validate PowerShell launcher syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\run-local.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
