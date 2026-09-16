@@ -31,10 +31,11 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 - A01: 矩形室モードと6面の一次image-source反射候補。結果は`predicted_geometry_candidate`
 - schema v2: 測定品質、再測定グループ、Raw添付、整合性検査、A/B confounder分離
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
+- A03: localhost限定・GET専用のREW 5.40 APIアダプター
 
 ## A03 — 読取専用REW API
 
-REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを実装する。
+REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを実装した。
 
 - 既定 `http://127.0.0.1:4735`、localhost以外を拒否
 - `GET /measurements` と measurement UUID参照
@@ -49,6 +50,23 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 実REW接続がないため、完了条件のうち「オフラインへ戻れる」「REW変更/発音を起こさない」はmock/コード境界で検証し、実機での最終受入だけを保留する。
 
+## 実装中 — A04 ピーク/ディップと幾何候補対応
+
+周波数応答をHTDT内部の96 PPO / log2補間へ再標本化し、固定パラメータを返す特徴検出を追加した。
+
+- 既定評価帯域: 20–300 Hz（APIで変更可能）
+- baseline: log周波数上の移動平均、既定1/3 octave幅
+- feature threshold: baselineからの偏差3 dB以上
+- 最小feature間隔: 1/12 octave
+- mode / reflection候補との照合距離: log2周波数距離、既定1/12 octave以内
+- room modeはpeak/dip双方の候補、一次反射の`first_destructive_hz`はdipのみの候補
+- 結果分類は`candidate_association_not_causal_diagnosis`。近接しても原因確定とは扱わない
+- `invalid`測定と非`measured`データでは自動候補照合を無効化
+- `warning` / `unknown`品質は候補照合を許すが、手動確認が必要な警告を返す
+- 検出・照合のPPO、帯域、prominence、baseline幅、最小間隔、照合許容差、音速、算法版を結果に保持
+
+合成FRでは既知の狭いpeak/dipを検出し、既知周波数の矩形室モード/一次反射候補との対応をテストする。実測での妥当な閾値は実REW測定取得後に再評価する。
+
 ## 未検証・保留
 
 - 実REW安定版テキストとの互換性
@@ -57,11 +75,12 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - RX-A4A HDMIチャンネル割当
 - 高さチャンネルの個別励振
 - 実部屋での同条件再測定ばらつき
+- A04の閾値/prominenceが実部屋で実用的か
 - M10の実データ通し確認
 
 ## 次
 
-1. A04としてピーク/ディップ検出条件を固定し、モード/一次反射との候補対応を実装する。原因確定とは表示しない。
+1. A04のWindows CI受入後、特徴/候補をUIへ表示する。
 2. REW API取得をHTDT Datasetへ保存する場合は、API response/queryの来歴をRawAsset/metadataへ固定する。実API確認前にmeasuredへ自動分類しない。
 3. IR/ETCは実IRサンプル取得後にA02として開始する。
 4. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
