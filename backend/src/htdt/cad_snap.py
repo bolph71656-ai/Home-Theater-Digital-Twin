@@ -16,6 +16,7 @@ SNAP_PRIORITY: dict[SnapKind, int] = {
     'edge': 2,
     'alignment': 3,
 }
+ALL_SNAP_KINDS: frozenset[SnapKind] = frozenset(SNAP_PRIORITY)
 
 _PROJECTION_SENTINELS: tuple[Position3, ...] = (
     Position3(x_m=0.0, y_m=0.0, z_m=0.0),
@@ -69,9 +70,6 @@ class SnapSelector:
         self._projection_signature = None
 
     def _sync_projection_cache(self, project: ScreenProjector) -> None:
-        # Candidate screen anchors are static only while the camera/projection is
-        # static. Four non-coplanar sentinels cheaply fingerprint that mapping so
-        # zoom/pan/view changes invalidate cached screen coordinates immediately.
         signature = tuple(
             round(value, 6)
             for point in _PROJECTION_SENTINELS
@@ -103,9 +101,6 @@ class SnapSelector:
         self._sync_projection_cache(project)
         probe_screen = project(probe)
 
-        # Hysteresis is the common case while dragging along an acquired feature.
-        # Resolve the retained candidate first so stable drags do not score every
-        # scene feature on every mouse-move event.
         if self._retained_id is not None:
             retained = next(
                 (candidate for candidate in candidates if candidate.stable_id == self._retained_id),
@@ -253,24 +248,34 @@ def generate_snap_candidates(
     exclude_ids: set[str],
     axis: AxisName,
     probe: Position3,
+    kinds: set[SnapKind] | frozenset[SnapKind] | None = None,
 ) -> tuple[SnapCandidate, ...]:
+    enabled = ALL_SNAP_KINDS if kinds is None else frozenset(kinds)
+    unknown = enabled - ALL_SNAP_KINDS
+    if unknown:
+        raise ValueError(f'unsupported snap kinds: {sorted(unknown)}')
+
     candidates: list[SnapCandidate] = []
     for entity in document.entities:
         if entity.entity_id in exclude_ids:
             continue
         vertices = _entity_vertices(entity)
-        for index, vertex in enumerate(vertices):
-            candidates.append(_candidate(entity, 'vertex', str(index), vertex, axis, probe))
-        if entity.size_m is not None:
+        if 'vertex' in enabled:
+            for index, vertex in enumerate(vertices):
+                candidates.append(_candidate(entity, 'vertex', str(index), vertex, axis, probe))
+        if entity.size_m is not None and ({'midpoint', 'edge'} & enabled):
             for edge_index, (left, right) in enumerate(_box_edges(vertices)):
                 start, end = vertices[left], vertices[right]
-                midpoint = Position3(
-                    x_m=(start.x_m + end.x_m) / 2.0,
-                    y_m=(start.y_m + end.y_m) / 2.0,
-                    z_m=(start.z_m + end.z_m) / 2.0,
-                )
-                closest = _closest_point_on_segment(probe, start, end)
-                candidates.append(_candidate(entity, 'midpoint', str(edge_index), midpoint, axis, probe))
-                candidates.append(_candidate(entity, 'edge', str(edge_index), closest, axis, probe))
-        candidates.append(_candidate(entity, 'alignment', 'origin', entity.position, axis, probe))
+                if 'midpoint' in enabled:
+                    midpoint = Position3(
+                        x_m=(start.x_m + end.x_m) / 2.0,
+                        y_m=(start.y_m + end.y_m) / 2.0,
+                        z_m=(start.z_m + end.z_m) / 2.0,
+                    )
+                    candidates.append(_candidate(entity, 'midpoint', str(edge_index), midpoint, axis, probe))
+                if 'edge' in enabled:
+                    closest = _closest_point_on_segment(probe, start, end)
+                    candidates.append(_candidate(entity, 'edge', str(edge_index), closest, axis, probe))
+        if 'alignment' in enabled:
+            candidates.append(_candidate(entity, 'alignment', 'origin', entity.position, axis, probe))
     return tuple(candidates)
