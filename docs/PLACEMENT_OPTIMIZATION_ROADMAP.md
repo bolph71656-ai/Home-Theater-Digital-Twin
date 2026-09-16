@@ -104,8 +104,7 @@ O10以降はv1.0安定版の必須条件にしない。安定した測定・履�
 
 hard constraintとsoft objectiveを混同しない。設置不能位置はスコアを悪化させるのではなく候補集合から除外する。一方、移動量、ケーブル長、見た目上の好みなど「許容はできるが避けたい」条件は独立Objectiveとして保持できる。
 
-polygon演算は自前実装を最小化し、Shapely 2.xを第一候補としてWindows/Python 3.12で検証する。採用時はversionをlockし、`contains/covers`、bufferによる壁離隔、differenceによる禁止領域除外をfixtureで検証する。
-2026-09-16時点のShapely 2.1.2にはCPython 3.12 / Windows x86-64 wheelが提供されている。ただしG00/G10実装時に所有PCとWindows CIで導入検証してから依存へ追加する。
+G00でpolygon演算にShapely 2.1.2をpinした。CPython 3.12 / Windows x86-64 wheelを所有PCで導入確認し、`is_valid` / `covers`を8頂点fixtureで検証する。G10で`buffer`による壁離隔、`difference`による禁止領域除外、距離演算を追加する際も、各意味論をfixtureで独立検証してからConstraintSetへ使う。
 
 ### 6.1 hard constraint実装順
 

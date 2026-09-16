@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .geometry import polygon_covers_xy, validate_polygon_in_reference_box
 from .limits import MAX_ATTACHMENT_BASE64_CHARS, MAX_BACKUP_BASE64_CHARS, MAX_REW_TEXT_BASE64_CHARS
 
 
@@ -13,6 +14,12 @@ QualityStatus = Literal['usable', 'warning', 'invalid', 'unknown']
 QualitySource = Literal['manual', 'imported', 'derived', 'unknown']
 RoutingEvidence = Literal['verified', 'manual', 'inferred', 'unknown']
 AttachmentKind = Literal['mdat', 'microphone_calibration', 'avr_settings', 'measurement_note', 'image', 'other']
+
+
+class RoomVertex(BaseModel):
+    vertex_id: str = Field(min_length=1, max_length=100)
+    x_m: float
+    y_m: float
 
 
 class Point3D(BaseModel):
@@ -34,8 +41,25 @@ class RoomSnapshot(BaseModel):
     width_m: float = Field(gt=0)
     depth_m: float = Field(gt=0)
     height_m: float = Field(gt=0)
-    geometry_kind: Literal['rectangular', 'reference_box'] = 'rectangular'
+    geometry_kind: Literal['rectangular', 'reference_box', 'polygon_prism'] = 'rectangular'
+    footprint_vertices: list[RoomVertex] | None = None
     notes: str | None = None
+
+    @model_validator(mode='after')
+    def validate_geometry(self) -> 'RoomSnapshot':
+        if self.geometry_kind == 'polygon_prism':
+            if self.footprint_vertices is None:
+                raise ValueError('polygon_prism requires footprint_vertices')
+            vertex_ids = [vertex.vertex_id for vertex in self.footprint_vertices]
+            if len(set(vertex_ids)) != len(vertex_ids):
+                raise ValueError('Room polygon vertex_id values must be unique')
+            validate_polygon_in_reference_box(
+                self.width_m, self.depth_m,
+                [(point.x_m, point.y_m) for point in self.footprint_vertices],
+            )
+        elif self.footprint_vertices is not None:
+            raise ValueError('footprint_vertices is only valid for polygon_prism geometry')
+        return self
 
 
 class MeasurementPoint(BaseModel):
@@ -89,9 +113,17 @@ class ContextCreate(BaseModel):
         room = self.room
         positions: list[tuple[str, Point3D]] = [('measurement point', self.measurement_point.position)]
         positions.extend((speaker.speaker_id, speaker.position) for speaker in self.speakers if speaker.position is not None)
+        polygon = None
+        if room.geometry_kind == 'polygon_prism' and room.footprint_vertices is not None:
+            polygon = validate_polygon_in_reference_box(
+                room.width_m, room.depth_m,
+                [(point.x_m, point.y_m) for point in room.footprint_vertices],
+            )
         for label, point in positions:
             if not (0 <= point.x_m <= room.width_m and 0 <= point.y_m <= room.depth_m and 0 <= point.z_m <= room.height_m):
                 raise ValueError(f'{label} is outside the room reference bounds')
+            if polygon is not None and not polygon_covers_xy(polygon, point.x_m, point.y_m):
+                raise ValueError(f'{label} is outside the room polygon')
         return self
 
 

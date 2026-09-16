@@ -19,6 +19,7 @@ from .comparison import ComparisonError, compare_frequency_responses
 from .conditions import classify_differences, context_differences
 from .database import SCHEMA_VERSION, Store
 from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
+from .geometry import room_geometry_payload
 from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, RewApiSnapshotImportRequest, SessionCreate
 from .readiness import evaluate_measurement_readiness
 from .report import build_report_payload, render_report_html
@@ -181,6 +182,16 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
     @app.get('/api/projects/{project_id}/contexts')
     def list_contexts(project_id: str) -> list[dict]:
         return store.list_contexts(project_id)
+
+    @app.get('/api/projects/{project_id}/contexts/{context_id}/geometry')
+    def context_geometry(project_id: str, context_id: str) -> dict:
+        context = store.get_context(project_id, context_id)
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            return room_geometry_payload(context['payload']['room'])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post('/api/projects/{project_id}/contexts', status_code=201)
     def create_context(project_id: str, request: ContextCreate) -> dict:
