@@ -71,6 +71,25 @@ def test_screen_space_snap_uses_acquire_retain_hysteresis() -> None:
     assert switched is not None and switched.candidate.stable_id == 'b'
 
 
+def test_snap_selector_reuses_static_anchor_projections_until_reset() -> None:
+    selector = SnapSelector()
+    candidates = (_snap_candidate('a', 'vertex', 1.0), _snap_candidate('b', 'midpoint', 1.4))
+    calls = 0
+
+    def project(position: Position3) -> tuple[float, float]:
+        nonlocal calls
+        calls += 1
+        return (position.x_m * 10.0, 0.0)
+
+    selector.select(candidates, Position3(x_m=1.1, y_m=0.0, z_m=0.0), project)
+    assert calls == 3  # probe + 2 anchors
+    selector.select(candidates, Position3(x_m=1.2, y_m=0.0, z_m=0.0), project)
+    assert calls == 4  # only the new probe is projected
+    selector.reset()
+    selector.select(candidates, Position3(x_m=1.2, y_m=0.0, z_m=0.0), project)
+    assert calls == 7
+
+
 def test_snap_priority_precedes_distance_and_stable_id_breaks_ties() -> None:
     selector = SnapSelector()
     project = lambda position: (position.x_m * 10.0, 0.0)
