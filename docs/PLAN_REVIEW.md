@@ -5,7 +5,7 @@
 > 追加対象: mainの10dabf995453e1351fce32e2041790c925d2e31bにある計画6文書
 > 範囲: 計画書の検証・詳細化。アプリ実装、Windows実機検証、実測データ検証は実施していない。
 
-**最新のCAD-firstレビューは[§7](#7-cad-first追加レビュー2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
+**最新の技術レビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化とIssue/PR整理は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
 
 §1–5は初回レビューの記録を残す。追加レビューの指摘と反映先は[§6](#6-追加レビュー)を参照。現在の仕様は各設計文書を正本とする。
 
@@ -167,4 +167,21 @@ Qt/VTKは第一実装として維持する。選定理由を「WindowsなのでW
 
 14文書の内容整合、80のrelative link、milestone ID、旧方針の残存、28の固定commitソースリンク、変更範囲を確認した。文書のみのため新規testは追加していない。既存CIの結果とGitHub反映先はこの変更のPRに記録する。Windows実機gateは未実施。
 
-次工程はPR #37へ本改訂を取り込み、N05の選択→移動→取消/Undo→保存/reopen→packageをGitHubから再現可能にすること。
+このレビュー時点ではPR #37の継続を予定したが、その後のユーザー指示による旧Issue/PR整理で§8の後継Issueへ置換した。N05の選択→移動→取消/Undo→保存/reopen→packageという次工程は維持する。
+
+## 8. 正本化と旧Issue/PRの整理（2026-09-16）
+
+ユーザーの「今回のロードマップを正本にし、旧仕様のIssue/PRをclose」の指示に対応した。正本はmainの[IMPLEMENTATION_ROADMAP](IMPLEMENTATION_ROADMAP.md)、採択は[PR #40](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/40)、commit `850cfa5cb6bc9ef21308246fd7091d28bdfa6b23`。
+
+open一覧全件と各本文・コメントを確認。旧仕様はIssue 2件とDraft PR 1件だった。
+
+| 対象 | 処理 | 理由 / 引継ぎ |
+|---|---|---|
+| [Issue #36](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/36) | closed / not_planned | Context中心の一括仕様をScene分離とN05先行へ置換 |
+| [Issue #38](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/38) | closed / not_planned | 旧N10一括checklistと旧frontend受入を段階別gateへ置換 |
+| [PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37) | closed / 未マージ | 旧Context保存・既存契約固定のscopeを終了。branchと0353768 snapshotは保存 |
+| [Issue #41](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41) | open / 後継 | 正本のN05/A01/A02、仕様リンク、試作再利用候補を集約。実装は一時停止中 |
+
+closeは実装完了を意味しない。各本文の先頭に置換理由・正本・後継を追記し、元の本文と履歴を残した。既にclosed/mergedの37件は履歴として維持した。旧branchやデータの削除、旧PRのマージ、アプリ実装再開は行っていない。
+
+README、ロードマップ、実装状況の「PR #37を継続」の指示をIssue #41へ更新し、二重の正本が残らないようにした。今後のIssue/PRは正本を具体化する追跡票とし、仕様変更時は文書も同じPRで更新する。
