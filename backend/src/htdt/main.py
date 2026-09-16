@@ -7,12 +7,13 @@ import os
 from pathlib import Path
 import tempfile
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
+from .acoustics import analyze_rectangular_context
 from .comparison import ComparisonError, compare_frequency_responses
 from .database import Store
 from .models import BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate
@@ -69,6 +70,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             return store.create_context(project_id, request.model_dump(mode='json'), request.parent_context_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/projects/{project_id}/contexts/{context_id}/acoustics')
+    def context_acoustics(
+        project_id: str,
+        context_id: str,
+        max_hz: float = Query(default=300.0, gt=0, le=2000),
+        sound_speed_m_s: float = Query(default=343.0, gt=250, lt=400),
+    ) -> dict:
+        context = next((item for item in store.list_contexts(project_id) if item['id'] == context_id), None)
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            return analyze_rectangular_context(context['payload'], max_hz=max_hz, sound_speed_m_s=sound_speed_m_s)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post('/api/import/preview')
     def preview_import(request: ImportPreviewRequest) -> dict:

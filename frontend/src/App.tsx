@@ -36,7 +36,34 @@ type Comparison = {
   result: ComparisonResult
   spec: { label?: string | null }
 }
-
+type RoomMode = {
+  n_x: number
+  n_y: number
+  n_z: number
+  frequency_hz: number
+  mode_class: string
+}
+type ReflectionCandidate = {
+  speaker_id: string
+  speaker_role: string
+  surface: string
+  reflection_point_m: [number, number, number]
+  direct_length_m: number
+  reflected_length_m: number
+  excess_length_m: number
+  excess_delay_ms: number
+  first_destructive_hz: number | null
+}
+type AcousticAnalysis = {
+  classification: 'predicted_geometry_candidate'
+  algorithm_version: string
+  assumptions: string[]
+  sound_speed_m_s: number
+  max_mode_hz: number
+  room_modes: RoomMode[]
+  first_order_reflections: ReflectionCandidate[]
+  skipped_speaker_ids: string[]
+}
 type SpeakerDraft = {
   speaker_id: string
   role: string
@@ -45,6 +72,8 @@ type SpeakerDraft = {
   y: string
   z: string
 }
+
+type ExcludedBand = { low_hz: number; high_hz: number }
 
 const initialSpeakers: SpeakerDraft[] = [
   { speaker_id: 'FL', role: 'front_left', model: '', x: '', y: '', z: '' },
@@ -75,6 +104,18 @@ function speakerPayload(draft: SpeakerDraft): Speaker {
   }
 }
 
+function parseExcludedBands(text: string): ExcludedBand[] {
+  if (!text.trim()) return []
+  return text.split(/[,;]+/).map((chunk) => {
+    const match = chunk.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*-\s*([0-9]+(?:\.[0-9]+)?)$/)
+    if (!match) throw new Error(`除外帯域「${chunk.trim()}」は 70-90 の形式で入力してください`)
+    const low_hz = Number(match[1])
+    const high_hz = Number(match[2])
+    if (low_hz <= 0 || high_hz <= low_hz) throw new Error(`除外帯域「${chunk.trim()}」が不正です`)
+    return { low_hz, high_hz }
+  })
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
@@ -100,7 +141,12 @@ export default function App() {
   const [datasetA, setDatasetA] = useState('')
   const [datasetB, setDatasetB] = useState('')
   const [band, setBand] = useState({ low: '60', high: '200', refLow: '60', refHigh: '200' })
+  const [excludedBandsText, setExcludedBandsText] = useState('')
   const [activeComparison, setActiveComparison] = useState<Comparison | null>(null)
+
+  const [maxModeHz, setMaxModeHz] = useState('300')
+  const [soundSpeed, setSoundSpeed] = useState('343')
+  const [acoustics, setAcoustics] = useState<AcousticAnalysis | null>(null)
 
   const activeContext = useMemo(
     () => contexts.find((context) => context.id === selectedContextId) ?? contexts[0] ?? null,
@@ -139,8 +185,13 @@ export default function App() {
     setDatasetA('')
     setDatasetB('')
     setActiveComparison(null)
+    setAcoustics(null)
     void reloadProjectData(projectId).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : '読込失敗'))
   }, [projectId])
+
+  useEffect(() => {
+    setAcoustics(null)
+  }, [selectedContextId])
 
   function notify(text: string) {
     setMessage(text)
@@ -157,6 +208,30 @@ export default function App() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '作成失敗')
     }
+  }
+
+  function copyActiveContextToEditor() {
+    if (!activeContext) return
+    const payload = activeContext.payload
+    setRoom({
+      width: String(payload.room.width_m),
+      depth: String(payload.room.depth_m),
+      height: String(payload.room.height_m),
+    })
+    setMlp({
+      x: String(payload.measurement_point.position.x_m),
+      y: String(payload.measurement_point.position.y_m),
+      z: String(payload.measurement_point.position.z_m),
+    })
+    setSpeakers(payload.speakers.map((speaker) => ({
+      speaker_id: speaker.speaker_id,
+      role: speaker.role,
+      model: speaker.model ?? '',
+      x: speaker.position ? String(speaker.position.x_m) : '',
+      y: speaker.position ? String(speaker.position.y_m) : '',
+      z: speaker.position ? String(speaker.position.z_m) : '',
+    })))
+    notify(`R${activeContext.revision_number} を編集フォームへ複製しました。保存するまで元版は変わりません`)
   }
 
   async function saveContext(event: FormEvent) {
@@ -240,6 +315,7 @@ export default function App() {
           high_hz: numeric(band.high, '帯域上限'),
           reference_low_hz: numeric(band.refLow, '基準帯域下限'),
           reference_high_hz: numeric(band.refHigh, '基準帯域上限'),
+          excluded_bands: parseExcludedBands(excludedBandsText),
           label: 'Speaker setting A/B',
         }),
       })
@@ -248,6 +324,19 @@ export default function App() {
       notify('比較条件と結果を保存しました')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '比較失敗')
+    }
+  }
+
+  async function runAcoustics() {
+    try {
+      if (!projectId || !activeContext) throw new Error('配置版を選択してください')
+      const maxHz = numeric(maxModeHz, 'モード上限')
+      const speed = numeric(soundSpeed, '音速')
+      const result = await api<AcousticAnalysis>(`/api/projects/${projectId}/contexts/${activeContext.id}/acoustics?max_hz=${encodeURIComponent(maxHz)}&sound_speed_m_s=${encodeURIComponent(speed)}`)
+      setAcoustics(result)
+      notify('幾何モデル候補を計算しました。実測診断とは別表示です')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '解析失敗')
     }
   }
 
@@ -268,9 +357,9 @@ export default function App() {
     <main className="shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">v0.1 core · measurement → context → comparison</p>
+          <p className="eyebrow">v0.2 foundation · measured evidence first</p>
           <h1>Home Theater Digital Twin</h1>
-          <p className="lead">測定の再現性と配置履歴を固定し、A/B比較を積み重ねてスピーカーセッティングを改善します。</p>
+          <p className="lead">測定の再現性と配置履歴を固定し、A/B比較を積み重ねてスピーカーセッティングを改善します。幾何モデルは候補生成に限定します。</p>
         </div>
         <div className="runtime">
           <strong>{health?.status ?? 'checking'}</strong>
@@ -327,6 +416,7 @@ export default function App() {
             <select value={selectedContextId} onChange={(event) => setSelectedContextId(event.target.value)}>
               {contexts.map((context) => <option key={context.id} value={context.id}>R{context.revision_number}</option>)}
             </select>
+            <button type="button" className="ghost" disabled={!activeContext} onClick={copyActiveContextToEditor}>選択版を複製して編集</button>
           </div>
         </form>
         {activeContext && <RoomPlot context={activeContext.payload} />}
@@ -342,8 +432,9 @@ export default function App() {
         </div>
         {preview && <div className="preview"><strong>{preview.filename}</strong><span>{preview.points} points</span><span>{preview.frequency_min_hz}–{preview.frequency_max_hz} Hz</span><span>phase: {preview.phase_status}</span><span>SHA {preview.sha256.slice(0, 12)}…</span>{preview.warnings.map((warning) => <em key={warning}>{warning}</em>)}</div>}
         <button disabled={!preview} onClick={() => void importMeasurement()}>この測定を保存</button>
+        <p className="hint">測定品質は、REWのレベル/クリップ警告と同条件再測定が未取得の間は unknown と扱います。</p>
         <div className="cards">
-          {measurements.map((measurement) => <article key={measurement.id}><strong>{measurement.channel_role}</strong><span>{measurement.points} pts · {measurement.frequency_min_hz}–{measurement.frequency_max_hz} Hz</span><code>{measurement.dataset_id.slice(0, 8)}</code></article>)}
+          {measurements.map((measurement) => <article key={measurement.id}><strong>{measurement.channel_role}</strong><span>{measurement.points} pts · {measurement.frequency_min_hz}–{measurement.frequency_max_hz} Hz</span><span>quality: unknown · evidence: {measurement.evidence_type}</span><code>{measurement.dataset_id.slice(0, 8)}</code></article>)}
         </div>
       </section>
 
@@ -359,7 +450,8 @@ export default function App() {
           <label>基準Low Hz<input value={band.refLow} onChange={(event) => setBand({ ...band, refLow: event.target.value })} /></label>
           <label>基準High Hz<input value={band.refHigh} onChange={(event) => setBand({ ...band, refHigh: event.target.value })} /></label>
         </div>
-        <button onClick={() => void compare()}>比較して保存</button>
+        <label>除外帯域（例: 70-90, 120-130）<input value={excludedBandsText} onChange={(event) => setExcludedBandsText(event.target.value)} placeholder="任意" /></label>
+        <div className="row action-row"><button onClick={() => void compare()}>比較して保存</button></div>
         {activeComparison && <>
           <div className="metrics">
             <div><span>Mean A−B</span><strong>{activeComparison.result.mean_difference_db?.toFixed(2) ?? '—'} dB</strong></div>
@@ -370,6 +462,28 @@ export default function App() {
           <FrequencyPlot result={activeComparison.result} />
         </>}
         {!activeComparison && comparisons[0] && <button className="ghost" onClick={() => setActiveComparison(comparisons[0])}>最新の保存済み比較を表示</button>}
+      </section>
+
+      <section className="panel">
+        <div className="section-title"><h2>5. Geometry candidates</h2><span>予測候補 · 実測診断ではない</span></div>
+        <p className="hint">矩形室の固有周波数と、各スピーカー→MLPの一次鏡像反射を計算します。壁の吸音率、反射位相、スピーカーの指向性、開口や家具はまだモデル化しません。</p>
+        <div className="grid3">
+          <label>Room mode上限 (Hz)<input value={maxModeHz} onChange={(event) => setMaxModeHz(event.target.value)} /></label>
+          <label>音速 (m/s)<input value={soundSpeed} onChange={(event) => setSoundSpeed(event.target.value)} /></label>
+          <div className="field-action"><button disabled={!activeContext} onClick={() => void runAcoustics()}>選択版を解析</button></div>
+        </div>
+        {acoustics && <>
+          <div className="analysis-banner"><strong>{acoustics.classification}</strong><span>{acoustics.algorithm_version}</span><span>c={acoustics.sound_speed_m_s} m/s</span></div>
+          {acoustics.skipped_speaker_ids.length > 0 && <p className="hint">座標未入力のため反射計算を省略: {acoustics.skipped_speaker_ids.join(', ')}</p>}
+          <h3>Room modes（先頭24件）</h3>
+          <div className="analysis-grid">
+            {acoustics.room_modes.slice(0, 24).map((mode) => <div key={`${mode.n_x}-${mode.n_y}-${mode.n_z}`}><strong>{mode.frequency_hz.toFixed(1)} Hz</strong><span>({mode.n_x},{mode.n_y},{mode.n_z}) · {mode.mode_class}</span></div>)}
+          </div>
+          <h3>一次反射候補</h3>
+          <div className="analysis-grid wide">
+            {acoustics.first_order_reflections.map((candidate) => <div key={`${candidate.speaker_id}-${candidate.surface}`}><strong>{candidate.speaker_id} · {candidate.surface}</strong><span>ΔL {candidate.excess_length_m.toFixed(3)} m · +{candidate.excess_delay_ms.toFixed(2)} ms</span><span>180°幾何候補 {candidate.first_destructive_hz ? `${candidate.first_destructive_hz.toFixed(1)} Hz` : '—'}</span></div>)}
+          </div>
+        </>}
       </section>
     </main>
   )
