@@ -378,6 +378,7 @@ class NativeEditorWindow(QMainWindow):
                 self.actors[entity_id],
                 interact_callback=self._translation_interact,
                 release_callback=self._translation_release,
+                cancel_callback=self.cancel_preview,
             )
         elif entity.kind in {'speaker', 'furniture'}:
             self.gizmo = RotationWidget3D(
@@ -385,6 +386,7 @@ class NativeEditorWindow(QMainWindow):
                 self.actors[entity_id],
                 interact_callback=self._rotation_interact,
                 release_callback=self._rotation_release,
+                cancel_callback=self.cancel_preview,
             )
 
     def _inspect(self, entity_id: str | None, *, use_preview: bool = False) -> None:

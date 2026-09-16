@@ -10,6 +10,7 @@ from vtkmodules.vtkRenderingCore import vtkPropPicker
 
 MatrixCallback = Callable[[np.ndarray], None]
 RotationCallback = Callable[[int, float], None]
+CancelCallback = Callable[[], None]
 
 
 def _grab_mouse(plotter: pv.Plotter) -> None:
@@ -24,6 +25,14 @@ def _release_mouse(plotter: pv.Plotter) -> None:
         widget.releaseMouse()
 
 
+def _event_inside_renderer(plotter: pv.Plotter, interactor) -> bool:
+    x, y = interactor.GetEventPosition()
+    renderer = plotter.iren.get_poked_renderer()
+    ox, oy = renderer.GetOrigin()
+    width, height = renderer.GetSize()
+    return ox <= x < ox + width and oy <= y < oy + height
+
+
 class TranslationWidget3D:
     """Three-axis translation-only widget for HTDT's physical domain axes."""
 
@@ -34,11 +43,13 @@ class TranslationWidget3D:
         *,
         interact_callback: MatrixCallback | None = None,
         release_callback: MatrixCallback | None = None,
+        cancel_callback: CancelCallback | None = None,
     ) -> None:
         self.plotter = plotter
         self.actor = actor
         self.interact_callback = interact_callback
         self.release_callback = release_callback
+        self.cancel_callback = cancel_callback
         # Polar vectors use C=diag(1,-1,1): domain +Y is render -Y.
         self.axes = np.array(((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)))
         self.origin = np.asarray(actor.center, dtype=float)
@@ -126,8 +137,14 @@ class TranslationWidget3D:
         self.pressing = True
         _grab_mouse(self.plotter)
 
-    def _release(self, _interactor, _event) -> None:
+    def _release(self, interactor, _event) -> None:
         if not self.pressing:
+            return
+        if not _event_inside_renderer(self.plotter, interactor):
+            if self.cancel_callback:
+                self.cancel_callback()
+            else:
+                self.cancel()
             return
         self.plotter.enable_trackball_style()
         self.pressing = False
@@ -164,11 +181,13 @@ class RotationWidget3D:
         *,
         interact_callback: RotationCallback | None = None,
         release_callback: RotationCallback | None = None,
+        cancel_callback: CancelCallback | None = None,
     ) -> None:
         self.plotter = plotter
         self.actor = actor
         self.interact_callback = interact_callback
         self.release_callback = release_callback
+        self.cancel_callback = cancel_callback
         self.origin = np.asarray(actor.center, dtype=float)
         self.actor_length = max(float(actor.GetLength()), 0.25)
         self.radius = self.actor_length * 0.82
@@ -313,8 +332,14 @@ class RotationWidget3D:
         self.pressing = True
         _grab_mouse(self.plotter)
 
-    def _release(self, _interactor, _event) -> None:
+    def _release(self, interactor, _event) -> None:
         if not self.pressing or self.selected is None:
+            return
+        if not _event_inside_renderer(self.plotter, interactor):
+            if self.cancel_callback:
+                self.cancel_callback()
+            else:
+                self.cancel()
             return
         axis_index = self.handles.index(self.selected)
         self.plotter.enable_trackball_style()
