@@ -9,7 +9,7 @@ from typing import Any, Literal
 import numpy as np
 import pyvista as pv
 from PySide6.QtCore import QEvent, QItemSelectionModel, QSignalBlocker, QTimer, Qt
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -76,6 +76,14 @@ class NativeEditorWindow(QMainWindow):
         self.capture_watch = QTimer(self)
         self.capture_watch.setInterval(40)
         self.capture_watch.timeout.connect(self._check_mouse_capture)
+        self.gizmo_rebuild_timer = QTimer(self)
+        self.gizmo_rebuild_timer.setSingleShot(True)
+        self.gizmo_rebuild_timer.setInterval(16)
+        self.gizmo_rebuild_timer.timeout.connect(self._rebuild_gizmo_after_selection)
+        self.view_state_save_timer = QTimer(self)
+        self.view_state_save_timer.setSingleShot(True)
+        self.view_state_save_timer.setInterval(250)
+        self.view_state_save_timer.timeout.connect(self._persist_view_state)
         self.resize(1440, 900)
         self.setWindowTitle('Home Theater Digital Twin — N20b')
 
@@ -267,6 +275,7 @@ class NativeEditorWindow(QMainWindow):
             return
         selected_ids = self.view_state.selection
         primary_id = self.view_state.selected_id
+        self.gizmo_rebuild_timer.stop()
         self._remove_gizmo()
         self.viewport.clear()
         self.viewport.add_axes()
@@ -409,6 +418,7 @@ class NativeEditorWindow(QMainWindow):
     ) -> None:
         if cancel_preview and self.working and self.working.has_preview:
             self.cancel_preview()
+        self.gizmo_rebuild_timer.stop()
         self._remove_gizmo()
         valid: list[str] = []
         if self.working is not None:
@@ -430,11 +440,25 @@ class NativeEditorWindow(QMainWindow):
             actor.prop.show_edges = key in selected_set
             actor.prop.line_width = 4 if key == self.selected_id else (2 if key in selected_set else 1)
         self._inspect(self.selected_id)
-        self._create_gizmo(self.selected_id)
         if persist:
-            self._persist_view_state()
+            self._schedule_view_state_persist()
         self._update_actions()
         self.viewport.render()
+        self._schedule_gizmo_rebuild()
+
+    def _schedule_gizmo_rebuild(self) -> None:
+        self.gizmo_rebuild_timer.start()
+
+    def _rebuild_gizmo_after_selection(self) -> None:
+        if self.working is None or self.working.has_preview:
+            return
+        self._remove_gizmo()
+        self._create_gizmo(self.selected_id)
+        if self.gizmo is not None:
+            self.viewport.render()
+
+    def _schedule_view_state_persist(self) -> None:
+        self.view_state_save_timer.start()
 
     def _selection_pivot(self) -> Position3 | None:
         if self.working is None or not self.view_state.selection:
@@ -650,18 +674,27 @@ class NativeEditorWindow(QMainWindow):
         self.working.preview_group_move(delta)
         self._inspect(self.selected_id, use_preview=True)
 
-    def _translation_release(self, matrix: np.ndarray) -> None:
+    def _commit_active_preview(self, expected_kind: Literal['move', 'rotate'] | None = None) -> bool:
         self.capture_watch.stop()
-        del matrix
-        if self.working is None or self.working.preview_kind != 'move':
-            return
+        if self.working is None or not self.working.has_preview:
+            return False
+        kind = self.working.preview_kind
+        if kind is None or (expected_kind is not None and kind != expected_kind):
+            return False
         self.working.commit_preview()
         self.drag_base_position = None
+        self.drag_base_orientation = None
+        self.drag_rotation_pivot = None
         self.snap_selector.reset()
         self._clear_snap_feedback()
         self._sync_recovery()
         self._rebuild()
         self._set_dirty_status()
+        return True
+
+    def _translation_release(self, matrix: np.ndarray) -> None:
+        del matrix
+        self._commit_active_preview('move')
 
     def _rotation_interact(self, axis_index: int, angle_deg: float) -> None:
         if self.selected_id is None or self.working is None or self.recovery_candidate is not None:
@@ -697,18 +730,8 @@ class NativeEditorWindow(QMainWindow):
         self._inspect(self.selected_id, use_preview=True)
 
     def _rotation_release(self, axis_index: int, angle_deg: float) -> None:
-        self.capture_watch.stop()
         del axis_index, angle_deg
-        if self.working is None or self.working.preview_kind != 'rotate':
-            return
-        self.working.commit_preview()
-        self.drag_base_orientation = None
-        self.drag_rotation_pivot = None
-        self.snap_selector.reset()
-        self._clear_snap_feedback()
-        self._sync_recovery()
-        self._rebuild()
-        self._set_dirty_status()
+        self._commit_active_preview('rotate')
 
     def cancel_preview(self) -> None:
         self.capture_watch.stop()
@@ -746,6 +769,7 @@ class NativeEditorWindow(QMainWindow):
             return
         self.view_state.transform_mode = mode
         self._sync_transform_controls()
+        self.gizmo_rebuild_timer.stop()
         self._remove_gizmo()
         self._create_gizmo(self.selected_id)
         self.statusBar().showMessage(f'{mode.title()} tool · world axes')
@@ -910,6 +934,7 @@ class NativeEditorWindow(QMainWindow):
             self.statusBar().showMessage(f'Recovery snapshot failed · {exc}')
 
     def _persist_view_state(self) -> None:
+        self.view_state_save_timer.stop()
         try:
             self.repository.save_view_state(
                 self.document_id,
@@ -993,6 +1018,15 @@ class NativeEditorWindow(QMainWindow):
         if self.working is None or not self.working.has_preview:
             self.capture_watch.stop()
             return
+        if not (QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
+            local = self.viewport.interactor.mapFromGlobal(QCursor.pos())
+            if self.viewport.interactor.rect().contains(local):
+                kind = self.working.preview_kind
+                if self._commit_active_preview(kind):
+                    self.statusBar().showMessage(f'{kind.title()} committed after recovered mouse release')
+            else:
+                self.cancel_preview()
+            return
         if QWidget.mouseGrabber() is not self.viewport.interactor:
             self.cancel_preview()
 
@@ -1007,6 +1041,8 @@ class NativeEditorWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         self.capture_watch.stop()
+        self.gizmo_rebuild_timer.stop()
+        self.view_state_save_timer.stop()
         if self.working and self.working.has_preview:
             self.working.cancel_preview()
         self._sync_recovery()
