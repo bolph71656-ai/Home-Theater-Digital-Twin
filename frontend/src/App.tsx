@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { api, fileToBase64 } from './api'
 import { FeatureCandidatePanel } from './FeatureCandidates'
+import { PlacementConstraintPanel } from './PlacementConstraints'
 import { FrequencyPlot, RoomPlot, type ComparisonResult, type ContextPayload, type Speaker } from './plots'
 
 type Health = {
@@ -710,6 +711,8 @@ export default function App() {
           </div>
         </>}
       </section>
+
+      <PlacementConstraintPanel projectId={projectId} context={activeContext} />
 
       <FeatureCandidatePanel projectId={projectId} measurements={measurements} />
     </main>

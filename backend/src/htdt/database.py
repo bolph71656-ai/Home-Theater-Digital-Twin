@@ -20,14 +20,19 @@ from .rew_api import RewFrequencyResponseSnapshot
 from .rew_parser import parse_rew_frequency_response
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 REW_API_SNAPSHOT_FORMAT = 'htdt-rew-api-frequency-response-snapshot-1'
 REW_API_ADAPTER_VERSION = 'rew-api-snapshot-1'
-SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3}
+SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3, 4}
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def canonical_json_sha256(payload: Any) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _pack(values: tuple[float, ...] | None) -> bytes | None:
@@ -88,6 +93,11 @@ class Store:
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), purpose TEXT,
                     started_at TEXT, notes TEXT, created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS constraint_sets (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+                    context_id TEXT NOT NULL REFERENCES contexts(id), name TEXT, spec_json TEXT NOT NULL,
+                    spec_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS assets (
                     sha256 TEXT PRIMARY KEY, relative_path TEXT NOT NULL, original_filename TEXT NOT NULL,
@@ -206,6 +216,61 @@ class Store:
         if row is None:
             return None
         return {'id': row['id'], 'project_id': row['project_id'], 'revision_number': row['revision_number'], 'parent_context_id': row['parent_context_id'], 'created_at': row['created_at'], 'payload': json.loads(row['payload_json'])}
+
+    def create_constraint_set(self, project_id: str, context_id: str, name: str | None, spec: dict[str, Any]) -> dict[str, Any]:
+        record = {
+            'id': str(uuid4()), 'project_id': project_id, 'context_id': context_id,
+            'name': name.strip() if name and name.strip() else None, 'spec': spec,
+            'spec_sha256': canonical_json_sha256(spec), 'created_at': utc_now(),
+        }
+        with self.connect() as db:
+            if db.execute('SELECT id FROM projects WHERE id = ?', (project_id,)).fetchone() is None:
+                raise KeyError('project_not_found')
+            if db.execute('SELECT id FROM contexts WHERE id = ? AND project_id = ?', (context_id, project_id)).fetchone() is None:
+                raise KeyError('context_not_found')
+            db.execute(
+                'INSERT INTO constraint_sets(id, project_id, context_id, name, spec_json, spec_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (record['id'], project_id, context_id, record['name'], json.dumps(spec, ensure_ascii=False, sort_keys=True),
+                 record['spec_sha256'], record['created_at']),
+            )
+            db.commit()
+        return record
+
+    def list_constraint_sets(self, project_id: str, context_id: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            if context_id is None:
+                rows = db.execute('SELECT * FROM constraint_sets WHERE project_id = ? ORDER BY created_at DESC', (project_id,)).fetchall()
+            else:
+                rows = db.execute(
+                    'SELECT * FROM constraint_sets WHERE project_id = ? AND context_id = ? ORDER BY created_at DESC',
+                    (project_id, context_id),
+                ).fetchall()
+        result = []
+        for row in rows:
+            spec = json.loads(row['spec_json'])
+            digest = canonical_json_sha256(spec)
+            result.append({
+                'id': row['id'], 'project_id': row['project_id'], 'context_id': row['context_id'], 'name': row['name'],
+                'spec': spec, 'spec_sha256': row['spec_sha256'], 'integrity_valid': digest == row['spec_sha256'],
+                'created_at': row['created_at'],
+            })
+        return result
+
+    def get_constraint_set(self, project_id: str, constraint_set_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                'SELECT * FROM constraint_sets WHERE id = ? AND project_id = ?',
+                (constraint_set_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        spec = json.loads(row['spec_json'])
+        digest = canonical_json_sha256(spec)
+        return {
+            'id': row['id'], 'project_id': row['project_id'], 'context_id': row['context_id'], 'name': row['name'],
+            'spec': spec, 'spec_sha256': row['spec_sha256'], 'integrity_valid': digest == row['spec_sha256'],
+            'created_at': row['created_at'],
+        }
 
     def _store_asset(self, filename: str, raw: bytes) -> tuple[str, Path, bool, bool]:
         digest = hashlib.sha256(raw).hexdigest()
@@ -470,6 +535,15 @@ class Store:
                     problems.append(f'unsafe_asset_path:{row["sha256"]}')
                 elif not (root / relative).is_file():
                     problems.append(f'missing_asset:{row["sha256"]}:{relative.as_posix()}')
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='constraint_sets'").fetchone() is not None:
+                for row in connection.execute('SELECT id, spec_json, spec_sha256 FROM constraint_sets'):
+                    try:
+                        spec = json.loads(row['spec_json'])
+                    except (TypeError, json.JSONDecodeError):
+                        problems.append(f'invalid_constraint_set_json:{row["id"]}')
+                        continue
+                    if canonical_json_sha256(spec) != row['spec_sha256']:
+                        problems.append(f'constraint_set_hash_mismatch:{row["id"]}')
         finally:
             connection.close()
         return problems

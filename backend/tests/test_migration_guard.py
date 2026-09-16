@@ -69,6 +69,24 @@ def _create_v2_root(root: Path) -> Path:
     return root
 
 
+def _create_v3_root(root: Path) -> Path:
+    root = _create_v2_root(root)
+    db = sqlite3.connect(root / 'htdt.sqlite3')
+    try:
+        db.executescript('''
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), purpose TEXT,
+            started_at TEXT, notes TEXT, created_at TEXT NOT NULL
+        );
+        ALTER TABLE measurements ADD COLUMN session_id TEXT REFERENCES sessions(id);
+        UPDATE metadata SET value='3' WHERE key='schema_version';
+        ''')
+        db.commit()
+    finally:
+        db.close()
+    return root
+
+
 def _schema_version(root: Path) -> int:
     db = sqlite3.connect(root / 'htdt.sqlite3')
     try:
@@ -82,7 +100,7 @@ def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> 
 
     store = Store(root)
 
-    assert SCHEMA_VERSION == 3
+    assert SCHEMA_VERSION == 4
     assert _schema_version(root) == SCHEMA_VERSION
     assert store.migrated_from_schema_version == 1
     assert store.pre_migration_backup.is_file()
@@ -128,6 +146,31 @@ def test_v2_open_adds_sessions_without_inventing_session_membership(tmp_path: Pa
     try:
         assert int(snapshot_db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]) == 2
         assert snapshot_db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone() is None
+    finally:
+        snapshot_db.close()
+
+
+def test_v3_open_adds_empty_constraint_sets_table_after_pre_migration_backup(tmp_path: Path) -> None:
+    root = _create_v3_root(tmp_path / 'legacy-v3')
+
+    store = Store(root)
+
+    assert _schema_version(root) == SCHEMA_VERSION == 4
+    assert store.migrated_from_schema_version == 3
+    assert store.list_constraint_sets('p1') == []
+    with store.connect() as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert 'constraint_sets' in tables
+
+    with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert manifest == {'reason': 'pre_migration', 'schema_version': 3, 'target_schema_version': 4}
+        snapshot = tmp_path / 'snapshot-v3.sqlite3'
+        snapshot.write_bytes(archive.read('htdt.sqlite3'))
+    snapshot_db = sqlite3.connect(snapshot)
+    try:
+        assert int(snapshot_db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]) == 3
+        assert snapshot_db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='constraint_sets'").fetchone() is None
     finally:
         snapshot_db.close()
 

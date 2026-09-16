@@ -111,6 +111,11 @@ class ContextCreate(BaseModel):
     @model_validator(mode='after')
     def validate_positions(self) -> 'ContextCreate':
         room = self.room
+        speaker_ids = [speaker.speaker_id for speaker in self.speakers]
+        if len(speaker_ids) != len(set(speaker_ids)):
+            raise ValueError('speaker_id values must be unique within a Context')
+        if self.measurement_point.point_id in set(speaker_ids):
+            raise ValueError('measurement point_id must not duplicate a speaker_id')
         positions: list[tuple[str, Point3D]] = [('measurement point', self.measurement_point.position)]
         positions.extend((speaker.speaker_id, speaker.position) for speaker in self.speakers if speaker.position is not None)
         polygon = None

@@ -114,7 +114,7 @@ export function FeatureCandidatePanel({ projectId, measurements }: Props) {
 
   return (
     <section className="panel">
-      <div className="section-title"><h2>7. Measured feature candidates</h2><span>近接候補 ≠ 原因診断</span></div>
+      <div className="section-title"><h2>8. Measured feature candidates</h2><span>近接候補 ≠ 原因診断</span></div>
       <p className="hint">保存済みFRを96 PPOへ再標本化し、baselineからのpeak/dipを検出します。room modeや一次反射との周波数近接は、次に確認する候補を絞るための情報であり原因確定ではありません。</p>
       <div className="grid4">
         <label>Dataset<select value={datasetId} onChange={(event) => { setDatasetId(event.target.value); setResult(null) }}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.quality_status} · {measurement.evidence_type} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>

@@ -110,14 +110,14 @@ G00でpolygon演算にShapely 2.1.2をpinした。CPython 3.12 / Windows x86-64 
 
 | ID | 制約 | 初期実装 | 判定 |
 |---|---|---|---|
-| C01 | Allowed region | speaker/MLPごとのpolygon/multipolygon | entity footprintが領域内 |
-| C02 | Exclusion region | 家具、ラック、扉可動域、通路 | C01からdifferenceして除外 |
-| C03 | Wall clearance | 壁/壁タグごとのmin/max距離 | 指定境界までの最短距離 |
-| C04 | Cabinet clearance | speaker footprint/radius + 安全余白 | point中心だけで判定しない |
-| C05 | Pair distance | FL-FR、speaker-MLP等のmin/max | entity間距離 |
-| C06 | Linked placement | 左右鏡映、等Y、同時前後移動 | master候補からslaveを決定 |
-| C07 | Axis/height | x/y/z固定または範囲 | 量子化後も範囲内 |
-| C08 | Movement budget | 現在位置からの最大移動 | hard上限として候補除外 |
+| C01 | Allowed region | speaker/MLPごとのpolygon/multipolygon | entity footprintが領域内。G10実装済み |
+| C02 | Exclusion region | 家具、ラック、扉可動域、通路 | entity footprintとの交差で除外。G10実装済み |
+| C03 | Wall clearance | wall edgeごとのmin/max距離 | 指定edgeまでの最短clearance。G10実装済み |
+| C04 | Cabinet clearance | speaker footprint/radius + 安全余白 | point中心だけで判定しない。G10実装済み |
+| C05 | Pair distance | FL-FR、speaker-MLP等のmin/max | center/envelope clearance。G10実装済み |
+| C06 | Linked placement | 左右鏡映、等Y、同時前後移動 | G10で関係判定、master→slave生成はO10 |
+| C07 | Axis/height | x/y/z固定または範囲 | G10で範囲判定、量子化はO10 |
+| C08 | Movement budget | 現在位置からの最大移動 | hard上限として候補除外。G10実装済み |
 
 各候補は`accepted/rejected`だけでなく、拒否したconstraint IDと実測値/閾値を保存する。これにより「なぜその位置を探索しなかったか」を後から再現できる。
 

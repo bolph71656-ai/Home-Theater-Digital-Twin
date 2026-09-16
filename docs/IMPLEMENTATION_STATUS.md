@@ -46,7 +46,8 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
 - V02: schema移行前ZIP、移行後整合性検査、失敗時DB/RawAssetロールバック
 - S01 backend: REW Room Simulator read-only state/FR契約、座標変換、実beta135 fixture。モデルは`rectangular_room_only`として明示
-- G00: Contextへ任意頂点polygon-prismをexact room geometryとして不変保存。8頂点/凹形状、wall edge ID、polygon内外判定、3D境界表示を実装。G10 placement constraintsは次段
+- G00: Contextへ任意頂点polygon-prismをexact room geometryとして不変保存。8頂点/凹形状、wall edge ID、polygon内外判定、3D境界表示を実装
+- G10: schema v4 ConstraintSet不変保存、allowed/exclusion、wall/cabinet/pair clearance、axis/movement、左右連動、reject理由、評価UIを実装
 
 ## G00 — Room Geometry v2
 
@@ -60,7 +61,24 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - UIで`vertex_id,x,y` ordered verticesを入力/複製し、3Dでpolygon-prism境界を表示。
 - A01矩形room mode/6面反射はpolygon/reference-box Contextでは実行不可。
 
-詳細契約は[Room Geometry contract](ROOM_GEOMETRY.md)を参照する。家具・通路・壁離隔・筐体寸法等はG10で別ConstraintSetとして実装する。
+詳細契約は[Room Geometry contract](ROOM_GEOMETRY.md)を参照する。家具・通路・壁離隔・筐体寸法等はG10の別ConstraintSetで扱う。
+
+## G10 — Placement Constraint Engine
+
+G00のexact footprint上で、物理的に設置不能な候補を音響予測前に除外するhard feasibility engineを実装済み。
+
+- schema v4 `constraint_sets`: Context revision固定、更新/deleteなし、canonical spec SHA-256を保存。
+- allowed regionは単一polygonまたは非連結multipolygon、exclusionは独立constraint IDで複数保存可能。
+- cabinet footprint radius + safety marginをroom/allowed/exclusion/wall/pair判定へ反映。
+- wall edge min/max clearance、XYZ fixed/range、現在位置からのmovement budgetを判定。
+- pair distanceはcenterまたはenvelope clearanceを選択可能。
+- linked placementはmirror X（任意mirror axis対応）、equal X/Y/Z、equal delta X/Y/Zを判定。
+- unknown entity/position、reference-box-only geometryはpass扱いにせず拒否。
+- rejectごとにconstraint ID、entity、実値、閾値を返す。
+- UIで保存済みConstraintSetと候補座標を選び、feasible/rejected理由を確認可能。
+- backup/restoreとschema v3→v4 pre-migration backupをテスト。
+
+候補の格子生成、seed、刻み、linked master→slave生成、候補集合の再生成はO10の責務。詳細は[Placement Constraint contract](PLACEMENT_CONSTRAINTS.md)を参照する。
 
 ## A03 — 読取専用REW API / UI
 

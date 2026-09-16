@@ -18,6 +18,7 @@ export type ContextPayload = {
   }
   speakers: Speaker[]
   measurement_point: {
+    point_id?: string
     label: string
     position: { x_m: number; y_m: number; z_m: number }
     aim_xyz?: [number, number, number] | null
