@@ -26,7 +26,7 @@ class MigrationPreparation:
 def _read_schema_version(db_path: Path) -> int | None:
     if not db_path.exists() or db_path.stat().st_size == 0:
         return None
-    connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+    connection = sqlite3.connect(db_path)
     try:
         table = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='metadata'"
@@ -45,7 +45,7 @@ def _read_schema_version(db_path: Path) -> int | None:
 
 
 def _legacy_integrity_problems(root: Path, db_path: Path) -> list[str]:
-    connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+    connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     problems: list[str] = []
     try:
@@ -89,7 +89,7 @@ def _create_pre_migration_backup(
 
     with tempfile.TemporaryDirectory(dir=root) as temp_dir_name:
         snapshot_db = Path(temp_dir_name) / 'htdt.sqlite3'
-        source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        source = sqlite3.connect(db_path)
         destination = sqlite3.connect(snapshot_db)
         try:
             source.backup(destination)
