@@ -32,6 +32,7 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 - schema v2: 測定品質、再測定グループ、Raw添付、整合性検査、A/B confounder分離
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
 - A03: localhost限定・GET専用のREW 5.40 APIアダプター
+- A04 backend: 96 PPO特徴検出とroom mode/一次反射の候補対応、quality/evidence gate
 
 ## A03 — 読取専用REW API
 
@@ -50,11 +51,11 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 実REW接続がないため、完了条件のうち「オフラインへ戻れる」「REW変更/発音を起こさない」はmock/コード境界で検証し、実機での最終受入だけを保留する。
 
-## 実装中 — A04 ピーク/ディップと幾何候補対応
+## A04 — ピーク/ディップと幾何候補対応
 
-周波数応答をHTDT内部の96 PPO / log2補間へ再標本化し、固定パラメータを返す特徴検出を追加した。
+周波数応答をHTDT内部の96 PPO / log2補間へ再標本化し、固定パラメータを返す特徴検出を実装した。
 
-- 既定評価帯域: 20–300 Hz（APIで変更可能）
+- 既定評価帯域: 20–300 Hz（API/UIで変更可能）
 - baseline: log周波数上の移動平均、既定1/3 octave幅
 - feature threshold: baselineからの偏差3 dB以上
 - 最小feature間隔: 1/12 octave
@@ -64,8 +65,9 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - `invalid`測定と非`measured`データでは自動候補照合を無効化
 - `warning` / `unknown`品質は候補照合を許すが、手動確認が必要な警告を返す
 - 検出・照合のPPO、帯域、prominence、baseline幅、最小間隔、照合許容差、音速、算法版を結果に保持
+- UIでDatasetを選び、peak/dip・baseline偏差・候補周波数・log周波数距離・品質警告を同じパネルで表示
 
-合成FRでは既知の狭いpeak/dipを検出し、既知周波数の矩形室モード/一次反射候補との対応をテストする。実測での妥当な閾値は実REW測定取得後に再評価する。
+合成FRでは既知の狭いpeak/dipを検出し、既知周波数の矩形室モード/一次反射候補との対応をテスト済み。実測での妥当な閾値は実REW測定取得後に再評価する。
 
 ## 未検証・保留
 
@@ -80,7 +82,8 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 ## 次
 
-1. A04のWindows CI受入後、特徴/候補をUIへ表示する。
-2. REW API取得をHTDT Datasetへ保存する場合は、API response/queryの来歴をRawAsset/metadataへ固定する。実API確認前にmeasuredへ自動分類しない。
-3. IR/ETCは実IRサンプル取得後にA02として開始する。
-4. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
+1. A04 UIのWindows buildを通してmainへ反映する。
+2. R01として、比較結果・測定ID・条件差・品質警告・算法版を自己完結したJSON/HTMLレポートへ保存できるようにする。
+3. V01の土台として、同じchannel/MLPの複数配置を比較一覧へまとめる。
+4. IR/ETCは実IRサンプル取得後にA02として開始する。
+5. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
