@@ -23,17 +23,21 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - M01: Windows起動基盤、FastAPI、React/Vite、CI
 - M01運用: loopback空きポート選択、ブラウザ自動起動、PowerShell一発起動
 - M01運用: 同一データ領域の単一インスタンス排他。二重起動時は既存UIを再利用
+- M01入力境界: Hostをloopbackへ限定し、書込みOriginもHTTP loopbackへ限定。CORSは追加しない
 - M02: REW周波数応答テキストparser、原本SHA-256
 - M03: Project / Context revision / Measurement / Dataset / RawAsset / SQLite
+- schema v3: MeasurementSession、Measurement.session_id、v1/v2→v3 pre-migration backup/rollback
+- Session UI: ProjectごとのSession作成・一覧・Session付き測定取込・measurement_count表示
 - M04: 96 PPO、log2(f)補間、A−B、mean/RMS、level offset、shape RMS
 - M05/M06: 部屋・MLP・可変スピーカー・RX-A4A条件、取込プレビュー
-- M07: Dataset/Context版を固定した比較履歴
+- M06/M08入力上限: REW text 32 MiB、Raw添付256 MiB、restore ZIP 512 MiB、通常書込みJSON 2 MiB
+- M07: Dataset/Context/Session provenanceを固定した比較履歴
 - M08: DB + RawAsset ZIPバックアップ/復元
 - M09: Plotly FRグラフと最小3D
 - M10: Windows合成E2Eと実機受入手順
 - M10補強: build済みfrontendをFastAPIから配信するWindows smoke test
 - A01: 矩形室モードと6面の一次image-source反射候補。結果は`predicted_geometry_candidate`
-- schema v2: 測定品質、再測定グループ、Raw添付、整合性検査、A/B confounder分離
+- schema v2由来: 測定品質、再測定グループ、Raw添付、整合性検査、A/B confounder分離
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
 - A03 backend: localhost限定・GET専用のREW 5.40系APIアダプター
 - A03 UI: offline表示、測定一覧、PPO/unit/smoothing指定FRプレビュー、requested/returned来歴表示
@@ -41,6 +45,19 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
 - V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
 - V02: schema移行前ZIP、移行後整合性検査、失敗時DB/RawAssetロールバック
+
+## MeasurementSession / schema v3
+
+Sessionは「同じ測定作業のまとまり」、`repeat_group`は「同条件再測定の系列」として分離した。
+
+- SessionはProject内でpurpose / started_at / notesを保持
+- Measurementはnullable `session_id`を固定
+- 既存v1/v2測定はSessionを推測せず`session_id = null`のまま移行
+- 他ProjectのSessionをMeasurementへ割り当てることは禁止
+- Dataset descriptor、A04 provenance、保存済みComparisonのmeasurement snapshotにもSession IDを保持
+- UIからSessionを作成し、ContextとSessionを選んでREW textを保存可能
+- backup/restore対象はSQLite全体なのでSessionも同一IDで復元される
+- M10合成E2EでSession作成→3測定→A/B→report→再open→backup/restoreまで検証する
 
 ## A03 — 読取専用REW API / UI
 
@@ -79,7 +96,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 ## 保存・復旧・Windows受入
 
 - V02: 旧schemaを開く前にDB＋assetsをpre-migration ZIPへ退避し、移行失敗または移行後整合性失敗時に旧状態へロールバックする。
-- M10: Project→R1→測定/再測定→Raw添付→R2→A/B→report→再open→backup→別フォルダrestore→integrityをWindows合成E2Eで固定。
+- M10: Project→Session→R1→測定/再測定→Raw添付→R2→A/B→report→再open→backup→別フォルダrestore→integrityをWindows合成E2Eで固定。
 - built-app smoke: Vite build後、FastAPIから`index.html`、実JS bundle、`/api/health`、SPA fallbackが取得できることをWindows CIで確認する。
 - launcher: CLI、PowerShell構文、空きポートfallback、単一インスタンス排他をWindows CIで確認する。
 
@@ -97,11 +114,11 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターと
 
 ## 次の実行ゲート
 
-1. REWを導入し、まずFL/FRの同条件repeatを含むテキストexportを取得する。
+1. REWを導入し、Measurement Sessionを作ってFL/FRの同条件repeatを含むテキストexportを取得する。
 2. 測定マイク導入後、校正ファイル・向き・Windows入力経路を記録する。
 3. RX-A4AでFL/FR/C/Heightの実発音経路を確認し、input roleと実音源を分離して記録する。
 4. `docs/WINDOWS_ACCEPTANCE.md`の実機最終受入を実行する。
 5. 実REW APIを確認できた後、API取得をHTDT Datasetへ保存する場合はresponse/query来歴をRawAsset/metadataへ固定し、実API確認前に`measured`へ自動分類しない。
 6. IR/ETCは実IRサンプル取得後にA02として開始する。
 
-現時点では、合成データだけで安全に進められるv0.1中核と周辺品質作業は実装済み。次の大きな情報増分は実REW/実測から得る。
+現時点では、合成データだけで安全に進められるv0.1中核と周辺品質作業はほぼ実装済み。次の大きな情報増分は実REW/実測から得る。
