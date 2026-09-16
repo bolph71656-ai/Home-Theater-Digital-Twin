@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field, model_validator
 
 EvidenceType = Literal['measured', 'derived', 'predicted', 'unknown']
 RadiationScope = Literal['single', 'bass_managed', 'mixed', 'unknown']
+QualityStatus = Literal['usable', 'warning', 'invalid', 'unknown']
+QualitySource = Literal['manual', 'imported', 'derived', 'unknown']
+RoutingEvidence = Literal['verified', 'manual', 'inferred', 'unknown']
+AttachmentKind = Literal['mdat', 'microphone_calibration', 'avr_settings', 'measurement_note', 'image', 'other']
 
 
 class Point3D(BaseModel):
@@ -85,8 +89,22 @@ class MeasurementImportRequest(ImportPreviewRequest):
     evidence_type: EvidenceType = 'unknown'
     source_speaker_ids: list[str] = Field(default_factory=list)
     radiation_scope: RadiationScope = 'unknown'
+    routing_evidence: RoutingEvidence = 'unknown'
     captured_at: str | None = None
     notes: str | None = None
+    quality_status: QualityStatus = 'unknown'
+    quality_reasons: list[str] = Field(default_factory=list)
+    quality_source: QualitySource = 'unknown'
+    repeat_group: str | None = Field(default=None, max_length=200)
+
+
+class AttachmentCreate(BaseModel):
+    filename: str = Field(min_length=1)
+    raw_base64: str = Field(min_length=1)
+    kind: AttachmentKind = 'other'
+    label: str | None = Field(default=None, max_length=300)
+    measurement_id: str | None = None
+    context_id: str | None = None
 
 
 class ExcludedBand(BaseModel):
@@ -108,6 +126,7 @@ class ComparisonCreate(BaseModel):
     reference_low_hz: float | None = Field(default=None, gt=0)
     reference_high_hz: float | None = Field(default=None, gt=0)
     excluded_bands: list[ExcludedBand] = Field(default_factory=list)
+    expected_change_paths: list[str] = Field(default_factory=list)
     label: str | None = None
 
     @model_validator(mode='after')
