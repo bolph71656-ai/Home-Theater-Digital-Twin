@@ -3,7 +3,11 @@ import { api } from './api'
 import type { ContextPayload } from './plots'
 
 type Project = { id: string; name: string }
-type ContextRecord = { id: string; revision_number: number; payload: ContextPayload }
+type OverviewContextPayload = ContextPayload & {
+  measurement_point: ContextPayload['measurement_point'] & { point_id?: string }
+  avr?: unknown
+}
+type ContextRecord = { id: string; revision_number: number; payload: OverviewContextPayload }
 type Measurement = {
   id: string
   dataset_id: string
@@ -34,6 +38,11 @@ type Comparison = {
 }
 
 type Point = { x_m: number; y_m: number; z_m: number }
+
+function pointIdentity(context: ContextRecord | undefined): string {
+  if (!context) return ''
+  return context.payload.measurement_point.point_id || context.payload.measurement_point.label
+}
 
 function distance(a: Point | null | undefined, b: Point | null | undefined): number | null {
   if (!a || !b) return null
@@ -108,19 +117,19 @@ export function PlacementOverviewPanel() {
       const firstMeasured = measurementRows.find((measurement) => measurement.evidence_type === 'measured')
       setChannelRole(firstMeasured?.channel_role ?? '')
       const firstContext = contextRows.find((context) => context.id === firstMeasured?.context_id)
-      setPointId(firstContext?.payload.measurement_point.point_id ?? '')
+      setPointId(pointIdentity(firstContext))
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : '配置比較データの読込に失敗しました'))
   }, [projectId])
 
   const contextsById = useMemo(() => new Map(contexts.map((context) => [context.id, context])), [contexts])
   const channelRoles = useMemo(() => Array.from(new Set(measurements.filter((row) => row.evidence_type === 'measured').map((row) => row.channel_role))).sort(), [measurements])
-  const pointIds = useMemo(() => Array.from(new Set(contexts.map((context) => context.payload.measurement_point.point_id))).sort(), [contexts])
+  const pointIds = useMemo(() => Array.from(new Set(contexts.map((context) => pointIdentity(context)).filter(Boolean))).sort(), [contexts])
   const rows = useMemo(() => measurements.filter((measurement) => {
     if (measurement.evidence_type !== 'measured') return false
     if (channelRole && measurement.channel_role !== channelRole) return false
     const context = contextsById.get(measurement.context_id)
     if (!context) return false
-    if (pointId && context.payload.measurement_point.point_id !== pointId) return false
+    if (pointId && pointIdentity(context) !== pointId) return false
     return true
   }), [measurements, channelRole, pointId, contextsById])
 
