@@ -20,10 +20,10 @@ from .rew_api import RewFrequencyResponseSnapshot
 from .rew_parser import parse_rew_frequency_response
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 REW_API_SNAPSHOT_FORMAT = 'htdt-rew-api-frequency-response-snapshot-1'
 REW_API_ADAPTER_VERSION = 'rew-api-snapshot-1'
-SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3, 4, 5}
+SUPPORTED_BACKUP_SCHEMA_VERSIONS = {1, 2, 3, 4, 5, 6}
 
 
 def utc_now() -> str:
@@ -104,6 +104,21 @@ class Store:
                     context_id TEXT NOT NULL REFERENCES contexts(id),
                     constraint_set_id TEXT NOT NULL REFERENCES constraint_sets(id),
                     name TEXT, spec_json TEXT NOT NULL, spec_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS prediction_runs (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+                    context_id TEXT NOT NULL REFERENCES contexts(id), search_spec_id TEXT NOT NULL REFERENCES search_specs(id),
+                    name TEXT, spec_json TEXT NOT NULL, spec_sha256 TEXT NOT NULL,
+                    baseline_json TEXT NOT NULL, baseline_sha256 TEXT NOT NULL, status TEXT NOT NULL,
+                    active_candidate_id TEXT, active_state_sha256 TEXT, error TEXT,
+                    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS prediction_items (
+                    id TEXT PRIMARY KEY, prediction_run_id TEXT NOT NULL REFERENCES prediction_runs(id),
+                    candidate_id TEXT NOT NULL, raw_index INTEGER NOT NULL, feasible_index INTEGER NOT NULL,
+                    input_json TEXT NOT NULL, input_sha256 TEXT NOT NULL, status TEXT NOT NULL,
+                    result_json TEXT, result_sha256 TEXT, error TEXT, created_at TEXT NOT NULL, completed_at TEXT,
+                    UNIQUE(prediction_run_id, candidate_id)
                 );
                 CREATE TABLE IF NOT EXISTS assets (
                     sha256 TEXT PRIMARY KEY, relative_path TEXT NOT NULL, original_filename TEXT NOT NULL,
@@ -348,6 +363,227 @@ class Store:
             'integrity_valid': canonical_json_sha256(spec) == row['spec_sha256'],
             'created_at': row['created_at'],
         }
+
+    def create_prediction_run(
+        self, project_id: str, context_id: str, search_spec_id: str, name: str | None,
+        spec: dict[str, Any], baseline: dict[str, Any], items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        now = utc_now()
+        record = {
+            'id': str(uuid4()), 'project_id': project_id, 'context_id': context_id, 'search_spec_id': search_spec_id,
+            'name': name.strip() if name and name.strip() else None, 'spec': spec,
+            'spec_sha256': canonical_json_sha256(spec), 'baseline': baseline,
+            'baseline_sha256': canonical_json_sha256(baseline), 'status': 'pending',
+            'active_candidate_id': None, 'active_state_sha256': None, 'error': None,
+            'created_at': now, 'started_at': None, 'finished_at': None,
+        }
+        with self.connect() as db:
+            row = db.execute(
+                'SELECT context_id FROM search_specs WHERE id = ? AND project_id = ?', (search_spec_id, project_id)
+            ).fetchone()
+            if row is None:
+                raise KeyError('search_spec_not_found')
+            if row['context_id'] != context_id:
+                raise ValueError('PredictionRun context must match SearchSpec context')
+            db.execute(
+                'INSERT INTO prediction_runs(id,project_id,context_id,search_spec_id,name,spec_json,spec_sha256,baseline_json,baseline_sha256,status,active_candidate_id,active_state_sha256,error,created_at,started_at,finished_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (record['id'], project_id, context_id, search_spec_id, record['name'],
+                 json.dumps(spec, ensure_ascii=False, sort_keys=True), record['spec_sha256'],
+                 json.dumps(baseline, ensure_ascii=False, sort_keys=True), record['baseline_sha256'], 'pending',
+                 None, None, None, now, None, None),
+            )
+            for item in items:
+                item_id = str(uuid4())
+                input_payload = item['input']
+                db.execute(
+                    'INSERT INTO prediction_items(id,prediction_run_id,candidate_id,raw_index,feasible_index,input_json,input_sha256,status,result_json,result_sha256,error,created_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (item_id, record['id'], item['candidate_id'], item['raw_index'], item['feasible_index'],
+                     json.dumps(input_payload, ensure_ascii=False, sort_keys=True), canonical_json_sha256(input_payload),
+                     'pending', None, None, None, now, None),
+                )
+            db.commit()
+        return record
+
+    def list_prediction_runs(self, project_id: str, context_id: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            if context_id is None:
+                rows = db.execute('SELECT * FROM prediction_runs WHERE project_id = ? ORDER BY created_at DESC', (project_id,)).fetchall()
+            else:
+                rows = db.execute(
+                    'SELECT * FROM prediction_runs WHERE project_id = ? AND context_id = ? ORDER BY created_at DESC',
+                    (project_id, context_id),
+                ).fetchall()
+            return [self._prediction_run_record(db, row) for row in rows]
+
+    def get_prediction_run(self, project_id: str, prediction_run_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                'SELECT * FROM prediction_runs WHERE id = ? AND project_id = ?', (prediction_run_id, project_id)
+            ).fetchone()
+            return self._prediction_run_record(db, row) if row is not None else None
+
+    @staticmethod
+    def _prediction_run_record(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
+        spec = json.loads(row['spec_json'])
+        baseline = json.loads(row['baseline_json'])
+        counts = {item['status']: int(item['n']) for item in db.execute(
+            'SELECT status, COUNT(*) AS n FROM prediction_items WHERE prediction_run_id = ? GROUP BY status',
+            (row['id'],),
+        ).fetchall()}
+        total = sum(counts.values())
+        return {
+            'id': row['id'], 'project_id': row['project_id'], 'context_id': row['context_id'],
+            'search_spec_id': row['search_spec_id'], 'name': row['name'],
+            'spec': spec, 'spec_sha256': row['spec_sha256'],
+            'baseline': baseline, 'baseline_sha256': row['baseline_sha256'],
+            'integrity_valid': canonical_json_sha256(spec) == row['spec_sha256'] and canonical_json_sha256(baseline) == row['baseline_sha256'],
+            'status': row['status'], 'active_candidate_id': row['active_candidate_id'],
+            'active_state_sha256': row['active_state_sha256'], 'error': row['error'],
+            'created_at': row['created_at'], 'started_at': row['started_at'], 'finished_at': row['finished_at'],
+            'counts': {'total': total, **counts},
+        }
+
+    def list_prediction_items(
+        self, prediction_run_id: str, *, offset: int = 0, limit: int = 100, include_result: bool = False
+    ) -> list[dict[str, Any]]:
+        columns = '*' if include_result else 'id,prediction_run_id,candidate_id,raw_index,feasible_index,input_json,input_sha256,status,result_sha256,error,created_at,completed_at'
+        with self.connect() as db:
+            rows = db.execute(
+                f'SELECT {columns} FROM prediction_items WHERE prediction_run_id = ? ORDER BY feasible_index LIMIT ? OFFSET ?',
+                (prediction_run_id, limit, offset),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item['input'] = json.loads(item.pop('input_json'))
+            if include_result and item.get('result_json') is not None:
+                item['result'] = json.loads(item.pop('result_json'))
+            elif include_result:
+                item.pop('result_json', None); item['result'] = None
+            result.append(item)
+        return result
+
+    def next_pending_prediction_item(self, prediction_run_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM prediction_items WHERE prediction_run_id = ? AND status = 'pending' ORDER BY feasible_index LIMIT 1",
+                (prediction_run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row); item['input'] = json.loads(item.pop('input_json'))
+        item['result'] = json.loads(item['result_json']) if item.get('result_json') else None
+        return item
+
+    def begin_prediction_item(self, prediction_run_id: str, candidate_id: str) -> None:
+        now = utc_now()
+        with self.connect() as db:
+            run = db.execute('SELECT active_candidate_id FROM prediction_runs WHERE id = ?', (prediction_run_id,)).fetchone()
+            if run is None:
+                raise KeyError('prediction_run_not_found')
+            if run['active_candidate_id'] is not None:
+                raise ValueError('PredictionRun already has an active candidate')
+            updated = db.execute(
+                "UPDATE prediction_items SET status='running', error=NULL WHERE prediction_run_id=? AND candidate_id=? AND status='pending'",
+                (prediction_run_id, candidate_id),
+            ).rowcount
+            if updated != 1:
+                raise ValueError('Prediction item is not pending')
+            db.execute(
+                "UPDATE prediction_runs SET status='running', active_candidate_id=?, active_state_sha256=NULL, error=NULL, started_at=COALESCE(started_at, ?) WHERE id=?",
+                (candidate_id, now, prediction_run_id),
+            )
+            db.commit()
+
+    def set_prediction_active_state(self, prediction_run_id: str, candidate_id: str, state_sha256: str) -> None:
+        with self.connect() as db:
+            updated = db.execute(
+                'UPDATE prediction_runs SET active_state_sha256=? WHERE id=? AND active_candidate_id=?',
+                (state_sha256, prediction_run_id, candidate_id),
+            ).rowcount
+            if updated != 1:
+                raise ValueError('PredictionRun active candidate changed unexpectedly')
+            db.commit()
+
+    def complete_prediction_item(
+        self, prediction_run_id: str, candidate_id: str, result: dict[str, Any]
+    ) -> None:
+        now = utc_now(); digest = canonical_json_sha256(result)
+        with self.connect() as db:
+            updated = db.execute(
+                "UPDATE prediction_items SET status='succeeded', result_json=?, result_sha256=?, error=NULL, completed_at=? WHERE prediction_run_id=? AND candidate_id=? AND status='running'",
+                (json.dumps(result, ensure_ascii=False, sort_keys=True), digest, now, prediction_run_id, candidate_id),
+            ).rowcount
+            if updated != 1:
+                raise ValueError('Prediction item is not running')
+            db.execute(
+                'UPDATE prediction_runs SET active_candidate_id=NULL, active_state_sha256=NULL, error=NULL WHERE id=? AND active_candidate_id=?',
+                (prediction_run_id, candidate_id),
+            )
+            pending = db.execute(
+                "SELECT COUNT(*) FROM prediction_items WHERE prediction_run_id=? AND status IN ('pending','running')",
+                (prediction_run_id,),
+            ).fetchone()[0]
+            if int(pending) == 0:
+                db.execute(
+                    "UPDATE prediction_runs SET status='completed', finished_at=? WHERE id=?", (now, prediction_run_id)
+                )
+            db.commit()
+
+    def fail_prediction_item(self, prediction_run_id: str, candidate_id: str, error: str) -> None:
+        now = utc_now()
+        with self.connect() as db:
+            db.execute(
+                "UPDATE prediction_items SET status='failed', error=?, completed_at=? WHERE prediction_run_id=? AND candidate_id=? AND status='running'",
+                (error, now, prediction_run_id, candidate_id),
+            )
+            db.execute(
+                'UPDATE prediction_runs SET active_candidate_id=NULL, active_state_sha256=NULL, error=NULL WHERE id=? AND active_candidate_id=?',
+                (prediction_run_id, candidate_id),
+            )
+            remaining = db.execute(
+                "SELECT COUNT(*) FROM prediction_items WHERE prediction_run_id=? AND status IN ('pending','running')",
+                (prediction_run_id,),
+            ).fetchone()[0]
+            if int(remaining) == 0:
+                db.execute(
+                    "UPDATE prediction_runs SET status='completed_with_failures', finished_at=? WHERE id=?",
+                    (now, prediction_run_id),
+                )
+            db.commit()
+
+    def mark_prediction_restore_required(self, prediction_run_id: str, candidate_id: str, error: str) -> None:
+        with self.connect() as db:
+            updated = db.execute(
+                "UPDATE prediction_runs SET status='restore_required', error=? WHERE id=? AND active_candidate_id=?",
+                (error, prediction_run_id, candidate_id),
+            ).rowcount
+            if updated != 1:
+                raise ValueError('PredictionRun active candidate changed unexpectedly')
+            db.execute(
+                "UPDATE prediction_items SET error=? WHERE prediction_run_id=? AND candidate_id=? AND status='running'",
+                (error, prediction_run_id, candidate_id),
+            )
+            db.commit()
+
+    def reset_prediction_item_after_recovery(self, prediction_run_id: str, candidate_id: str) -> None:
+        with self.connect() as db:
+            updated = db.execute(
+                "UPDATE prediction_items SET status='pending', error=NULL, completed_at=NULL WHERE prediction_run_id=? AND candidate_id=? AND status='running'",
+                (prediction_run_id, candidate_id),
+            ).rowcount
+            if updated != 1:
+                raise ValueError('Prediction item is not recoverable')
+            db.execute(
+                "UPDATE prediction_runs SET status='pending', active_candidate_id=NULL, active_state_sha256=NULL, error=NULL WHERE id=? AND active_candidate_id=?",
+                (prediction_run_id, candidate_id),
+            )
+            db.commit()
+
+    def set_prediction_run_error(self, prediction_run_id: str, status: str, error: str) -> None:
+        with self.connect() as db:
+            db.execute('UPDATE prediction_runs SET status=?, error=? WHERE id=?', (status, error, prediction_run_id))
+            db.commit()
 
     def _store_asset(self, filename: str, raw: bytes) -> tuple[str, Path, bool, bool]:
         digest = hashlib.sha256(raw).hexdigest()
@@ -630,6 +866,30 @@ class Store:
                         continue
                     if canonical_json_sha256(spec) != row['spec_sha256']:
                         problems.append(f'search_spec_hash_mismatch:{row["id"]}')
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='prediction_runs'").fetchone() is not None:
+                for row in connection.execute('SELECT id, spec_json, spec_sha256, baseline_json, baseline_sha256 FROM prediction_runs'):
+                    try:
+                        spec = json.loads(row['spec_json']); baseline = json.loads(row['baseline_json'])
+                    except (TypeError, json.JSONDecodeError):
+                        problems.append(f'invalid_prediction_run_json:{row["id"]}'); continue
+                    if canonical_json_sha256(spec) != row['spec_sha256']:
+                        problems.append(f'prediction_run_spec_hash_mismatch:{row["id"]}')
+                    if canonical_json_sha256(baseline) != row['baseline_sha256']:
+                        problems.append(f'prediction_run_baseline_hash_mismatch:{row["id"]}')
+                for row in connection.execute('SELECT id, input_json, input_sha256, result_json, result_sha256, status FROM prediction_items'):
+                    try:
+                        input_payload = json.loads(row['input_json'])
+                    except (TypeError, json.JSONDecodeError):
+                        problems.append(f'invalid_prediction_item_input_json:{row["id"]}'); continue
+                    if canonical_json_sha256(input_payload) != row['input_sha256']:
+                        problems.append(f'prediction_item_input_hash_mismatch:{row["id"]}')
+                    if row['status'] == 'succeeded':
+                        try:
+                            result_payload = json.loads(row['result_json'])
+                        except (TypeError, json.JSONDecodeError):
+                            problems.append(f'invalid_prediction_item_result_json:{row["id"]}'); continue
+                        if canonical_json_sha256(result_payload) != row['result_sha256']:
+                            problems.append(f'prediction_item_result_hash_mismatch:{row["id"]}')
         finally:
             connection.close()
         return problems

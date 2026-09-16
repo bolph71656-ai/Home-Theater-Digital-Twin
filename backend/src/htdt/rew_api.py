@@ -246,6 +246,23 @@ class RewApiClient:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RewApiError('REW returned invalid JSON') from exc
 
+    def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
+        url = f'{self.base_url}{path}'
+        raw_body = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        request = Request(
+            url, data=raw_body,
+            headers={'Accept': 'application/json', 'Content-Type': 'application/json'}, method='POST',
+        )
+        try:
+            with self._opener(request, timeout=self.timeout_s) as response:
+                raw = response.read()
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            raise RewApiUnavailable(str(exc)) from exc
+        try:
+            return json.loads(raw.decode('utf-8'))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RewApiError('REW returned invalid JSON') from exc
+
     def list_measurements(self) -> list[dict[str, Any]]:
         return normalize_measurement_summaries(self._get_json('/measurements'))
 
@@ -403,6 +420,27 @@ class RewApiClient:
             mic_position_offsets=offsets, active_sources=active, recognized_sources=recognized, mic_positions=mic_positions, sources=source_state,
         )
 
+
+    def set_roomsim_head_position(self, position_htdt: dict[str, Any], *, room_depth_m: float) -> dict[str, Any]:
+        payload = htdt_position_to_roomsim(room_depth_m, position_htdt)
+        response = self._post_json('/roomsim/head-position', payload)
+        if not isinstance(response, dict) or not isinstance(response.get('message'), str):
+            raise RewApiError('Unexpected REW Room Simulator head-position update response')
+        return response
+
+    def set_roomsim_source_position(
+        self, source_name: str, position_htdt: dict[str, Any], *, room_depth_m: float
+    ) -> dict[str, Any]:
+        names = self._get_json('/roomsim/source-names')
+        if not isinstance(names, list) or any(not isinstance(item, str) for item in names):
+            raise RewApiError('Unexpected REW Room Simulator source-name response shape')
+        if source_name not in names:
+            raise RewApiError(f'Unknown REW Room Simulator source: {source_name}')
+        payload = htdt_position_to_roomsim(room_depth_m, position_htdt)
+        response = self._post_json(f'/roomsim/{quote(source_name, safe="")}/position', payload)
+        if not isinstance(response, dict) or not isinstance(response.get('message'), str):
+            raise RewApiError('Unexpected REW Room Simulator source-position update response')
+        return response
 
     def get_roomsim_frequency_response(
         self, *, mic_position: str = 'Main', source_name: str | None = None
