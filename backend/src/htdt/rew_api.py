@@ -184,7 +184,7 @@ class RewApiClient:
     def status(self) -> dict[str, Any]:
         try:
             measurements = self.list_measurements()
-        except RewApiUnavailable as exc:
+        except RewApiError as exc:
             return {
                 'connected': False,
                 'read_only': True,
