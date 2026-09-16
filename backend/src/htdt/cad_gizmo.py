@@ -12,6 +12,18 @@ MatrixCallback = Callable[[np.ndarray], None]
 RotationCallback = Callable[[int, float], None]
 
 
+def _grab_mouse(plotter: pv.Plotter) -> None:
+    widget = getattr(plotter, 'interactor', None)
+    if widget is not None and hasattr(widget, 'grabMouse'):
+        widget.grabMouse()
+
+
+def _release_mouse(plotter: pv.Plotter) -> None:
+    widget = getattr(plotter, 'interactor', None)
+    if widget is not None and hasattr(widget, 'releaseMouse'):
+        widget.releaseMouse()
+
+
 class TranslationWidget3D:
     """Three-axis translation-only widget for HTDT's physical domain axes."""
 
@@ -37,7 +49,6 @@ class TranslationWidget3D:
         self.pressing = False
         self.matrix = np.eye(4)
         self.observers: list[int] = []
-        # Keep gizmo hit-testing isolated from PyVista's scene mesh picker.
         self.handle_picker = vtkPropPicker()
         colors = (
             pv.global_theme.axes.x_color,
@@ -68,6 +79,11 @@ class TranslationWidget3D:
     def active_axis_index(self) -> int | None:
         return self.handles.index(self.selected) if self.selected in self.handles else None
 
+    def set_display_delta(self, delta_xyz: tuple[float, float, float]) -> None:
+        self.matrix = np.eye(4)
+        self.matrix[:3, 3] = np.asarray(delta_xyz, dtype=float)
+        self.actor.user_matrix = self.matrix
+
     def _world_for_translation(self, interactor) -> np.ndarray:
         x, y = interactor.GetEventPosition()
         renderer = self.plotter.iren.get_poked_renderer()
@@ -94,9 +110,7 @@ class TranslationWidget3D:
             current = self._world_for_translation(interactor)
             axis = self.axes[self.handles.index(self.selected)]
             delta = axis * float(np.dot(current - self.initial_world, axis))
-            self.matrix = np.eye(4)
-            self.matrix[:3, 3] = delta
-            self.actor.user_matrix = self.matrix
+            self.set_display_delta(tuple(float(value) for value in delta))
             if self.interact_callback:
                 self.interact_callback(self.matrix.copy())
             self.plotter.render()
@@ -110,12 +124,14 @@ class TranslationWidget3D:
         self.plotter.enable_trackball_actor_style()
         self.initial_world = self._world_for_translation(interactor)
         self.pressing = True
+        _grab_mouse(self.plotter)
 
     def _release(self, _interactor, _event) -> None:
         if not self.pressing:
             return
         self.plotter.enable_trackball_style()
         self.pressing = False
+        _release_mouse(self.plotter)
         if self.release_callback:
             self.release_callback(self.matrix.copy())
 
@@ -124,10 +140,12 @@ class TranslationWidget3D:
         self.matrix = np.eye(4)
         self.pressing = False
         self.initial_world = None
+        _release_mouse(self.plotter)
         self.plotter.enable_trackball_style()
         self.plotter.render()
 
     def remove(self) -> None:
+        _release_mouse(self.plotter)
         for observer in self.observers:
             self.plotter.iren.remove_observer(observer)
         self.observers.clear()
@@ -216,10 +234,7 @@ class RotationWidget3D:
             renderer.SetDisplayPoint(x, y, depth)
             renderer.DisplayToWorld()
             value = np.asarray(renderer.GetWorldPoint(), dtype=float)
-            if abs(value[3]) <= 1e-12:
-                points.append(value[:3])
-            else:
-                points.append(value[:3] / value[3])
+            points.append(value[:3] if abs(value[3]) <= 1e-12 else value[:3] / value[3])
         return points[0], points[1]
 
     def _plane_vector(self, interactor, axis: np.ndarray) -> np.ndarray | None:
@@ -258,6 +273,14 @@ class RotationWidget3D:
         after[:3, 3] = origin
         return after @ result @ before
 
+    def set_display_angle(self, angle_deg: float) -> None:
+        if self.selected not in self.handles:
+            return
+        axis = self.axes[self.handles.index(self.selected)]
+        self.angle_deg = float(angle_deg)
+        self.matrix = self._rotation_about(self.origin, axis, self.angle_deg)
+        self.actor.user_matrix = self.matrix
+
     def _move(self, interactor, _event) -> None:
         if self.pressing and self.selected is not None and self.initial_vector is not None:
             axis_index = self.handles.index(self.selected)
@@ -267,9 +290,7 @@ class RotationWidget3D:
                 return
             sine = float(np.dot(axis, np.cross(self.initial_vector, current)))
             cosine = float(np.dot(self.initial_vector, current))
-            self.angle_deg = degrees(atan2(sine, cosine))
-            self.matrix = self._rotation_about(self.origin, axis, self.angle_deg)
-            self.actor.user_matrix = self.matrix
+            self.set_display_angle(degrees(atan2(sine, cosine)))
             if self.interact_callback:
                 self.interact_callback(axis_index, self.angle_deg)
             self.plotter.render()
@@ -290,6 +311,7 @@ class RotationWidget3D:
         self.angle_deg = 0.0
         self.matrix = np.eye(4)
         self.pressing = True
+        _grab_mouse(self.plotter)
 
     def _release(self, _interactor, _event) -> None:
         if not self.pressing or self.selected is None:
@@ -297,6 +319,7 @@ class RotationWidget3D:
         axis_index = self.handles.index(self.selected)
         self.plotter.enable_trackball_style()
         self.pressing = False
+        _release_mouse(self.plotter)
         if self.release_callback:
             self.release_callback(axis_index, self.angle_deg)
 
@@ -306,10 +329,12 @@ class RotationWidget3D:
         self.angle_deg = 0.0
         self.pressing = False
         self.initial_vector = None
+        _release_mouse(self.plotter)
         self.plotter.enable_trackball_style()
         self.plotter.render()
 
     def remove(self) -> None:
+        _release_mouse(self.plotter)
         for observer in self.observers:
             self.plotter.iren.remove_observer(observer)
         self.observers.clear()
