@@ -23,6 +23,7 @@ from .geometry import room_geometry_payload
 from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate, RewApiSnapshotImportRequest, SessionCreate
 from .placement_constraints import ConstraintSetCreate, PlacementEvaluationRequest, evaluate_constraint_set, validate_constraint_set_for_context
 from .readiness import evaluate_measurement_readiness
+from .search_space import SearchSpecCreate, generate_search_space, validate_search_spec
 from .report import build_report_payload, render_report_html
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
 from .rew_parser import RewParseError, parse_rew_frequency_response
@@ -238,6 +239,91 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {**result, 'constraint_set_id': record['id'], 'constraint_set_spec_sha256': record['spec_sha256'],
+                'context_id': record['context_id']}
+
+    @app.get('/api/projects/{project_id}/search-specs')
+    def list_search_specs(project_id: str, context_id: str | None = Query(default=None)) -> list[dict]:
+        return store.list_search_specs(project_id, context_id)
+
+    @app.post('/api/projects/{project_id}/search-specs/preview')
+    def preview_search_spec(project_id: str, request: SearchSpecCreate) -> dict:
+        constraint_set = store.get_constraint_set(project_id, request.constraint_set_id)
+        if constraint_set is None:
+            raise HTTPException(status_code=404, detail='ConstraintSet not found')
+        if not constraint_set['integrity_valid']:
+            raise HTTPException(status_code=409, detail='ConstraintSet integrity check failed')
+        context = store.get_context(project_id, constraint_set['context_id'])
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            spec, estimate = validate_search_spec(
+                request, context['payload'], context_id=context['id'],
+                constraint_set_id=constraint_set['id'], constraint_set_spec=constraint_set['spec'],
+                constraint_set_spec_sha256=constraint_set['spec_sha256'],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {'classification': 'placement_search_space_preview', 'spec': spec, **estimate}
+
+    @app.post('/api/projects/{project_id}/search-specs', status_code=201)
+    def create_search_spec(project_id: str, request: SearchSpecCreate) -> dict:
+        constraint_set = store.get_constraint_set(project_id, request.constraint_set_id)
+        if constraint_set is None:
+            raise HTTPException(status_code=404, detail='ConstraintSet not found')
+        if not constraint_set['integrity_valid']:
+            raise HTTPException(status_code=409, detail='ConstraintSet integrity check failed')
+        context = store.get_context(project_id, constraint_set['context_id'])
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            spec, estimate = validate_search_spec(
+                request, context['payload'], context_id=context['id'],
+                constraint_set_id=constraint_set['id'], constraint_set_spec=constraint_set['spec'],
+                constraint_set_spec_sha256=constraint_set['spec_sha256'],
+            )
+            record = store.create_search_spec(project_id, context['id'], constraint_set['id'], request.name, spec)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {**record, 'estimate': estimate}
+
+    @app.get('/api/projects/{project_id}/search-specs/{search_spec_id}')
+    def get_search_spec(project_id: str, search_spec_id: str) -> dict:
+        record = store.get_search_spec(project_id, search_spec_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail='SearchSpec not found')
+        return record
+
+    @app.post('/api/projects/{project_id}/search-specs/{search_spec_id}/generate')
+    def generate_search_candidates(
+        project_id: str, search_spec_id: str,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict:
+        record = store.get_search_spec(project_id, search_spec_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail='SearchSpec not found')
+        if not record['integrity_valid']:
+            raise HTTPException(status_code=409, detail='SearchSpec integrity check failed')
+        constraint_set = store.get_constraint_set(project_id, record['constraint_set_id'])
+        if constraint_set is None:
+            raise HTTPException(status_code=404, detail='ConstraintSet not found')
+        if not constraint_set['integrity_valid']:
+            raise HTTPException(status_code=409, detail='ConstraintSet integrity check failed')
+        context = store.get_context(project_id, record['context_id'])
+        if context is None:
+            raise HTTPException(status_code=404, detail='Context not found')
+        try:
+            result = generate_search_space(
+                context['payload'], record['spec'], search_spec_sha256=record['spec_sha256'],
+                constraint_set_spec=constraint_set['spec'], constraint_set_spec_sha256=constraint_set['spec_sha256'],
+                offset=offset, limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {**result, 'search_spec_id': record['id'], 'search_spec_sha256': record['spec_sha256'],
+                'constraint_set_id': constraint_set['id'], 'constraint_set_spec_sha256': constraint_set['spec_sha256'],
                 'context_id': record['context_id']}
 
     @app.get('/api/projects/{project_id}/contexts/{context_id}/measurement-readiness')

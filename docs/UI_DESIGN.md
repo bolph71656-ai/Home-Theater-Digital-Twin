@@ -17,7 +17,7 @@ HTDTは専門的な測定・配置情報を扱うが、通常操作で説明文�
 
 主フローは番号ではなく機能名で示す。
 
-`Project → Room → Constraints → Measure → Compare → Model → Features`
+`Project → Room → Constraints → Search → Measure → Compare → Model → Features`
 
 上部workflow railから各surfaceへ直接移動できる。
 旧来の「4./5./6.」等の番号は、機能追加で順序がずれるためUIから除去する。
@@ -41,7 +41,20 @@ G10は文章ではなくroom mapを主surfaceとする。
 - evaluationは`FEASIBLE` / `REJECTED`を大きく表示し、reject対象とconstraint IDを続けて示す。
 - `feasible`は物理配置可否だけで、音響評価ではないことを契約として維持する。
 
-## 4. Visual QA
+## 4. Search Space
+
+O10はConstraintSetの次に配置し、文章ではなく可動軸と候補雲を主surfaceとする。
+
+- entityごとのX/Y/Zはsegmented controlで可動軸を追加する。
+- min/max/stepは単位付きcardで編集し、raw candidate countを保存前にpreviewする。
+- linked relationはOFF / A→B / B→Aでmaster方向を明示する。
+- 保存済みSearchSpecはimmutable表示し、変更は`複製して編集`で新規版にする。
+- 生成結果はraw / feasible / rejected / duplicateを別metricで表示する。
+- exact room上面図へfeasible candidate cloudを描き、Context baselineを別記号で示す。
+- candidate選択はmap上で強調し、可動entityのXYZを隣接detailに表示する。
+- candidateは物理的にfeasibleという意味だけで、音響的な優劣を色や順位で示さない。
+
+## 5. Visual QA
 
 所有Windows PC上でVite production buildをFastAPIから配信し、Playwright Chromiumで実レンダリングを確認する。
 G10受入fixtureは8頂点凹polygon、FL/C/FR/MLP、5 hard constraintsを使用する。
@@ -65,3 +78,14 @@ G10受入fixtureは8頂点凹polygon、FL/C/FR/MLP、5 hard constraintsを使用
 - workflow railはline SVG icon + 短い機能名とし、仮記号や段階番号へ依存しない。
 - Help OFFでも主操作を維持し、Help ONは補助説明だけを追加する。
 - local CI-equivalent: Python 3.12.10 `.venv`でbackend 119 tests pass、frontend production build、built-app smoke pass。
+
+### O10 visual acceptance — 2026-09-16
+
+- Windows 11 / Playwright Chromiumで1440 px desktopと390 px narrow viewportを実レンダリング確認。
+- 8頂点凹polygon、FL/C/FR/MLP、保存済みG10 ConstraintSet / O10 SearchSpecを使用。
+- 81 raw candidatesから62 feasible / 19 rejected / 0 duplicateを表示し、候補雲とreject集計が一致。
+- 390 pxでSearch panelの`scrollWidth == clientWidth`を確認し、横はみ出しなし。
+- candidate行を選ぶとmap強調とFL/FR XYZ detailが同期。
+- 保存済みSearchSpecの`複製して編集`で2 axes / 2 linked derivationsがbuilderへ復元され、元specは不変。
+- QA screenshotはrepo外`C:\Users\ka092\Desktop\HTDT\`に保存し、commitしない。
+- local CI-equivalent: Python 3.12.10でbackend 132 tests pass、launcher CLI/PowerShell syntax pass、`npm ci` 0 vulnerabilities、production build、built-app smoke pass。

@@ -48,6 +48,7 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - S01 backend: REW Room Simulator read-only state/FR契約、座標変換、実beta135 fixture。モデルは`rectangular_room_only`として明示
 - G00: Contextへ任意頂点polygon-prismをexact room geometryとして不変保存。8頂点/凹形状、wall edge ID、polygon内外判定、3D境界表示を実装
 - G10: schema v4 ConstraintSet不変保存、allowed/exclusion、wall/cabinet/pair clearance、axis/movement、左右連動、reject理由、評価UIを実装
+- O10: schema v5 SearchSpec不変保存、deterministic grid、linked master→slave、G10 hard gate、candidate identity/hash、ページング、visual Search UIを実装
 
 ## G00 — Room Geometry v2
 
@@ -78,7 +79,23 @@ G00のexact footprint上で、物理的に設置不能な候補を音響予測�
 - UIでConstraintSetをguided作成し、上面図上でContext基準→候補の移動とreject対象を可視化しながらfeasible/rejected理由を確認可能。
 - backup/restoreとschema v3→v4 pre-migration backupをテスト。
 
-候補の格子生成、seed、刻み、linked master→slave生成、候補集合の再生成はO10の責務。詳細は[Placement Constraint contract](PLACEMENT_CONSTRAINTS.md)を参照する。
+候補の格子生成、刻み、linked master→slave生成、候補集合の再生成はO10で実装済み。G10の詳細は[Placement Constraint contract](PLACEMENT_CONSTRAINTS.md)を参照する。
+
+## O10 — Search Space
+
+G10 hard feasibilityを満たす配置候補集合を、immutable SearchSpecから決定論的に再生成できる。
+
+- schema v5 `search_specs`: Context revision / ConstraintSet ID / ConstraintSet SHA-256へ固定し、canonical SearchSpec SHA-256を保存。
+- `search-space-grid-1`: entity別X/Y/Z min/max/stepのdecimal格子を固定順で列挙。
+- mirror/equal/equal-delta linked placementをmaster→slaveとして導出し、その後G10で再評価。
+- raw candidate countを生成前に見積り、candidate limit超過は部分実行せず拒否。system上限50,000。
+- hard rejected / duplicate / feasibleを別集計し、constraint ID別reject countを保持。
+- SearchSpec SHA + candidate座標からcandidate ID、candidate ID列からcandidate set SHAを決定論的に生成。
+- 候補座標はoffset/limitでページングし、全体件数/hashはページに依存しない。
+- backup/restore後の完全再生成、SearchSpec/ConstraintSet hash不整合時の停止をテスト。
+- UIは可動軸、刻み、連動、候補数preview、immutable保存、候補雲、候補XYZ、保存版の複製編集をvisual操作できる。
+
+詳細契約は[O10 Search Space contract](SEARCH_SPACE.md)を参照する。音響予測・ランキング・Pareto評価はまだ行わない。
 
 ## A03 — 読取専用REW API / UI
 
@@ -158,3 +175,14 @@ REW V5.40 beta 135の実OpenAPIと所有PC実機で、Room Simulator APIを確�
 6. IR/ETCは実IRサンプル取得後にA02として開始する。
 
 現時点では、合成データだけで安全に進められるv0.1中核と周辺品質作業は実装済み。次の大きな情報増分は実REW/実測から得る。
+
+## 探索トラックの次段階
+
+O10のソフトウェア実装は完了した。次はO20 Batch Predictionを実装する。
+
+- O10 candidate setをprediction batchの入力として固定する。
+- PredictionRunは実測Measurementと別分類・別来歴で保存する。
+- 中断/再開と同一入力からの再現性を先に実装し、順位付けはまだ行わない。
+- REW Room Simulatorは矩形専用なので、8頂点実室では`rectangular_approximation`を維持する。
+- 非矩形exact predictorはS03で独立評価し、実測validation前に自動推薦へ昇格させない。
+- O30/O40までは単一scalar scoreや「最適位置」を導入しない。
