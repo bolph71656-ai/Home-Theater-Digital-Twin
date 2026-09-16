@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -19,6 +19,7 @@ from .conditions import classify_differences, context_differences
 from .database import SCHEMA_VERSION, Store
 from .features import FeatureDetectionError, detect_frequency_features, match_geometry_candidates
 from .models import AttachmentCreate, BackupRestoreRequest, ComparisonCreate, ContextCreate, ImportPreviewRequest, MeasurementImportRequest, ProjectCreate
+from .report import build_report_payload, render_report_html
 from .rew_api import DEFAULT_REW_API_URL, RewApiClient, RewApiError, RewApiUnavailable
 from .rew_parser import RewParseError, parse_rew_frequency_response
 
@@ -264,6 +265,29 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
     @app.get('/api/projects/{project_id}/comparisons')
     def list_comparisons(project_id: str) -> list[dict]:
         return store.list_comparisons(project_id)
+
+    def report_snapshot(project_id: str, comparison_id: str) -> tuple[dict, dict]:
+        project = store.get_project(project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail='Project not found')
+        comparison = next((item for item in store.list_comparisons(project_id) if item['id'] == comparison_id), None)
+        if comparison is None:
+            raise HTTPException(status_code=404, detail='Comparison not found')
+        return project, comparison
+
+    @app.get('/api/projects/{project_id}/comparisons/{comparison_id}/report.json')
+    def comparison_report_json(project_id: str, comparison_id: str) -> JSONResponse:
+        project, comparison = report_snapshot(project_id, comparison_id)
+        payload = build_report_payload(project, comparison)
+        filename = f'htdt-comparison-{comparison_id[:8]}.json'
+        return JSONResponse(payload, headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+    @app.get('/api/projects/{project_id}/comparisons/{comparison_id}/report.html')
+    def comparison_report_html(project_id: str, comparison_id: str) -> HTMLResponse:
+        project, comparison = report_snapshot(project_id, comparison_id)
+        payload = build_report_payload(project, comparison)
+        filename = f'htdt-comparison-{comparison_id[:8]}.html'
+        return HTMLResponse(render_report_html(payload), headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
     @app.post('/api/projects/{project_id}/comparisons', status_code=201)
     def create_comparison(project_id: str, request: ComparisonCreate) -> dict:
