@@ -23,8 +23,8 @@ if (-not $SkipFrontendBuild) {
     try {
         if (-not (Test-Path 'node_modules')) {
             Write-Host 'Installing frontend dependencies...'
-            & npm install
-            if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
+            & npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation from lockfile failed.' }
         }
         Write-Host 'Building frontend...'
         & npm run build
