@@ -34,6 +34,7 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 - A03: localhost限定・GET専用のREW 5.40 APIアダプター
 - A04: 96 PPO特徴検出、room mode/一次反射の候補対応、quality/evidence gate、UI
 - R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
+- V01: 実測配置の比較一覧。channel/measurement point、移動量、品質、条件差、保存済み比較を横並び表示
 
 ## A03 — 読取専用REW API
 
@@ -43,7 +44,7 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - `GET /measurements` と measurement UUID参照
 - `GET /measurements/{uuid}/frequency-response`
 - 32-bit float Base64を公式仕様どおりbig-endianで復号
-- `startFreq + ppo` または `startFreq + freqStep` から周波数軸を復元
+- `startFreq + ppo` または`startFreq + freqStep`から周波数軸を復元
 - requested PPO/unit/smoothingとREW返却PPO/unit/smoothingを分離
 - 測定一覧のlist/object-keyed形状を正規化
 - 壊れたBase64、NaN/Inf、空配列、spacing欠損、phase長不一致を拒否
@@ -85,9 +86,9 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 保存済みComparisonを使うため、後から現在の配置や条件を編集しても旧レポートの入力根拠は変わらない。Windows CIでrenderer/API/backend回帰/frontend buildまで受入済み。
 
-## 実装中 — V01 実測配置の比較一覧
+## V01 — 実測配置の比較一覧
 
-新しい解析APIは増やさず、既存のProject / Context / Measurement / Comparison APIをUIで構成して一覧化する。
+新しい解析APIは増やさず、既存のProject / Context / Measurement / Comparison APIをUIで構成して一覧化した。
 
 - measured Datasetのみを対象にchannel roleとmeasurement pointで絞込
 - 1つのDatasetをreferenceとして選択
@@ -99,6 +100,23 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - 保存済みComparisonがなければ「未比較」と表示し、一覧表示のために勝手に解析を実行しない
 - Comparison reportへ直接移動可能
 - `measured_layout_overview_not_ranking`の考え方をUI文言で維持し、この一覧自体はbest/worstを決めない
+
+初回CIで`ContextPayload`の表示型不足を検出し、後方互換の拡張型へ修正。Windowsでbackend 40テストとfrontend buildが成功した状態をmainへ反映済み。
+
+## 実装中 — V02 更新・復元の安定化
+
+既存schema v1をschema v2へ開く経路に、移行前バックアップと失敗時ロールバックを追加する。
+
+- 既存DBを開く前に`metadata.schema_version`を読み、アプリより新しいschemaは変更せず拒否
+- 旧schemaだけを対象にSQLite `integrity_check`、foreign key、RawAsset参照を検証
+- 検証後、DBと`assets/`を`backups/pre-migration-v1-to-v2-*.zip`へ保存
+- manifestには`schema_version`、`target_schema_version`、`reason=pre_migration`を固定
+- バックアップ完了後に既存Store migrationを実行
+- 移行後にschema versionとRawAsset整合性を再検証
+- 移行処理または移行後検証が失敗した場合、pre-migration ZIPからDBとRawAssetを旧状態へ復元
+- rollback後もpre-migration ZIP自体は残し、手動復旧にも使えるようにする
+- 原本欠損がある旧DBは移行を開始せず、schema versionも変更しない
+- F10相当として、移行途中にDB versionとRawAssetを故意に破壊して例外を起こし、v1 DBと原本バイト列へ戻ることをテストする
 
 ## 未検証・保留
 
@@ -114,8 +132,8 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 ## 次
 
-1. V01一覧のWindows buildを通してmainへ反映する。
-2. V02としてschema移行前バックアップ、移行失敗時のロールバック契約を強化する。
+1. V02をWindows CIで受入し、mainへ反映する。
+2. M10に向け、Windowsで初回作成→配置版→測定取込→A/B→レポート→バックアップ→復元の合成E2Eを自動化する。
 3. REW API取得をHTDT Datasetへ保存する場合は、API response/queryの来歴をRawAsset/metadataへ固定する。実API確認前にmeasuredへ自動分類しない。
 4. IR/ETCは実IRサンプル取得後にA02として開始する。
 5. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
