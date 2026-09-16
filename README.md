@@ -82,6 +82,7 @@ REW 5.40系のAPIについてはlocalhost限定・GET専用のブラウザを実
 | [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較数式、座標、保存契約 |
 | [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW/Windows/AVRの測定境界 |
 | [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | M01以降の作業と受入条件 |
+| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 候補生成、シミュレーション、多目的/Pareto探索、実測閉ループ、適応探索 |
 | [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | 現在の実装済み/未検証項目 |
 | [WINDOWS_ACCEPTANCE.md](docs/WINDOWS_ACCEPTANCE.md) | Windows合成E2Eと実機最終受入手順 |
 | [REW_API.md](docs/REW_API.md) | 読取専用REW API契約 |
@@ -93,3 +94,5 @@ REW 5.40系のAPIについてはlocalhost限定・GET専用のブラウザを実
 ## 重要な制約
 
 REW APIアダプターは所有PC上のV5.40 beta 135で実接続・FRデコード・UI表示まで確認済みです。ただし同一measurementのREW text exportとの照合と実測FRは未完了なので、parserを含む実測ワークフロー全体の互換性はまだ完了扱いにしません。また、HTDTは現段階で「最適位置」を自動断定しません。まず同条件再測定のばらつきと配置A/B差を比較し、再現した改善を次の基準にします。
+
+長期ロードマップでは、可動範囲からの候補生成、REW等の検証済みモデルによるバッチ予測、多目的/Pareto探索、候補の実測検証、条件を満たした場合の適応的な次測定候補提案までを正式に扱います。予測順位が実測で安定しない場合は、自動推薦を停止して比較表示へ戻す方針です。
