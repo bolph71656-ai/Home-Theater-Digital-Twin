@@ -17,6 +17,10 @@
 
 これらは実装の依存条件を確認するための記録であり、すべてが分からないとファイル取込を拒否する設計にはしない。
 
+### 採用マイク: miniDSP UMIK-1
+
+HTDTの第一対象測定マイクはminiDSP UMIK-1とする。UMIK-1は48 kHzで使用し、個体serialから0°/90°の校正ファイルを取得する。ホームシアターの基準測定はマイクを天井へ向け、90°校正ファイルを使用する。単一スピーカーへ正対する0°測定は別条件として記録する。実serialと個体校正原本はローカルRawAssetとして保持し、公開リポジトリへ自動コミットしない。
+
 ## 2. Windowsと測定チャンネル
 
 REWのWindows向けJava出力で多チャンネルを扱う場合はWASAPI Exclusive（EXCL）デバイスを確認する。入力と出力を別デバイスにできるため、USBマイクとHDMIを組み合わせる候補になる。ASIOは利用可能なドライバーが必要な場合に評価し、ASIO4ALLの導入を初期必須条件にしない。[REW Soundcard Preferences](https://www.roomeqwizard.com/help/help_en-GB/html/soundcard.html)
@@ -66,7 +70,7 @@ HTDTからスピーカーをLargeへ変更したり、低域スイープ範囲�
 
 ### A. 条件を固定する
 
-- マイクを支持し、カプセル中心の座標・高さ・向き、校正ファイルを記録する。
+- UMIK-1を支持し、カプセル中心の座標・高さ・向き、個体serial、校正ファイルを記録する。ホームシアター基準は天井向き+90°校正。
 - AVRの入力・音量・音場モード・EQ・距離・レベル・クロスオーバー・サブ設定を保存する。
 - YPAO Volume、Adaptive DRC、tone、Enhancer、Extra Bass等は対応機種で状態を記録する。不明はunknown。
 - Windows側の音量、音響効果、空間オーディオ、サンプルレート、REWの出力・スイープ条件を記録する。

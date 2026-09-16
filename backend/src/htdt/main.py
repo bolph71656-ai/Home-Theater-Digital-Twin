@@ -78,6 +78,15 @@ def create_app(data_dir: Path | None = None, rew_client: RewApiClient | None = N
     def rew_status() -> dict:
         return rew.status()
 
+    @app.get('/api/rew/audio-preflight')
+    def rew_audio_preflight() -> dict:
+        try:
+            return rew.get_audio_preflight()
+        except RewApiUnavailable as exc:
+            raise HTTPException(status_code=503, detail=f'REW API unavailable: {exc}') from exc
+        except RewApiError as exc:
+            raise HTTPException(status_code=502, detail=f'Unexpected REW API response: {exc}') from exc
+
     @app.get('/api/rew/measurements')
     def rew_measurements() -> list[dict]:
         try:

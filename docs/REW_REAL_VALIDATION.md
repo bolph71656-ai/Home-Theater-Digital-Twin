@@ -66,7 +66,7 @@ REW実APIで確認したbaseline:
 - WASAPI Exclusive候補は現状Realtekのみ
 
 REW公式仕様ではWindowsのJava driverでmultichannelを使えるのは、
-名前が`EXCL:`で始まるWASAPI Exclusive deviceのみ。REWはJava outputを最大16chまで扱える。
+名前が`EXCL:`で始まるWASAPI Exclusive deviceのみ。RX-A4A受入では上限値を仮定せず、実際に8 hardware channelsが見えることを確認する。
 
 所有PCのIdeaPad Pro 5 14AHP9は公式PSREF上、HDMI 2.1出力を持つ。
 RX-A4Aは公式仕様上、HDMIでPCM 2〜8ch、最大192 kHz/24-bitを受けられる。
@@ -102,3 +102,11 @@ React描画後のDOMに実REW measurement `HTDT synthetic real-API fixture` が�
 
 したがって所有PCでは、REW -> HTDT backend -> A03 React UIのread-only経路まで実接続済み。
 FRプレビューボタン押下後の視覚的グラフ評価は、実測データ取得後の操作性確認へ残す。
+
+## 接続後のpreflight
+
+HTDTは`GET /api/rew/audio-preflight`でREWのaudio状態を変更せず取得する。Windows/Javaの多ch確認では、`EXCL:`出力が選択され、hardware output channelsが2を超え、stereo-onlyでないことを確認する。入力側はdevice/input/channelとREW input calibration fileの有無を表示するが、入力endpointがreadyでも測定マイクの同定・校正済みとは自動判定しない。RX-A4A接続後はこのpreflightと`scripts/inspect-measurement-audio.ps1`を同時に保存してrouting evidenceとする。
+
+## 日本語device名の文字コード確認
+
+REW V5.40 beta 135のHTTP生バイトを確認した結果、Java audio device名はUTF-8として正しく返っている。Python/HTDT側では追加補正不要。PowerShell 5.1の`Invoke-RestMethod`経路でのみ表示上のmojibakeが発生したため、診断スクリプトはHTTP応答ストリームをUTF-8として明示デコードする。routing判定はdevice名だけには依存しない。

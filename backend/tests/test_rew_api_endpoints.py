@@ -34,6 +34,12 @@ def test_rew_read_only_endpoints(tmp_path: Path) -> None:
 
     def opener(request: Request, timeout: float) -> FakeResponse:
         methods.append(request.get_method())
+        if request.full_url.endswith('/audio/status'):
+            return FakeResponse({'enabled': True, 'ready': True})
+        if request.full_url.endswith('/audio/driver'):
+            return FakeResponse({'driver': 'ASIO'})
+        if request.full_url.endswith('/audio/samplerate'):
+            return FakeResponse({'value': 48000.0, 'unit': 'Hz'})
         if request.full_url.endswith('/measurements'):
             return FakeResponse({'1': {'uuid': 'abc', 'title': 'FL', 'startFreq': 20, 'endFreq': 20000}})
         if '/measurements/abc/frequency-response?' in request.full_url:
@@ -47,6 +53,11 @@ def test_rew_read_only_endpoints(tmp_path: Path) -> None:
     assert status.status_code == 200
     assert status.json()['connected'] is True
     assert status.json()['read_only'] is True
+
+    preflight = client.get('/api/rew/audio-preflight')
+    assert preflight.status_code == 200
+    assert preflight.json()['driver'] == 'ASIO'
+    assert preflight.json()['read_only'] is True
 
     measurements = client.get('/api/rew/measurements')
     assert measurements.status_code == 200
