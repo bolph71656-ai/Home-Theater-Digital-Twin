@@ -1,20 +1,88 @@
 # Home Theater Digital Twin
 
-Windows 11 x64で個人利用する、**部屋・スピーカー配置・REW測定・AVR設定・変更履歴を結び付け、再現可能なA/B比較でスピーカーセッティングを改善するローカルツール**です。
+HTDTは、Windows上で**部屋・ホームシアター配置・測定・予測・最適化を一つの3D空間モデルへ統合するデジタルツイン**です。
 
-v0.1の中核であるプロジェクト保存、配置/条件スナップショット、REWテキスト取込、A/B比較、バックアップ/復元、最小空間表示、Windows合成E2Eまで実装済みです。REW V5.40 beta 135 API版は所有PCへ導入し、実APIとUI経由のFR取得まで確認済みです。測定マイクと実測FRを使う最終受入は継続中です。
+## 現在の開発方針
 
-## 現在の対象環境
+2026-09-16にGUI方針を全面改訂しました。
+
+従来のbrowser-first UIとの互換性は要件とせず、今後は**3D CADのようにmouseで部屋とセッティングを直接構築・編集できるnative desktop editor**を製品の中心にします。
+
+- native Windows desktop application
+- PySide6 / Qt 6 Widgets
+- PyVista / VTK / PyVistaQt
+- rendererから独立したDocument model
+- CAD型のselection / gizmo / snapping / numeric edit / undo-redo
+- room、speaker、seat、screen、furniture、measurement point等を同一sceneで編集
+- REW測定、配置制約、予測、最適化結果を同じ3D viewportへ重畳
+
+**今後の実装順と完了条件の正本は [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) です。**
+
+技術選定の根拠は [`docs/CAD_EDITOR_OSS_RESEARCH.md`](docs/CAD_EDITOR_OSS_RESEARCH.md)、アーキテクチャ決定は [`docs/adr/0001-native-cad-editor-stack.md`](docs/adr/0001-native-cad-editor-stack.md) を参照してください。
+
+## 完成像
+
+HTDTでは、数値フォームを先に埋めるのではなく、3D空間を直接操作します。
+
+- room footprintをclickして描く
+- wall vertexをdragし、寸法入力で正確に修正する
+- speaker、seat、screen、furnitureをpaletteから配置する
+- objectを選択してgizmoでmove/rotateする
+- grid / axis / angle / wall / vertexへsnapする
+- Top / Front / Side / Perspectiveを切り替える
+- Scene tree / viewport / Inspectorが同じselectionへ同期する
+- distance / dimension / clearanceをその場で確認する
+- measurement、reflection、placement candidate、heatmap等をlayer表示する
+
+将来的には、配置候補の生成、音響予測、多目的/Pareto探索、実測検証を同じworkspaceで行います。
+
+## 現在mainにある実装資産
+
+既存コードはすべて捨てるのではなく、新アーキテクチャへ適合するものを再利用します。
+
+主な実装済み資産:
+
+- Windowsローカル起動基盤
+- Project / Context revision / Measurement / Dataset / RawAsset / SQLite
+- REW frequency response text import
+- REW 5.40系 read-only API integration
+- measurement/comparison history
+- backup / restore
+- room mode / first-reflection candidate
+- polygon-prism Room Geometry v2
+- placement constraint engine
+- deterministic placement search space
+- report generation
+
+実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) を正本とします。
+
+## Native CAD editor track
+
+Draft PR #37で、native GUIのWindows PoCを進めています。
+
+確認済み:
+
+- PySide6 + PyVista/VTK + PyVistaQtのnative Qt window
+- 8頂点の凹polygon room描画
+- FL/C/FRとMLP描画
+- `AffineWidget3D`によるspeaker actorのmove/rotate interaction
+- initial snap / undo-redo / immutable Context draft semantics
+
+今後はRoadmapのN10〜N40で、Scene tree、Inspector、SelectionService、CommandHistory、gizmo、snapping、room CAD、speaker/seat/screen/furniture placementを完成させます。
+
+## 対象環境
 
 - Windows 11 x64
 - 開発PC = 利用PC
 - Yamaha RX-A4A
-- 現在3.0.2（増減可能なデータモデル）
+- 現在のspeaker構成: 3.0.2（data model上は可変）
 - サブウーファーなしを主要シナリオとするが、将来追加可能
-- REW V5.40 beta 135 API版を所有PCへ導入済み。測定マイクはminiDSP UMIK-1を採用、実機接続/serial登録は未実施
-- REW/測定マイクがなくても保存・比較・解析・バックアップ機能は利用/テスト可能
+- REW V5.40 beta 135 API版を所有PCへ導入済み
+- miniDSP UMIK-1を採用、実機接続/serial登録は未実施
 
-## Windowsでローカル起動
+## 現行browser版のローカル起動
+
+native editorへ移行中のため、以下は**現行実装を確認するための手順**です。将来の主UIではありません。
 
 リポジトリ直下のPowerShellで:
 
@@ -22,21 +90,7 @@ v0.1の中核であるプロジェクト保存、配置/条件スナップショ
 .\scripts\run-local.ps1
 ```
 
-初回は`.venv`を作り、backend依存を導入し、必要ならfrontend依存を導入して`frontend/dist`をbuildします。その後FastAPIがUIとAPIを同一originで配信し、既定ブラウザを開きます。
-
-- 既定は`127.0.0.1:8765`
-- 8765が使用中ならloopback上の空きポートへ自動フォールバック
-- 同じHTDTデータ領域では1プロセスだけが起動し、二重起動時は新しいserverを作らず既存UIを開く
-- staleなinstance metadataはOSの排他ロックを取得できれば上書きされるため、異常終了後も再起動可能
-- 終了は起動したPowerShellで`Ctrl+C`
-- ブラウザを自動起動しない場合: `.\scripts\run-local.ps1 -NoBrowser`
-- 既に`frontend/dist`が最新でbuildを省略したい場合: `.\scripts\run-local.ps1 -SkipFrontendBuild`
-
-データはWindowsのローカルアプリデータ領域に保存され、ブラウザタブを閉じても残ります。REWは必須ではなく、未起動時も保存済みHTDTデータは利用できます。
-
-## 開発起動
-
-backendだけを直接起動する場合:
+backendのみ:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -45,54 +99,25 @@ python -m pip install -e ".\backend[dev]"
 python -m htdt
 ```
 
-`python -m htdt`は8765を優先し、使用中なら空きポートを選びます。同じデータ領域ですでにHTDTが動いていれば二重起動せず、その既存URLを利用します。ブラウザを開かない場合は`python -m htdt --no-browser`、優先ポートを変える場合は`python -m htdt --port 9000`のように指定できます。
-
-API docsは起動URLの`/api/docs`です。
-
-frontendをVite開発サーバーで動かす場合は別のPowerShellで:
-
-```powershell
-cd frontend
-npm ci
-npm run dev
-```
-
-開発UIは`http://127.0.0.1:5173`で、APIはVite proxy経由でbackendへ接続します。本番相当では`npm run build`後、FastAPIが`frontend/dist`を配信します。
-
-## v0.1の流れ
-
-1. プロジェクトを作る。
-2. 部屋寸法、MLP、スピーカー、RX-A4A条件を不変版として保存する。
-3. REWの周波数応答テキストをプレビューして取り込む。
-4. 原本SHA-256、入力role、実音源ID、条件版、品質状態を測定に固定する。
-5. 同条件再測定の再現性を確認する。
-6. 配置や設定A/Bを96 PPOの共通グリッドで比較する。
-7. 平均差、RMS差、レベルオフセット、形状RMS、意図した変更、交絡要因と比較設定を保存する。
-8. 配置を変える場合は新しいContext revisionを作り、過去測定を現在位置へ動かさない。
-9. 保存済みComparisonから自己完結HTML/JSONレポートを生成する。
-10. DBとRawAssetをZIPへバックアップし、別データ領域へ復元できる。
-
-REW 5.40系のAPIについてはlocalhost限定・GET専用のブラウザを実装済みです。所有PCのREW V5.40 beta 135で実接続し、測定一覧と96 PPO FRの実デコード、UI表示まで確認しました。REWの測定開始、Generator、設定変更、API取得データの自動保存は行いません。
-
 ## 設計文書
 
 | 文書 | 内容 |
 |---|---|
-| [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | スコープ、アーキテクチャ、段階別到達点 |
+| [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | **今後の実装順・milestone・受入条件の正本** |
+| [CAD_EDITOR_OSS_RESEARCH.md](docs/CAD_EDITOR_OSS_RESEARCH.md) | 3D CAD/OSS調査、採用・不採用理由、参照コード |
+| [ADR-0001](docs/adr/0001-native-cad-editor-stack.md) | native CAD editor技術決定 |
+| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | mainへ反映済みの実装事実 |
 | [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較数式、座標、保存契約 |
 | [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW/Windows/AVRの測定境界 |
-| [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | M01以降の作業と受入条件 |
-| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 候補生成、シミュレーション、多目的/Pareto探索、実測閉ループ、適応探索 |
-| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | 現在の実装済み/未検証項目 |
-| [WINDOWS_ACCEPTANCE.md](docs/WINDOWS_ACCEPTANCE.md) | Windows合成E2Eと実機最終受入手順 |
-| [REW_API.md](docs/REW_API.md) | 読取専用REW API契約 |
-| [REW_REAL_VALIDATION.md](docs/REW_REAL_VALIDATION.md) | 所有PC上の実REW API/UI検証記録 |
-| [RXA4A_HDMI_VALIDATION.md](docs/RXA4A_HDMI_VALIDATION.md) | RX-A4A HDMI/WASAPI Exclusive/routing実機受入手順 |
-| [UMIK1_VALIDATION.md](docs/UMIK1_VALIDATION.md) | UMIK-1の48 kHz/校正/向き/入力経路の実機受入手順 |
-| [PLAN_REVIEW.md](docs/PLAN_REVIEW.md) | 計画レビューと根拠 |
+| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 配置探索アルゴリズム詳細。実装順はCAD-first roadmapに従う |
+| [ROOM_GEOMETRY.md](docs/ROOM_GEOMETRY.md) | polygon room geometry contract |
+| [PLACEMENT_CONSTRAINTS.md](docs/PLACEMENT_CONSTRAINTS.md) | placement hard constraints |
+| [REW_API.md](docs/REW_API.md) | read-only REW API契約 |
 
-## 重要な制約
+## 開発運用
 
-REW APIアダプターは所有PC上のV5.40 beta 135で実接続・FRデコード・UI表示まで確認済みです。ただし同一measurementのREW text exportとの照合と実測FRは未完了なので、parserを含む実測ワークフロー全体の互換性はまだ完了扱いにしません。また、HTDTは現段階で「最適位置」を自動断定しません。まず同条件再測定のばらつきと配置A/B差を比較し、再現した改善を次の基準にします。
+ローカル作業は `C:\Users\ka092\Desktop\HTDT\` で行います。Windows renderingやmouse interaction等の実機確認に使用します。
 
-長期ロードマップでは、可動範囲からの候補生成、REW等の検証済みモデルによるバッチ予測、多目的/Pareto探索、候補の実測検証、条件を満たした場合の適応的な次測定候補提案までを正式に扱います。予測順位が実測で安定しない場合は、自動推薦を停止して比較表示へ戻す方針です。
+ただし、**計画、考察、設計判断、実装記録、検証結果、進捗、成果物の正本はGitHubに残します。**
+
+各native editor PRではRoadmap milestone ID（N10、N20等）、参考OSS、検証結果、Windows実機確認、既知の制限を記録します。
