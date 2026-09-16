@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import sqlite3
+import zipfile
+
+import pytest
+
+from htdt.database import SCHEMA_VERSION, Store
+from htdt.migration_guard import MigrationOpenError
+
+
+def _create_v1_root(root: Path, *, with_asset: bool = True) -> tuple[Path, bytes | None]:
+    root.mkdir(parents=True)
+    assets = root / 'assets'
+    assets.mkdir()
+    asset_bytes = b'legacy-raw-asset' if with_asset else None
+    digest = hashlib.sha256(asset_bytes).hexdigest() if asset_bytes is not None else None
+    relative = f'assets/{digest}.bin' if digest else None
+    if asset_bytes is not None and relative is not None:
+        (root / relative).write_bytes(asset_bytes)
+
+    db = sqlite3.connect(root / 'htdt.sqlite3')
+    try:
+        db.executescript('''
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata(key, value) VALUES ('schema_version', '1');
+        CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE contexts (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), revision_number INTEGER NOT NULL, parent_context_id TEXT REFERENCES contexts(id), created_at TEXT NOT NULL, payload_json TEXT NOT NULL, UNIQUE(project_id, revision_number));
+        CREATE TABLE assets (sha256 TEXT PRIMARY KEY, relative_path TEXT NOT NULL, original_filename TEXT NOT NULL, size_bytes INTEGER NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE measurements (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), context_id TEXT NOT NULL REFERENCES contexts(id), channel_role TEXT NOT NULL, evidence_type TEXT NOT NULL, source_speaker_ids_json TEXT NOT NULL, radiation_scope TEXT NOT NULL, captured_at TEXT, imported_at TEXT NOT NULL, notes TEXT);
+        CREATE TABLE datasets (id TEXT PRIMARY KEY, measurement_id TEXT NOT NULL REFERENCES measurements(id), asset_sha256 TEXT NOT NULL REFERENCES assets(sha256), kind TEXT NOT NULL, frequency_blob BLOB NOT NULL, level_blob BLOB NOT NULL, phase_blob BLOB, metadata_json TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE comparisons (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), dataset_a_id TEXT NOT NULL REFERENCES datasets(id), dataset_b_id TEXT NOT NULL REFERENCES datasets(id), spec_json TEXT NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL);
+        INSERT INTO projects(id, name, created_at) VALUES ('p1', 'Legacy Room', '2026-09-15T00:00:00+00:00');
+        ''')
+        if asset_bytes is not None and digest is not None and relative is not None:
+            db.execute(
+                'INSERT INTO assets(sha256, relative_path, original_filename, size_bytes, created_at) VALUES (?, ?, ?, ?, ?)',
+                (digest, relative, 'legacy.bin', len(asset_bytes), '2026-09-15T00:00:00+00:00'),
+            )
+        db.commit()
+    finally:
+        db.close()
+    return root, asset_bytes
+
+
+def _schema_version(root: Path) -> int:
+    db = sqlite3.connect(root / 'htdt.sqlite3')
+    try:
+        return int(db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0])
+    finally:
+        db.close()
+
+
+def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> None:
+    root, asset_bytes = _create_v1_root(tmp_path / 'legacy')
+
+    store = Store(root)
+
+    assert SCHEMA_VERSION == 2
+    assert _schema_version(root) == SCHEMA_VERSION
+    assert store.migrated_from_schema_version == 1
+    assert store.pre_migration_backup.is_file()
+    assert store.list_projects()[0]['name'] == 'Legacy Room'
+
+    with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert manifest == {'reason': 'pre_migration', 'schema_version': 1, 'target_schema_version': 2}
+        snapshot = tmp_path / 'snapshot.sqlite3'
+        snapshot.write_bytes(archive.read('htdt.sqlite3'))
+        assert archive.read(next(name for name in archive.namelist() if name.startswith('assets/') and name != 'assets/')) == asset_bytes
+    assert _schema_version(snapshot.parent / snapshot.name) if False else True
+    snapshot_db = sqlite3.connect(snapshot)
+    try:
+        assert int(snapshot_db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]) == 1
+        columns = {row[1] for row in snapshot_db.execute('PRAGMA table_info(measurements)')}
+        assert 'quality_status' not in columns
+    finally:
+        snapshot_db.close()
+
+
+def test_failed_migration_restores_v1_database_and_raw_assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, asset_bytes = _create_v1_root(tmp_path / 'legacy')
+    assert asset_bytes is not None
+    asset_path = next((root / 'assets').iterdir())
+    original_initialise = Store._initialise
+
+    def fail_after_partial_mutation(self: Store) -> None:
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE metadata SET value='99' WHERE key='schema_version'")
+            db.commit()
+        asset_path.write_bytes(b'corrupted-during-migration')
+        raise RuntimeError('synthetic migration failure')
+
+    monkeypatch.setattr(Store, '_initialise', fail_after_partial_mutation)
+    with pytest.raises(MigrationOpenError, match='previous data restored'):
+        Store(root)
+
+    assert _schema_version(root) == 1
+    assert asset_path.read_bytes() == asset_bytes
+    backups = list((root / 'backups').glob('pre-migration-v1-to-v2-*.zip'))
+    assert len(backups) == 1
+
+    monkeypatch.setattr(Store, '_initialise', original_initialise)
+    reopened = Store(root)
+    assert _schema_version(root) == 2
+    assert reopened.list_projects()[0]['name'] == 'Legacy Room'
+    assert asset_path.read_bytes() == asset_bytes
+
+
+def test_missing_legacy_asset_blocks_migration_without_schema_change(tmp_path: Path) -> None:
+    root, _ = _create_v1_root(tmp_path / 'legacy')
+    next((root / 'assets').iterdir()).unlink()
+
+    with pytest.raises(MigrationOpenError, match='missing_asset'):
+        Store(root)
+
+    assert _schema_version(root) == 1
+    assert not (root / 'backups').exists()
+
+
+def test_newer_schema_is_refused_without_downgrade(tmp_path: Path) -> None:
+    root = tmp_path / 'future'
+    root.mkdir()
+    db_path = root / 'htdt.sqlite3'
+    db = sqlite3.connect(db_path)
+    try:
+        db.executescript("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO metadata VALUES ('schema_version', '999');")
+        db.commit()
+    finally:
+        db.close()
+    before = db_path.read_bytes()
+
+    with pytest.raises(MigrationOpenError, match='newer'):
+        Store(root)
+
+    assert db_path.read_bytes() == before
