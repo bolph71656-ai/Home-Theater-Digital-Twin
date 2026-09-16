@@ -80,6 +80,12 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 
 
+class SessionCreate(BaseModel):
+    purpose: str | None = Field(default=None, max_length=300)
+    started_at: str | None = Field(default=None, max_length=100)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
 class ImportPreviewRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=512)
     raw_base64: str = Field(min_length=1, max_length=MAX_REW_TEXT_BASE64_CHARS)
@@ -87,6 +93,7 @@ class ImportPreviewRequest(BaseModel):
 
 class MeasurementImportRequest(ImportPreviewRequest):
     context_id: str
+    session_id: str | None = None
     channel_role: str = Field(min_length=1)
     evidence_type: EvidenceType = 'unknown'
     source_speaker_ids: list[str] = Field(default_factory=list)

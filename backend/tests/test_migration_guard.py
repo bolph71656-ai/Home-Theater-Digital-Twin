@@ -46,6 +46,29 @@ def _create_v1_root(root: Path, *, with_asset: bool = True) -> tuple[Path, bytes
     return root, asset_bytes
 
 
+def _create_v2_root(root: Path) -> Path:
+    root, _ = _create_v1_root(root, with_asset=False)
+    db = sqlite3.connect(root / 'htdt.sqlite3')
+    try:
+        db.executescript('''
+        ALTER TABLE measurements ADD COLUMN routing_evidence TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE measurements ADD COLUMN quality_status TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE measurements ADD COLUMN quality_reasons_json TEXT NOT NULL DEFAULT '[]';
+        ALTER TABLE measurements ADD COLUMN quality_source TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE measurements ADD COLUMN repeat_group TEXT;
+        CREATE TABLE asset_links (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), asset_sha256 TEXT NOT NULL REFERENCES assets(sha256),
+            measurement_id TEXT REFERENCES measurements(id), context_id TEXT REFERENCES contexts(id), kind TEXT NOT NULL,
+            label TEXT, filename TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        UPDATE metadata SET value='2' WHERE key='schema_version';
+        ''')
+        db.commit()
+    finally:
+        db.close()
+    return root
+
+
 def _schema_version(root: Path) -> int:
     db = sqlite3.connect(root / 'htdt.sqlite3')
     try:
@@ -59,7 +82,7 @@ def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> 
 
     store = Store(root)
 
-    assert SCHEMA_VERSION == 2
+    assert SCHEMA_VERSION == 3
     assert _schema_version(root) == SCHEMA_VERSION
     assert store.migrated_from_schema_version == 1
     assert store.pre_migration_backup.is_file()
@@ -67,7 +90,7 @@ def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> 
 
     with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
         manifest = json.loads(archive.read('manifest.json'))
-        assert manifest == {'reason': 'pre_migration', 'schema_version': 1, 'target_schema_version': 2}
+        assert manifest == {'reason': 'pre_migration', 'schema_version': 1, 'target_schema_version': SCHEMA_VERSION}
         snapshot = tmp_path / 'snapshot.sqlite3'
         snapshot.write_bytes(archive.read('htdt.sqlite3'))
         asset_name = next(name for name in archive.namelist() if name.startswith('assets/') and name != 'assets/')
@@ -77,6 +100,34 @@ def test_v1_open_creates_pre_migration_backup_before_upgrade(tmp_path: Path) -> 
         assert int(snapshot_db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]) == 1
         columns = {row[1] for row in snapshot_db.execute('PRAGMA table_info(measurements)')}
         assert 'quality_status' not in columns
+        assert 'session_id' not in columns
+    finally:
+        snapshot_db.close()
+
+
+def test_v2_open_adds_sessions_without_inventing_session_membership(tmp_path: Path) -> None:
+    root = _create_v2_root(tmp_path / 'legacy-v2')
+
+    store = Store(root)
+
+    assert _schema_version(root) == SCHEMA_VERSION
+    assert store.migrated_from_schema_version == 2
+    assert store.list_sessions('p1') == []
+    with store.connect() as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {row[1] for row in db.execute('PRAGMA table_info(measurements)')}
+    assert 'sessions' in tables
+    assert 'session_id' in columns
+
+    with zipfile.ZipFile(store.pre_migration_backup, 'r') as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert manifest == {'reason': 'pre_migration', 'schema_version': 2, 'target_schema_version': SCHEMA_VERSION}
+        snapshot = tmp_path / 'snapshot-v2.sqlite3'
+        snapshot.write_bytes(archive.read('htdt.sqlite3'))
+    snapshot_db = sqlite3.connect(snapshot)
+    try:
+        assert int(snapshot_db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]) == 2
+        assert snapshot_db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone() is None
     finally:
         snapshot_db.close()
 
@@ -100,12 +151,12 @@ def test_failed_migration_restores_v1_database_and_raw_assets(tmp_path: Path, mo
 
     assert _schema_version(root) == 1
     assert asset_path.read_bytes() == asset_bytes
-    backups = list((root / 'backups').glob('pre-migration-v1-to-v2-*.zip'))
+    backups = list((root / 'backups').glob(f'pre-migration-v1-to-v{SCHEMA_VERSION}-*.zip'))
     assert len(backups) == 1
 
     monkeypatch.setattr(Store, '_initialise', original_initialise)
     reopened = Store(root)
-    assert _schema_version(root) == 2
+    assert _schema_version(root) == SCHEMA_VERSION
     assert reopened.list_projects()[0]['name'] == 'Legacy Room'
     assert asset_path.read_bytes() == asset_bytes
 
