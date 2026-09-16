@@ -106,3 +106,32 @@ class ContextDraft:
                 self._commit(candidate)
                 return
         raise SpatialEditError(f'Unknown speaker: {speaker_id}')
+
+    def move_room_vertex(self, vertex_id: str, xy_m: Sequence[float], *, snap_m: float) -> None:
+        if len(xy_m) != 2:
+            raise SpatialEditError('Room vertex requires X and Y')
+        candidate = self.payload
+        room = candidate['room']
+        if room.get('geometry_kind') != 'polygon_prism':
+            raise SpatialEditError('Room vertices can only be edited for polygon_prism geometry')
+        vertices = room.get('footprint_vertices') or []
+        for vertex in vertices:
+            if vertex['vertex_id'] == vertex_id:
+                vertex['x_m'] = snap_scalar(float(xy_m[0]), snap_m)
+                vertex['y_m'] = snap_scalar(float(xy_m[1]), snap_m)
+                self._commit(candidate)
+                return
+        raise SpatialEditError(f'Unknown room vertex: {vertex_id}')
+
+    def set_room_height(self, height_m: float, *, snap_m: float) -> None:
+        candidate = self.payload
+        candidate['room']['height_m'] = snap_scalar(float(height_m), snap_m)
+        self._commit(candidate)
+
+    def payload_for_save(self) -> dict[str, Any]:
+        candidate = self.payload
+        candidate['parent_context_id'] = self.source_context_id
+        try:
+            return ContextCreate.model_validate(candidate).model_dump(mode='json')
+        except ValueError as exc:
+            raise SpatialEditError(str(exc)) from exc
