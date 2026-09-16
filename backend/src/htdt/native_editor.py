@@ -54,7 +54,7 @@ def default_data_dir() -> Path:
 
 
 class NativeEditorWindow(QMainWindow):
-    """N20a native CAD shell: rigid move/rotate, snap, undo, recovery and view state."""
+    """N20b native CAD shell: rigid group transforms, snap, undo, recovery and view state."""
 
     def __init__(self, repository: SceneRepository, document_id: str = F1_DOCUMENT_ID) -> None:
         super().__init__()
@@ -340,6 +340,8 @@ class NativeEditorWindow(QMainWindow):
         if entity_id is None:
             return
         additive = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+        if not additive and entity_id in self.view_state.selection:
+            return
         if additive:
             selected = list(self.view_state.selection)
             if entity_id in selected:
@@ -414,7 +416,8 @@ class NativeEditorWindow(QMainWindow):
         if persist:
             self._persist_view_state()
         self._update_actions()
-        self.viewport.render()
+        if self.gizmo is None:
+            self.viewport.render()
 
     def _selection_pivot(self) -> Position3 | None:
         if self.working is None or not self.view_state.selection:
@@ -997,7 +1000,7 @@ class NativeEditorWindow(QMainWindow):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description='Run the HTDT native CAD editor N20a shell')
+    parser = argparse.ArgumentParser(description='Run the HTDT native CAD editor N20b shell')
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--document-id', default=F1_DOCUMENT_ID)
     args = parser.parse_args(argv)
