@@ -20,7 +20,7 @@ def _context_payload(*, fl_x: float = 1.0, volume_db: float | None = None) -> di
     }
 
 
-def test_schema_v1_is_migrated_to_v2(tmp_path: Path) -> None:
+def test_schema_v1_is_migrated_to_current_schema(tmp_path: Path) -> None:
     root = tmp_path / 'legacy'
     root.mkdir()
     db = sqlite3.connect(root / 'htdt.sqlite3')
@@ -47,9 +47,9 @@ def test_schema_v1_is_migrated_to_v2(tmp_path: Path) -> None:
         tables = {row[0] for row in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     finally:
         migrated.close()
-    assert int(version) == SCHEMA_VERSION == 2
-    assert {'quality_status', 'quality_reasons_json', 'quality_source', 'repeat_group', 'routing_evidence'} <= columns
-    assert 'asset_links' in tables
+    assert int(version) == SCHEMA_VERSION
+    assert {'quality_status', 'quality_reasons_json', 'quality_source', 'repeat_group', 'routing_evidence', 'session_id'} <= columns
+    assert {'asset_links', 'sessions'} <= tables
 
 
 def test_quality_duplicate_asset_attachment_and_restore(tmp_path: Path) -> None:
