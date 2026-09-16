@@ -46,6 +46,27 @@ def test_geometric_candidates_exclude_moving_selection_and_have_stable_feature_i
     assert len(stable_ids) == len(set(stable_ids))
 
 
+def test_split_static_and_edge_candidates_match_full_generation() -> None:
+    document = make_f1_scene()
+    kwargs = {
+        'exclude_ids': {'speaker-fl', 'speaker-c'},
+        'axis': 'x',
+        'probe': Position3(x_m=1.8, y_m=0.75, z_m=1.05),
+    }
+    full = generate_snap_candidates(document, **kwargs)
+    static = generate_snap_candidates(
+        document,
+        **kwargs,
+        kinds={'vertex', 'midpoint', 'alignment'},
+    )
+    edges = generate_snap_candidates(document, **kwargs, kinds={'edge'})
+    assert {candidate.stable_id for candidate in static + edges} == {
+        candidate.stable_id for candidate in full
+    }
+    assert all(candidate.kind != 'edge' for candidate in static)
+    assert all(candidate.kind == 'edge' for candidate in edges)
+
+
 def _snap_candidate(stable_id: str, kind: str, x_m: float) -> SnapCandidate:
     return SnapCandidate(
         stable_id=stable_id,
