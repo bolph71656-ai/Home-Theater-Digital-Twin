@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from pyvistaqt import QtInteractor
-from vtkmodules.vtkRenderingCore import vtkPropPicker
+from vtkmodules.vtkRenderingCore import vtkCellPicker
 
 from .cad_document import EditorViewState, WorkingDocument
 from .cad_gizmo import RotationWidget3D, TranslationWidget3D
@@ -43,10 +43,12 @@ from .cad_scene import (
     render_delta_to_domain,
     rotate_orientation_world,
 )
-from .cad_snap import SnapSelector, generate_snap_candidates, snap_angle_deg, snap_position_axis
+from .cad_snap import SnapCandidate, SnapSelector, generate_snap_candidates, snap_angle_deg, snap_position_axis
 
 ROLE = int(Qt.ItemDataRole.UserRole)
 AXIS_NAMES: tuple[Literal['x', 'y', 'z'], ...] = ('x', 'y', 'z')
+STATIC_SNAP_KINDS = frozenset({'vertex', 'midpoint', 'alignment'})
+EDGE_SNAP_KINDS = frozenset({'edge'})
 
 
 def default_data_dir() -> Path:
@@ -72,6 +74,10 @@ class NativeEditorWindow(QMainWindow):
         self.drag_base_position: Position3 | None = None
         self.drag_base_orientation: Quaternion4 | None = None
         self.drag_rotation_pivot: Position3 | None = None
+        self.drag_static_snap_candidates: tuple[SnapCandidate, ...] = ()
+        self.drag_snap_axis: Literal['x', 'y', 'z'] | None = None
+        self.retained_snap_candidate: SnapCandidate | None = None
+        self.snap_feedback_label: str | None = None
         self.snap_selector = SnapSelector()
         self.capture_watch = QTimer(self)
         self.capture_watch.setInterval(40)
@@ -84,13 +90,18 @@ class NativeEditorWindow(QMainWindow):
         self.view_state_save_timer.setSingleShot(True)
         self.view_state_save_timer.setInterval(250)
         self.view_state_save_timer.timeout.connect(self._persist_view_state)
+        self.preview_inspect_timer = QTimer(self)
+        self.preview_inspect_timer.setSingleShot(True)
+        self.preview_inspect_timer.setInterval(33)
+        self.preview_inspect_timer.timeout.connect(self._refresh_preview_inspector)
         self.resize(1440, 900)
         self.setWindowTitle('Home Theater Digital Twin — N20b')
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
-        self.scene_picker = vtkPropPicker()
+        self.scene_picker = vtkCellPicker()
         self.scene_picker.PickFromListOn()
+        self.scene_picker.SetTolerance(0.005)
         self.scene_pick_observer: int | None = self.viewport.iren.interactor.AddObserver(
             'LeftButtonPressEvent', self._scene_left_press, -1.0
         )
@@ -276,6 +287,8 @@ class NativeEditorWindow(QMainWindow):
         selected_ids = self.view_state.selection
         primary_id = self.view_state.selected_id
         self.gizmo_rebuild_timer.stop()
+        self.preview_inspect_timer.stop()
+        self._reset_drag_snap_state()
         self._remove_gizmo()
         self.viewport.clear()
         self.viewport.add_axes()
@@ -481,9 +494,14 @@ class NativeEditorWindow(QMainWindow):
         return (float(display_x) / dpr, float(display_y) / dpr)
 
     def _clear_snap_feedback(self) -> None:
+        if self.snap_feedback_label is None:
+            return
         self.viewport.remove_actor('snap-feedback', reset_camera=False, render=False)
+        self.snap_feedback_label = None
 
     def _show_snap_feedback(self, label: str) -> None:
+        if label == self.snap_feedback_label:
+            return
         self.viewport.add_text(
             label,
             position='lower_left',
@@ -491,6 +509,63 @@ class NativeEditorWindow(QMainWindow):
             name='snap-feedback',
             render=False,
         )
+        self.snap_feedback_label = label
+
+    def _reset_drag_snap_state(self) -> None:
+        self.snap_selector.reset()
+        self.drag_static_snap_candidates = ()
+        self.drag_snap_axis = None
+        self.retained_snap_candidate = None
+
+    def _select_object_snap(
+        self,
+        selection: tuple[str, ...],
+        axis: Literal['x', 'y', 'z'],
+        probe: Position3,
+    ):
+        if self.working is None:
+            return None
+        if self.drag_snap_axis != axis:
+            self._reset_drag_snap_state()
+            self.drag_snap_axis = axis
+            self.drag_static_snap_candidates = generate_snap_candidates(
+                self.working.committed_document,
+                exclude_ids=set(selection),
+                axis=axis,
+                probe=probe,
+                kinds=STATIC_SNAP_KINDS,
+            )
+
+        retained = self.retained_snap_candidate
+        if retained is not None and retained.kind != 'edge':
+            selected = self.snap_selector.select((retained,), probe, self._project_domain_to_dip)
+            if selected is not None:
+                self.retained_snap_candidate = selected.candidate
+                return selected
+            self.retained_snap_candidate = None
+
+        edges = generate_snap_candidates(
+            self.working.committed_document,
+            exclude_ids=set(selection),
+            axis=axis,
+            probe=probe,
+            kinds=EDGE_SNAP_KINDS,
+        )
+        selected = self.snap_selector.select(
+            self.drag_static_snap_candidates + edges,
+            probe,
+            self._project_domain_to_dip,
+        )
+        self.retained_snap_candidate = None if selected is None else selected.candidate
+        return selected
+
+    def _schedule_preview_inspector(self) -> None:
+        if not self.preview_inspect_timer.isActive():
+            self.preview_inspect_timer.start()
+
+    def _refresh_preview_inspector(self) -> None:
+        if self.working is not None and self.working.has_preview and self.selected_id is not None:
+            self._inspect(self.selected_id, use_preview=True)
 
     def _create_gizmo(self, entity_id: str | None) -> None:
         if entity_id is None or self.working is None or self.recovery_candidate is not None:
@@ -626,7 +701,7 @@ class NativeEditorWindow(QMainWindow):
         if not self.working.has_preview:
             self.drag_base_position = self._selection_pivot()
             self.working.begin_group_move(selection)
-            self.snap_selector.reset()
+            self._reset_drag_snap_state()
             self.capture_watch.start()
         if self.drag_base_position is None:
             return
@@ -640,13 +715,7 @@ class NativeEditorWindow(QMainWindow):
         if axis_index is not None and not bypass_snap:
             axis = AXIS_NAMES[axis_index]
             if self.view_state.object_snap_enabled:
-                candidates = generate_snap_candidates(
-                    self.working.committed_document,
-                    exclude_ids=set(selection),
-                    axis=axis,
-                    probe=candidate,
-                )
-                selected = self.snap_selector.select(candidates, candidate, self._project_domain_to_dip)
+                selected = self._select_object_snap(selection, axis, candidate)
                 if selected is not None:
                     candidate = selected.candidate.target
                     self._show_snap_feedback(selected.candidate.label)
@@ -658,7 +727,7 @@ class NativeEditorWindow(QMainWindow):
                 snapped = True
         if bypass_snap or axis_index is None or not snapped:
             if bypass_snap:
-                self.snap_selector.reset()
+                self._reset_drag_snap_state()
             self._clear_snap_feedback()
         delta = (
             candidate.x_m - self.drag_base_position.x_m,
@@ -672,10 +741,11 @@ class NativeEditorWindow(QMainWindow):
             if actor is not None and actor is not self.gizmo.actor:
                 actor.user_matrix = self.gizmo.matrix.copy()
         self.working.preview_group_move(delta)
-        self._inspect(self.selected_id, use_preview=True)
+        self._schedule_preview_inspector()
 
     def _commit_active_preview(self, expected_kind: Literal['move', 'rotate'] | None = None) -> bool:
         self.capture_watch.stop()
+        self.preview_inspect_timer.stop()
         if self.working is None or not self.working.has_preview:
             return False
         kind = self.working.preview_kind
@@ -685,7 +755,7 @@ class NativeEditorWindow(QMainWindow):
         self.drag_base_position = None
         self.drag_base_orientation = None
         self.drag_rotation_pivot = None
-        self.snap_selector.reset()
+        self._reset_drag_snap_state()
         self._clear_snap_feedback()
         self._sync_recovery()
         self._rebuild()
@@ -709,7 +779,7 @@ class NativeEditorWindow(QMainWindow):
             if self.drag_rotation_pivot is None:
                 return
             self.working.begin_group_rotate(selection)
-            self.snap_selector.reset()
+            self._reset_drag_snap_state()
             self._clear_snap_feedback()
             self.capture_watch.start()
         if self.drag_rotation_pivot is None:
@@ -727,7 +797,7 @@ class NativeEditorWindow(QMainWindow):
             effective_angle,
             self.drag_rotation_pivot,
         )
-        self._inspect(self.selected_id, use_preview=True)
+        self._schedule_preview_inspector()
 
     def _rotation_release(self, axis_index: int, angle_deg: float) -> None:
         del axis_index, angle_deg
@@ -735,6 +805,7 @@ class NativeEditorWindow(QMainWindow):
 
     def cancel_preview(self) -> None:
         self.capture_watch.stop()
+        self.preview_inspect_timer.stop()
         if self.working is None:
             return
         had_preview = self.working.has_preview
@@ -744,7 +815,7 @@ class NativeEditorWindow(QMainWindow):
         self.drag_base_position = None
         self.drag_base_orientation = None
         self.drag_rotation_pivot = None
-        self.snap_selector.reset()
+        self._reset_drag_snap_state()
         self._clear_snap_feedback()
         if self.gizmo:
             self.gizmo.cancel()
@@ -769,6 +840,7 @@ class NativeEditorWindow(QMainWindow):
             return
         self.view_state.transform_mode = mode
         self._sync_transform_controls()
+        self._reset_drag_snap_state()
         self.gizmo_rebuild_timer.stop()
         self._remove_gizmo()
         self._create_gizmo(self.selected_id)
@@ -780,7 +852,7 @@ class NativeEditorWindow(QMainWindow):
         if self.working and self.working.has_preview:
             self.cancel_preview()
         self.view_state.object_snap_enabled = bool(checked)
-        self.snap_selector.reset()
+        self._reset_drag_snap_state()
         self._clear_snap_feedback()
         self.statusBar().showMessage(f"Object snap {'on' if checked else 'off'} · 8/12 DIP")
 
@@ -1043,6 +1115,7 @@ class NativeEditorWindow(QMainWindow):
         self.capture_watch.stop()
         self.gizmo_rebuild_timer.stop()
         self.view_state_save_timer.stop()
+        self.preview_inspect_timer.stop()
         if self.working and self.working.has_preview:
             self.working.cancel_preview()
         self._sync_recovery()
