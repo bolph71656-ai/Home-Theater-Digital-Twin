@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { api, fileToBase64 } from './api'
+import { FeatureCandidatePanel } from './FeatureCandidates'
 import { FrequencyPlot, RoomPlot, type ComparisonResult, type ContextPayload, type Speaker } from './plots'
 
 type Health = {
@@ -603,6 +604,8 @@ export default function App() {
           </div>
         </>}
       </section>
+
+      <FeatureCandidatePanel projectId={projectId} measurements={measurements} />
     </main>
   )
 }
