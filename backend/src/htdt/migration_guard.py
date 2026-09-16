@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import shutil
 import sqlite3
@@ -140,9 +139,15 @@ def _restore_pre_migration_backup(root: Path, archive_path: Path, expected_versi
             raise MigrationOpenError('Pre-migration backup database failed schema validation')
 
         db_path = root / 'htdt.sqlite3'
-        db_temp = root / f'.htdt.rollback-{uuid4().hex}.sqlite3'
-        shutil.copy2(restored_db, db_temp)
-        os.replace(db_temp, db_path)
+        source = sqlite3.connect(restored_db)
+        destination = sqlite3.connect(db_path)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+            source.close()
+        if _read_schema_version(db_path) != expected_version:
+            raise MigrationOpenError('Rolled-back database failed schema validation')
 
         assets_dir = root / 'assets'
         replacement_assets = root / f'.assets.rollback-{uuid4().hex}'
@@ -150,11 +155,11 @@ def _restore_pre_migration_backup(root: Path, archive_path: Path, expected_versi
             shutil.copytree(restored_assets, replacement_assets)
         else:
             replacement_assets.mkdir()
-        old_assets = root / f'.assets.failed-migration-{uuid4().hex}'
+        shutil.rmtree(assets_dir, ignore_errors=True)
         if assets_dir.exists():
-            os.replace(assets_dir, old_assets)
-        os.replace(replacement_assets, assets_dir)
-        shutil.rmtree(old_assets, ignore_errors=True)
+            shutil.rmtree(replacement_assets, ignore_errors=True)
+            raise MigrationOpenError('Could not remove assets from failed migration')
+        replacement_assets.rename(assets_dir)
 
 
 def _prepare(root: Path, target_version: int) -> MigrationPreparation | None:
@@ -206,8 +211,8 @@ def install_migration_guard() -> None:
                 _restore_pre_migration_backup(root, preparation.backup_path, preparation.source_version)
             except Exception as rollback_exc:
                 raise MigrationOpenError(
-                    f'Migration v{preparation.source_version}->v{preparation.target_version} failed and rollback also failed; '
-                    f'pre-migration backup remains at {preparation.backup_path}'
+                    f'Migration v{preparation.source_version}->v{preparation.target_version} failed and rollback also failed '
+                    f'({rollback_exc}); pre-migration backup remains at {preparation.backup_path}'
                 ) from rollback_exc
             raise MigrationOpenError(
                 f'Migration v{preparation.source_version}->v{preparation.target_version} failed; '
