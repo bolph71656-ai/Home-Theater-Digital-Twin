@@ -11,12 +11,18 @@ type Health = {
 
 type Project = { id: string; name: string; created_at: string }
 type ContextRecord = { id: string; revision_number: number; created_at: string; payload: ContextPayload }
+type QualityStatus = 'usable' | 'warning' | 'invalid' | 'unknown'
 type Measurement = {
   id: string
   dataset_id: string
   context_id: string
   channel_role: string
   evidence_type: string
+  routing_evidence: string
+  quality_status: QualityStatus
+  quality_reasons: string[]
+  quality_source: string
+  repeat_group: string | null
   points: number
   frequency_min_hz: number
   frequency_max_hz: number
@@ -31,10 +37,40 @@ type Preview = {
   phase_status: string
   warnings: string[]
 }
+type ContextDifference = { path: string; a: unknown; b: unknown }
+type MeasurementSnapshot = {
+  measurement_id: string
+  context_id: string
+  channel_role: string
+  evidence_type: string
+  quality_status: QualityStatus
+  quality_reasons: string[]
+  quality_source: string
+  repeat_group: string | null
+}
+type ExtendedComparisonResult = ComparisonResult & {
+  comparison_role?: string
+  measurement_a?: MeasurementSnapshot
+  measurement_b?: MeasurementSnapshot
+  context_differences?: ContextDifference[]
+  intended_changes?: ContextDifference[]
+  confounders?: ContextDifference[]
+  interpretation_warnings?: string[]
+}
 type Comparison = {
   id: string
-  result: ComparisonResult
-  spec: { label?: string | null }
+  result: ExtendedComparisonResult
+  spec: { label?: string | null; expected_change_paths?: string[] }
+}
+type Attachment = {
+  id: string
+  asset_sha256: string
+  measurement_id: string | null
+  context_id: string | null
+  kind: string
+  label: string | null
+  filename: string
+  size_bytes: number
 }
 type RoomMode = {
   n_x: number
@@ -72,7 +108,6 @@ type SpeakerDraft = {
   y: string
   z: string
 }
-
 type ExcludedBand = { low_hz: number; high_hz: number }
 
 const initialSpeakers: SpeakerDraft[] = [
@@ -116,6 +151,16 @@ function parseExcludedBands(text: string): ExcludedBand[] {
   })
 }
 
+function parseList(text: string): string[] {
+  return text.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean)
+}
+
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
@@ -123,6 +168,7 @@ export default function App() {
   const [contexts, setContexts] = useState<ContextRecord[]>([])
   const [measurements, setMeasurements] = useState<Measurement[]>([])
   const [comparisons, setComparisons] = useState<Comparison[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -137,11 +183,21 @@ export default function App() {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [channelRole, setChannelRole] = useState('front_left')
   const [sourceSpeakerIds, setSourceSpeakerIds] = useState('FL')
+  const [qualityStatus, setQualityStatus] = useState<QualityStatus>('unknown')
+  const [qualityReasons, setQualityReasons] = useState('')
+  const [repeatGroup, setRepeatGroup] = useState('')
+  const [routingEvidence, setRoutingEvidence] = useState('unknown')
+
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [attachmentKind, setAttachmentKind] = useState('mdat')
+  const [attachmentLabel, setAttachmentLabel] = useState('')
+  const [attachmentMeasurementId, setAttachmentMeasurementId] = useState('')
 
   const [datasetA, setDatasetA] = useState('')
   const [datasetB, setDatasetB] = useState('')
   const [band, setBand] = useState({ low: '60', high: '200', refLow: '60', refHigh: '200' })
   const [excludedBandsText, setExcludedBandsText] = useState('')
+  const [expectedChangesText, setExpectedChangesText] = useState('speakers.FL.position')
   const [activeComparison, setActiveComparison] = useState<Comparison | null>(null)
 
   const [maxModeHz, setMaxModeHz] = useState('300')
@@ -161,14 +217,16 @@ export default function App() {
 
   async function reloadProjectData(id: string) {
     if (!id) return
-    const [contextRows, measurementRows, comparisonRows] = await Promise.all([
+    const [contextRows, measurementRows, comparisonRows, attachmentRows] = await Promise.all([
       api<ContextRecord[]>(`/api/projects/${id}/contexts`),
       api<Measurement[]>(`/api/projects/${id}/measurements`),
       api<Comparison[]>(`/api/projects/${id}/comparisons`),
+      api<Attachment[]>(`/api/projects/${id}/attachments`),
     ])
     setContexts(contextRows)
     setMeasurements(measurementRows)
     setComparisons(comparisonRows)
+    setAttachments(attachmentRows)
     if (contextRows[0]) setSelectedContextId((current) => current || contextRows[0].id)
     if (measurementRows[0]) setDatasetA((current) => current || measurementRows[0].dataset_id)
     if (measurementRows[1]) setDatasetB((current) => current || measurementRows[1].dataset_id)
@@ -213,11 +271,7 @@ export default function App() {
   function copyActiveContextToEditor() {
     if (!activeContext) return
     const payload = activeContext.payload
-    setRoom({
-      width: String(payload.room.width_m),
-      depth: String(payload.room.depth_m),
-      height: String(payload.room.height_m),
-    })
+    setRoom({ width: String(payload.room.width_m), depth: String(payload.room.depth_m), height: String(payload.room.height_m) })
     setMlp({
       x: String(payload.measurement_point.position.x_m),
       y: String(payload.measurement_point.position.y_m),
@@ -239,11 +293,7 @@ export default function App() {
     try {
       if (!projectId) throw new Error('先にプロジェクトを作成してください')
       const payload = {
-        room: {
-          width_m: numeric(room.width, '部屋幅'),
-          depth_m: numeric(room.depth, '部屋奥行'),
-          height_m: numeric(room.height, '部屋高さ'),
-        },
+        room: { width_m: numeric(room.width, '部屋幅'), depth_m: numeric(room.depth, '部屋奥行'), height_m: numeric(room.height, '部屋高さ') },
         speakers: speakers.map(speakerPayload),
         measurement_point: {
           point_id: 'MLP',
@@ -281,7 +331,7 @@ export default function App() {
   async function importMeasurement() {
     try {
       if (!projectId || !selectedContextId || !measurementFile || !measurementBase64) throw new Error('プロジェクト、条件版、測定ファイルを選択してください')
-      await api(`/api/projects/${projectId}/measurements`, {
+      const imported = await api<{ duplicate_asset: boolean; existing_dataset_count: number }>(`/api/projects/${projectId}/measurements`, {
         method: 'POST',
         body: JSON.stringify({
           filename: measurementFile.name,
@@ -289,17 +339,48 @@ export default function App() {
           context_id: selectedContextId,
           channel_role: channelRole,
           evidence_type: 'measured',
-          source_speaker_ids: sourceSpeakerIds.split(',').map((value) => value.trim()).filter(Boolean),
+          source_speaker_ids: parseList(sourceSpeakerIds),
           radiation_scope: 'unknown',
+          routing_evidence: routingEvidence,
+          quality_status: qualityStatus,
+          quality_reasons: parseList(qualityReasons),
+          quality_source: qualityStatus === 'unknown' ? 'unknown' : 'manual',
+          repeat_group: repeatGroup.trim() || null,
         }),
       })
       await reloadProjectData(projectId)
       setMeasurementFile(null)
       setMeasurementBase64('')
       setPreview(null)
-      notify('測定を原本付きで保存しました')
+      notify(imported.duplicate_asset
+        ? `測定を保存しました。同じRawAssetを使う既存Datasetが${imported.existing_dataset_count}件ありますが、自動統合していません`
+        : '測定を原本付きで保存しました')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '取込失敗')
+    }
+  }
+
+  async function uploadAttachment() {
+    try {
+      if (!projectId || !attachmentFile) throw new Error('プロジェクトと添付ファイルを選択してください')
+      const raw_base64 = await fileToBase64(attachmentFile)
+      await api(`/api/projects/${projectId}/attachments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          filename: attachmentFile.name,
+          raw_base64,
+          kind: attachmentKind,
+          label: attachmentLabel.trim() || null,
+          measurement_id: attachmentMeasurementId || null,
+          context_id: selectedContextId || null,
+        }),
+      })
+      await reloadProjectData(projectId)
+      setAttachmentFile(null)
+      setAttachmentLabel('')
+      notify('再解析・復元用の添付原本を保存しました')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '添付保存失敗')
     }
   }
 
@@ -316,12 +397,13 @@ export default function App() {
           reference_low_hz: numeric(band.refLow, '基準帯域下限'),
           reference_high_hz: numeric(band.refHigh, '基準帯域上限'),
           excluded_bands: parseExcludedBands(excludedBandsText),
+          expected_change_paths: parseList(expectedChangesText),
           label: 'Speaker setting A/B',
         }),
       })
       setActiveComparison(comparison)
       await reloadProjectData(projectId)
-      notify('比較条件と結果を保存しました')
+      notify('比較条件、品質、条件差と結果を保存しました')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '比較失敗')
     }
@@ -359,7 +441,7 @@ export default function App() {
         <div>
           <p className="eyebrow">v0.2 foundation · measured evidence first</p>
           <h1>Home Theater Digital Twin</h1>
-          <p className="lead">測定の再現性と配置履歴を固定し、A/B比較を積み重ねてスピーカーセッティングを改善します。幾何モデルは候補生成に限定します。</p>
+          <p className="lead">測定品質・配置履歴・原本を固定し、再現可能なA/B比較でセッティングを改善します。幾何モデルは候補生成に限定します。</p>
         </div>
         <div className="runtime">
           <strong>{health?.status ?? 'checking'}</strong>
@@ -423,26 +505,52 @@ export default function App() {
       </section>
 
       <section className="panel">
-        <div className="section-title"><h2>3. REW text import</h2><span>原本SHA-256保持</span></div>
+        <div className="section-title"><h2>3. REW text import</h2><span>原本 + quality snapshot</span></div>
         <div className="grid2">
           <label>測定ファイル<input type="file" accept=".txt,.dat,.frd" onChange={(event) => void chooseMeasurementFile(event.target.files?.[0] ?? null)} /></label>
           <label>条件版<select value={selectedContextId} onChange={(event) => setSelectedContextId(event.target.value)}><option value="">選択</option>{contexts.map((context) => <option key={context.id} value={context.id}>R{context.revision_number}</option>)}</select></label>
           <label>入力role<input value={channelRole} onChange={(event) => setChannelRole(event.target.value)} /></label>
           <label>実際の音源ID（カンマ区切り）<input value={sourceSpeakerIds} onChange={(event) => setSourceSpeakerIds(event.target.value)} /></label>
+          <label>品質<select value={qualityStatus} onChange={(event) => setQualityStatus(event.target.value as QualityStatus)}><option value="unknown">unknown</option><option value="usable">usable</option><option value="warning">warning</option><option value="invalid">invalid</option></select></label>
+          <label>ルーティング根拠<select value={routingEvidence} onChange={(event) => setRoutingEvidence(event.target.value)}><option value="unknown">unknown</option><option value="manual">manual</option><option value="verified">verified</option><option value="inferred">inferred</option></select></label>
+          <label>同条件再測定グループ<input value={repeatGroup} onChange={(event) => setRepeatGroup(event.target.value)} placeholder="例: FL-R1-baseline" /></label>
+          <label>品質理由<input value={qualityReasons} onChange={(event) => setQualityReasons(event.target.value)} placeholder="例: level checked, no clip warning" /></label>
         </div>
         {preview && <div className="preview"><strong>{preview.filename}</strong><span>{preview.points} points</span><span>{preview.frequency_min_hz}–{preview.frequency_max_hz} Hz</span><span>phase: {preview.phase_status}</span><span>SHA {preview.sha256.slice(0, 12)}…</span>{preview.warnings.map((warning) => <em key={warning}>{warning}</em>)}</div>}
         <button disabled={!preview} onClick={() => void importMeasurement()}>この測定を保存</button>
-        <p className="hint">測定品質は、REWのレベル/クリップ警告と同条件再測定が未取得の間は unknown と扱います。</p>
+        <p className="hint">品質は有限なFR値から自動推定しません。実測条件を確認できない間は unknown のまま保存してください。</p>
         <div className="cards">
-          {measurements.map((measurement) => <article key={measurement.id}><strong>{measurement.channel_role}</strong><span>{measurement.points} pts · {measurement.frequency_min_hz}–{measurement.frequency_max_hz} Hz</span><span>quality: unknown · evidence: {measurement.evidence_type}</span><code>{measurement.dataset_id.slice(0, 8)}</code></article>)}
+          {measurements.map((measurement) => <article key={measurement.id}>
+            <strong>{measurement.channel_role}</strong>
+            <span>{measurement.points} pts · {measurement.frequency_min_hz}–{measurement.frequency_max_hz} Hz</span>
+            <span>quality: {measurement.quality_status} · evidence: {measurement.evidence_type}</span>
+            <span>repeat: {measurement.repeat_group ?? '—'} · routing: {measurement.routing_evidence}</span>
+            {measurement.quality_reasons.length > 0 && <small>{measurement.quality_reasons.join(' / ')}</small>}
+            <code>{measurement.dataset_id.slice(0, 8)}</code>
+          </article>)}
         </div>
       </section>
 
       <section className="panel">
-        <div className="section-title"><h2>4. A/B comparison</h2><span>96 PPO / log₂ interpolation / A−B</span></div>
+        <div className="section-title"><h2>4. Raw attachments</h2><span>.mdat / calibration / AVR settings</span></div>
+        <p className="hint">周波数応答テキストとは別に、再解析や復元に必要な原本をRawAssetとして保存します。自動解析はしません。</p>
         <div className="grid2">
-          <label>A<select value={datasetA} onChange={(event) => setDatasetA(event.target.value)}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
-          <label>B<select value={datasetB} onChange={(event) => setDatasetB(event.target.value)}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
+          <label>添付ファイル<input type="file" onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)} /></label>
+          <label>種別<select value={attachmentKind} onChange={(event) => setAttachmentKind(event.target.value)}><option value="mdat">mdat</option><option value="microphone_calibration">microphone_calibration</option><option value="avr_settings">avr_settings</option><option value="measurement_note">measurement_note</option><option value="image">image</option><option value="other">other</option></select></label>
+          <label>ラベル<input value={attachmentLabel} onChange={(event) => setAttachmentLabel(event.target.value)} placeholder="任意" /></label>
+          <label>関連測定<select value={attachmentMeasurementId} onChange={(event) => setAttachmentMeasurementId(event.target.value)}><option value="">Project/Contextのみ</option>{measurements.map((measurement) => <option key={measurement.id} value={measurement.id}>{measurement.channel_role} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
+        </div>
+        <button disabled={!attachmentFile || !projectId} onClick={() => void uploadAttachment()}>添付原本を保存</button>
+        <div className="cards">
+          {attachments.map((attachment) => <article key={attachment.id}><strong>{attachment.kind}</strong><span>{attachment.filename}</span><span>{attachment.label ?? '—'} · {attachment.size_bytes} bytes</span><code>{attachment.asset_sha256.slice(0, 12)}</code></article>)}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-title"><h2>5. A/B comparison</h2><span>96 PPO / log₂ interpolation / A−B</span></div>
+        <div className="grid2">
+          <label>A<select value={datasetA} onChange={(event) => setDatasetA(event.target.value)}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.quality_status} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
+          <label>B<select value={datasetB} onChange={(event) => setDatasetB(event.target.value)}><option value="">選択</option>{measurements.map((measurement) => <option key={measurement.dataset_id} value={measurement.dataset_id}>{measurement.channel_role} · {measurement.quality_status} · {measurement.dataset_id.slice(0, 8)}</option>)}</select></label>
         </div>
         <div className="grid4">
           <label>評価Low Hz<input value={band.low} onChange={(event) => setBand({ ...band, low: event.target.value })} /></label>
@@ -451,6 +559,7 @@ export default function App() {
           <label>基準High Hz<input value={band.refHigh} onChange={(event) => setBand({ ...band, refHigh: event.target.value })} /></label>
         </div>
         <label>除外帯域（例: 70-90, 120-130）<input value={excludedBandsText} onChange={(event) => setExcludedBandsText(event.target.value)} placeholder="任意" /></label>
+        <label>意図した変更パス（例: speakers.FL.position）<input value={expectedChangesText} onChange={(event) => setExpectedChangesText(event.target.value)} /></label>
         <div className="row action-row"><button onClick={() => void compare()}>比較して保存</button></div>
         {activeComparison && <>
           <div className="metrics">
@@ -459,13 +568,22 @@ export default function App() {
             <div><span>Level offset</span><strong>{activeComparison.result.level_offset_db?.toFixed(2) ?? '—'} dB</strong></div>
             <div><span>Shape RMS</span><strong>{activeComparison.result.shape_rms_db?.toFixed(2) ?? '—'} dB</strong></div>
           </div>
+          <p className="hint">comparison role: {activeComparison.result.comparison_role ?? 'legacy'}</p>
+          {(activeComparison.result.interpretation_warnings?.length ?? 0) > 0 && <div className="preview">
+            <strong>Interpretation warnings</strong>
+            {activeComparison.result.interpretation_warnings?.map((warning) => <em key={warning}>{warning}</em>)}
+          </div>}
+          <div className="grid2">
+            <div><h3>Intended changes</h3>{activeComparison.result.intended_changes?.length ? activeComparison.result.intended_changes.map((item) => <p className="hint" key={item.path}>{item.path}: {displayValue(item.a)} → {displayValue(item.b)}</p>) : <p className="hint">なし / 未分類</p>}</div>
+            <div><h3>Confounders</h3>{activeComparison.result.confounders?.length ? activeComparison.result.confounders.map((item) => <p className="hint" key={item.path}>{item.path}: {displayValue(item.a)} → {displayValue(item.b)}</p>) : <p className="hint">検出なし</p>}</div>
+          </div>
           <FrequencyPlot result={activeComparison.result} />
         </>}
         {!activeComparison && comparisons[0] && <button className="ghost" onClick={() => setActiveComparison(comparisons[0])}>最新の保存済み比較を表示</button>}
       </section>
 
       <section className="panel">
-        <div className="section-title"><h2>5. Geometry candidates</h2><span>予測候補 · 実測診断ではない</span></div>
+        <div className="section-title"><h2>6. Geometry candidates</h2><span>予測候補 · 実測診断ではない</span></div>
         <p className="hint">矩形室の固有周波数と、各スピーカー→MLPの一次鏡像反射を計算します。壁の吸音率、反射位相、スピーカーの指向性、開口や家具はまだモデル化しません。</p>
         <div className="grid3">
           <label>Room mode上限 (Hz)<input value={maxModeHz} onChange={(event) => setMaxModeHz(event.target.value)} /></label>
