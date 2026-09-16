@@ -5,6 +5,8 @@
 > 追加対象: mainの10dabf995453e1351fce32e2041790c925d2e31bにある計画6文書
 > 範囲: 計画書の検証・詳細化。アプリ実装、Windows実機検証、実測データ検証は実施していない。
 
+**最新のCAD-firstレビューは[§7](#7-cad-first追加レビュー2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
+
 §1–5は初回レビューの記録を残す。追加レビューの指摘と反映先は[§6](#6-追加レビュー)を参照。現在の仕様は各設計文書を正本とする。
 
 ## 1. 総合判断
@@ -125,3 +127,44 @@ pyroomacousticsの公開説明には新しい版表示と古いPython/Windows導
 指摘はREADMEと設計4文書へ反映し、ロードマップのF12–F18と数値・復元受入条件へ結び付けた。文書6本の差分、内部リンク/見出し参照18件、M01–M10の依存関係に循環がないこと、96 PPOグリッドと一定レベル差の数式を確認した。parser・バックアップの実装や実機での精度は未検証である。
 
 対象Windows、REWビルド、実測・出力サンプルは引き続き未確認。これは文書修正の未完了ではなく、P0-01〜P0-05と各追加機能の開始時に確認する事項である。
+
+## 7. CAD-first追加レビュー（2026-09-16）
+
+### 対象・方法
+
+- main: [1b510206](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/commit/1b510206e7c2fe84ff15fe544a6e3fe2d896dc84)
+- 実装track: [PR #37 / 初回9724f4b](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/tree/9724f4b84aa34b32a77a169b73ce68290de69fdd)、[追加確認0353768](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/tree/035376816c755f2917119a730c415c31f9ea0d6e)
+- mainの計画・状況・幾何/データ契約、models/geometry/依存/CIとPRのspatial_editor/進捗文書を確認。レビュー中の追加commitについてnative_editor、run-native、依存pinも確認。
+- 13のOSSで選定したソースをcommit固定で確認。コード・symbol・採否は[OSS調査](CAD_EDITOR_OSS_RESEARCH.md)。
+- 今回は計画レビューと文書修正。native GUI実装、依存追加、Windows実機再検証は行っていない。
+
+### 指摘と反映
+
+| ID / 優先度 | 所見 | 反映 |
+|---|---|---|
+| C01 / 高 | PROJECT_PLANはReact/Three.js、native保留、3D後回しのまま。UI_DESIGNもbrowser画面とmobile受入が主仕様 | 両文書をCAD-firstへ改訂、正本の責務を統一 |
+| C02 / 高 | IMPLEMENTATION_STATUSは次工程をO20と記載。実測待ちだけが主blockerに読める | N05先行、O20保留、実機測定trackを独立表記 |
+| C03 / 高 | 初回headにはshell未掲載。追加0353768でshell/起動/依存pinが入ったが、編集とSave/UndoのGUI接続・package受入は未完 | 追加実装を認めてstatus更新。main/branch/報告/未確認を分離し、N05で通し受入 |
+| C04 / 高 | 一測定点Contextを全Sceneへ拡張すると家具/複数席/測定との責務が混在 | SceneRevision、WorkingDocument、AcquisitionContext、ViewStateを分離 |
+| C05 / 高 | Snapshot履歴のis_dirty=index!=0ではSave後clean/Undo分岐を表現できない | content hash、Save成功後clean、no-op、redo分岐、失敗/復旧仕様 |
+| C06 / 高 | 壁を端点ID列だけで識別するとsplit/mergeで開口/制約が失われる | 安定wall ID、影響確認、制約revision、原子的Undo、G10対応表 |
+| C07 / 高 | VTK transformをdomainの左手系へそのまま戻すと向き/面/左右を誤る | 一箇所の座標adapter、方向/法線/winding、非対称fixture |
+| C08 / 高 | PyVista callbackは確認commitでmatrix更新より先、camera styleも変更する | HTDT transactionとadapter、最終値再取得、cancelとobserver解放 |
+| C09 / 中 | snapがworld距離だけではzoom/DPIで操作感が変わる。入力競合・capture lossが未定義 | screen距離/hysteresis、優先順位、入力表、Esc/Alt+Tab/画面外release |
+| C10 / 高 | 重い計算をthread外に出すだけでは、古い結果が編集済みsceneへ適用される | immutable job input、generation、取消/stale、GUI thread境界 |
+| C11 / 中 | 保存復旧/配布がN90に集中し、N20のsnap範囲も過大 | N05の縦断package、N10復旧、N20a/b・N30a/b、独立可能なN50/N60 |
+| C12 / 中 | 1000 entityで実用的等の評価が曖昧、Godotが無条件fallback | fixture/計測手順/目標値、原因別の代替比較。計測済みと表示しない |
+| C13 / 中 | 多数のOSS名と一般URLだけでコード根拠・取得可否が追えない | 固定commit/path/symbol、確認範囲、license根拠、Sweet Home 3Dの404を訂正 |
+| C14 / 中 | 旧API/domain契約維持やfeature parityが互換不要方針を弱める | 新schema開始可、必要なadapterだけ再利用、旧frontendの凍結/廃止条件 |
+
+### 決定・未完事項
+
+Qt/VTKは第一実装として維持する。選定理由を「WindowsなのでWebは不適」から、Python解析/科学可視化/操作を統合する費用の比較へ修正した。Godot/C#/TypeScriptも、N05/N20の未達原因に応じて比較できる。
+
+新しい[編集契約](CAD_EDITOR_SPEC.md)と[受入仕様](CAD_EDITOR_ACCEPTANCE.md)は実装前仕様。初期数値目標・snap半径・配布候補はWindows受入で確認/調整する。旧PoCの版で今回のソース所見を再現したとは主張しない。
+
+### この改訂の検証
+
+14文書の内容整合、80のrelative link、milestone ID、旧方針の残存、28の固定commitソースリンク、変更範囲を確認した。文書のみのため新規testは追加していない。既存CIの結果とGitHub反映先はこの変更のPRに記録する。Windows実機gateは未実施。
+
+次工程はPR #37へ本改訂を取り込み、N05の選択→移動→取消/Undo→保存/reopen→packageをGitHubから再現可能にすること。

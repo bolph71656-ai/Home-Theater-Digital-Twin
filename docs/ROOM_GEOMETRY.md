@@ -1,7 +1,8 @@
 # Room Geometry contract
 
 > 更新: 2026-09-16
-> 実装: G00 Room Geometry v2
+> 実装: mainのG00 Room Geometry v2。以下は現行Contextの実装契約。
+> 新native Sceneのwall ID、opening、bounds自動導出、負座標、制約参照は[CAD編集契約](CAD_EDITOR_SPEC.md)を正本とし、G00/G10とは明示adapterで接続する。現行コードが新契約に対応済みという意味ではない。
 
 ## 1. 座標契約
 

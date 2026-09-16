@@ -1,6 +1,23 @@
 # 実装ステータス
 
-> 更新: 2026-09-16
+> 更新: 2026-09-16 / CAD-first計画レビュー反映
+> 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。以下の旧UI実績をnative GUI完了と扱わない。
+
+## Native CADの状態
+
+レビュー基準: main `1b510206e7c2fe84ff15fe544a6e3fe2d896dc84`、[Draft PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37) 初回head `9724f4b84aa34b32a77a169b73ce68290de69fdd`、追加確認head `035376816c755f2917119a730c415c31f9ea0d6e`。
+
+| 区分 | 確認できた内容 |
+|---|---|
+| main | native CAD方針・ロードマップ・ADR。実装は既存Python/backendとbrowser UI |
+| PR #37のtracked code | ContextDraft/snap/aim/undo試作に加え、`0353768`でnative shell、Scene/viewport選択同期、読取Inspector、view切替、`run-native.ps1`と直接依存の版固定。main未反映 |
+| 過去のPR進捗文書にある報告 | Windows/Python 3.12、PySide6 6.11.2、PyVista 0.49.0、PyVistaQt 0.13.1、VTK 9.7.0でnative描画・AffineWidget3D操作 |
+| 未完/未確認 | GUIでの変形・数値編集・Save/Undo接続、全依存の再現性、standalone package、実機性能、N05〜N40受入 |
+| 今回の変更 | 仕様・計画・OSSコード調査・受入条件の改訂。アプリ実装やWindows再検証ではない |
+
+過去のPoC報告は[PR #37の進捗文書](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/blob/9724f4b84aa34b32a77a169b73ce68290de69fdd/docs/NATIVE_3D_UI_PROGRESS.md)に残る。`0353768`の既存windows CIは成功しているが、報告版の数字やCIだけでN05の通し操作・package合格を代用しない。
+
+次はN05の縦断試作をGitHub上に実装する。細分化した作業と判定は[編集契約](CAD_EDITOR_SPEC.md)と[受入仕様](CAD_EDITOR_ACCEPTANCE.md)。
 
 ## 確定した実環境
 
@@ -165,20 +182,20 @@ REW V5.40 beta 135の実OpenAPIと所有PC実機で、Room Simulator APIを確�
 - V01を複数の実配置・実測で使った操作性
 - M10の実データ通し確認
 
-## 次の実行ゲート
+## 測定側の実機ゲート（CAD実装とは独立）
 
-1. REWを導入し、まずFL/FRの同条件repeatを含むテキストexportを取得する。
+1. 導入済みREWで、FL/FRの同条件repeatを含む実測テキストexportを取得する。
 2. UMIK-1導入後、48 kHz、天井向き、個体別90°校正ファイル、Windows/REW入力経路を記録する。
 3. RX-A4AでFL/FR/C/Heightの実発音経路を確認し、input roleと実音源を分離して記録する。
 4. `docs/WINDOWS_ACCEPTANCE.md`の実機最終受入を実行する。
 5. UMIK-1実測取得後、REW API snapshotとGUI text exportを同一measurement・同一spacing/smoothing条件で照合する。
 6. IR/ETCは実IRサンプル取得後にA02として開始する。
 
-現時点では、合成データだけで安全に進められるv0.1中核と周辺品質作業は実装済み。次の大きな情報増分は実REW/実測から得る。
+上記は測定機能側の未完項目。マイク/実データ待ちでもnative CADのN05〜N40はsample fixtureで進められる。
 
 ## 探索トラックの次段階
 
-O10のソフトウェア実装は完了した。次はO20 Batch Predictionを実装する。
+O10のソフトウェア実装はmainにある。**O20の先行拡張は保留し、まずN05〜N40のCAD基盤を進める。** 以下は再開時の算法契約。N70/N80とO系の依存は[ロードマップ](IMPLEMENTATION_ROADMAP.md)に従う。
 
 - O10 candidate setをprediction batchの入力として固定する。
 - PredictionRunは実測Measurementと別分類・別来歴で保存する。

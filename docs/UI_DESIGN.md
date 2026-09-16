@@ -1,91 +1,91 @@
-# UI / Interaction Design
+# Native CAD UI / Interaction Design
 
-> 更新: 2026-09-16
-> HTDTのGUI原則と視覚受入基準。
+> 2026-09-16 / 従来browser UIの主画面設計を置換する。
+> 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)、値・履歴は[SPEC](CAD_EDITOR_SPEC.md)、判定は[受入仕様](CAD_EDITOR_ACCEPTANCE.md)。
 
-## 1. 目標
+## 1. 画面の中心
 
-HTDTは専門的な測定・配置情報を扱うが、通常操作で説明文を読ませない。
-画面構造、位置関係、状態、単位、選択結果から次の操作を理解できることを優先する。
+中央viewportを常に主作業領域にする。独立したRoom/Constraints/Search画面へ移動するたびに空間を見失うnavigationをやめ、同じsceneのtool・dock・layerを切り替える。
 
-- premium minimal: 白〜淡灰、十分な余白、弱い境界、階層の明確なsurface。
-- primary actionは青、通常状態は無彩色、warning/rejectのみ意味色を使う。
-- 長い説明を常時表示せず、Help `?` で補助説明を開示する。
-- IDやversion等の技術情報は主操作から一段下げ、provenanceとして残す。
-- desktop / narrow viewportの双方で横スクロールを主操作にしない。
-## 2. Navigation
+- 左: compactなScene tree。Add paletteは必要時に開く。
+- 中央: 大きなviewport、view cube/preset、床grid、選択handle、必要な寸法。
+- 右: 選択物のInspector。何も選ばない時はroom/projectの要約。
+- 上: Project/Open/Save、Select/Add/Move/Rotate/Measure、snap、view。
+- 下: 必要時だけFR/比較dock。通常のstatusは単位・snap・保存状態・短い操作hint。
+- constraints/analysisは選択またはmodeに応じて開示する。空の画面に全panelを並べない。
 
-主フローは番号ではなく機能名で示す。
+白〜淡灰を基調、余白、弱い境界、読みやすい文字階層、主操作は青。viewportはgeometryの輪郭と選択が読み取れる照明/背景とし、写実的な素材より空間の理解を優先する。Qtの既定外観を置くだけで完成としない。
 
-`Project → Room → Constraints → Search → Measure → Compare → Model → Features`
+## 2. 最初の5分
 
-上部workflow railから各surfaceへ直接移動できる。
-旧来の「4./5./6.」等の番号は、機能追加で順序がずれるためUIから除去する。
+1. 「部屋を作る」で長方形または自由作図を選ぶ。
+2. 自動的にTop orthographicへ切り替わり、clickで頂点、始点clickまたはEnterで閉じる。
+3. live寸法から幅/長さを精密化し、高さhandleまたはInspectorで天井高を設定する。
+4. paletteからspeaker、seat、screenを置き、床面のghostで配置先を確認する。
+5. Perspectiveで全体を確認し、gizmoで高さ/向き、寸法で距離を調整してSaveする。
 
-HelpをOFFにした通常表示では、panel直下の補助説明を隠す。
-解析警告、quality、provenance、reject理由など判断に必要な結果はHelpとは無関係に常時表示する。
+CSV頂点列、ID文字列、設定項目の読み込みを主要導線にしない。配置はdrag/dropに加えて「選ぶ→sceneをclick」も用意する。
 
-## 3. Placement Constraints
+## 3. 操作の既定値
 
-G10は文章ではなくroom mapを主surfaceとする。
+N05で衝突を確認しN20で固定する初期操作案。各操作はtoolbar/context menuでも実行できる。
 
-- exact room polygonを上面図で表示。
-- Context基準位置とcandidate位置を同じ座標上で表示。
-- candidate編集はentity別X/Y/Z card。
-- constraint kindは7個のvisual tileから選択。
-- allowed/exclusion regionはroom mapをクリックして頂点を描画する。
-- 複数の非連結領域は`+ Area`で追加する。
-- wall clearanceはwall ID文字列ではなく、room map上の壁を直接選ぶ。
-- speaker/MLP選択はchip、axisはsegmented controlで行う。
-- footprint radius / safety marginはentity cardで単位付き入力する。
-- evaluationは`FEASIBLE` / `REJECTED`を大きく表示し、reject対象とconstraint IDを続けて示す。
-- `feasible`は物理配置可否だけで、音響評価ではないことを契約として維持する。
+| 入力 | 動作 |
+|---|---|
+| 左click | 物体選択。空白clickで解除 |
+| Ctrl＋左click | 選択を追加/解除 |
+| 選択後の左drag | 表示されたhandleまたはactive toolの平面で変形 |
+| 中button drag | pan |
+| 右button drag | orbit。orthographicでは必要に応じPerspectiveへ切替を明示 |
+| wheel | cursor近傍を基準にzoom |
+| 右click（移動なし） | context menu。作図/変形中はその操作をcancel |
+| Esc | active操作を取消。IdleではtoolをSelectへ戻す |
+| Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y | Undo / Redo |
+| Ctrl+S / Delete / Ctrl+D | Save / Delete / Duplicate |
+| F / Home | 選択物へfit / scene全体へfit |
+| X/Y/Z（変形中） | axis constraint切替 |
+| Shift（変形中） | precision move |
+| Alt（変形中） | snap一時反転 |
 
-## 4. Search Space
+textboxにfocusがある間は文字入力を優先し、Delete/X/Y/Z等をscene操作へ流さない。Altによるmenu競合は実機で確認し、不適切ならmodifierを変更する。trackpad利用者には画面上のpan/orbit/zoomを用意する。
 
-O10はConstraintSetの次に配置し、文章ではなく可動軸と候補雲を主surfaceとする。
+frame/座標値/単位は常に一貫。world/local軸とpivotの現在値を見える位置に置く。N20のmulti-selectはworld軸・共通pivotのみを必須にする。
 
-- entityごとのX/Y/Zはsegmented controlで可動軸を追加する。
-- min/max/stepは単位付きcardで編集し、raw candidate countを保存前にpreviewする。
-- linked relationはOFF / A→B / B→Aでmaster方向を明示する。
-- 保存済みSearchSpecはimmutable表示し、変更は`複製して編集`で新規版にする。
-- 生成結果はraw / feasible / rejected / duplicateを別metricで表示する。
-- exact room上面図へfeasible candidate cloudを描き、Context baselineを別記号で示す。
-- candidate選択はmap上で強調し、可動entityのXYZを隣接detailに表示する。
-- candidateは物理的にfeasibleという意味だけで、音響的な優劣を色や順位で示さない。
+## 4. 直接見えるfeedback
 
-## 5. Visual QA
+| 状態 | 表示 |
+|---|---|
+| Hover | 弱い輪郭、対象名 |
+| Selection | はっきりした輪郭とhandle、tree/Inspector同期 |
+| Drag | ghost位置、変化量、active軸、snap先の記号 |
+| Invalid geometry | 問題辺/頂点を強調、短い理由、確定不可 |
+| 設置制約違反 | 対象と離隔線。理由を選ぶと該当箇所へfocus |
+| Unknown aim | 方向矢印を確定表示しない。未設定記号 |
+| 保存失敗 / 未保存 | document名付近に状態。失敗してもdraftを保つ |
+| 過去測定 / 古い予測 | ghost・線種・短いbadgeで現revisionと区別 |
 
-所有Windows PC上でVite production buildをFastAPIから配信し、Playwright Chromiumで実レンダリングを確認する。
-G10受入fixtureは8頂点凹polygon、FL/C/FR/MLP、5 hard constraintsを使用する。
+遠い壁が編集物を隠す場合はcutaway/透過をViewStateとして切り替える。自動透過でpick対象が不意に変わらないよう、選択規則を固定する。色だけに意味を持たせずshape/line/labelを併用する。
 
-確認項目:
+## 5. 精密入力・部屋編集
 
-- 1440 px幅でroom mapとcandidate editorが同一視線内にある。
-- 390 px幅でcard/gridが1列へreflowし、主操作が切れない。
-- G10 builderでrule tile、entity chip、polygon drawing、wall pickerが操作可能。
-- exclusion polygonの頂点追加が即時visual feedbackになる。
-- 説明HelpをOFFにしても主操作の意味が失われない。
-- browser zoom依存の固定pixel座標を保存データへ使用しない。
+寸法はmm/cm/mを入力可能とし、単位付き値を内部mへ変換する。Inspectorは位置・高さ・向き・寸法を対象ごとに必要最小限表示する。multi-selectの異なる値は混在表示とし、一つの値で無言に上書きしない。
 
-スクリーンショット等の一時QA成果物は`C:\Users\ka092\Desktop\HTDT\`配下に置き、製品repoへcommitしない。
+Room editでは頂点とedge midpoint handleを出し、壁clickで壁寸法/厚み/開口を編集する。作図中はpreview線と寸法、閉鎖可能な始点を示す。壁のsplit/mergeでopeningやconstraintへ影響する場合だけ、該当物を強調して解決操作を求める。
 
-### G10 visual acceptance — 2026-09-16
+家具/座席/screenは幅・奥行・高さを持つprimitiveから始める。speakerは筐体中心と音響基準点の区別を表示できる。天井speakerの高さは床面dragとは別handleで編集する。
 
-- Windows 11 / Chromiumで1440 px desktopと390 px narrow viewportを実レンダリング確認。
-- 8頂点凹room、FL/C/FR/MLP、保存済みConstraintSetを使い、mapとcandidate editorの同時視認を確認。
-- guided builderを開き、exclusion polygonを4点クリックして赤い半透明領域と頂点番号が即時表示されることを確認。
-- workflow railはline SVG icon + 短い機能名とし、仮記号や段階番号へ依存しない。
-- Help OFFでも主操作を維持し、Help ONは補助説明だけを追加する。
-- local CI-equivalent: Python 3.12.10 `.venv`でbackend 119 tests pass、frontend production build、built-app smoke pass。
+## 6. 制約・測定・候補
 
-### O10 visual acceptance — 2026-09-16
+G10のallowed/exclusionはscene上で描き、壁離隔は壁を選んで指定する。IDを入力させない。feasibleは配置可能性であり、音が良いことを意味しない。
 
-- Windows 11 / Playwright Chromiumで1440 px desktopと390 px narrow viewportを実レンダリング確認。
-- 8頂点凹polygon、FL/C/FR/MLP、保存済みG10 ConstraintSet / O10 SearchSpecを使用。
-- 81 raw candidatesから62 feasible / 19 rejected / 0 duplicateを表示し、候補雲とreject集計が一致。
-- 390 pxでSearch panelの`scrollWidth == clientWidth`を確認し、横はみ出しなし。
-- candidate行を選ぶとmap強調とFL/FR XYZ detailが同期。
-- 保存済みSearchSpecの`複製して編集`で2 axes / 2 linked derivationsがbuilderへ復元され、元specは不変。
-- QA screenshotはrepo外`C:\Users\ka092\Desktop\HTDT\`に保存し、commitしない。
-- local CI-equivalent: Python 3.12.10でbackend 132 tests pass、launcher CLI/PowerShell syntax pass、`npm ci` 0 vulnerabilities、production build、built-app smoke pass。
+measurement point/speakerを選ぶと関連FRを絞り、測定側からもsceneへ逆選択できる。古い測定は当時の配置をghost表示する。
+
+O10候補は位置の集合として表示し、音響評価前に優劣の色を付けない。予測後は目的値ごとの表示を切り替える。候補を選ぶとghost preview、適用を確定すると1 Undo。model・帯域・近似・staleは必要な判断情報として隠さない。
+
+説明Helpは通常閉じるが、測定品質、適用限界、操作失敗まで隠してはならない。UUID、schema、内部job等は詳細表示へ置く。
+
+## 7. Visual QA
+
+対象はWindows native application、DPI、mouse、keyboard、focus、dockの折り畳み。主操作の可視性と所要時間/誤操作を[受入仕様](CAD_EDITOR_ACCEPTANCE.md)で確認する。pixel完全一致を必須にしない。
+
+旧browserの1440/390 px、Playwright、G10/O10視覚検証の記録は[改訂前UI設計](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/blob/1b510206e7c2fe84ff15fe544a6e3fe2d896dc84/docs/UI_DESIGN.md)に保存されている。native GUIの合格証拠として流用しない。

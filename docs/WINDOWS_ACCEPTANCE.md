@@ -1,5 +1,7 @@
 # Windows受入手順
 
+> CAD-first改訂: 本書は既存測定/browser経路の受入手順。native CADの操作・DPI・保存・配布は[CAD_EDITOR_ACCEPTANCE](CAD_EDITOR_ACCEPTANCE.md)を使用する。旧browser smokeの合格はnative操作の合格を意味しない。
+
 > 対象: Windows 11 x64 / 同一PC / Yamaha RX-A4A / miniDSP UMIK-1 / 現在3.0.2
 
 M10は「自動化できる保存・比較・復元契約」と「実REW/実測が必要な受入」を分離する。測定マイクとREW実環境が未準備の間、実機互換性を完了扱いにはしない。
