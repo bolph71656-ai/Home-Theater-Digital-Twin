@@ -67,6 +67,31 @@ def test_split_static_and_edge_candidates_match_full_generation() -> None:
     assert all(candidate.kind == 'edge' for candidate in edges)
 
 
+def test_cached_edge_geometry_keeps_closest_point_probe_dependent() -> None:
+    document = make_f1_scene()
+    first = generate_snap_candidates(
+        document,
+        exclude_ids={'speaker-fl', 'speaker-c'},
+        axis='x',
+        probe=Position3(x_m=4.3, y_m=0.4, z_m=0.9),
+        kinds={'edge'},
+    )
+    second = generate_snap_candidates(
+        document,
+        exclude_ids={'speaker-fl', 'speaker-c'},
+        axis='x',
+        probe=Position3(x_m=4.9, y_m=1.1, z_m=1.2),
+        kinds={'edge'},
+    )
+    first_by_id = {candidate.stable_id: candidate for candidate in first}
+    second_by_id = {candidate.stable_id: candidate for candidate in second}
+    assert first_by_id.keys() == second_by_id.keys()
+    assert any(
+        first_by_id[stable_id].screen_anchor != second_by_id[stable_id].screen_anchor
+        for stable_id in first_by_id
+    )
+
+
 def _snap_candidate(stable_id: str, kind: str, x_m: float) -> SnapCandidate:
     return SnapCandidate(
         stable_id=stable_id,
