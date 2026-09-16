@@ -15,7 +15,7 @@ def test_health_endpoint(tmp_path: Path) -> None:
         'platform_target': 'Windows 11 x64',
         'rew_required': False,
         'measurement_hardware_required': False,
-        'schema_version': 1,
+        'schema_version': 2,
     }
 
 
