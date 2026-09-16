@@ -70,6 +70,17 @@ ConstraintSetに更新/delete APIは設けない。条件を変える場合は�
 
 Room/Layoutで選択しているContextに紐づくConstraintSetを一覧表示し、speaker/MLP候補座標を入力してhard constraint評価できる。
 
+G10 UIはguided builderを備え、JSON/APIを直接編集せずに次を作成できる。
+
+- entityごとの筐体半径と安全余白。
+- 単一/非連結allowed region、家具・通路等のexclusion region。
+- wall edgeごとのmin/max clearance。
+- X/Y/Z fixed/range、movement budget。
+- center/envelope基準のpair distance。
+- mirror/equal/equal-delta linked placement。
+
+候補評価画面は上面図でroom polygon、Context基準位置、候補位置、移動線を表示し、reject対象entityと違反理由を視覚的に確認できる。
+
 実室固有のallowed/exclusion region、家具、通路、壁離隔などの値は推測で生成しない。実測・入力された制約だけを保存する。
 
 ## 7. G10とO10の境界

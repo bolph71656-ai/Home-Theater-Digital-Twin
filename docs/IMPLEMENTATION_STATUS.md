@@ -75,7 +75,7 @@ G00のexact footprint上で、物理的に設置不能な候補を音響予測�
 - linked placementはmirror X（任意mirror axis対応）、equal X/Y/Z、equal delta X/Y/Zを判定。
 - unknown entity/position、reference-box-only geometryはpass扱いにせず拒否。
 - rejectごとにconstraint ID、entity、実値、閾値を返す。
-- UIで保存済みConstraintSetと候補座標を選び、feasible/rejected理由を確認可能。
+- UIでConstraintSetをguided作成し、上面図上でContext基準→候補の移動とreject対象を可視化しながらfeasible/rejected理由を確認可能。
 - backup/restoreとschema v3→v4 pre-migration backupをテスト。
 
 候補の格子生成、seed、刻み、linked master→slave生成、候補集合の再生成はO10の責務。詳細は[Placement Constraint contract](PLACEMENT_CONSTRAINTS.md)を参照する。

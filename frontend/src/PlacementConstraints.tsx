@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { ConstraintBuilder } from './ConstraintBuilder'
 import type { ContextPayload } from './plots'
 
 type ContextRecord = { id: string; revision_number: number; payload: ContextPayload }
@@ -132,13 +133,18 @@ export function PlacementConstraintPanel({ projectId, context }: { projectId: st
   )
   const entityIds = useMemo(() => Object.keys(positions).sort(), [positions])
 
+  async function reloadConstraintSets() {
+    if (!projectId || !context) return
+    const items = await api<ConstraintSetRecord[]>(`/api/projects/${projectId}/constraint-sets?context_id=${encodeURIComponent(context.id)}`)
+    setSets(items)
+    setSelectedId((current) => items.some((item) => item.id === current) ? current : (items[0]?.id ?? ''))
+  }
+
   useEffect(() => {
     setResult(null); setError(''); setSelectedId(''); setSets([])
     if (!projectId || !context) return
     setPositions(baselinePositions(context))
-    void api<ConstraintSetRecord[]>(`/api/projects/${projectId}/constraint-sets?context_id=${encodeURIComponent(context.id)}`)
-      .then((items) => { setSets(items); if (items[0]) setSelectedId(items[0].id) })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'ConstraintSet読込失敗'))
+    void reloadConstraintSets().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'ConstraintSet読込失敗'))
   }, [projectId, context])
 
   async function evaluate() {
@@ -158,9 +164,9 @@ export function PlacementConstraintPanel({ projectId, context }: { projectId: st
   }
 
   if (!context) return null
-  return <section className="panel constraint-panel">
+  return <section className="panel constraint-panel" id="constraints">
     <div className="section-title premium-title">
-      <div><span className="section-kicker">G10 · Physical feasibility</span><h2>Placement Constraints</h2></div>
+      <div><span className="section-kicker">Step 3 · G10 · Physical feasibility</span><h2>Placement Constraints</h2></div>
       <span className="status-pill neutral">Context R{context.revision_number}</span>
     </div>
     <div className="constraint-intro">
@@ -172,6 +178,7 @@ export function PlacementConstraintPanel({ projectId, context }: { projectId: st
       </div>
     </div>
     {error && <div className="notice error">{error}</div>}
+    <ConstraintBuilder key={context.id} projectId={projectId} context={context} onSaved={reloadConstraintSets} />
     <div className="constraint-toolbar">
       <label>ConstraintSet
         <select value={selected?.id ?? ''} onChange={(event) => { setSelectedId(event.target.value); setResult(null) }}>
