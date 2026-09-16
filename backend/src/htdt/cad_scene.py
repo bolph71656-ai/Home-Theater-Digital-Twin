@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
-from math import isfinite, sqrt
+from math import asin, atan2, cos, degrees, isfinite, radians, sin, sqrt
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -46,6 +46,120 @@ class Direction3(BaseModel):
         return self
 
 
+class Quaternion4(BaseModel):
+    """Normalized body-pose quaternion (w, x, y, z), independent from speaker aim."""
+
+    model_config = ConfigDict(frozen=True)
+    w: float = 1.0
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+    @model_validator(mode='after')
+    def normalized(self) -> 'Quaternion4':
+        values = (float(self.w), float(self.x), float(self.y), float(self.z))
+        if any(not isfinite(value) for value in values):
+            raise ValueError('quaternion values must be finite')
+        length = sqrt(sum(value * value for value in values))
+        if length <= 1e-12:
+            raise ValueError('quaternion must not be zero length')
+        if abs(length - 1.0) > 1e-6:
+            raise ValueError('quaternion must be normalized')
+        return self
+
+
+IDENTITY_ORIENTATION = Quaternion4()
+
+
+def normalized_quaternion(w: float, x: float, y: float, z: float) -> Quaternion4:
+    values = (float(w), float(x), float(y), float(z))
+    if any(not isfinite(value) for value in values):
+        raise ValueError('quaternion values must be finite')
+    length = sqrt(sum(value * value for value in values))
+    if length <= 1e-12:
+        raise ValueError('quaternion must not be zero length')
+    return Quaternion4(w=values[0] / length, x=values[1] / length, y=values[2] / length, z=values[3] / length)
+
+
+def quaternion_multiply(left: Quaternion4, right: Quaternion4) -> Quaternion4:
+    """Hamilton product. For active rotations, left is applied after right."""
+
+    w1, x1, y1, z1 = left.w, left.x, left.y, left.z
+    w2, x2, y2, z2 = right.w, right.x, right.y, right.z
+    return normalized_quaternion(
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    )
+
+
+def quaternion_from_axis_angle(axis: Literal['x', 'y', 'z'], angle_deg: float) -> Quaternion4:
+    half = radians(float(angle_deg)) * 0.5
+    c = cos(half)
+    s = sin(half)
+    if axis == 'x':
+        return normalized_quaternion(c, s, 0.0, 0.0)
+    if axis == 'y':
+        return normalized_quaternion(c, 0.0, s, 0.0)
+    if axis == 'z':
+        return normalized_quaternion(c, 0.0, 0.0, s)
+    raise ValueError(f'unsupported rotation axis: {axis}')
+
+
+def quaternion_from_euler_deg(*, yaw_deg: float, pitch_deg: float, roll_deg: float) -> Quaternion4:
+    """Build intrinsic Z-Y-X yaw/pitch/roll body orientation in HTDT domain axes."""
+
+    yaw = radians(float(yaw_deg)) * 0.5
+    pitch = radians(float(pitch_deg)) * 0.5
+    roll = radians(float(roll_deg)) * 0.5
+    cy, sy = cos(yaw), sin(yaw)
+    cp, sp = cos(pitch), sin(pitch)
+    cr, sr = cos(roll), sin(roll)
+    return normalized_quaternion(
+        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+    )
+
+
+def quaternion_to_euler_deg(orientation: Quaternion4) -> tuple[float, float, float]:
+    """Return intrinsic Z-Y-X yaw, pitch, roll in degrees."""
+
+    w, x, y, z = orientation.w, orientation.x, orientation.y, orientation.z
+    sin_yaw = 2.0 * (w * z + x * y)
+    cos_yaw = 1.0 - 2.0 * (y * y + z * z)
+    yaw = atan2(sin_yaw, cos_yaw)
+
+    sin_pitch = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = asin(sin_pitch)
+
+    sin_roll = 2.0 * (w * x + y * z)
+    cos_roll = 1.0 - 2.0 * (x * x + y * y)
+    roll = atan2(sin_roll, cos_roll)
+    return (degrees(yaw), degrees(pitch), degrees(roll))
+
+
+def quaternion_to_matrix3(orientation: Quaternion4) -> tuple[tuple[float, float, float], ...]:
+    w, x, y, z = orientation.w, orientation.x, orientation.y, orientation.z
+    return (
+        (1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)),
+        (2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)),
+        (2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)),
+    )
+
+
+def rotate_orientation_world(
+    orientation: Quaternion4,
+    axis: Literal['x', 'y', 'z'],
+    angle_deg: float,
+) -> Quaternion4:
+    """Apply a world-axis rotation before the existing body orientation."""
+
+    return quaternion_multiply(quaternion_from_axis_angle(axis, angle_deg), orientation)
+
+
 class Size3(BaseModel):
     model_config = ConfigDict(frozen=True)
     x_m: float = Field(gt=0)
@@ -67,6 +181,7 @@ class SceneEntity(BaseModel):
     kind: Literal['speaker', 'measurement_point', 'furniture']
     name: str = Field(min_length=1)
     position: Position3
+    orientation: Quaternion4 = Field(default_factory=Quaternion4)
     size_m: Size3 | None = None
     speaker_role: str | None = None
     aim_xyz: Direction3 | None = None
@@ -103,8 +218,14 @@ class SceneDocument(BaseModel):
 
 
 def canonical_scene_json(document: SceneDocument) -> str:
+    payload = document.model_dump(mode='json')
+    # Preserve hashes of N05/N10 identity-pose revisions: identity orientation is canonical omission.
+    for entity in payload['entities']:
+        orientation = entity.get('orientation')
+        if orientation == IDENTITY_ORIENTATION.model_dump(mode='json'):
+            entity.pop('orientation', None)
     return json.dumps(
-        document.model_dump(mode='json'),
+        payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(',', ':'),
@@ -118,7 +239,29 @@ def scene_content_hash(document: SceneDocument) -> str:
 
 def domain_to_render(position: Position3) -> tuple[float, float, float]:
     """Map HTDT +X right/+Y rear/+Z up into VTK's right-handed world."""
+
     return (position.x_m, -position.y_m, position.z_m)
+
+
+def domain_pose_to_render_matrix(
+    position: Position3,
+    orientation: Quaternion4,
+) -> tuple[tuple[float, float, float, float], ...]:
+    """Convert an active HTDT pose with Tv=C4*Td*C4, C=diag(1,-1,1)."""
+
+    domain = quaternion_to_matrix3(orientation)
+    signs = (1.0, -1.0, 1.0)
+    render_rotation = tuple(
+        tuple(signs[row] * domain[row][column] * signs[column] for column in range(3))
+        for row in range(3)
+    )
+    tx, ty, tz = domain_to_render(position)
+    return (
+        (render_rotation[0][0], render_rotation[0][1], render_rotation[0][2], tx),
+        (render_rotation[1][0], render_rotation[1][1], render_rotation[1][2], ty),
+        (render_rotation[2][0], render_rotation[2][1], render_rotation[2][2], tz),
+        (0.0, 0.0, 0.0, 1.0),
+    )
 
 
 def render_delta_to_domain(delta_xyz: tuple[float, float, float], base: Position3) -> Position3:
