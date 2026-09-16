@@ -53,7 +53,7 @@ frontendをVite開発サーバーで動かす場合は別のPowerShellで:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
