@@ -3,7 +3,13 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from htdt.security import install_local_request_boundary, is_allowed_host, is_allowed_origin
+from htdt.limits import (
+    MAX_ATTACHMENT_REQUEST_BODY_BYTES,
+    MAX_RESTORE_REQUEST_BODY_BYTES,
+    MAX_REW_REQUEST_BODY_BYTES,
+    MAX_SMALL_JSON_BODY_BYTES,
+)
+from htdt.security import install_local_request_boundary, is_allowed_host, is_allowed_origin, request_body_limit
 
 
 def make_client(*, allow_testserver: bool = False) -> TestClient:
@@ -45,6 +51,21 @@ def test_non_loopback_origin_is_rejected_for_write() -> None:
 def test_write_without_origin_remains_available_to_local_clients() -> None:
     client = make_client()
     assert client.post('/write').status_code == 200
+
+
+def test_oversized_declared_body_is_rejected_before_route() -> None:
+    client = make_client()
+    response = client.post('/write', content=b'{}', headers={'Content-Length': str(MAX_SMALL_JSON_BODY_BYTES + 1)})
+    assert response.status_code == 413
+
+
+def test_endpoint_specific_body_limits() -> None:
+    assert request_body_limit('/api/import/preview', 'POST') == MAX_REW_REQUEST_BODY_BYTES
+    assert request_body_limit('/api/projects/p1/measurements', 'POST') == MAX_REW_REQUEST_BODY_BYTES
+    assert request_body_limit('/api/projects/p1/attachments', 'POST') == MAX_ATTACHMENT_REQUEST_BODY_BYTES
+    assert request_body_limit('/api/restore', 'POST') == MAX_RESTORE_REQUEST_BODY_BYTES
+    assert request_body_limit('/api/projects', 'POST') == MAX_SMALL_JSON_BODY_BYTES
+    assert request_body_limit('/api/projects', 'GET') is None
 
 
 def test_https_loopback_origin_is_rejected_because_htdt_is_http_only() -> None:

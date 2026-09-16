@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .limits import MAX_ATTACHMENT_BASE64_CHARS, MAX_BACKUP_BASE64_CHARS, MAX_REW_TEXT_BASE64_CHARS
+
 
 EvidenceType = Literal['measured', 'derived', 'predicted', 'unknown']
 RadiationScope = Literal['single', 'bass_managed', 'mixed', 'unknown']
@@ -79,8 +81,8 @@ class ProjectCreate(BaseModel):
 
 
 class ImportPreviewRequest(BaseModel):
-    filename: str = Field(min_length=1)
-    raw_base64: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=512)
+    raw_base64: str = Field(min_length=1, max_length=MAX_REW_TEXT_BASE64_CHARS)
 
 
 class MeasurementImportRequest(ImportPreviewRequest):
@@ -99,8 +101,8 @@ class MeasurementImportRequest(ImportPreviewRequest):
 
 
 class AttachmentCreate(BaseModel):
-    filename: str = Field(min_length=1)
-    raw_base64: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=512)
+    raw_base64: str = Field(min_length=1, max_length=MAX_ATTACHMENT_BASE64_CHARS)
     kind: AttachmentKind = 'other'
     label: str | None = Field(default=None, max_length=300)
     measurement_id: str | None = None
@@ -142,4 +144,4 @@ class ComparisonCreate(BaseModel):
 
 
 class BackupRestoreRequest(BaseModel):
-    archive_base64: str = Field(min_length=1)
+    archive_base64: str = Field(min_length=1, max_length=MAX_BACKUP_BASE64_CHARS)

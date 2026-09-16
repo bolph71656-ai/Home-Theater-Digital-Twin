@@ -6,6 +6,13 @@ from urllib.parse import urlsplit
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
+from .limits import (
+    MAX_ATTACHMENT_REQUEST_BODY_BYTES,
+    MAX_RESTORE_REQUEST_BODY_BYTES,
+    MAX_REW_REQUEST_BODY_BYTES,
+    MAX_SMALL_JSON_BODY_BYTES,
+)
+
 
 LOOPBACK_HOSTS = frozenset({'127.0.0.1', 'localhost', '::1'})
 UNSAFE_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
@@ -43,6 +50,30 @@ def is_allowed_origin(origin: str | None) -> bool:
     return hostname in LOOPBACK_HOSTS
 
 
+def request_body_limit(path: str, method: str) -> int | None:
+    if method.upper() not in UNSAFE_METHODS:
+        return None
+    if path == '/api/import/preview' or (path.startswith('/api/projects/') and path.endswith('/measurements')):
+        return MAX_REW_REQUEST_BODY_BYTES
+    if path.startswith('/api/projects/') and path.endswith('/attachments'):
+        return MAX_ATTACHMENT_REQUEST_BODY_BYTES
+    if path == '/api/restore':
+        return MAX_RESTORE_REQUEST_BODY_BYTES
+    return MAX_SMALL_JSON_BODY_BYTES
+
+
+def _content_length(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        length = int(value)
+    except ValueError as exc:
+        raise ValueError('Invalid Content-Length') from exc
+    if length < 0:
+        raise ValueError('Invalid Content-Length')
+    return length
+
+
 def install_local_request_boundary(app: object, *, allow_testserver: bool = False) -> None:
     # FastAPI exposes `middleware` dynamically; keeping the dependency surface here small
     # makes the policy functions independently testable.
@@ -58,5 +89,14 @@ def install_local_request_boundary(app: object, *, allow_testserver: bool = Fals
 
         if request.method.upper() in UNSAFE_METHODS and not is_allowed_origin(request.headers.get('origin')):
             return JSONResponse({'detail': 'Origin must be localhost or loopback'}, status_code=403)
+
+        body_limit = request_body_limit(request.url.path, request.method)
+        if body_limit is not None:
+            try:
+                content_length = _content_length(request.headers.get('content-length'))
+            except ValueError:
+                return JSONResponse({'detail': 'Invalid Content-Length'}, status_code=400)
+            if content_length is not None and content_length > body_limit:
+                return JSONResponse({'detail': f'Request body exceeds {body_limit} bytes'}, status_code=413)
 
         return await call_next(request)
