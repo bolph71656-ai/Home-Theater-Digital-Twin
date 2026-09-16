@@ -110,6 +110,7 @@ type SpeakerDraft = {
   z: string
 }
 type ExcludedBand = { low_hz: number; high_hz: number }
+type MicOrientation = 'ceiling' | 'toward_speakers' | 'unknown'
 
 const initialSpeakers: SpeakerDraft[] = [
   { speaker_id: 'FL', role: 'front_left', model: '', x: '', y: '', z: '' },
@@ -176,6 +177,11 @@ export default function App() {
   const [projectName, setProjectName] = useState('Home Theater')
   const [room, setRoom] = useState({ width: '', depth: '', height: '' })
   const [mlp, setMlp] = useState({ x: '', y: '', z: '' })
+  const [micOrientation, setMicOrientation] = useState<MicOrientation>('ceiling')
+  const [micSerial, setMicSerial] = useState('')
+  const [micSampleRate, setMicSampleRate] = useState('48000')
+  const [micCalibrationProfile, setMicCalibrationProfile] = useState<'0deg' | '90deg' | 'unknown'>('90deg')
+  const [micCalibrationFilename, setMicCalibrationFilename] = useState('')
   const [speakers, setSpeakers] = useState<SpeakerDraft[]>(initialSpeakers)
 
   const [selectedContextId, setSelectedContextId] = useState('')
@@ -278,6 +284,12 @@ export default function App() {
       y: String(payload.measurement_point.position.y_m),
       z: String(payload.measurement_point.position.z_m),
     })
+    const aim = payload.measurement_point.aim_xyz
+    setMicOrientation(aim?.[2] === 1 ? 'ceiling' : aim?.[1] === -1 ? 'toward_speakers' : 'unknown')
+    setMicSerial(payload.microphone?.serial ?? '')
+    setMicSampleRate(payload.microphone?.sample_rate_hz ? String(payload.microphone.sample_rate_hz) : '48000')
+    setMicCalibrationProfile(payload.microphone?.calibration_profile ?? '90deg')
+    setMicCalibrationFilename(payload.microphone?.calibration_filename ?? '')
     setSpeakers(payload.speakers.map((speaker) => ({
       speaker_id: speaker.speaker_id,
       role: speaker.role,
@@ -300,6 +312,16 @@ export default function App() {
           point_id: 'MLP',
           label: 'MLP',
           position: { x_m: numeric(mlp.x, 'MLP X'), y_m: numeric(mlp.y, 'MLP Y'), z_m: numeric(mlp.z, 'MLP Z') },
+          aim_xyz: micOrientation === 'ceiling' ? [0, 0, 1] : micOrientation === 'toward_speakers' ? [0, -1, 0] : null,
+        },
+        microphone: {
+          manufacturer: 'miniDSP',
+          model: 'UMIK-1',
+          serial: micSerial.trim() || null,
+          connection: 'usb',
+          sample_rate_hz: numeric(micSampleRate, 'マイクsample rate'),
+          calibration_profile: micCalibrationProfile,
+          calibration_filename: micCalibrationFilename.trim() || null,
         },
         avr: { manufacturer: 'Yamaha', model: 'RX-A4A' },
         parent_context_id: activeContext?.id ?? null,
@@ -481,6 +503,15 @@ export default function App() {
             <label>Y<input value={mlp.y} onChange={(event) => setMlp({ ...mlp, y: event.target.value })} /></label>
             <label>Z<input value={mlp.z} onChange={(event) => setMlp({ ...mlp, z: event.target.value })} /></label>
           </div>
+          <h3>Measurement microphone — miniDSP UMIK-1</h3>
+          <div className="grid3">
+            <label>向き<select value={micOrientation} onChange={(event) => setMicOrientation(event.target.value as MicOrientation)}><option value="ceiling">天井向き (90°)</option><option value="toward_speakers">スピーカー向き (0°)</option><option value="unknown">unknown</option></select></label>
+            <label>Sample rate (Hz)<input value={micSampleRate} onChange={(event) => setMicSampleRate(event.target.value)} /></label>
+            <label>Calibration<select value={micCalibrationProfile} onChange={(event) => setMicCalibrationProfile(event.target.value as '0deg' | '90deg' | 'unknown')}><option value="90deg">90deg</option><option value="0deg">0deg</option><option value="unknown">unknown</option></select></label>
+            <label>Serial（ローカル保存）<input value={micSerial} onChange={(event) => setMicSerial(event.target.value)} placeholder="実機到着後に入力" /></label>
+            <label>Calibration filename<input value={micCalibrationFilename} onChange={(event) => setMicCalibrationFilename(event.target.value)} placeholder="例: 7001234_90deg.txt" /></label>
+          </div>
+          <p className="hint">ホームシアター基準は48 kHz・天井向き・個体別90°校正。校正ファイル原本はRaw attachmentsで保存します。</p>
           <h3>Speakers — 現在の3.0.2を初期行として表示。増減可能</h3>
           <div className="speaker-table">
             {speakers.map((speaker, index) => (

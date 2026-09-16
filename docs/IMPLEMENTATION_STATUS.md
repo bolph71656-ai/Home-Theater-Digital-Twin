@@ -27,6 +27,7 @@ HTDTは未測定の状態で「最適位置」を断定せず、**配置を保�
 - M03: Project / Context revision / Measurement / Dataset / RawAsset / SQLite
 - M04: 96 PPO、log2(f)補間、A−B、mean/RMS、level offset、shape RMS
 - M05/M06: 部屋・MLP・可変スピーカー・RX-A4A条件、取込プレビュー
+- Mic snapshot: ContextへUMIK-1 model/serial/48 kHz/calibration profileとマイク向きを不変保存
 - M07: Dataset/Context版を固定した比較履歴
 - M08: DB + RawAsset ZIPバックアップ/復元
 - M09: Plotly FRグラフと最小3D

@@ -46,6 +46,24 @@ class MeasurementPoint(BaseModel):
     position_precision_m: float | None = Field(default=None, ge=0)
 
 
+class MicrophoneSnapshot(BaseModel):
+    manufacturer: str = 'miniDSP'
+    model: str = 'UMIK-1'
+    serial: str | None = None
+    connection: Literal['usb', 'other', 'unknown'] = 'usb'
+    sample_rate_hz: int | None = Field(default=48000, gt=0)
+    calibration_profile: Literal['0deg', '90deg', 'unknown'] = '90deg'
+    calibration_filename: str | None = None
+    notes: str | None = None
+
+    @model_validator(mode='after')
+    def validate_known_sample_rate(self) -> 'MicrophoneSnapshot':
+        normalized = self.model.upper().replace(' ', '')
+        if normalized.startswith('UMIK-1') and self.sample_rate_hz not in (None, 48000):
+            raise ValueError('UMIK-1 must use 48000 Hz')
+        return self
+
+
 class AVRConfiguration(BaseModel):
     manufacturer: str = 'Yamaha'
     model: str = 'RX-A4A'
@@ -61,6 +79,7 @@ class ContextCreate(BaseModel):
     room: RoomSnapshot
     speakers: list[SpeakerPlacement]
     measurement_point: MeasurementPoint
+    microphone: MicrophoneSnapshot | None = None
     avr: AVRConfiguration = Field(default_factory=AVRConfiguration)
     notes: str | None = None
     parent_context_id: str | None = None

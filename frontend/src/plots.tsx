@@ -14,7 +14,17 @@ export type ContextPayload = {
   measurement_point: {
     label: string
     position: { x_m: number; y_m: number; z_m: number }
+    aim_xyz?: [number, number, number] | null
   }
+  microphone?: {
+    manufacturer: string
+    model: string
+    serial?: string | null
+    connection?: string
+    sample_rate_hz?: number | null
+    calibration_profile?: '0deg' | '90deg' | 'unknown'
+    calibration_filename?: string | null
+  } | null
 }
 
 export type ComparisonResult = {
