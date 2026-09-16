@@ -26,15 +26,17 @@ jobs:
       - name: Check backend launcher CLI
         run: python -m htdt --help
 
-      - name: Validate PowerShell launcher syntax
+      - name: Validate PowerShell scripts syntax
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path '.\scripts\run-local.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+          Get-ChildItem '.\scripts\*.ps1' | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$($_.Extent.File): $($_.Message)" }
+              exit 1
+            }
           }
 
       - uses: actions/setup-node@v4

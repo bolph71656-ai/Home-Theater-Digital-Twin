@@ -1,6 +1,6 @@
 # REW API read-only integration
 
-> 状態: 実装済み・mock検証対象 / 実REW接続は未検証
+> 状態: 実装済み / REW V5.40 beta 135実機接続・FRデコード確認済み / text export同一測定照合は未完
 
 ## 方針
 
@@ -90,7 +90,10 @@ REWを導入したら次を確認する。
 6. REWを停止するとHTDTは保存済みデータを失わずAPIだけunavailableになる。
 7. テスト中にREW側の測定数・名称・設定・音声出力が変化しないことを確認する。
 
-ここまで通るまでは「REW API実機互換性確認済み」としない。
+2026-09-16時点で1、2、および合成FRを使った5の数値デコード確認まで所有PCで完了した。
+同一measurementのtext exportとの照合、実測FL/FR、RX-A4A routing確認が残るため、実測ワークフロー全体はまだ完了扱いにしない。
+
+詳細は[実REW検証記録](REW_REAL_VALIDATION.md)を参照する。
 
 ## 公式資料
 
