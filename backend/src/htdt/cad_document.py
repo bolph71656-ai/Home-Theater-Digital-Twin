@@ -137,6 +137,7 @@ class EditorViewState:
     hidden_ids: set[str] = field(default_factory=set)
     locked_ids: set[str] = field(default_factory=set)
     transform_mode: Literal['move', 'rotate'] = 'move'
+    object_snap_enabled: bool = True
     grid_snap_enabled: bool = False
     grid_step_m: float = 0.05
     angle_snap_enabled: bool = False

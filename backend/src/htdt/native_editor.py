@@ -42,7 +42,7 @@ from .cad_scene import (
     render_delta_to_domain,
     rotate_orientation_world,
 )
-from .cad_snap import snap_angle_deg, snap_position_axis
+from .cad_snap import SnapSelector, generate_snap_candidates, snap_angle_deg, snap_position_axis
 
 ROLE = int(Qt.ItemDataRole.UserRole)
 AXIS_NAMES: tuple[Literal['x', 'y', 'z'], ...] = ('x', 'y', 'z')
@@ -71,6 +71,7 @@ class NativeEditorWindow(QMainWindow):
         self.drag_base_position: Position3 | None = None
         self.drag_base_orientation: Quaternion4 | None = None
         self.drag_rotation_pivot: Position3 | None = None
+        self.snap_selector = SnapSelector()
         self.capture_watch = QTimer(self)
         self.capture_watch.setInterval(40)
         self.capture_watch.timeout.connect(self._check_mouse_capture)
@@ -158,11 +159,14 @@ class NativeEditorWindow(QMainWindow):
         self.move_action.setChecked(True)
         toolbar.addActions((self.move_action, self.rotate_action))
 
+        self.object_snap_action = self._action('Object Snap', None, self._object_snap_toggled)
+        self.object_snap_action.setCheckable(True)
+        self.object_snap_action.setChecked(True)
         self.grid_snap_action = self._action('Grid Snap', None, self._grid_snap_toggled)
         self.grid_snap_action.setCheckable(True)
         self.angle_snap_action = self._action('Angle Snap', None, self._angle_snap_toggled)
         self.angle_snap_action.setCheckable(True)
-        toolbar.addActions((self.grid_snap_action, self.angle_snap_action))
+        toolbar.addActions((self.object_snap_action, self.grid_snap_action, self.angle_snap_action))
 
         self.grid_step_field = QDoubleSpinBox()
         self.grid_step_field.setRange(0.001, 10.0)
@@ -219,6 +223,8 @@ class NativeEditorWindow(QMainWindow):
             self.move_action.setChecked(self.view_state.transform_mode == 'move')
         with QSignalBlocker(self.rotate_action):
             self.rotate_action.setChecked(self.view_state.transform_mode == 'rotate')
+        with QSignalBlocker(self.object_snap_action):
+            self.object_snap_action.setChecked(self.view_state.object_snap_enabled)
         with QSignalBlocker(self.grid_snap_action):
             self.grid_snap_action.setChecked(self.view_state.grid_snap_enabled)
         with QSignalBlocker(self.angle_snap_action):
@@ -421,6 +427,27 @@ class NativeEditorWindow(QMainWindow):
             z_m=sum(entity.position.z_m for entity in entities) / count,
         )
 
+    def _project_domain_to_dip(self, position: Position3) -> tuple[float, float]:
+        x, y, z = domain_to_render(position)
+        renderer = self.viewport.renderer
+        renderer.SetWorldPoint(float(x), float(y), float(z), 1.0)
+        renderer.WorldToDisplay()
+        display_x, display_y, _ = renderer.GetDisplayPoint()
+        dpr = max(float(self.viewport.interactor.devicePixelRatioF()), 1e-9)
+        return (float(display_x) / dpr, float(display_y) / dpr)
+
+    def _clear_snap_feedback(self) -> None:
+        self.viewport.remove_actor('snap-feedback', reset_camera=False, render=False)
+
+    def _show_snap_feedback(self, label: str) -> None:
+        self.viewport.add_text(
+            label,
+            position='lower_left',
+            font_size=10,
+            name='snap-feedback',
+            render=False,
+        )
+
     def _create_gizmo(self, entity_id: str | None) -> None:
         if entity_id is None or self.working is None or self.recovery_candidate is not None:
             return
@@ -555,13 +582,40 @@ class NativeEditorWindow(QMainWindow):
         if not self.working.has_preview:
             self.drag_base_position = self.working.committed_document.entity(self.selected_id).position
             self.working.begin_group_move(selection)
+            self.snap_selector.reset()
             self.capture_watch.start()
         if self.drag_base_position is None:
             return
-        candidate = render_delta_to_domain(tuple(float(value) for value in matrix[:3, 3]), self.drag_base_position)
+        candidate = render_delta_to_domain(
+            tuple(float(value) for value in matrix[:3, 3]),
+            self.drag_base_position,
+        )
         axis_index = self.gizmo.active_axis_index
-        if self.view_state.grid_snap_enabled and axis_index is not None:
-            candidate = snap_position_axis(candidate, AXIS_NAMES[axis_index], self.view_state.grid_step_m)
+        bypass_snap = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.AltModifier)
+        snapped = False
+        if axis_index is not None and not bypass_snap:
+            axis = AXIS_NAMES[axis_index]
+            if self.view_state.object_snap_enabled:
+                candidates = generate_snap_candidates(
+                    self.working.committed_document,
+                    exclude_ids=set(selection),
+                    axis=axis,
+                    probe=candidate,
+                )
+                selected = self.snap_selector.select(candidates, candidate, self._project_domain_to_dip)
+                if selected is not None:
+                    candidate = selected.candidate.target
+                    self._show_snap_feedback(selected.candidate.label)
+                    snapped = True
+            if not snapped and self.view_state.grid_snap_enabled:
+                candidate = snap_position_axis(candidate, axis, self.view_state.grid_step_m)
+                value = {'x': candidate.x_m, 'y': candidate.y_m, 'z': candidate.z_m}[axis]
+                self._show_snap_feedback(f'grid · {axis.upper()}={value:.3f} m')
+                snapped = True
+        if bypass_snap or axis_index is None or not snapped:
+            if bypass_snap:
+                self.snap_selector.reset()
+            self._clear_snap_feedback()
         delta = (
             candidate.x_m - self.drag_base_position.x_m,
             candidate.y_m - self.drag_base_position.y_m,
@@ -583,6 +637,8 @@ class NativeEditorWindow(QMainWindow):
             return
         self.working.commit_preview()
         self.drag_base_position = None
+        self.snap_selector.reset()
+        self._clear_snap_feedback()
         self._sync_recovery()
         self._rebuild()
         self._set_dirty_status()
@@ -600,6 +656,8 @@ class NativeEditorWindow(QMainWindow):
             if self.drag_rotation_pivot is None:
                 return
             self.working.begin_group_rotate(selection)
+            self.snap_selector.reset()
+            self._clear_snap_feedback()
             self.capture_watch.start()
         if self.drag_rotation_pivot is None:
             return
@@ -626,6 +684,8 @@ class NativeEditorWindow(QMainWindow):
         self.working.commit_preview()
         self.drag_base_orientation = None
         self.drag_rotation_pivot = None
+        self.snap_selector.reset()
+        self._clear_snap_feedback()
         self._sync_recovery()
         self._rebuild()
         self._set_dirty_status()
@@ -641,6 +701,8 @@ class NativeEditorWindow(QMainWindow):
         self.drag_base_position = None
         self.drag_base_orientation = None
         self.drag_rotation_pivot = None
+        self.snap_selector.reset()
+        self._clear_snap_feedback()
         if self.gizmo:
             self.gizmo.cancel()
         if had_preview:
@@ -669,6 +731,14 @@ class NativeEditorWindow(QMainWindow):
         self.statusBar().showMessage(f'{mode.title()} tool · world axes')
         self._update_actions()
         self.viewport.render()
+
+    def _object_snap_toggled(self, checked: bool) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+        self.view_state.object_snap_enabled = bool(checked)
+        self.snap_selector.reset()
+        self._clear_snap_feedback()
+        self.statusBar().showMessage(f"Object snap {'on' if checked else 'off'} · 8/12 DIP")
 
     def _grid_snap_toggled(self, checked: bool) -> None:
         if self.working and self.working.has_preview:
