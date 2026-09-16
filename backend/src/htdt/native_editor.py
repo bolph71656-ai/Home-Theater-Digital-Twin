@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 import numpy as np
 import pyvista as pv
-from PySide6.QtCore import QEvent, QSignalBlocker, Qt
+from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -68,12 +68,14 @@ class NativeEditorWindow(QMainWindow):
         self.gizmo: TranslationWidget3D | RotationWidget3D | None = None
         self.drag_base_position: Position3 | None = None
         self.drag_base_orientation: Quaternion4 | None = None
+        self.capture_watch = QTimer(self)
+        self.capture_watch.setInterval(40)
+        self.capture_watch.timeout.connect(self._check_mouse_capture)
         self.resize(1440, 900)
         self.setWindowTitle('Home Theater Digital Twin — N20a')
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
-        self.viewport.interactor.installEventFilter(self)
         self.viewport.enable_mesh_picking(
             self._picked,
             show=False,
@@ -473,6 +475,7 @@ class NativeEditorWindow(QMainWindow):
         if not self.working.has_preview:
             self.drag_base_position = self.working.committed_document.entity(self.selected_id).position
             self.working.begin_move(self.selected_id)
+            self.capture_watch.start()
         if self.drag_base_position is None:
             return
         candidate = render_delta_to_domain(tuple(float(value) for value in matrix[:3, 3]), self.drag_base_position)
@@ -489,6 +492,7 @@ class NativeEditorWindow(QMainWindow):
         self._inspect(self.selected_id, use_preview=True)
 
     def _translation_release(self, matrix: np.ndarray) -> None:
+        self.capture_watch.stop()
         del matrix
         if self.working is None or self.working.preview_kind != 'move':
             return
@@ -506,6 +510,7 @@ class NativeEditorWindow(QMainWindow):
         if not self.working.has_preview:
             self.drag_base_orientation = self.working.committed_document.entity(self.selected_id).orientation
             self.working.begin_rotate(self.selected_id)
+            self.capture_watch.start()
         if self.drag_base_orientation is None:
             return
         effective_angle = float(angle_deg)
@@ -521,6 +526,7 @@ class NativeEditorWindow(QMainWindow):
         self._inspect(self.selected_id, use_preview=True)
 
     def _rotation_release(self, axis_index: int, angle_deg: float) -> None:
+        self.capture_watch.stop()
         del axis_index, angle_deg
         if self.working is None or self.working.preview_kind != 'rotate':
             return
@@ -531,16 +537,22 @@ class NativeEditorWindow(QMainWindow):
         self._set_dirty_status()
 
     def cancel_preview(self) -> None:
-        if self.working is None or not self.working.has_preview:
+        self.capture_watch.stop()
+        if self.working is None:
             return
+        had_preview = self.working.has_preview
         kind = self.working.preview_kind or 'transform'
-        self.working.cancel_preview()
+        if had_preview:
+            self.working.cancel_preview()
         self.drag_base_position = None
         self.drag_base_orientation = None
         if self.gizmo:
             self.gizmo.cancel()
-        self._rebuild()
-        self.statusBar().showMessage(f'{kind.title()} cancelled · history unchanged')
+        if had_preview:
+            self._rebuild()
+            self.statusBar().showMessage(f'{kind.title()} cancelled · history unchanged')
+        else:
+            self._update_actions()
 
     def _activate_move_mode(self, checked: bool = False) -> None:
         del checked
@@ -790,15 +802,12 @@ class NativeEditorWindow(QMainWindow):
         self.viewport.reset_camera()
         self.viewport.render()
 
-    def eventFilter(self, watched, event) -> bool:  # noqa: N802
-        if (
-            watched is self.viewport.interactor
-            and event.type() == QEvent.Type.UngrabMouse
-            and self.working is not None
-            and self.working.has_preview
-        ):
+    def _check_mouse_capture(self) -> None:
+        if self.working is None or not self.working.has_preview:
+            self.capture_watch.stop()
+            return
+        if QWidget.mouseGrabber() is not self.viewport.interactor:
             self.cancel_preview()
-        return super().eventFilter(watched, event)
 
     def event(self, event) -> bool:
         if (
@@ -810,6 +819,7 @@ class NativeEditorWindow(QMainWindow):
         return super().event(event)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        self.capture_watch.stop()
         if self.working and self.working.has_preview:
             self.working.cancel_preview()
         self._sync_recovery()
