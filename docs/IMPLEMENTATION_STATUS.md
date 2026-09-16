@@ -1,24 +1,25 @@
 # 実装ステータス
 
-> 更新: 2026-09-16 / N10 editor shell・Windows A03/A04受入反映
+> 更新: 2026-09-16 / N20a basic transform・Windows A05/A06受入反映
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧UI/旧PoCをnative CAD完了とは扱わない。
 
 ## Native CADの状態
 
-**N05とN10の技術gateは通過。** N05はPR #43でmainへ反映済み。N10はIssue #44 / `feat/n10-editor-shell-recovery` で、ViewState、Delete履歴、Save失敗保持、recovery snapshotとA03/A04実機受入まで完了した。N20のRotate/multi-select/snap等はまだ実装していない。
+**N05 / N10 / N20aの技術gateは通過。** N05とN10はmainへ反映済み。N20aはIssue #47 / `feat/n20a-basic-transform-snap` で、body pose quaternion、Move/Rotate、Inspector数値編集、grid/angle snap、cancel/capture-loss耐性とA05/A06実機受入まで完了した。multi-selectやvertex/edge snapはまだ実装していない。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | N05 / PR #43、merge `73184061a608aa9d50c21a81549ec937d2438100` |
-| N10 branch / Issue | `feat/n10-editor-shell-recovery` / Issue #44 |
-| N10受入対象コード | `1f44d0f2a957f9d2908fbb9d713bbf853d262718` |
-| A03 | 実マウスでtree/viewport選択、hide/lock、Delete/Undo、reopenをpass。scene pickerとgizmo pickerの共有による二重callbackを専用`vtkPropPicker`で解消 |
-| A04 | Save→Undo→新操作、注入Save失敗、recovery候補→明示Recover→再Saveをpass。既存revision不変・draft/history保持を確認 |
-| 自動検証 | editor/repository対象10 tests pass。最終backend全回帰pass（既存1 skip） |
-| N05配布 | Python 3.12.10 / Windows x64の55依存lockとstandalone A02はmainに反映済み |
-| 次工程 | N20a — Move/Rotate、数値編集、grid/axis/angle snap、A05/A06 |
+| main | N10まで反映済み。PR #46 merge `a229a34e258eb0d13a43c9635dfebc9073ac362d` |
+| N20a branch / Issue | `feat/n20a-basic-transform-snap` / Issue #47 |
+| N20a実機受入 | Windows 11 / 実OS 200% DPIでA05/A06 pass |
+| A05 | Top/Front/Side/PerspectiveでMove/Rotate、0.10 m grid snap、15° angle snap、Inspector、Undoをpass。unknown speaker aim保持 |
+| A06 | Esc、window外release、Alt+Tab/deactivate、tool/view切替、capture lossをcancel。history/recoveryへ未確定値を残さず、その後Move/Rotate/Orbit可能 |
+| 高DPI改善 | rotation ringのhit targetを拡大し、200% DPIの整数pixel丸めでも4 viewで実マウスpick/dragを確認 |
+| capture loss | active preview中のみ40 msのQt mouse-grab watchdog。grab owner喪失時は共通cancel transactionへ流す |
+| 自動検証 | N20a focused 18 tests pass。backend全回帰pass（既存1 skip、既知deprecation warningsのみ） |
+| 次工程 | N20b — multi-select / common pivot / vertex-edge-midpoint-alignment snapと次の受入gate |
 
-N05詳細は[N05 Windows acceptance](N05_ACCEPTANCE_2026-09-16.md)、N10詳細は[N10 Windows acceptance](N10_ACCEPTANCE_2026-09-16.md)。N10完了をN20以降の変形・snap・room sketch完成とは扱わない。
+N05詳細は[N05 Windows acceptance](N05_ACCEPTANCE_2026-09-16.md)、N10詳細は[N10 Windows acceptance](N10_ACCEPTANCE_2026-09-16.md)、N20a詳細は[N20a Windows acceptance](N20A_ACCEPTANCE_2026-09-16.md)。N20a完了をroom sketchやmulti-select完成とは扱わない。
 
 ## 確定した実環境
 

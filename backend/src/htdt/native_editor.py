@@ -4,12 +4,12 @@ import argparse
 import os
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pyvista as pv
-from PySide6.QtCore import QSignalBlocker, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, Qt
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -26,18 +26,24 @@ from PySide6.QtWidgets import (
 from pyvistaqt import QtInteractor
 
 from .cad_document import EditorViewState, WorkingDocument
-from .cad_gizmo import TranslationWidget3D
+from .cad_gizmo import RotationWidget3D, TranslationWidget3D
 from .cad_repository import RecoverySnapshot, SceneRepository
 from .cad_scene import (
     F1_DOCUMENT_ID,
     Position3,
+    Quaternion4,
     SceneEntity,
-    domain_to_render,
+    domain_pose_to_render_matrix,
     make_f1_scene,
+    quaternion_from_euler_deg,
+    quaternion_to_euler_deg,
     render_delta_to_domain,
+    rotate_orientation_world,
 )
+from .cad_snap import snap_angle_deg, snap_position_axis
 
 ROLE = int(Qt.ItemDataRole.UserRole)
+AXIS_NAMES: tuple[Literal['x', 'y', 'z'], ...] = ('x', 'y', 'z')
 
 
 def default_data_dir() -> Path:
@@ -46,7 +52,7 @@ def default_data_dir() -> Path:
 
 
 class NativeEditorWindow(QMainWindow):
-    """N10 native shell: view state, delete history, immutable save and recovery."""
+    """N20a native CAD shell: rigid move/rotate, snap, undo, recovery and view state."""
 
     def __init__(self, repository: SceneRepository, document_id: str = F1_DOCUMENT_ID) -> None:
         super().__init__()
@@ -59,10 +65,14 @@ class NativeEditorWindow(QMainWindow):
         self.actors: dict[str, pv.Actor] = {}
         self.actor_ids: dict[int, str] = {}
         self.items: dict[str, QTreeWidgetItem] = {}
-        self.gizmo: TranslationWidget3D | None = None
-        self.drag_base: Position3 | None = None
+        self.gizmo: TranslationWidget3D | RotationWidget3D | None = None
+        self.drag_base_position: Position3 | None = None
+        self.drag_base_orientation: Quaternion4 | None = None
+        self.capture_watch = QTimer(self)
+        self.capture_watch.setInterval(40)
+        self.capture_watch.timeout.connect(self._check_mouse_capture)
         self.resize(1440, 900)
-        self.setWindowTitle('Home Theater Digital Twin — N10')
+        self.setWindowTitle('Home Theater Digital Twin — N20a')
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
@@ -91,6 +101,7 @@ class NativeEditorWindow(QMainWindow):
         form.addRow('Type', self.kind_label)
         form.addRow('ID', self.id_label)
         form.addRow('State', self.state_label)
+
         self.position_fields: dict[str, QDoubleSpinBox] = {}
         for axis in ('X', 'Y', 'Z'):
             field = QDoubleSpinBox()
@@ -102,7 +113,20 @@ class NativeEditorWindow(QMainWindow):
             field.editingFinished.connect(self._numeric_position_edited)
             self.position_fields[axis] = field
             form.addRow(axis, field)
+
+        self.orientation_fields: dict[str, QDoubleSpinBox] = {}
+        for axis in ('Yaw', 'Pitch', 'Roll'):
+            field = QDoubleSpinBox()
+            field.setRange(-180.0, 180.0)
+            field.setDecimals(2)
+            field.setSingleStep(1.0)
+            field.setSuffix('°')
+            field.setKeyboardTracking(False)
+            field.editingFinished.connect(self._numeric_orientation_edited)
+            self.orientation_fields[axis] = field
+            form.addRow(axis, field)
         form.addRow('Aim', self.aim_label)
+
         right = QDockWidget('Inspector', self)
         right.setWidget(inspector)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, right)
@@ -115,6 +139,44 @@ class NativeEditorWindow(QMainWindow):
         self.delete_action = self._action('Delete', None, self.delete_selected)
         self.delete_action.setShortcut(QKeySequence('Delete'))
         toolbar.addActions((self.save_action, self.undo_action, self.redo_action, self.delete_action))
+        toolbar.addSeparator()
+
+        self.transform_group = QActionGroup(self)
+        self.transform_group.setExclusive(True)
+        self.move_action = self._action('Move', None, self._activate_move_mode)
+        self.move_action.setCheckable(True)
+        self.move_action.setShortcut(QKeySequence('W'))
+        self.rotate_action = self._action('Rotate', None, self._activate_rotate_mode)
+        self.rotate_action.setCheckable(True)
+        self.rotate_action.setShortcut(QKeySequence('R'))
+        self.transform_group.addAction(self.move_action)
+        self.transform_group.addAction(self.rotate_action)
+        self.move_action.setChecked(True)
+        toolbar.addActions((self.move_action, self.rotate_action))
+
+        self.grid_snap_action = self._action('Grid Snap', None, self._grid_snap_toggled)
+        self.grid_snap_action.setCheckable(True)
+        self.angle_snap_action = self._action('Angle Snap', None, self._angle_snap_toggled)
+        self.angle_snap_action.setCheckable(True)
+        toolbar.addActions((self.grid_snap_action, self.angle_snap_action))
+
+        self.grid_step_field = QDoubleSpinBox()
+        self.grid_step_field.setRange(0.001, 10.0)
+        self.grid_step_field.setDecimals(3)
+        self.grid_step_field.setSingleStep(0.01)
+        self.grid_step_field.setValue(self.view_state.grid_step_m)
+        self.grid_step_field.setSuffix(' m grid')
+        self.grid_step_field.valueChanged.connect(self._grid_step_changed)
+        toolbar.addWidget(self.grid_step_field)
+
+        self.angle_step_field = QDoubleSpinBox()
+        self.angle_step_field.setRange(0.1, 180.0)
+        self.angle_step_field.setDecimals(1)
+        self.angle_step_field.setSingleStep(5.0)
+        self.angle_step_field.setValue(self.view_state.angle_step_deg)
+        self.angle_step_field.setSuffix('° angle')
+        self.angle_step_field.valueChanged.connect(self._angle_step_changed)
+        toolbar.addWidget(self.angle_step_field)
         toolbar.addSeparator()
 
         self.hide_action = self._action('Hidden', None, self._toggle_hidden)
@@ -148,6 +210,20 @@ class NativeEditorWindow(QMainWindow):
         action.triggered.connect(callback)
         return action
 
+    def _sync_transform_controls(self) -> None:
+        with QSignalBlocker(self.move_action):
+            self.move_action.setChecked(self.view_state.transform_mode == 'move')
+        with QSignalBlocker(self.rotate_action):
+            self.rotate_action.setChecked(self.view_state.transform_mode == 'rotate')
+        with QSignalBlocker(self.grid_snap_action):
+            self.grid_snap_action.setChecked(self.view_state.grid_snap_enabled)
+        with QSignalBlocker(self.angle_snap_action):
+            self.angle_snap_action.setChecked(self.view_state.angle_snap_enabled)
+        with QSignalBlocker(self.grid_step_field):
+            self.grid_step_field.setValue(self.view_state.grid_step_m)
+        with QSignalBlocker(self.angle_step_field):
+            self.angle_step_field.setValue(self.view_state.angle_step_deg)
+
     def _load_or_seed(self) -> None:
         revision = self.repository.latest(self.document_id)
         if revision is None:
@@ -165,6 +241,7 @@ class NativeEditorWindow(QMainWindow):
                 locked_ids=set(record.locked_ids),
             )
             self.view_state.sanitize(revision.document)
+        self._sync_transform_controls()
         self.selected_id = self.view_state.selected_id
         self.recovery_candidate = self.repository.recovery(self.document_id)
         self._rebuild(reset_camera=True)
@@ -229,25 +306,25 @@ class NativeEditorWindow(QMainWindow):
 
         if self.view_state.is_hidden(entity.entity_id):
             return
-        center = domain_to_render(entity.position)
         if entity.kind in {'speaker', 'furniture'}:
             if entity.size_m is None:
                 raise ValueError(f'{entity.entity_id} requires size_m for rendering')
             mesh = pv.Cube(
-                center=center,
+                center=(0.0, 0.0, 0.0),
                 x_length=entity.size_m.x_m,
                 y_length=entity.size_m.y_m,
                 z_length=entity.size_m.z_m,
             )
         else:
-            mesh = pv.Sphere(radius=0.08, center=center)
+            mesh = pv.Sphere(radius=0.08, center=(0.0, 0.0, 0.0))
+        mesh.transform(np.asarray(domain_pose_to_render_matrix(entity.position, entity.orientation)), inplace=True)
         actor = self.viewport.add_mesh(mesh, name=f'entity:{entity.entity_id}', pickable=True)
         self.actors[entity.entity_id] = actor
         self.actor_ids[id(actor)] = entity.entity_id
 
     def _picked(self, actor: Any) -> None:
         entity_id = self.actor_ids.get(id(actor))
-        if entity_id:
+        if entity_id and entity_id != self.selected_id:
             self._select(entity_id)
 
     def _tree_selected(self) -> None:
@@ -281,30 +358,45 @@ class NativeEditorWindow(QMainWindow):
             actor.prop.show_edges = key == entity_id
             actor.prop.line_width = 3 if key == entity_id else 1
         self._inspect(entity_id)
-        if entity_id and self.working and self.recovery_candidate is None:
-            entity = self.working.committed_document.entity(entity_id)
-            if (
-                entity.kind == 'speaker'
-                and entity_id in self.actors
-                and not self.view_state.is_locked(entity_id)
-            ):
-                self.gizmo = TranslationWidget3D(
-                    self.viewport,
-                    self.actors[entity_id],
-                    interact_callback=self._gizmo_interact,
-                    release_callback=self._gizmo_release,
-                )
+        self._create_gizmo(entity_id)
         if persist:
             self._persist_view_state()
         self._update_actions()
         self.viewport.render()
+
+    def _create_gizmo(self, entity_id: str | None) -> None:
+        if (
+            entity_id is None
+            or self.working is None
+            or self.recovery_candidate is not None
+            or entity_id not in self.actors
+            or self.view_state.is_locked(entity_id)
+        ):
+            return
+        entity = self.working.committed_document.entity(entity_id)
+        if self.view_state.transform_mode == 'move':
+            self.gizmo = TranslationWidget3D(
+                self.viewport,
+                self.actors[entity_id],
+                interact_callback=self._translation_interact,
+                release_callback=self._translation_release,
+                cancel_callback=self.cancel_preview,
+            )
+        elif entity.kind in {'speaker', 'furniture'}:
+            self.gizmo = RotationWidget3D(
+                self.viewport,
+                self.actors[entity_id],
+                interact_callback=self._rotation_interact,
+                release_callback=self._rotation_release,
+                cancel_callback=self.cancel_preview,
+            )
 
     def _inspect(self, entity_id: str | None, *, use_preview: bool = False) -> None:
         self.kind_label.setText('—')
         self.id_label.setText('—')
         self.state_label.setText('—')
         self.aim_label.setText('—')
-        for field in self.position_fields.values():
+        for field in (*self.position_fields.values(), *self.orientation_fields.values()):
             field.setEnabled(False)
         if entity_id is None or self.working is None:
             return
@@ -323,15 +415,24 @@ class NativeEditorWindow(QMainWindow):
             if entity.kind == 'speaker' and entity.aim_xyz is None
             else ('known' if entity.kind == 'speaker' else '—')
         )
-        values = (entity.position.x_m, entity.position.y_m, entity.position.z_m)
         editable = not self.view_state.is_locked(entity_id) and self.recovery_candidate is None
-        blockers = [QSignalBlocker(field) for field in self.position_fields.values()]
+        position_values = (entity.position.x_m, entity.position.y_m, entity.position.z_m)
+        position_blockers = [QSignalBlocker(field) for field in self.position_fields.values()]
         try:
-            for field, value in zip(self.position_fields.values(), values, strict=True):
+            for field, value in zip(self.position_fields.values(), position_values, strict=True):
                 field.setValue(value)
                 field.setEnabled(editable)
         finally:
-            del blockers
+            del position_blockers
+
+        yaw, pitch, roll = quaternion_to_euler_deg(entity.orientation)
+        orientation_blockers = [QSignalBlocker(field) for field in self.orientation_fields.values()]
+        try:
+            for field, value in zip(self.orientation_fields.values(), (yaw, pitch, roll), strict=True):
+                field.setValue(value)
+                field.setEnabled(editable and entity.kind in {'speaker', 'furniture'})
+        finally:
+            del orientation_blockers
 
     def _numeric_position_edited(self) -> None:
         if self.selected_id is None or self.working is None or self.working.has_preview:
@@ -348,38 +449,157 @@ class NativeEditorWindow(QMainWindow):
             self._rebuild()
         self._set_dirty_status()
 
-    def _gizmo_interact(self, matrix: np.ndarray) -> None:
+    def _numeric_orientation_edited(self) -> None:
+        if self.selected_id is None or self.working is None or self.working.has_preview:
+            return
+        if self.recovery_candidate is not None or self.view_state.is_locked(self.selected_id):
+            return
+        entity = self.working.committed_document.entity(self.selected_id)
+        if entity.kind not in {'speaker', 'furniture'}:
+            return
+        orientation = quaternion_from_euler_deg(
+            yaw_deg=self.orientation_fields['Yaw'].value(),
+            pitch_deg=self.orientation_fields['Pitch'].value(),
+            roll_deg=self.orientation_fields['Roll'].value(),
+        )
+        if self.working.rotate_entity(self.selected_id, orientation):
+            self._sync_recovery()
+            self._rebuild()
+        self._set_dirty_status()
+
+    def _translation_interact(self, matrix: np.ndarray) -> None:
         if self.selected_id is None or self.working is None or self.recovery_candidate is not None:
             return
-        if self.view_state.is_locked(self.selected_id):
+        if self.view_state.is_locked(self.selected_id) or not isinstance(self.gizmo, TranslationWidget3D):
             return
         if not self.working.has_preview:
-            self.drag_base = self.working.committed_document.entity(self.selected_id).position
+            self.drag_base_position = self.working.committed_document.entity(self.selected_id).position
             self.working.begin_move(self.selected_id)
-        if self.drag_base is None:
+            self.capture_watch.start()
+        if self.drag_base_position is None:
             return
-        self.working.preview_move(render_delta_to_domain(tuple(matrix[:3, 3]), self.drag_base))
+        candidate = render_delta_to_domain(tuple(float(value) for value in matrix[:3, 3]), self.drag_base_position)
+        axis_index = self.gizmo.active_axis_index
+        if self.view_state.grid_snap_enabled and axis_index is not None:
+            candidate = snap_position_axis(candidate, AXIS_NAMES[axis_index], self.view_state.grid_step_m)
+        display_delta = (
+            candidate.x_m - self.drag_base_position.x_m,
+            -(candidate.y_m - self.drag_base_position.y_m),
+            candidate.z_m - self.drag_base_position.z_m,
+        )
+        self.gizmo.set_display_delta(display_delta)
+        self.working.preview_move(candidate)
         self._inspect(self.selected_id, use_preview=True)
 
-    def _gizmo_release(self, matrix: np.ndarray) -> None:
+    def _translation_release(self, matrix: np.ndarray) -> None:
+        self.capture_watch.stop()
         del matrix
-        if self.working is None or not self.working.has_preview:
+        if self.working is None or self.working.preview_kind != 'move':
             return
         self.working.commit_preview()
-        self.drag_base = None
+        self.drag_base_position = None
+        self._sync_recovery()
+        self._rebuild()
+        self._set_dirty_status()
+
+    def _rotation_interact(self, axis_index: int, angle_deg: float) -> None:
+        if self.selected_id is None or self.working is None or self.recovery_candidate is not None:
+            return
+        if self.view_state.is_locked(self.selected_id) or not isinstance(self.gizmo, RotationWidget3D):
+            return
+        if not self.working.has_preview:
+            self.drag_base_orientation = self.working.committed_document.entity(self.selected_id).orientation
+            self.working.begin_rotate(self.selected_id)
+            self.capture_watch.start()
+        if self.drag_base_orientation is None:
+            return
+        effective_angle = float(angle_deg)
+        if self.view_state.angle_snap_enabled:
+            effective_angle = snap_angle_deg(effective_angle, self.view_state.angle_step_deg)
+        self.gizmo.set_display_angle(effective_angle)
+        orientation = rotate_orientation_world(
+            self.drag_base_orientation,
+            AXIS_NAMES[axis_index],
+            effective_angle,
+        )
+        self.working.preview_rotate(orientation)
+        self._inspect(self.selected_id, use_preview=True)
+
+    def _rotation_release(self, axis_index: int, angle_deg: float) -> None:
+        self.capture_watch.stop()
+        del axis_index, angle_deg
+        if self.working is None or self.working.preview_kind != 'rotate':
+            return
+        self.working.commit_preview()
+        self.drag_base_orientation = None
         self._sync_recovery()
         self._rebuild()
         self._set_dirty_status()
 
     def cancel_preview(self) -> None:
-        if self.working is None or not self.working.has_preview:
+        self.capture_watch.stop()
+        if self.working is None:
             return
-        self.working.cancel_preview()
-        self.drag_base = None
+        had_preview = self.working.has_preview
+        kind = self.working.preview_kind or 'transform'
+        if had_preview:
+            self.working.cancel_preview()
+        self.drag_base_position = None
+        self.drag_base_orientation = None
         if self.gizmo:
             self.gizmo.cancel()
-        self._rebuild()
-        self.statusBar().showMessage('Move cancelled · history unchanged')
+        if had_preview:
+            self._rebuild()
+            self.statusBar().showMessage(f'{kind.title()} cancelled · history unchanged')
+        else:
+            self._update_actions()
+
+    def _activate_move_mode(self, checked: bool = False) -> None:
+        del checked
+        self._set_transform_mode('move')
+
+    def _activate_rotate_mode(self, checked: bool = False) -> None:
+        del checked
+        self._set_transform_mode('rotate')
+
+    def _set_transform_mode(self, mode: Literal['move', 'rotate']) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+        if self.view_state.transform_mode == mode:
+            return
+        self.view_state.transform_mode = mode
+        self._sync_transform_controls()
+        self._remove_gizmo()
+        self._create_gizmo(self.selected_id)
+        self.statusBar().showMessage(f'{mode.title()} tool · world axes')
+        self._update_actions()
+        self.viewport.render()
+
+    def _grid_snap_toggled(self, checked: bool) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+        self.view_state.grid_snap_enabled = bool(checked)
+        self.statusBar().showMessage(
+            f"Grid snap {'on' if checked else 'off'} · {self.view_state.grid_step_m:g} m"
+        )
+
+    def _angle_snap_toggled(self, checked: bool) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+        self.view_state.angle_snap_enabled = bool(checked)
+        self.statusBar().showMessage(
+            f"Angle snap {'on' if checked else 'off'} · {self.view_state.angle_step_deg:g}°"
+        )
+
+    def _grid_step_changed(self, value: float) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+        self.view_state.grid_step_m = float(value)
+
+    def _angle_step_changed(self, value: float) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+        self.view_state.angle_step_deg = float(value)
 
     def undo(self) -> None:
         if self.working is None or self.recovery_candidate is not None:
@@ -418,6 +638,8 @@ class NativeEditorWindow(QMainWindow):
     def _toggle_hidden(self, checked: bool) -> None:
         if self.selected_id is None:
             return
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
         self.view_state.set_hidden(self.selected_id, checked)
         self._persist_view_state()
         self._rebuild()
@@ -425,6 +647,8 @@ class NativeEditorWindow(QMainWindow):
     def _toggle_locked(self, checked: bool) -> None:
         if self.selected_id is None:
             return
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
         self.view_state.set_locked(self.selected_id, checked)
         self._persist_view_state()
         self._rebuild()
@@ -432,6 +656,8 @@ class NativeEditorWindow(QMainWindow):
     def show_all(self) -> None:
         if not self.view_state.hidden_ids:
             return
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
         self.view_state.hidden_ids.clear()
         self._persist_view_state()
         self._rebuild()
@@ -440,7 +666,7 @@ class NativeEditorWindow(QMainWindow):
         if self.working is None or self.recovery_candidate is not None:
             return
         if self.working.has_preview:
-            self.statusBar().showMessage('Finish or cancel the active move before Save')
+            self.statusBar().showMessage('Finish or cancel the active transform before Save')
             return
         try:
             result = self.repository.save(
@@ -539,31 +765,61 @@ class NativeEditorWindow(QMainWindow):
             self.gizmo.remove()
             self.gizmo = None
 
+    def _cancel_before_view_change(self) -> None:
+        if self.working and self.working.has_preview:
+            self.cancel_preview()
+
     def _top(self) -> None:
+        self._cancel_before_view_change()
         self.viewport.view_xy(negative=True)
         self.viewport.enable_parallel_projection()
-        self._fit()
-
-    def _front(self) -> None:
-        self.viewport.view_xz(negative=False)
-        self.viewport.enable_parallel_projection()
-        self._fit()
-
-    def _right(self) -> None:
-        self.viewport.view_yz(negative=True)
-        self.viewport.enable_parallel_projection()
-        self._fit()
-
-    def _perspective(self) -> None:
-        self.viewport.disable_parallel_projection()
-        self.viewport.view_isometric()
-        self._fit()
-
-    def _fit(self) -> None:
         self.viewport.reset_camera()
         self.viewport.render()
 
+    def _front(self) -> None:
+        self._cancel_before_view_change()
+        self.viewport.view_xz(negative=False)
+        self.viewport.enable_parallel_projection()
+        self.viewport.reset_camera()
+        self.viewport.render()
+
+    def _right(self) -> None:
+        self._cancel_before_view_change()
+        self.viewport.view_yz(negative=True)
+        self.viewport.enable_parallel_projection()
+        self.viewport.reset_camera()
+        self.viewport.render()
+
+    def _perspective(self) -> None:
+        self._cancel_before_view_change()
+        self.viewport.disable_parallel_projection()
+        self.viewport.view_isometric()
+        self.viewport.reset_camera()
+        self.viewport.render()
+
+    def _fit(self) -> None:
+        self._cancel_before_view_change()
+        self.viewport.reset_camera()
+        self.viewport.render()
+
+    def _check_mouse_capture(self) -> None:
+        if self.working is None or not self.working.has_preview:
+            self.capture_watch.stop()
+            return
+        if QWidget.mouseGrabber() is not self.viewport.interactor:
+            self.cancel_preview()
+
+    def event(self, event) -> bool:
+        if (
+            event.type() == QEvent.Type.WindowDeactivate
+            and self.working is not None
+            and self.working.has_preview
+        ):
+            self.cancel_preview()
+        return super().event(event)
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        self.capture_watch.stop()
         if self.working and self.working.has_preview:
             self.working.cancel_preview()
         self._sync_recovery()
@@ -574,7 +830,7 @@ class NativeEditorWindow(QMainWindow):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description='Run the HTDT native CAD editor N10 shell')
+    parser = argparse.ArgumentParser(description='Run the HTDT native CAD editor N20a shell')
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--document-id', default=F1_DOCUMENT_ID)
     args = parser.parse_args(argv)

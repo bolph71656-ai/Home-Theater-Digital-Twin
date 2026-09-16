@@ -1,7 +1,17 @@
 import pytest
 
 from htdt.cad_document import EditorViewState, WorkingDocument
-from htdt.cad_scene import Position3, domain_to_render, make_f1_scene, render_delta_to_domain
+from htdt.cad_scene import (
+    Position3,
+    canonical_scene_json,
+    domain_pose_to_render_matrix,
+    domain_to_render,
+    make_f1_scene,
+    quaternion_from_euler_deg,
+    quaternion_to_euler_deg,
+    render_delta_to_domain,
+    rotate_orientation_world,
+)
 
 
 def test_preview_cancel_does_not_change_history_or_unknown_aim() -> None:
@@ -29,6 +39,59 @@ def test_drag_commit_is_one_undo_and_numeric_move_uses_same_history() -> None:
     assert working.redo()
     assert working.move_entity('speaker-fl', Position3(x_m=1.60, y_m=0.75, z_m=1.05))
     assert working.history_length == 2
+
+
+def test_rotate_preview_cancel_commit_and_undo_preserve_unknown_aim() -> None:
+    working = WorkingDocument(make_f1_scene())
+    original = working.committed_document.entity('speaker-fl')
+    rotated = rotate_orientation_world(original.orientation, 'z', 30.0)
+
+    working.begin_rotate('speaker-fl')
+    working.preview_rotate(rotated)
+    assert working.preview_kind == 'rotate'
+    assert working.document.entity('speaker-fl').orientation == rotated
+    assert working.document.entity('speaker-fl').aim_xyz is None
+    assert working.cancel_preview()
+    assert working.history_length == 0
+    assert working.committed_document.entity('speaker-fl') == original
+
+    working.begin_rotate('speaker-fl')
+    working.preview_rotate(rotated)
+    assert working.commit_preview()
+    assert working.history_length == 1
+    assert working.committed_document.entity('speaker-fl').aim_xyz is None
+    assert working.undo()
+    assert working.committed_document.entity('speaker-fl') == original
+
+
+def test_numeric_rotation_uses_same_history_and_euler_round_trips() -> None:
+    working = WorkingDocument(make_f1_scene())
+    orientation = quaternion_from_euler_deg(yaw_deg=25.0, pitch_deg=-10.0, roll_deg=5.0)
+    assert working.rotate_entity('furniture-left', orientation)
+    assert working.history_length == 1
+    yaw, pitch, roll = quaternion_to_euler_deg(
+        working.committed_document.entity('furniture-left').orientation
+    )
+    assert yaw == pytest.approx(25.0)
+    assert pitch == pytest.approx(-10.0)
+    assert roll == pytest.approx(5.0)
+
+
+def test_identity_orientation_is_canonical_omission_for_n10_hash_compatibility() -> None:
+    payload = canonical_scene_json(make_f1_scene())
+    assert 'orientation' not in payload
+
+
+def test_domain_pose_conversion_reflects_y_axis_without_treating_reflection_as_rotation() -> None:
+    position = Position3(x_m=1.0, y_m=2.0, z_m=3.0)
+    orientation = quaternion_from_euler_deg(yaw_deg=90.0, pitch_deg=0.0, roll_deg=0.0)
+    matrix = domain_pose_to_render_matrix(position, orientation)
+    assert matrix[0][3] == pytest.approx(1.0)
+    assert matrix[1][3] == pytest.approx(-2.0)
+    assert matrix[2][3] == pytest.approx(3.0)
+    # Domain +X rotated to domain +Y; domain +Y is render -Y after C*R*C.
+    assert matrix[0][0] == pytest.approx(0.0, abs=1e-9)
+    assert matrix[1][0] == pytest.approx(-1.0, abs=1e-9)
 
 
 def test_noop_move_is_not_added_to_history() -> None:
