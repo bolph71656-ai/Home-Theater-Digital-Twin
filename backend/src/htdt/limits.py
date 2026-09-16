@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+
+MIB = 1024 * 1024
+
+# The browser API currently transports binary inputs as Base64 JSON. These
+# limits are deliberately generous for a personal REW workflow while keeping
+# accidental or hostile allocations finite.
+MAX_REW_TEXT_BYTES = 32 * MIB
+MAX_ATTACHMENT_BYTES = 256 * MIB
+MAX_BACKUP_ARCHIVE_BYTES = 512 * MIB
+MAX_SMALL_JSON_BODY_BYTES = 2 * MIB
+
+
+def max_base64_chars(decoded_bytes: int) -> int:
+    if decoded_bytes < 0:
+        raise ValueError('decoded_bytes must be non-negative')
+    return 4 * ((decoded_bytes + 2) // 3)
+
+
+MAX_REW_TEXT_BASE64_CHARS = max_base64_chars(MAX_REW_TEXT_BYTES)
+MAX_ATTACHMENT_BASE64_CHARS = max_base64_chars(MAX_ATTACHMENT_BYTES)
+MAX_BACKUP_BASE64_CHARS = max_base64_chars(MAX_BACKUP_ARCHIVE_BYTES)
+
+# JSON field names/quotes and ordinary metadata need only a small allowance on
+# top of the encoded payload itself.
+JSON_ENVELOPE_ALLOWANCE_BYTES = 1 * MIB
+MAX_REW_REQUEST_BODY_BYTES = MAX_REW_TEXT_BASE64_CHARS + JSON_ENVELOPE_ALLOWANCE_BYTES
+MAX_ATTACHMENT_REQUEST_BODY_BYTES = MAX_ATTACHMENT_BASE64_CHARS + JSON_ENVELOPE_ALLOWANCE_BYTES
+MAX_RESTORE_REQUEST_BODY_BYTES = MAX_BACKUP_BASE64_CHARS + JSON_ENVELOPE_ALLOWANCE_BYTES
