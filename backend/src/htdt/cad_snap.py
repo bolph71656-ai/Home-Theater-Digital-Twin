@@ -46,6 +46,10 @@ class SnapSelector:
         self.acquire_radius_dip = float(acquire_radius_dip)
         self.retain_radius_dip = float(retain_radius_dip)
         self._retained_id: str | None = None
+        self._projection_cache: dict[
+            str,
+            tuple[tuple[float, float, float], tuple[float, float]],
+        ] = {}
 
     @property
     def retained_id(self) -> str | None:
@@ -53,6 +57,20 @@ class SnapSelector:
 
     def reset(self) -> None:
         self._retained_id = None
+        self._projection_cache.clear()
+
+    def _project_candidate(self, candidate: SnapCandidate, project: ScreenProjector) -> tuple[float, float]:
+        anchor_key = (
+            candidate.screen_anchor.x_m,
+            candidate.screen_anchor.y_m,
+            candidate.screen_anchor.z_m,
+        )
+        cached = self._projection_cache.get(candidate.stable_id)
+        if cached is not None and cached[0] == anchor_key:
+            return cached[1]
+        projected = project(candidate.screen_anchor)
+        self._projection_cache[candidate.stable_id] = (anchor_key, projected)
+        return projected
 
     def select(
         self,
@@ -61,7 +79,10 @@ class SnapSelector:
         project: ScreenProjector,
     ) -> SnapSelection | None:
         probe_screen = project(probe)
-        scored = [(candidate, _screen_distance(project(candidate.screen_anchor), probe_screen)) for candidate in candidates]
+        scored = [
+            (candidate, _screen_distance(self._project_candidate(candidate, project), probe_screen))
+            for candidate in candidates
+        ]
         if self._retained_id is not None:
             for candidate, distance in scored:
                 if candidate.stable_id == self._retained_id and distance <= self.retain_radius_dip:
