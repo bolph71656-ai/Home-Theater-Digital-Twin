@@ -33,6 +33,7 @@ HTDTは「最適位置」を未測定の段階で断定するのではなく、*
 - UI: quality / repeat_group / attachments / intended changes / confounders / interpretation warnings
 - A03: localhost限定・GET専用のREW 5.40 APIアダプター
 - A04: 96 PPO特徴検出、room mode/一次反射の候補対応、quality/evidence gate、UI
+- R01: 保存済みComparisonから自己完結HTML/JSONレポート、inline SVG、UIダウンロード導線
 
 ## A03 — 読取専用REW API
 
@@ -69,20 +70,35 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 
 合成FRでは既知の狭いpeak/dipを検出し、既知周波数の矩形室モード/一次反射候補との対応をテスト済み。実測での妥当な閾値は実REW測定取得後に再評価する。
 
-## 実装中 — R01 比較レポート
+## R01 — 比較レポート
 
 保存済みComparisonを唯一の入力として、再計算せずに自己完結レポートを生成する。
 
 - `GET /api/projects/{project_id}/comparisons/{comparison_id}/report.json`
 - `GET /api/projects/{project_id}/comparisons/{comparison_id}/report.html`
-- JSONにはProject、ComparisonSpec、保存済みAnalysisResult、測定/Context ID、quality、intended changes、confounders、算法版を同梱
-- HTMLには保存済みA/B配列から生成したインラインSVGグラフを埋め込む
+- JSONにProject、ComparisonSpec、保存済みAnalysisResult、測定/Context ID、quality、intended changes、confounders、算法版を同梱
+- HTMLに保存済みA/B配列から生成したインラインSVGグラフを埋込
 - HTMLは外部CDN、外部JavaScript、外部画像なしで単体表示可能
-- 完全なJSONスナップショットをHTML内の`application/json`としても埋め込む
-- 幾何候補やA/B差を原因・最適性の証明として扱わない解釈境界をレポートに固定
-- ファイル名はcomparison IDを含め、`Content-Disposition: attachment`でダウンロード可能
+- 完全なJSONスナップショットをHTML内の`application/json`としても埋込
+- 原因・最適性を自動証明しない解釈境界をレポートに固定
+- UIに保存済み比較一覧とHTML/JSONの直接ダウンロード導線を追加
 
-保存済みComparisonを使うため、後から現在の配置や条件を編集しても旧レポートの入力根拠は変わらない。HTML生成器とAPIの回帰テストを追加した。
+保存済みComparisonを使うため、後から現在の配置や条件を編集しても旧レポートの入力根拠は変わらない。Windows CIでrenderer/API/backend回帰/frontend buildまで受入済み。
+
+## 実装中 — V01 実測配置の比較一覧
+
+新しい解析APIは増やさず、既存のProject / Context / Measurement / Comparison APIをUIで構成して一覧化する。
+
+- measured Datasetのみを対象にchannel roleとmeasurement pointで絞込
+- 1つのDatasetをreferenceとして選択
+- 各配置版のContext revision、quality、repeat groupを表示
+- referenceからのMLP移動量を表示
+- speaker_idが一致する既知座標について最大スピーカー移動量を表示
+- Room snapshot / AVR snapshotがreferenceと異なる場合を明示
+- referenceとの保存済みA/B Comparisonがある場合だけ、保存済み帯域、RMS、shape RMS、confounder数、warning数を表示
+- 保存済みComparisonがなければ「未比較」と表示し、一覧表示のために勝手に解析を実行しない
+- Comparison reportへ直接移動可能
+- `measured_layout_overview_not_ranking`の考え方をUI文言で維持し、この一覧自体はbest/worstを決めない
 
 ## 未検証・保留
 
@@ -93,12 +109,13 @@ REW 5.40系の公式API仕様を対象に、任意のGET専用アダプターを
 - 高さチャンネルの個別励振
 - 実部屋での同条件再測定ばらつき
 - A04の閾値/prominenceが実部屋で実用的か
+- V01を複数の実配置・実測で使った操作性
 - M10の実データ通し確認
 
 ## 次
 
-1. R01のWindows CIを通し、UIからHTML/JSONレポートを開ける導線を追加する。
-2. V01の土台として、同じchannel/MLPの複数配置を比較一覧へまとめる。
+1. V01一覧のWindows buildを通してmainへ反映する。
+2. V02としてschema移行前バックアップ、移行失敗時のロールバック契約を強化する。
 3. REW API取得をHTDT Datasetへ保存する場合は、API response/queryの来歴をRawAsset/metadataへ固定する。実API確認前にmeasuredへ自動分類しない。
 4. IR/ETCは実IRサンプル取得後にA02として開始する。
 5. 実REWを導入した時点で、text exportとAPI取得を同一測定で照合する。
