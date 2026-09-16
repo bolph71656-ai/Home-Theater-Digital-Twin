@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Protocol
 
 from .cad_scene import Position3, SceneDocument, SceneEntity, scene_content_hash
 
@@ -17,6 +18,28 @@ def _replace_entity(document: SceneDocument, replacement: SceneEntity) -> SceneD
 def _move(document: SceneDocument, entity_id: str, position: Position3) -> SceneDocument:
     entity = document.entity(entity_id)
     return _replace_entity(document, entity.model_copy(update={'position': position}))
+
+
+def _delete(document: SceneDocument, entity_id: str) -> SceneDocument:
+    document.entity(entity_id)
+    return document.model_copy(update={'entities': tuple(item for item in document.entities if item.entity_id != entity_id)})
+
+
+def _insert(document: SceneDocument, index: int, entity: SceneEntity) -> SceneDocument:
+    if any(item.entity_id == entity.entity_id for item in document.entities):
+        raise EditStateError(f'entity already exists: {entity.entity_id}')
+    entities = list(document.entities)
+    entities.insert(index, entity)
+    return document.model_copy(update={'entities': tuple(entities)})
+
+
+class EditCommand(Protocol):
+    @property
+    def is_noop(self) -> bool: ...
+
+    def apply(self, document: SceneDocument) -> SceneDocument: ...
+
+    def revert(self, document: SceneDocument) -> SceneDocument: ...
 
 
 @dataclass(frozen=True)
@@ -36,9 +59,59 @@ class MoveEntityCommand:
         return _move(document, self.entity_id, self.before)
 
 
+@dataclass(frozen=True)
+class DeleteEntityCommand:
+    entity: SceneEntity
+    index: int
+
+    @property
+    def is_noop(self) -> bool:
+        return False
+
+    def apply(self, document: SceneDocument) -> SceneDocument:
+        return _delete(document, self.entity.entity_id)
+
+    def revert(self, document: SceneDocument) -> SceneDocument:
+        return _insert(document, self.index, self.entity)
+
+
+@dataclass
+class EditorViewState:
+    """Non-physical editor state. It must never change SceneDocument semantics."""
+
+    selected_id: str | None = None
+    hidden_ids: set[str] = field(default_factory=set)
+    locked_ids: set[str] = field(default_factory=set)
+
+    def is_hidden(self, entity_id: str) -> bool:
+        return entity_id in self.hidden_ids
+
+    def is_locked(self, entity_id: str) -> bool:
+        return entity_id in self.locked_ids
+
+    def set_hidden(self, entity_id: str, hidden: bool) -> None:
+        if hidden:
+            self.hidden_ids.add(entity_id)
+        else:
+            self.hidden_ids.discard(entity_id)
+
+    def set_locked(self, entity_id: str, locked: bool) -> None:
+        if locked:
+            self.locked_ids.add(entity_id)
+        else:
+            self.locked_ids.discard(entity_id)
+
+    def sanitize(self, document: SceneDocument) -> None:
+        valid = {entity.entity_id for entity in document.entities}
+        self.hidden_ids.intersection_update(valid)
+        self.locked_ids.intersection_update(valid)
+        if self.selected_id not in valid:
+            self.selected_id = None
+
+
 class CommandHistory:
     def __init__(self) -> None:
-        self._commands: list[MoveEntityCommand] = []
+        self._commands: list[EditCommand] = []
         self._index = 0
 
     @property
@@ -53,7 +126,7 @@ class CommandHistory:
     def length(self) -> int:
         return len(self._commands)
 
-    def push(self, command: MoveEntityCommand, document: SceneDocument) -> SceneDocument:
+    def push(self, command: EditCommand, document: SceneDocument) -> SceneDocument:
         if command.is_noop:
             return document
         self._commands = self._commands[: self._index]
@@ -76,10 +149,16 @@ class CommandHistory:
 
 
 class WorkingDocument:
-    def __init__(self, document: SceneDocument, *, source_revision_id: str | None = None) -> None:
+    def __init__(
+        self,
+        document: SceneDocument,
+        *,
+        source_revision_id: str | None = None,
+        saved_content_hash: str | None = None,
+    ) -> None:
         self._document = document
         self._source_revision_id = source_revision_id
-        self._saved_hash = scene_content_hash(document)
+        self._saved_hash = saved_content_hash or scene_content_hash(document)
         self._history = CommandHistory()
         self._preview_entity_id: str | None = None
         self._preview_before: Position3 | None = None
@@ -96,6 +175,10 @@ class WorkingDocument:
     @property
     def source_revision_id(self) -> str | None:
         return self._source_revision_id
+
+    @property
+    def saved_content_hash(self) -> str:
+        return self._saved_hash
 
     @property
     def history_length(self) -> int:
@@ -152,6 +235,15 @@ class WorkingDocument:
         command = MoveEntityCommand(entity_id, before, position)
         before_hash = scene_content_hash(self._document)
         self._document = self._history.push(command, self._document)
+        return scene_content_hash(self._document) != before_hash
+
+    def delete_entity(self, entity_id: str) -> bool:
+        if self.has_preview:
+            raise EditStateError('cannot delete an entity while a preview is active')
+        index = next(index for index, entity in enumerate(self._document.entities) if entity.entity_id == entity_id)
+        entity = self._document.entities[index]
+        before_hash = scene_content_hash(self._document)
+        self._document = self._history.push(DeleteEntityCommand(entity=entity, index=index), self._document)
         return scene_content_hash(self._document) != before_hash
 
     def undo(self) -> bool:
