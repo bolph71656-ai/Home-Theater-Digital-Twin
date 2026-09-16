@@ -8,10 +8,11 @@ from typing import Any, Literal
 
 import numpy as np
 import pyvista as pv
-from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
     QDockWidget,
     QDoubleSpinBox,
     QFormLayout,
@@ -34,6 +35,7 @@ from .cad_scene import (
     Quaternion4,
     SceneEntity,
     domain_pose_to_render_matrix,
+    domain_to_render,
     make_f1_scene,
     quaternion_from_euler_deg,
     quaternion_to_euler_deg,
@@ -68,11 +70,12 @@ class NativeEditorWindow(QMainWindow):
         self.gizmo: TranslationWidget3D | RotationWidget3D | None = None
         self.drag_base_position: Position3 | None = None
         self.drag_base_orientation: Quaternion4 | None = None
+        self.drag_rotation_pivot: Position3 | None = None
         self.capture_watch = QTimer(self)
         self.capture_watch.setInterval(40)
         self.capture_watch.timeout.connect(self._check_mouse_capture)
         self.resize(1440, 900)
-        self.setWindowTitle('Home Theater Digital Twin — N20a')
+        self.setWindowTitle('Home Theater Digital Twin — N20b')
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
@@ -87,6 +90,7 @@ class NativeEditorWindow(QMainWindow):
 
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree.itemSelectionChanged.connect(self._tree_selected)
         left = QDockWidget('Scene', self)
         left.setWidget(self.tree)
@@ -237,6 +241,7 @@ class NativeEditorWindow(QMainWindow):
         if record is not None:
             self.view_state = EditorViewState(
                 selected_id=record.selected_id,
+                selected_ids=list(record.selected_ids),
                 hidden_ids=set(record.hidden_ids),
                 locked_ids=set(record.locked_ids),
             )
@@ -255,7 +260,8 @@ class NativeEditorWindow(QMainWindow):
     def _rebuild(self, *, reset_camera: bool = False) -> None:
         if self.working is None:
             return
-        selected = self.view_state.selected_id
+        selected_ids = self.view_state.selection
+        primary_id = self.view_state.selected_id
         self._remove_gizmo()
         self.viewport.clear()
         self.viewport.add_axes()
@@ -289,7 +295,8 @@ class NativeEditorWindow(QMainWindow):
         self.tree.expandAll()
         if reset_camera:
             self._perspective()
-        self._select(selected if selected in self.items else None, cancel_preview=False, persist=False)
+        valid_selected = tuple(entity_id for entity_id in selected_ids if entity_id in self.items)
+        self._set_selection(valid_selected, primary_id=primary_id, cancel_preview=False, persist=False)
         self._update_actions()
 
     def _add_entity(self, parent: QTreeWidgetItem, entity: SceneEntity) -> None:
@@ -324,14 +331,33 @@ class NativeEditorWindow(QMainWindow):
 
     def _picked(self, actor: Any) -> None:
         entity_id = self.actor_ids.get(id(actor))
-        if entity_id and entity_id != self.selected_id:
+        if entity_id is None:
+            return
+        additive = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+        if additive:
+            selected = list(self.view_state.selection)
+            if entity_id in selected:
+                selected.remove(entity_id)
+            else:
+                selected.append(entity_id)
+            primary = entity_id if entity_id in selected else (selected[-1] if selected else None)
+            self._set_selection(tuple(selected), primary_id=primary)
+        else:
             self._select(entity_id)
 
     def _tree_selected(self) -> None:
-        selected = self.tree.selectedItems()
-        entity_id = selected[0].data(0, ROLE) if selected else None
-        if isinstance(entity_id, str):
-            self._select(entity_id)
+        selected_from_tree = [
+            item.data(0, ROLE)
+            for item in self.tree.selectedItems()
+            if isinstance(item.data(0, ROLE), str)
+        ]
+        selected_set = set(selected_from_tree)
+        ordered = [entity_id for entity_id in self.view_state.selection if entity_id in selected_set]
+        ordered.extend(entity_id for entity_id in selected_from_tree if entity_id not in ordered)
+        current = self.tree.currentItem()
+        current_id = current.data(0, ROLE) if current is not None else None
+        primary = current_id if isinstance(current_id, str) and current_id in selected_set else (ordered[-1] if ordered else None)
+        self._set_selection(tuple(ordered), primary_id=primary)
 
     def _select(
         self,
@@ -340,40 +366,75 @@ class NativeEditorWindow(QMainWindow):
         cancel_preview: bool = True,
         persist: bool = True,
     ) -> None:
+        self._set_selection(
+            () if entity_id is None else (entity_id,),
+            primary_id=entity_id,
+            cancel_preview=cancel_preview,
+            persist=persist,
+        )
+
+    def _set_selection(
+        self,
+        entity_ids: tuple[str, ...],
+        *,
+        primary_id: str | None = None,
+        cancel_preview: bool = True,
+        persist: bool = True,
+    ) -> None:
         if cancel_preview and self.working and self.working.has_preview:
             self.cancel_preview()
         self._remove_gizmo()
-        if self.working is not None and entity_id is not None:
-            try:
-                self.working.committed_document.entity(entity_id)
-            except KeyError:
-                entity_id = None
-        self.selected_id = entity_id
-        self.view_state.selected_id = entity_id
+        valid: list[str] = []
+        if self.working is not None:
+            known = {entity.entity_id for entity in self.working.committed_document.entities}
+            valid = [entity_id for entity_id in entity_ids if entity_id in known]
+        self.view_state.set_selection(valid, primary_id=primary_id)
+        self.selected_id = self.view_state.selected_id
         with QSignalBlocker(self.tree):
             self.tree.clearSelection()
-            if entity_id in self.items:
-                self.items[entity_id].setSelected(True)
+            for entity_id in self.view_state.selection:
+                item = self.items.get(entity_id)
+                if item is not None:
+                    item.setSelected(True)
+            primary_item = self.items.get(self.selected_id) if self.selected_id is not None else None
+            if primary_item is not None:
+                self.tree.setCurrentItem(primary_item, 0, QItemSelectionModel.SelectionFlag.NoUpdate)
+        selected_set = set(self.view_state.selection)
         for key, actor in self.actors.items():
-            actor.prop.show_edges = key == entity_id
-            actor.prop.line_width = 3 if key == entity_id else 1
-        self._inspect(entity_id)
-        self._create_gizmo(entity_id)
+            actor.prop.show_edges = key in selected_set
+            actor.prop.line_width = 4 if key == self.selected_id else (2 if key in selected_set else 1)
+        self._inspect(self.selected_id)
+        self._create_gizmo(self.selected_id)
         if persist:
             self._persist_view_state()
         self._update_actions()
         self.viewport.render()
 
+    def _selection_pivot(self) -> Position3 | None:
+        if self.working is None or not self.view_state.selection:
+            return None
+        entities = tuple(self.working.committed_document.entity(entity_id) for entity_id in self.view_state.selection)
+        count = float(len(entities))
+        return Position3(
+            x_m=sum(entity.position.x_m for entity in entities) / count,
+            y_m=sum(entity.position.y_m for entity in entities) / count,
+            z_m=sum(entity.position.z_m for entity in entities) / count,
+        )
+
     def _create_gizmo(self, entity_id: str | None) -> None:
-        if (
-            entity_id is None
-            or self.working is None
-            or self.recovery_candidate is not None
-            or entity_id not in self.actors
-            or self.view_state.is_locked(entity_id)
-        ):
+        if entity_id is None or self.working is None or self.recovery_candidate is not None:
             return
-        entity = self.working.committed_document.entity(entity_id)
+        selection = self.view_state.selection
+        if not selection or entity_id not in selection or entity_id not in self.actors:
+            return
+        if any(self.view_state.is_locked(selected_id) for selected_id in selection):
+            self.statusBar().showMessage('Selection contains a locked object · transform disabled')
+            return
+        entities = tuple(self.working.committed_document.entity(selected_id) for selected_id in selection)
+        pivot = self._selection_pivot()
+        if pivot is None:
+            return
+        origin = domain_to_render(pivot)
         if self.view_state.transform_mode == 'move':
             self.gizmo = TranslationWidget3D(
                 self.viewport,
@@ -381,14 +442,16 @@ class NativeEditorWindow(QMainWindow):
                 interact_callback=self._translation_interact,
                 release_callback=self._translation_release,
                 cancel_callback=self.cancel_preview,
+                origin=origin,
             )
-        elif entity.kind in {'speaker', 'furniture'}:
+        elif all(entity.kind in {'speaker', 'furniture'} for entity in entities):
             self.gizmo = RotationWidget3D(
                 self.viewport,
                 self.actors[entity_id],
                 interact_callback=self._rotation_interact,
                 release_callback=self._rotation_release,
                 cancel_callback=self.cancel_preview,
+                origin=origin,
             )
 
     def _inspect(self, entity_id: str | None, *, use_preview: bool = False) -> None:
@@ -407,6 +470,8 @@ class NativeEditorWindow(QMainWindow):
         states = ['Hidden' if self.view_state.is_hidden(entity_id) else 'Visible']
         if self.view_state.is_locked(entity_id):
             states.append('Locked')
+        if len(self.view_state.selection) > 1:
+            states.append(f'{len(self.view_state.selection)} selected')
         if self.recovery_candidate is not None:
             states.append('Recovery pending')
         self.state_label.setText(' · '.join(states))
@@ -415,7 +480,8 @@ class NativeEditorWindow(QMainWindow):
             if entity.kind == 'speaker' and entity.aim_xyz is None
             else ('known' if entity.kind == 'speaker' else '—')
         )
-        editable = not self.view_state.is_locked(entity_id) and self.recovery_candidate is None
+        selection = self.view_state.selection or (entity_id,)
+        editable = self.recovery_candidate is None and not any(self.view_state.is_locked(selected_id) for selected_id in selection)
         position_values = (entity.position.x_m, entity.position.y_m, entity.position.z_m)
         position_blockers = [QSignalBlocker(field) for field in self.position_fields.values()]
         try:
@@ -430,21 +496,31 @@ class NativeEditorWindow(QMainWindow):
         try:
             for field, value in zip(self.orientation_fields.values(), (yaw, pitch, roll), strict=True):
                 field.setValue(value)
-                field.setEnabled(editable and entity.kind in {'speaker', 'furniture'})
+                field.setEnabled(editable and len(selection) == 1 and entity.kind in {'speaker', 'furniture'})
         finally:
             del orientation_blockers
 
     def _numeric_position_edited(self) -> None:
         if self.selected_id is None or self.working is None or self.working.has_preview:
             return
-        if self.recovery_candidate is not None or self.view_state.is_locked(self.selected_id):
+        selection = self.view_state.selection or (self.selected_id,)
+        if self.recovery_candidate is not None or any(self.view_state.is_locked(entity_id) for entity_id in selection):
             return
         position = Position3(
             x_m=self.position_fields['X'].value(),
             y_m=self.position_fields['Y'].value(),
             z_m=self.position_fields['Z'].value(),
         )
-        if self.working.move_entity(self.selected_id, position):
+        selection = self.view_state.selection or (self.selected_id,)
+        base = self.working.committed_document.entity(self.selected_id).position
+        delta = (position.x_m - base.x_m, position.y_m - base.y_m, position.z_m - base.z_m)
+        if len(selection) == 1:
+            changed = self.working.move_entity(self.selected_id, position)
+        else:
+            self.working.begin_group_move(selection)
+            self.working.preview_group_move(delta)
+            changed = self.working.commit_preview()
+        if changed:
             self._sync_recovery()
             self._rebuild()
         self._set_dirty_status()
@@ -452,7 +528,8 @@ class NativeEditorWindow(QMainWindow):
     def _numeric_orientation_edited(self) -> None:
         if self.selected_id is None or self.working is None or self.working.has_preview:
             return
-        if self.recovery_candidate is not None or self.view_state.is_locked(self.selected_id):
+        selection = self.view_state.selection or (self.selected_id,)
+        if self.recovery_candidate is not None or len(selection) != 1 or self.view_state.is_locked(self.selected_id):
             return
         entity = self.working.committed_document.entity(self.selected_id)
         if entity.kind not in {'speaker', 'furniture'}:
@@ -470,11 +547,14 @@ class NativeEditorWindow(QMainWindow):
     def _translation_interact(self, matrix: np.ndarray) -> None:
         if self.selected_id is None or self.working is None or self.recovery_candidate is not None:
             return
-        if self.view_state.is_locked(self.selected_id) or not isinstance(self.gizmo, TranslationWidget3D):
+        selection = self.view_state.selection or (self.selected_id,)
+        if any(self.view_state.is_locked(entity_id) for entity_id in selection):
+            return
+        if not isinstance(self.gizmo, TranslationWidget3D):
             return
         if not self.working.has_preview:
             self.drag_base_position = self.working.committed_document.entity(self.selected_id).position
-            self.working.begin_move(self.selected_id)
+            self.working.begin_group_move(selection)
             self.capture_watch.start()
         if self.drag_base_position is None:
             return
@@ -482,13 +562,18 @@ class NativeEditorWindow(QMainWindow):
         axis_index = self.gizmo.active_axis_index
         if self.view_state.grid_snap_enabled and axis_index is not None:
             candidate = snap_position_axis(candidate, AXIS_NAMES[axis_index], self.view_state.grid_step_m)
-        display_delta = (
+        delta = (
             candidate.x_m - self.drag_base_position.x_m,
-            -(candidate.y_m - self.drag_base_position.y_m),
+            candidate.y_m - self.drag_base_position.y_m,
             candidate.z_m - self.drag_base_position.z_m,
         )
+        display_delta = (delta[0], -delta[1], delta[2])
         self.gizmo.set_display_delta(display_delta)
-        self.working.preview_move(candidate)
+        for entity_id in selection:
+            actor = self.actors.get(entity_id)
+            if actor is not None and actor is not self.gizmo.actor:
+                actor.user_matrix = self.gizmo.matrix.copy()
+        self.working.preview_group_move(delta)
         self._inspect(self.selected_id, use_preview=True)
 
     def _translation_release(self, matrix: np.ndarray) -> None:
@@ -505,24 +590,32 @@ class NativeEditorWindow(QMainWindow):
     def _rotation_interact(self, axis_index: int, angle_deg: float) -> None:
         if self.selected_id is None or self.working is None or self.recovery_candidate is not None:
             return
-        if self.view_state.is_locked(self.selected_id) or not isinstance(self.gizmo, RotationWidget3D):
+        selection = self.view_state.selection or (self.selected_id,)
+        if any(self.view_state.is_locked(entity_id) for entity_id in selection):
+            return
+        if not isinstance(self.gizmo, RotationWidget3D):
             return
         if not self.working.has_preview:
-            self.drag_base_orientation = self.working.committed_document.entity(self.selected_id).orientation
-            self.working.begin_rotate(self.selected_id)
+            self.drag_rotation_pivot = self._selection_pivot()
+            if self.drag_rotation_pivot is None:
+                return
+            self.working.begin_group_rotate(selection)
             self.capture_watch.start()
-        if self.drag_base_orientation is None:
+        if self.drag_rotation_pivot is None:
             return
         effective_angle = float(angle_deg)
         if self.view_state.angle_snap_enabled:
             effective_angle = snap_angle_deg(effective_angle, self.view_state.angle_step_deg)
         self.gizmo.set_display_angle(effective_angle)
-        orientation = rotate_orientation_world(
-            self.drag_base_orientation,
+        for entity_id in selection:
+            actor = self.actors.get(entity_id)
+            if actor is not None and actor is not self.gizmo.actor:
+                actor.user_matrix = self.gizmo.matrix.copy()
+        self.working.preview_group_rotate(
             AXIS_NAMES[axis_index],
             effective_angle,
+            self.drag_rotation_pivot,
         )
-        self.working.preview_rotate(orientation)
         self._inspect(self.selected_id, use_preview=True)
 
     def _rotation_release(self, axis_index: int, angle_deg: float) -> None:
@@ -532,6 +625,7 @@ class NativeEditorWindow(QMainWindow):
             return
         self.working.commit_preview()
         self.drag_base_orientation = None
+        self.drag_rotation_pivot = None
         self._sync_recovery()
         self._rebuild()
         self._set_dirty_status()
@@ -546,6 +640,7 @@ class NativeEditorWindow(QMainWindow):
             self.working.cancel_preview()
         self.drag_base_position = None
         self.drag_base_orientation = None
+        self.drag_rotation_pivot = None
         if self.gizmo:
             self.gizmo.cancel()
         if had_preview:
@@ -628,8 +723,9 @@ class NativeEditorWindow(QMainWindow):
             return
         entity_id = self.selected_id
         if self.working.delete_entity(entity_id):
-            self.selected_id = None
-            self.view_state.selected_id = None
+            remaining = [selected for selected in self.view_state.selection if selected != entity_id]
+            self.view_state.set_selection(remaining)
+            self.selected_id = self.view_state.selected_id
             self._sync_recovery()
             self._persist_view_state()
             self._rebuild()
@@ -728,6 +824,7 @@ class NativeEditorWindow(QMainWindow):
             self.repository.save_view_state(
                 self.document_id,
                 selected_id=self.view_state.selected_id,
+                selected_ids=self.view_state.selection,
                 hidden_ids=self.view_state.hidden_ids,
                 locked_ids=self.view_state.locked_ids,
             )

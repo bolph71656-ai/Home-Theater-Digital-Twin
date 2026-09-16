@@ -46,6 +46,7 @@ class TranslationWidget3D:
         interact_callback: MatrixCallback | None = None,
         release_callback: MatrixCallback | None = None,
         cancel_callback: CancelCallback | None = None,
+        origin: tuple[float, float, float] | np.ndarray | None = None,
     ) -> None:
         self.plotter = plotter
         self.actor = actor
@@ -54,7 +55,7 @@ class TranslationWidget3D:
         self.cancel_callback = cancel_callback
         # Polar vectors use C=diag(1,-1,1): domain +Y is render -Y.
         self.axes = np.array(((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)))
-        self.origin = np.asarray(actor.center, dtype=float)
+        self.origin = np.asarray(actor.center if origin is None else origin, dtype=float)
         self.actor_length = max(float(actor.GetLength()), 0.25)
         self.handles: list[pv.Actor] = []
         self.selected: pv.Actor | None = None
@@ -184,13 +185,14 @@ class RotationWidget3D:
         interact_callback: RotationCallback | None = None,
         release_callback: RotationCallback | None = None,
         cancel_callback: CancelCallback | None = None,
+        origin: tuple[float, float, float] | np.ndarray | None = None,
     ) -> None:
         self.plotter = plotter
         self.actor = actor
         self.interact_callback = interact_callback
         self.release_callback = release_callback
         self.cancel_callback = cancel_callback
-        self.origin = np.asarray(actor.center, dtype=float)
+        self.origin = np.asarray(actor.center if origin is None else origin, dtype=float)
         self.actor_length = max(float(actor.GetLength()), 0.25)
         self.radius = self.actor_length * 0.82
         # Axial vectors under reflection use det(C)*C = -C. These normals make a
