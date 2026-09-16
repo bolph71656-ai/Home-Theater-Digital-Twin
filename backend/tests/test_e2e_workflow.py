@@ -43,6 +43,14 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
         assert project_response.status_code == 201, project_response.text
         project = project_response.json()
 
+        session_response = client.post(f"/api/projects/{project['id']}/sessions", json={
+            'purpose': 'Synthetic baseline repeatability and placement A/B',
+            'started_at': '2026-09-16T10:00:00+09:00',
+            'notes': 'M10 schema v3 fixture',
+        })
+        assert session_response.status_code == 201, session_response.text
+        session = session_response.json()
+
         r1_response = client.post(f"/api/projects/{project['id']}/contexts", json=_context(fl_x=1.0))
         assert r1_response.status_code == 201, r1_response.text
         r1 = r1_response.json()
@@ -53,6 +61,7 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
                 'filename': filename,
                 'raw_base64': _b64(raw),
                 'context_id': context_id,
+                'session_id': session['id'],
                 'channel_role': 'front_left',
                 'evidence_type': 'measured',
                 'source_speaker_ids': ['FL'],
@@ -64,6 +73,7 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
                 'repeat_group': repeat_group,
             })
             assert response.status_code == 201, response.text
+            assert response.json()['session_id'] == session['id']
             return response.json()
 
         baseline_raw = _fr((70.0, 71.0, 73.0, 71.0, 70.0))
@@ -109,8 +119,14 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
         assert comparison_response.status_code == 201, comparison_response.text
         comparison = comparison_response.json()
         assert comparison['result']['algorithm_version'] == 'fr-compare-1'
+        assert comparison['result']['measurement_a']['session_id'] == session['id']
+        assert comparison['result']['measurement_b']['session_id'] == session['id']
         assert any(item['path'].startswith('speakers.FL.position') for item in comparison['result']['intended_changes'])
         assert comparison['result']['confounders'] == []
+
+        session_rows = client.get(f"/api/projects/{project['id']}/sessions").json()
+        assert session_rows[0]['id'] == session['id']
+        assert session_rows[0]['measurement_count'] == 3
 
         r1_after = client.get(f"/api/projects/{project['id']}/contexts").json()
         r1_saved = next(item for item in r1_after if item['id'] == r1['id'])
@@ -120,6 +136,7 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
         assert report_response.status_code == 200
         assert baseline['dataset_id'] in report_response.text
         assert moved['dataset_id'] in report_response.text
+        assert session['id'] in report_response.text
         assert '<svg' in report_response.text
 
         backup_response = client.get('/api/backup')
@@ -131,12 +148,15 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
     with TestClient(create_app(data_root)) as restarted:
         projects = restarted.get('/api/projects').json()
         assert [item['id'] for item in projects] == [project['id']]
+        restarted_sessions = restarted.get(f"/api/projects/{project['id']}/sessions").json()
+        assert restarted_sessions[0]['id'] == session['id']
+        assert restarted_sessions[0]['measurement_count'] == 3
         saved_comparisons = restarted.get(f"/api/projects/{project['id']}/comparisons").json()
         assert saved_comparisons[0]['id'] == comparison['id']
         assert saved_comparisons[0]['result']['shape_rms_db'] == comparison['result']['shape_rms_db']
         assert restarted.get('/api/integrity').json() == {'status': 'ok', 'problems': []}
 
-    # Restore the backup into a separate data directory, then verify history and raw attachments.
+    # Restore the backup into a separate data directory, then verify history, session grouping and raw attachments.
     restored_root = tmp_path / 'restored'
     with TestClient(create_app(restored_root)) as restored:
         restore_response = restored.post('/api/restore', json={'archive_base64': _b64(backup_bytes)})
@@ -145,12 +165,16 @@ def test_m10_synthetic_workflow_survives_restart_backup_and_restore(tmp_path: Pa
 
         restored_projects = restored.get('/api/projects').json()
         assert restored_projects[0]['id'] == project['id']
+        restored_sessions = restored.get(f"/api/projects/{project['id']}/sessions").json()
+        assert restored_sessions[0]['id'] == session['id']
+        assert restored_sessions[0]['measurement_count'] == 3
         restored_contexts = restored.get(f"/api/projects/{project['id']}/contexts").json()
         assert {item['revision_number'] for item in restored_contexts} == {1, 2}
         restored_measurements = restored.get(f"/api/projects/{project['id']}/measurements").json()
         assert {item['dataset_id'] for item in restored_measurements} == {
             baseline['dataset_id'], repeat['dataset_id'], moved['dataset_id']
         }
+        assert {item['session_id'] for item in restored_measurements} == {session['id']}
         restored_attachments = restored.get(f"/api/projects/{project['id']}/attachments").json()
         restored_attachment = next(item for item in restored_attachments if item['id'] == attachment['id'])
         assert restored_attachment['asset_sha256'] == attachment['asset_sha256']
