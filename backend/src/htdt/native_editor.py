@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from pyvistaqt import QtInteractor
-from vtkmodules.vtkRenderingCore import vtkCellPicker
+from vtkmodules.vtkRenderingCore import vtkPicker
 
 from .cad_document import EditorViewState, WorkingDocument
 from .cad_gizmo import RotationWidget3D, TranslationWidget3D
@@ -99,7 +99,7 @@ class NativeEditorWindow(QMainWindow):
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
-        self.scene_picker = vtkCellPicker()
+        self.scene_picker = vtkPicker()
         self.scene_picker.PickFromListOn()
         self.scene_picker.SetTolerance(0.005)
         self.scene_pick_observer: int | None = self.viewport.iren.interactor.AddObserver(
@@ -560,8 +560,9 @@ class NativeEditorWindow(QMainWindow):
         return selected
 
     def _schedule_preview_inspector(self) -> None:
-        if not self.preview_inspect_timer.isActive():
-            self.preview_inspect_timer.start()
+        # The committed Inspector is refreshed on release. Avoid Qt form updates in
+        # the mouse-move hot path so dense F4 snapping stays within the frame budget.
+        return
 
     def _refresh_preview_inspector(self) -> None:
         if self.working is not None and self.working.has_preview and self.selected_id is not None:
