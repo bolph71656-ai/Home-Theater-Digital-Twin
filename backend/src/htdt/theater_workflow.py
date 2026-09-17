@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QToolBar
 from .cad_document import EditStateError, EditorViewState
 from .cad_objects import TheaterObjectError, speaker_aim_replacements
 from .cad_repository import SceneRepository
-from .cad_scene import F1_DOCUMENT_ID, make_empty_scene, make_f1_scene
+from .cad_scene import F1_DOCUMENT_ID, Position3, make_empty_scene, make_f1_scene
 from .theater_document import TheaterWorkingDocument
 from .theater_editor import TheaterEditorWindow
 
@@ -87,6 +87,19 @@ class TheaterWorkflowWindow(TheaterEditorWindow):
             self.statusBar().showMessage(
                 '部屋を作成しました · オブジェクトを追加できます · 形状調整は「部屋編集」から行えます'
             )
+
+    def _object_position(self, kind: str, size=None) -> Position3:
+        if kind != 'screen':
+            return super()._object_position(kind, size)
+        room = self._current_room()
+        if room is None:
+            return super()._object_position(kind, size)
+        min_x, min_y, max_x, max_y = room.bounds_m
+        center_x = min_x + (max_x - min_x) * 0.5
+        depth = max_y - min_y
+        y_m = min_y + min(depth * 0.04, 0.15)
+        z_m = min(max(room.height_m * 0.55, 0.5), max(room.height_m - 0.1, 0.1))
+        return Position3(x_m=center_x, y_m=y_m, z_m=z_m)
 
     def _aim_target_id(self) -> str | None:
         if self.working is None:
