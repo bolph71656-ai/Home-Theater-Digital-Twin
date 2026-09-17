@@ -207,6 +207,38 @@ def run_a13_latched(app: QApplication, root: Path) -> bool:
         base.pump(app, 0.08)
 
 
+def run_a14_fast_completion_tolerant(app: QApplication, root: Path) -> bool:
+    """Run base A14 without requiring a fast worker token to remain observable."""
+
+    original_start_prediction = base.start_prediction
+
+    def tolerant_start_prediction(window, qt_app):
+        if not base.select_receiver(window, 'point-mlp'):
+            return None
+        if not base.click_prediction_button(window, '矩形幾何予測を実行', qt_app):
+            return None
+        token_id = window._current_prediction_token_id
+        if token_id is not None:
+            return token_id
+        base.pump(qt_app, 0.05)
+        token_id = window._current_prediction_token_id
+        if token_id is not None:
+            return token_id
+        # Unsupported geometry can finish and clear the token before the harness
+        # observes it. Base A14 subsequently requires the persisted two-result
+        # unsupported contract, so this sentinel cannot turn a failed run into PASS.
+        if not window._prediction_tasks:
+            print('A14_FAST_COMPLETION_OBSERVED', True, flush=True)
+            return 'completed-before-token-observation'
+        return next(iter(window._prediction_tasks), 'prediction-started')
+
+    base.start_prediction = tolerant_start_prediction
+    try:
+        return base.run_a14(app, root)
+    finally:
+        base.start_prediction = original_start_prediction
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Run deterministic N70 A13/A14 Windows acceptance.')
     parser.add_argument('--keep-data', type=Path, default=None)
@@ -217,12 +249,12 @@ def main() -> int:
         base_dir = args.keep_data
         base_dir.mkdir(parents=True, exist_ok=True)
         a13 = run_a13_latched(app, base_dir / 'a13')
-        a14 = base.run_a14(app, base_dir / 'a14')
+        a14 = run_a14_fast_completion_tolerant(app, base_dir / 'a14')
     else:
         with tempfile.TemporaryDirectory(prefix='htdt-n70-gate-', ignore_cleanup_errors=True) as temp:
             base_dir = Path(temp)
             a13 = run_a13_latched(app, base_dir / 'a13')
-            a14 = base.run_a14(app, base_dir / 'a14')
+            a14 = run_a14_fast_completion_tolerant(app, base_dir / 'a14')
 
     print('A13_N70_RESULT', 'PASS' if a13 else 'FAIL', flush=True)
     print('A14_RESULT', 'PASS' if a14 else 'FAIL', flush=True)

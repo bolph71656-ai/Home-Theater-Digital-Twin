@@ -64,18 +64,16 @@ Commit `332ec93803b3bec981a605ca19f483051d02a86c` added the native prediction wo
 
 CI #307 / run `35231396558` passed completely on Windows after the N70a workspace integration, including backend tests, native launcher import, existing acceptance-harness compile, PowerShell syntax, frontend build and smoke test.
 
-Commit `32cc06be125a054416df4c6ebf9c0bf12560f7df` added `scripts/validate_n70_windows.py` for owned-Windows A13/A14 acceptance preparation. CI #308 / run `35231929534` passed completely, including compile of the new harness.
+Commit `32cc06be125a054416df4c6ebf9c0bf12560f7df` added the original owned-Windows A13/A14 acceptance harness. CI #308 / run `35231929534` passed completely.
 
 ## A13/A14 acceptance preparation
 
-`scripts/validate_n70_windows.py` exercises the production prediction workspace with real mouse/tab/button operations and controlled worker timing:
+The Windows acceptance exercises the production prediction workspace with real mouse/tab/button operations and controlled worker timing:
 
 - A13: start prediction, edit/save scene while job is pending, verify stale completion is not saved/applied;
 - A13: deterministic explicit cancel, delayed completion, document-ID switch and close-with-worker checks;
 - A14: run the rectangular-only model on the 8-vertex L-room fixture and verify `unsupported`, no payload, no silent rectangular approximation and no prediction overlay;
 - A14: verify scalar-field visualization remains gated while no scalar field exists.
-
-The harness is compile-only in CI. RDC remains reserved for the final owned-Windows acceptance after the remaining N70 implementation slices are green.
 
 ## F5 bulk analysis-marker slice
 
@@ -89,34 +87,37 @@ N70 uses a reusable bulk marker primitive instead of tying candidate-cloud rende
 
 The 64^3 scalar-grid part of F5 remains gated. N70a has no validated model that produces a scalar SPL field, so the product continues to disable heatmap/slice/volume controls instead of generating synthetic field data and treating it as prediction evidence.
 
-Product commit `76c21eed7d7efcff23905e8af977854669df2752` contains the bulk-marker primitive and benchmark harness. CI #309 / run `35270706491` passed completely on Windows, including the new focused marker tests and benchmark-script compile. This SHA is frozen as the N70 product-code acceptance target.
+Product-code commit `76c21eed7d7efcff23905e8af977854669df2752` contains the bulk-marker primitive and benchmark harness. CI #309 / run `35270706491` passed completely on Windows, including the new focused marker tests and benchmark-script compile. This SHA remains the last N70 product-code change.
 
-## Owned-Windows gate preparation
+## Owned-Windows gate preparation and diagnostics
 
 Commit `bdd7267630d82b4cd58821a65c83b32fb17a7359` added `run-n70-hardware-gate.ps1`. CI #310 / run `35271098365` passed completely, including PowerShell syntax and N70 gate preflight.
 
-The runner:
+The runner refuses a dirty working tree, records the hardware/software environment, executes A13/A14 and F5, cleans residual processes, and restores the exact original branch/detached SHA with a clean post-status even after failure.
 
-- refuses a dirty working tree;
-- fetches the N70 branch and rejects unexpected product changes after the pinned SHA;
-- records OS/build, CPU, RAM, active GPU/driver/display, AppliedDPI and Python/PySide6/PyVista/VTK/PyQtGraph versions;
-- executes N70 A13/A14 and F5 in one gate;
-- cleans residual harness processes between phases;
-- restores the exact original branch/detached SHA and requires a clean post-status even after failure.
+### First owned-Windows gate
 
-### First owned-Windows gate — diagnostic result
-
-The first gate checked out product-code SHA `76c21eed7d7efcff23905e8af977854669df2752` on the owned Windows machine and restored the original detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b` with `N70_POST_STATUS_COUNT=0`.
+Gate checkout: product-code SHA `76c21eed7d7efcff23905e8af977854669df2752`.
 
 - A13/A14 process: Windows native access violation `-1073741819` (`0xC0000005`) immediately after `A13_N70_PRODUCT_COMPOSITION True`.
 - F5: PASS.
 - F5 structure: 50 editable furniture objects, 10,000 analysis markers, marker actor delta `1`, non-pickable `True`.
 - F5 first render: `11.051 ms`.
 - F5 orbit: p50 `22.596 ms`, p95 `29.805 ms`, max `58.014 ms`.
+- Restored original detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`; post-status count `0`.
 
-The A13 stale case used a fixed `0.80 s` delayed worker. At 200% DPI, real tab/mouse/VTK interaction can consume enough time for the prediction to complete and rebuild overlays before the drag/save step, creating a timing-dependent VTK interaction race. This is an acceptance-harness defect rather than evidence of a failed stale-result guard.
+The A13 stale case used a fixed `0.80 s` delayed worker. At 200% DPI, real tab/mouse/VTK interaction can consume enough time for the prediction to complete and rebuild overlays before the drag/save step, creating a timing-dependent VTK interaction race. The deterministic wrapper introduced at `7ae853f9d44ba55614c2287c42326e5177634daa` holds stale/document workers until the intended state transition and holds cancel completion until cancellation is registered. CI #311 passed completely on that gate-only change.
 
-The deterministic gate harness now preserves the original harness as `validate_n70_windows_base.py` and uses `validate_n70_windows.py` as a latch-controlled wrapper. The stale and document-switch workers are not released until the required user/state transition is complete; the cancel worker is not released until cancellation is registered. Product code remains unchanged from `76c21eed7d7efcff23905e8af977854669df2752`.
+### Second owned-Windows gate
+
+Gate checkout: `7ae853f9d44ba55614c2287c42326e5177634daa`; product code still ends at `76c21eed7d7efcff23905e8af977854669df2752`.
+
+- A13: PASS for product composition, held stale worker, real mouse selection/drag/save, stale discard, UI responsiveness, cancel discard, document-switch discard, and clean close with zero workers.
+- A14: failed only at the harness prerequisite `A14_RUN_BUTTON False` before contract evaluation.
+- F5: PASS again; first render `10.451 ms`, orbit p50 `23.310 ms`, p95 `27.589 ms`, max `54.653 ms`.
+- Restored original detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`; post-status count `0`.
+
+A14 uses the intentionally unsupported L-room path, which completes quickly enough that `_current_prediction_token_id` may be set and cleared before the old helper observes it. The harness now treats a successful real button click followed by an already-empty task table as a possible fast completion, then relies on A14's actual persisted-result assertions (two results, one run, `unsupported`, no modes/reflections, no approximation rule, 8 polygon vertices, no overlay, scalar control disabled). A missing/failed prediction still cannot pass those assertions. Product code is unchanged.
 
 ## Planned focused verification
 
