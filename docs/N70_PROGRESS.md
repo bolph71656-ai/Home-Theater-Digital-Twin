@@ -5,133 +5,117 @@ PR: #64
 Branch: `feat/n70-prediction-visualization`  
 Base main: `86354dd58200738b33ae27261a5308e3551bcbac`
 
-## 2026-09-17 — start
+## Scope and evidence boundary
 
-- N60 merged as `f1694eb879a250835efa026ac5dacdec18362788`; Issue #61 closed `completed`.
-- Post-merge status/acceptance docs were synchronized on main as `86354dd58200738b33ae27261a5308e3551bcbac`.
-- Created Issue #63 and branch `feat/n70-prediction-visualization` from that main head.
-- Re-read `IMPLEMENTATION_ROADMAP.md`, `CAD_EDITOR_ACCEPTANCE.md`, `PLACEMENT_OPTIMIZATION_ROADMAP.md`, `DATA_AND_ANALYSIS.md` and existing acoustic code before implementation.
-- Confirmed A14 requires non-rectangular rooms to distinguish unsupported vs explicit rectangular approximation; no silent solver substitution is allowed.
-- Confirmed F5 is 10,000 analysis markers plus a later 64^3 scalar grid, with measured performance budget rather than a guessed target.
+N70 adds the native prediction/visualization workspace without promoting geometry-only calculations to validated acoustic FR/SPL prediction.
 
-## Existing code finding
+The existing rectangular-room algorithms are used only for what they actually compute:
 
-`backend/src/htdt/acoustics.py` already contains useful pure geometry algorithms:
+- rectangular room-mode frequency/class candidates;
+- first-order image-source reflection geometry;
+- direct/reflection path visualization.
 
-- rectangular room modes;
-- first-order image-source reflection points/path lengths;
-- explicit `predicted_geometry_candidate` classification and assumptions.
+They do not model reflection amplitude/phase, material absorption, loudspeaker directivity, modal damping/amplitude, or a spatial SPL field. Therefore heatmap/slice/volume controls stay disabled until a real model produces a scalar field.
 
-The implementation deliberately does not model reflection amplitude/phase, absorption, speaker directivity, modal damping/amplitude, or a spatial SPL field. Therefore N70 must not render these outputs as a validated FR/heatmap.
+## Product implementation
 
-## N70a implementation decision
+`305a05c238e0a01b4faecbda6e3c826d8cbffde5`:
 
-First build a native immutable prediction authority and geometry visualization layer:
+- immutable `CadPredictionResult` bound to exact native SceneRevision/content hash;
+- canonical model ID/version/parameters/input snapshot and SHA-256 identity;
+- prediction repository in the native CAD database;
+- exact axis-aligned rectangular compatibility detection;
+- explicit `unsupported` result for non-rectangular polygon rooms;
+- no silent bounding-box/rectangular approximation;
+- prediction-specific stale/cancel/document/constraint job guard.
 
-1. bind each prediction run to exact native SceneRevision/content hash plus model ID/version/parameters;
-2. use a native adapter to reuse the existing Qt-free room-mode/reflection geometry;
-3. reject non-rectangular rooms for the exact rectangular model;
-4. keep any future rectangular approximation explicit and persisted;
-5. add prediction-specific stale/cancel tokens rather than changing accepted N60 measurement-job semantics;
-6. add `PredictionWorkspaceWindow` over N60 with a `予測` tab and non-pickable overlays;
-7. enable heatmap/slice/volume only when a real model result contains a scalar field.
+`332ec93803b3bec981a605ca19f483051d02a86c`:
 
-Detailed contract: [N70 design](N70_DESIGN.md).
+- Japanese `予測` dock integrated into the native right-side CAD tab stack;
+- saved prediction history and model/input/revision metadata;
+- async worker outside the GUI thread;
+- stale/cancel/document mismatch rejection before persistence/application;
+- direct/reflection overlays as non-pickable analysis actors;
+- scalar-field UI gated by actual result payload;
+- native launcher composes `PredictionWorkspaceWindow` over N60.
 
-## N70a implemented so far
+CI #307 / run `35231396558` passed completely.
 
-Commit `305a05c238e0a01b4faecbda6e3c826d8cbffde5` added the immutable native prediction authority:
+`32cc06be125a054416df4c6ebf9c0bf12560f7df` added the original A13/A14 owned-Windows harness. CI #308 / run `35231929534` passed.
 
-- `CadPredictionResult` with exact SceneRevision/content hash, model ID/version, canonical parameters, canonical input snapshot and SHA-256 input hash;
-- separate SQLite prediction repository in the existing native CAD database;
-- exact axis-aligned rectangle detection including shifted polygon rectangles;
-- explicit `unsupported` results for non-rectangular polygon rooms with no silent rectangular approximation;
-- world-coordinate first-order reflection identities and room-mode candidates;
-- prediction-specific stale/cancel/document/constraint guard;
-- focused repository, geometry compatibility and guard tests.
+`76c21eed7d7efcff23905e8af977854669df2752` is the **last N70 product-code change**. It adds:
 
-Commit `332ec93803b3bec981a605ca19f483051d02a86c` added the native prediction workspace:
+- reusable bulk analysis-marker rendering;
+- one `PyVista.PolyData` / one mesh actor for many non-editable markers;
+- non-pickable marker cloud;
+- focused 10,000-marker structural test;
+- F5 owned-Windows benchmark with 50 editable objects + 10,000 markers.
 
-- canonical request-identity helper used before async submission and checked again against completed model output;
-- Japanese `予測` dock integrated into the single right-side CAD tab stack;
-- saved prediction history and model/assumption/compatibility/input-revision display;
-- GUI-thread-free prediction task with cancel/stale/document/constraint rejection before persistence/application;
-- saved predictions are only overlaid when the current scene content hash matches the source input revision;
-- direct path + first-order reflection path/point overlays are analysis actors and non-pickable;
-- room-mode frequencies are listed as predicted geometry only, not rendered as a fake spatial field;
-- heatmap/slice/volume control remains disabled until a real scalar-field result exists;
-- native launcher now composes `PredictionWorkspaceWindow` while preserving N40-N60 inheritance.
+CI #309 / run `35270706491` passed completely.
 
-CI #307 / run `35231396558` passed completely on Windows after the N70a workspace integration, including backend tests, native launcher import, existing acceptance-harness compile, PowerShell syntax, frontend build and smoke test.
+## Hardware-gate preparation
 
-Commit `32cc06be125a054416df4c6ebf9c0bf12560f7df` added the original owned-Windows A13/A14 acceptance harness. CI #308 / run `35231929534` passed completely.
+`bdd7267630d82b4cd58821a65c83b32fb17a7359` added `run-n70-hardware-gate.ps1`. It refuses dirty state, records environment, executes A13/A14/F5, cleans residual processes, and restores the exact pre-gate checkout. CI #310 / run `35271098365` passed including gate preflight.
 
-## A13/A14 acceptance preparation
+The first owned-Windows run exposed a timing-dependent acceptance-harness race in the A13 fixed-delay worker. F5 already passed with 10,000 markers in one actor. The local checkout was restored cleanly.
 
-The Windows acceptance exercises the production prediction workspace with real mouse/tab/button operations and controlled worker timing:
+`7ae853f9d44ba55614c2287c42326e5177634daa` changed only the acceptance harness to deterministic worker latches. CI #311 passed. The second owned-Windows run then passed all A13 stale/cancel/document/close assertions; A14 failed only because the unsupported calculation completed and cleared its transient token before the harness observed it. F5 passed again.
 
-- A13: start prediction, edit/save scene while job is pending, verify stale completion is not saved/applied;
-- A13: deterministic explicit cancel, delayed completion, document-ID switch and close-with-worker checks;
-- A14: run the rectangular-only model on the 8-vertex L-room fixture and verify `unsupported`, no payload, no silent rectangular approximation and no prediction overlay;
-- A14: verify scalar-field visualization remains gated while no scalar field exists.
+`2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93` made the A14 harness tolerate that legitimate fast completion only when the persisted unsupported-result assertions subsequently pass. Product runtime code remained unchanged. CI #312 / run `35272332747` passed completely.
 
-## F5 bulk analysis-marker slice
+## Final owned-Windows acceptance — PASS
 
-N70 uses a reusable bulk marker primitive instead of tying candidate-cloud rendering to legacy O10 Context authority:
+Detailed record: [N70 Windows acceptance](N70_ACCEPTANCE_2026-09-18.md).
 
-- `analysis_marker_polydata()` converts arbitrary native-domain `N×3` points to one render-space `PyVista.PolyData`;
-- `render_analysis_marker_cloud()` submits that cloud through exactly one `add_mesh()` call and marks the actor non-pickable;
-- the focused test builds 10,000 points and fixes the structural invariant that the renderer uses one mesh actor rather than one actor per marker;
-- `scripts/benchmark_n70_f5_windows.py` builds F5 with 50 editable furniture objects plus 10,000 analysis markers, records first-render time and 40-frame orbit p50/p95/max, and checks that the marker cloud adds exactly one non-pickable actor;
-- the first owned-PC run is deliberately measure-only. The F5 regression budget will be derived from the observed hardware result rather than invented before measurement.
+Environment:
 
-The 64^3 scalar-grid part of F5 remains gated. N70a has no validated model that produces a scalar SPL field, so the product continues to disable heatmap/slice/volume controls instead of generating synthetic field data and treating it as prediction evidence.
+- Windows 11 Pro build 26200
+- Ryzen 7 8845HS / Radeon 780M / 31.31 GiB
+- Radeon driver 32.0.13032.11
+- 2880×1800 / AppliedDPI 192 (200%)
+- Python 3.12.10
+- PySide6 6.11.2
+- PyVista 0.49.0
+- VTK 9.7.0
+- PyQtGraph 0.14.0
 
-Product-code commit `76c21eed7d7efcff23905e8af977854669df2752` contains the bulk-marker primitive and benchmark harness. CI #309 / run `35270706491` passed completely on Windows, including the new focused marker tests and benchmark-script compile. This SHA remains the last N70 product-code change.
+A13 final result: **PASS**
 
-## Owned-Windows gate preparation and diagnostics
+- real mouse scene select/drag/save while prediction worker is held;
+- edit makes pending result stale;
+- stale result not persisted/applied;
+- UI remains responsive;
+- explicit cancel registered and cancelled result not applied;
+- document-switch result not applied;
+- clean close leaves zero live worker threads.
 
-Commit `bdd7267630d82b4cd58821a65c83b32fb17a7359` added `run-n70-hardware-gate.ps1`. CI #310 / run `35271098365` passed completely, including PowerShell syntax and N70 gate preflight.
+A14 final result: **PASS**
 
-The runner refuses a dirty working tree, records the hardware/software environment, executes A13/A14 and F5, cleans residual processes, and restores the exact original branch/detached SHA with a clean post-status even after failure.
+- 8-vertex L-room remains exact polygon authority;
+- rectangular-only model persists `unsupported`;
+- no silent rectangular approximation rule;
+- no mode/reflection payload and no prediction overlay;
+- scalar-field controls remain disabled.
 
-### First owned-Windows gate
+F5 final result: **PASS**
 
-Gate checkout: product-code SHA `76c21eed7d7efcff23905e8af977854669df2752`.
+- 50 editable furniture objects;
+- 10,000 analysis markers;
+- marker actor delta `1`;
+- marker actor non-pickable;
+- first render `11.406 ms`;
+- orbit p50 `22.993 ms` / p95 `27.963 ms` / max `31.205 ms`.
 
-- A13/A14 process: Windows native access violation `-1073741819` (`0xC0000005`) immediately after `A13_N70_PRODUCT_COMPOSITION True`.
-- F5: PASS.
-- F5 structure: 50 editable furniture objects, 10,000 analysis markers, marker actor delta `1`, non-pickable `True`.
-- F5 first render: `11.051 ms`.
-- F5 orbit: p50 `22.596 ms`, p95 `29.805 ms`, max `58.014 ms`.
-- Restored original detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`; post-status count `0`.
+The 64^3 scalar-grid fixture remains conditional on a validated model producing a scalar field. N70 deliberately does not generate synthetic field data just to satisfy a visualization path.
 
-The A13 stale case used a fixed `0.80 s` delayed worker. At 200% DPI, real tab/mouse/VTK interaction can consume enough time for the prediction to complete and rebuild overlays before the drag/save step, creating a timing-dependent VTK interaction race. The deterministic wrapper introduced at `7ae853f9d44ba55614c2287c42326e5177634daa` holds stale/document workers until the intended state transition and holds cancel completion until cancellation is registered. CI #311 passed completely on that gate-only change.
+Gate cleanup:
 
-### Second owned-Windows gate
+- restored exact pre-gate detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`;
+- post-status count `0`;
+- `N70_HARDWARE_GATE_RESULT=PASS`.
 
-Gate checkout: `7ae853f9d44ba55614c2287c42326e5177634daa`; product code still ends at `76c21eed7d7efcff23905e8af977854669df2752`.
+## N70 status
 
-- A13: PASS for product composition, held stale worker, real mouse selection/drag/save, stale discard, UI responsiveness, cancel discard, document-switch discard, and clean close with zero workers.
-- A14: failed only at the harness prerequisite `A14_RUN_BUTTON False` before contract evaluation.
-- F5: PASS again; first render `10.451 ms`, orbit p50 `23.310 ms`, p95 `27.589 ms`, max `54.653 ms`.
-- Restored original detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`; post-status count `0`.
+**N70 technical acceptance complete.**
 
-A14 uses the intentionally unsupported L-room path, which completes quickly enough that `_current_prediction_token_id` may be set and cleared before the old helper observes it. The harness now treats a successful real button click followed by an already-empty task table as a possible fast completion, then relies on A14's actual persisted-result assertions (two results, one run, `unsupported`, no modes/reflections, no approximation rule, 8 polygon vertices, no overlay, scalar control disabled). A missing/failed prediction still cannot pass those assertions. Product code is unchanged.
-
-## Planned focused verification
-
-- native SceneRevision/model/input immutable binding;
-- result persistence round-trip;
-- exact rectangular-room detection and non-rectangular rejection;
-- acoustic-reference source/receiver mapping;
-- underlying geometry algorithm outputs preserved without semantic promotion;
-- prediction stale/cancel/document-switch guard;
-- measured vs predicted UI semantics;
-- reflection overlay identity and non-pickability;
-- deterministic A13/A14 real-Windows acceptance;
-- F5 10,000-marker one-actor invariant in CI and performance measurement on owned Windows.
-
-## External model decision boundary
-
-N70a does not require choosing a new external solver. REW Room Simulator / pyroomacoustics adoption is a later N70b decision boundary and requires S01/S03-equivalent evidence. Until then, the product exposes only what the current validated code actually computes: rectangular geometry candidates, not an SPL field.
+PR #64 has no review comments and is mergeable. After the acceptance-doc CI is green, mark it ready and merge. The roadmap next milestone is **N80 — 最適化workspace**, which will connect SearchSpec/O10 and the applicable O20–O40 gates for candidate preview/application and Pareto comparison.
