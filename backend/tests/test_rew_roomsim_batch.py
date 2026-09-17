@@ -129,10 +129,14 @@ class FakeControl:
 def _request() -> RewRoomSimPositionBatchRequest:
     return RewRoomSimPositionBatchRequest(
         candidate_id='candidate-a',
+        room_width_m=4.0,
+        room_depth_m=5.0,
+        room_height_m=2.4,
         head_position_htdt={'x_m': 2.0, 'y_m': 3.2, 'z_m': 1.0},
         source_positions_htdt={
             'Left': {'x_m': 1.1, 'y_m': 1.0, 'z_m': 1.0},
             'Right': {'x_m': 2.9, 'y_m': 1.0, 'z_m': 1.0},
+            'Sub1': {'x_m': 0.15, 'y_m': 0.3, 'z_m': 0.15},
         },
     )
 
@@ -164,8 +168,12 @@ def test_position_batch_rejects_inactive_source_before_writes() -> None:
     control = FakeControl()
     request = RewRoomSimPositionBatchRequest(
         candidate_id='candidate-a',
+        room_width_m=4.0,
+        room_depth_m=5.0,
+        room_height_m=2.4,
         head_position_htdt={'x_m': 2.0, 'y_m': 3.2, 'z_m': 1.0},
         source_positions_htdt={'Sub8': {'x_m': 1.0, 'y_m': 1.0, 'z_m': 0.2}},
+        source_name='Sub8',
     )
 
     with pytest.raises(RewRoomSimBatchError, match='not active'):
@@ -179,14 +187,53 @@ def test_position_batch_restores_unrequested_source_side_effect() -> None:
     control.paired_source_side_effect = True
     request = RewRoomSimPositionBatchRequest(
         candidate_id='candidate-a',
+        room_width_m=4.0,
+        room_depth_m=5.0,
+        room_height_m=2.4,
         head_position_htdt={'x_m': 2.0, 'y_m': 3.2, 'z_m': 1.0},
         source_positions_htdt={'Left': {'x_m': 1.1, 'y_m': 1.0, 'z_m': 1.0}},
+        source_name='Left',
     )
 
     with pytest.raises(RewRoomSimConcurrentChange, match='exact candidate state'):
         run_roomsim_position_batch(control, request)
 
     assert roomsim_state_sha256(control.get_roomsim_snapshot()) == before_hash
+
+
+def test_combined_response_requires_exact_active_source_coverage() -> None:
+    control = FakeControl()
+    request = RewRoomSimPositionBatchRequest(
+        candidate_id='candidate-a',
+        room_width_m=4.0,
+        room_depth_m=5.0,
+        room_height_m=2.4,
+        head_position_htdt={'x_m': 2.0, 'y_m': 3.2, 'z_m': 1.0},
+        source_positions_htdt={
+            'Left': {'x_m': 1.1, 'y_m': 1.0, 'z_m': 1.0},
+            'Right': {'x_m': 2.9, 'y_m': 1.0, 'z_m': 1.0},
+        },
+    )
+
+    with pytest.raises(RewRoomSimBatchError, match='every active source'):
+        run_roomsim_position_batch(control, request)
+    assert control.response_reads == 0
+
+
+def test_position_batch_rejects_room_dimension_mismatch() -> None:
+    control = FakeControl()
+    request = _request()
+    wrong = RewRoomSimPositionBatchRequest(
+        candidate_id=request.candidate_id,
+        room_width_m=6.0,
+        room_depth_m=request.room_depth_m,
+        room_height_m=request.room_height_m,
+        head_position_htdt=request.head_position_htdt,
+        source_positions_htdt=request.source_positions_htdt,
+    )
+    with pytest.raises(RewRoomSimBatchError, match='dimensions do not match'):
+        run_roomsim_position_batch(control, wrong)
+    assert control.response_reads == 0
 
 
 def test_position_batch_restore_failure_is_hard_error() -> None:

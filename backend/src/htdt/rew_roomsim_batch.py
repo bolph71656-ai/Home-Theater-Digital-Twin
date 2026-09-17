@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
-from math import isfinite
+from math import isclose, isfinite
 from typing import Any, Mapping, Protocol
 from urllib.parse import quote
 from urllib.request import Request
@@ -39,6 +39,9 @@ class RewRoomSimRestoreError(RewRoomSimBatchError):
 @dataclass(frozen=True)
 class RewRoomSimPositionBatchRequest:
     candidate_id: str
+    room_width_m: float
+    room_depth_m: float
+    room_height_m: float
     head_position_htdt: Mapping[str, float]
     source_positions_htdt: Mapping[str, Mapping[str, float]]
     mic_position: str = 'Main'
@@ -143,6 +146,41 @@ def _position(position: Mapping[str, Any]) -> dict[str, float]:
     return result
 
 
+def _validate_model_state(
+    before: RewRoomSimSnapshot,
+    request: RewRoomSimPositionBatchRequest,
+) -> None:
+    if before.room_size.get('unit') != 'metres':
+        raise RewRoomSimBatchError('Room Simulator room size must be read in metres')
+    expected = (
+        float(request.room_width_m),
+        float(request.room_depth_m),
+        float(request.room_height_m),
+    )
+    if not all(isfinite(value) and value > 0.0 for value in expected):
+        raise RewRoomSimBatchError('expected Room Simulator dimensions must be finite and positive')
+    actual = (
+        float(before.room_size['width']),
+        float(before.room_size['length']),
+        float(before.room_size['height']),
+    )
+    if any(not isclose(a, e, abs_tol=1e-9, rel_tol=0.0) for a, e in zip(actual, expected, strict=True)):
+        raise RewRoomSimBatchError(
+            f'Room Simulator dimensions do not match the candidate room: actual={actual} expected={expected}'
+        )
+
+    requested_sources = set(request.source_positions_htdt)
+    if request.source_name is None:
+        if requested_sources != set(before.active_sources):
+            raise RewRoomSimBatchError(
+                'combined Room Simulator response requires an exact mapping for every active source'
+            )
+    elif request.source_name not in requested_sources:
+        raise RewRoomSimBatchError(
+            'source-specific Room Simulator response requires that source in the candidate mapping'
+        )
+
+
 def _expected_applied_snapshot(
     before: RewRoomSimSnapshot,
     request: RewRoomSimPositionBatchRequest,
@@ -228,6 +266,7 @@ def run_roomsim_position_batch(
         raise RewRoomSimBatchError('candidate_id must not be empty')
 
     before = control.get_roomsim_snapshot()
+    _validate_model_state(before, request)
     pre_hash = roomsim_state_sha256(before)
     intended = _expected_applied_snapshot(before, request)
     intended_hash = roomsim_state_sha256(intended)
@@ -245,17 +284,17 @@ def run_roomsim_position_batch(
 
     try:
         for source_name in sorted(request.source_positions_htdt):
+            target_position = htdt_position_to_roomsim(
+                room_depth,
+                _position(request.source_positions_htdt[source_name]),
+            )
+            if _same_position(before.sources[source_name]['position_rew'], target_position):
+                continue
             if roomsim_state_sha256(control.get_roomsim_snapshot()) != roomsim_state_sha256(owned):
                 raise RewRoomSimConcurrentChange(
                     'Room Simulator state changed before a source position update'
                 )
-            control.set_roomsim_source_position(
-                source_name,
-                htdt_position_to_roomsim(
-                    room_depth,
-                    _position(request.source_positions_htdt[source_name]),
-                ),
-            )
+            control.set_roomsim_source_position(source_name, target_position)
             owned = control.get_roomsim_snapshot()
 
         if roomsim_state_sha256(control.get_roomsim_snapshot()) != roomsim_state_sha256(owned):
