@@ -115,13 +115,14 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         # split topology if tabifyDockWidget() is called in place, so the lower row can
         # remain clipped below the main window even though every dock reports the same
         # dock area. Remove and re-add the four alternative context surfaces first;
-        # this resets the split topology, after which tabification creates one row.
+        # removeDockWidget() hides them, so show them again before tabification.
         for candidate in ordered:
             candidate.setMinimumSize(0, 0)
             self.removeDockWidget(candidate)
         for candidate in ordered:
             candidate.setFloating(False)
             self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, candidate)
+            candidate.show()
 
         anchor = docks_by_title.get('Inspector', ordered[0])
         for candidate in ordered:
