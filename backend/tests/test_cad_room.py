@@ -1,9 +1,12 @@
+from pathlib import Path
 import json
 
 import pytest
 
+from htdt.cad_repository import SceneRepository
 from htdt.cad_room import RoomWorkingDocument
 from htdt.cad_scene import (
+    RoomPrism,
     RoomVertex,
     canonical_scene_json,
     make_empty_scene,
@@ -100,6 +103,53 @@ def test_room_edit_noop_does_not_add_history() -> None:
 
     assert not working.replace_room(room)
     assert working.history_length == 0
+
+
+def test_invalid_room_replacement_leaves_document_and_history_unchanged() -> None:
+    room = make_polygon_room(_f2_vertices(), height_m=2.4)
+    document = make_empty_scene('fixture-f2').model_copy(update={'room': room})
+    working = RoomWorkingDocument(document)
+    invalid = RoomPrism.model_construct(
+        room_id='room',
+        width_m=2.0,
+        depth_m=2.0,
+        height_m=2.4,
+        footprint_vertices=(
+            RoomVertex(vertex_id='a', x_m=0.0, y_m=0.0),
+            RoomVertex(vertex_id='b', x_m=2.0, y_m=2.0),
+            RoomVertex(vertex_id='c', x_m=0.0, y_m=2.0),
+            RoomVertex(vertex_id='d', x_m=2.0, y_m=0.0),
+        ),
+    )
+
+    with pytest.raises(ValueError, match='Invalid room polygon'):
+        working.replace_room(invalid)
+
+    assert working.committed_document == document
+    assert working.history_length == 0
+
+
+def test_polygon_room_revision_round_trips_through_repository(tmp_path: Path) -> None:
+    repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    initial = repository.save(make_empty_scene('fixture-f2'), parent_revision_id=None).revision
+    working = RoomWorkingDocument(
+        initial.document,
+        source_revision_id=initial.revision_id,
+        saved_content_hash=initial.content_hash,
+    )
+    room = make_polygon_room(_f2_vertices(), height_m=2.4)
+    assert working.replace_room(room)
+
+    saved = repository.save(working.committed_document, parent_revision_id=initial.revision_id).revision
+    reopened = repository.latest('fixture-f2')
+
+    assert reopened is not None
+    assert reopened.revision_id == saved.revision_id
+    assert reopened.document.room == room
+    assert tuple(vertex.vertex_id for vertex in room_vertices(reopened.document.room)) == tuple(
+        vertex.vertex_id for vertex in _f2_vertices()
+    )
+    assert reopened.document.room.bounds_m == pytest.approx((0.0, 0.0, 6.0, 4.0))
 
 
 def test_legacy_f1_rectangle_serialization_omits_new_optional_footprint_field() -> None:
