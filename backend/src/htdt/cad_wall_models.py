@@ -44,11 +44,31 @@ class WallOpening(BaseModel):
         return self
 
 
+class WallConstraintBinding(BaseModel):
+    """N30b wall-ID binding only; solver semantics remain outside the CAD topology."""
+
+    model_config = ConfigDict(frozen=True)
+
+    binding_id: str = Field(min_length=1)
+    wall_ids: tuple[str, ...] = Field(min_length=1)
+    kind: Literal['clearance'] = 'clearance'
+    clearance_m: float = Field(ge=0.0)
+
+    @model_validator(mode='after')
+    def valid_binding(self) -> 'WallConstraintBinding':
+        if len(self.wall_ids) != len(set(self.wall_ids)):
+            raise ValueError('constraint binding wall ids must be unique')
+        if not isfinite(float(self.clearance_m)):
+            raise ValueError('constraint clearance must be finite')
+        return self
+
+
 class WallTopology(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     walls: tuple[WallSegment, ...]
     openings: tuple[WallOpening, ...] = ()
+    constraint_bindings: tuple[WallConstraintBinding, ...] = ()
 
     @model_validator(mode='after')
     def unique_ids_and_references(self) -> 'WallTopology':
@@ -58,8 +78,18 @@ class WallTopology(BaseModel):
         opening_ids = [opening.opening_id for opening in self.openings]
         if len(opening_ids) != len(set(opening_ids)):
             raise ValueError('opening ids must be unique')
+        binding_ids = [binding.binding_id for binding in self.constraint_bindings]
+        if len(binding_ids) != len(set(binding_ids)):
+            raise ValueError('constraint binding ids must be unique')
         known_walls = set(wall_ids)
-        dangling = [opening.opening_id for opening in self.openings if opening.wall_id not in known_walls]
-        if dangling:
-            raise ValueError(f'openings reference unknown walls: {dangling}')
+        dangling_openings = [opening.opening_id for opening in self.openings if opening.wall_id not in known_walls]
+        if dangling_openings:
+            raise ValueError(f'openings reference unknown walls: {dangling_openings}')
+        dangling_bindings = [
+            binding.binding_id
+            for binding in self.constraint_bindings
+            if any(wall_id not in known_walls for wall_id in binding.wall_ids)
+        ]
+        if dangling_bindings:
+            raise ValueError(f'constraint bindings reference unknown walls: {dangling_bindings}')
         return self
