@@ -7,6 +7,7 @@ from typing import Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .cad_wall_models import WallTopology
 from .geometry import polygon_from_vertices
 
 
@@ -302,13 +303,22 @@ class SceneDocument(BaseModel):
     schema_version: int = 1
     coordinate_system: Literal['htdt-x-right-y-rear-z-up-m'] = 'htdt-x-right-y-rear-z-up-m'
     room: RoomPrism | None
+    wall_topology: WallTopology | None = None
     entities: tuple[SceneEntity, ...]
 
     @model_validator(mode='after')
-    def unique_entities(self) -> 'SceneDocument':
+    def valid_document(self) -> 'SceneDocument':
         ids = [entity.entity_id for entity in self.entities]
         if len(ids) != len(set(ids)):
             raise ValueError('entity_id values must be unique')
+        if self.wall_topology is not None:
+            if self.room is None:
+                raise ValueError('wall topology requires a room')
+            if self.schema_version < 3:
+                raise ValueError('wall topology requires scene schema_version >= 3')
+            from .cad_walls import validate_wall_topology
+
+            validate_wall_topology(self.room, self.wall_topology)
         return self
 
     def entity(self, entity_id: str) -> SceneEntity:
@@ -328,6 +338,9 @@ def canonical_scene_json(document: SceneDocument) -> str:
     # Preserve N05/N10/N20 rectangular-room hashes by omitting the new optional field.
     if isinstance(payload.get('room'), dict) and payload['room'].get('footprint_vertices') is None:
         payload['room'].pop('footprint_vertices', None)
+    # Preserve N05-N30a hashes until a wall topology is explicitly created.
+    if payload.get('wall_topology') is None:
+        payload.pop('wall_topology', None)
     return json.dumps(
         payload,
         ensure_ascii=False,
