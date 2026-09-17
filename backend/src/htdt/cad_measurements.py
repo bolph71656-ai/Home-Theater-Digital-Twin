@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from typing import Any
@@ -8,13 +9,16 @@ from uuid import uuid4
 from .cad_measurement_models import CadFrequencyResponseDataset, CadMeasurementRecord
 from .cad_repository import SceneRevision
 from .cad_scene import Direction3, acoustic_reference_position
-from .database import utc_now
 from .rew_api import REW_API_ADAPTER_VERSION, REW_API_SNAPSHOT_FORMAT, RewFrequencyResponseSnapshot
 from .rew_parser import parse_rew_frequency_response
 
 
 class CadMeasurementError(ValueError):
     pass
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def canonical_json(payload: Any) -> str:
