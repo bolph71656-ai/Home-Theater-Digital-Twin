@@ -1,7 +1,7 @@
 param(
     [string]$RepoRoot = "",
     [string]$Branch = "feat/n60-measurement-workspace",
-    [string]$ExpectedProductHead = "acfb0596691a3132cb9d096c49e708177598a9d5",
+    [string]$ExpectedProductHead = "8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79",
     [switch]$PreflightOnly
 )
 
@@ -115,14 +115,15 @@ function Write-N60Environment {
 function Invoke-N60Harness {
     param(
         [Parameter(Mandatory = $true)][string]$ScriptName,
-        [Parameter(Mandatory = $true)][string]$Label
+        [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][ref]$ExitCode
     )
 
     Write-Output "N60_GATE_${Label}_BEGIN"
     & $Python (Join-Path $RepoRoot "scripts\$ScriptName")
-    $exitCode = $LASTEXITCODE
-    Write-Output "N60_GATE_${Label}_EXIT=$exitCode"
-    return $exitCode
+    $code = $LASTEXITCODE
+    $ExitCode.Value = $code
+    Write-Output "N60_GATE_${Label}_EXIT=$code"
 }
 
 try {
@@ -195,9 +196,11 @@ try {
 
     Write-N60Environment
 
-    $a12Exit = Invoke-N60Harness -ScriptName 'validate_n60_a12_windows.py' -Label 'A12'
+    $a12Exit = -1
+    Invoke-N60Harness -ScriptName 'validate_n60_a12_windows.py' -Label 'A12' -ExitCode ([ref]$a12Exit)
     Stop-N60HarnessProcesses
-    $a13Exit = Invoke-N60Harness -ScriptName 'validate_n60_a13_windows.py' -Label 'A13'
+    $a13Exit = -1
+    Invoke-N60Harness -ScriptName 'validate_n60_a13_windows.py' -Label 'A13' -ExitCode ([ref]$a13Exit)
     Stop-N60HarnessProcesses
 
     $GateFailed = ($a12Exit -ne 0 -or $a13Exit -ne 0)
