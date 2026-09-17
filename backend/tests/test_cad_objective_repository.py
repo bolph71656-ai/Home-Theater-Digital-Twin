@@ -7,7 +7,7 @@ from htdt.cad_objective_models import CadObjectiveInputRef
 from htdt.cad_objectives import build_objective_evaluation, build_pareto_set
 from htdt.cad_objective_repository import CadObjectiveRepository
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity
+from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity, Size3
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates
 from htdt.cad_search_models import CadSearchAxis
 from htdt.cad_search_repository import CadSearchRepository
@@ -28,6 +28,7 @@ def _scene() -> SceneDocument:
                 kind='speaker',
                 name='FL',
                 position=Position3(x_m=1.0, y_m=1.0, z_m=1.0),
+                size_m=Size3(x_m=0.22, y_m=0.28, z_m=0.42),
                 speaker_role='FL',
             ),
         ),
