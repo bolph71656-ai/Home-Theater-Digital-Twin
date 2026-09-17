@@ -1,10 +1,15 @@
 param(
+    [string]$RepoRoot = "",
     [string]$Branch = "feat/n60-measurement-workspace",
     [string]$ExpectedProductHead = "acfb0596691a3132cb9d096c49e708177598a9d5"
 )
 
 $ErrorActionPreference = "Stop"
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $RepoRoot) {
+    $RepoRoot = Split-Path -Parent $PSScriptRoot
+} else {
+    $RepoRoot = (Resolve-Path $RepoRoot -ErrorAction Stop).Path
+}
 $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 $OriginalSha = $null
 $OriginalBranch = ""
