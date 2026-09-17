@@ -19,7 +19,7 @@ from htdt.measurement_editor import MeasurementEditorWindow
 from htdt.native_cad import TheaterEditorWindow
 from htdt.native_editor import ROLE
 
-from validate_n40_windows import click_action, click_actor, click_global, click_widget, drag_selected_x, foreground, pump, wait_until
+from validate_n40_windows import click_action, click_global, click_widget, drag_selected_x, foreground, pump, wait_until
 
 if sys.platform != 'win32':
     raise SystemExit('This acceptance harness requires Windows.')
@@ -55,6 +55,21 @@ def click_measurement(window: MeasurementEditorWindow, measurement_id: str, app:
         click_global(tree.viewport().mapToGlobal(rect.center()), app)
         return wait_until(app, lambda: window.measurement_selected_id == measurement_id, 0.8)
     return False
+
+
+def click_scene_entity(window: MeasurementEditorWindow, entity_id: str, app: QApplication) -> bool:
+    item = window.items.get(entity_id)
+    if item is None:
+        return False
+    tree = window.tree
+    rect = tree.visualItemRect(item)
+    if rect.isEmpty():
+        tree.scrollToItem(item)
+        pump(app, 0.05)
+        rect = tree.visualItemRect(item)
+    foreground(window, app)
+    click_global(tree.viewport().mapToGlobal(rect.center()), app)
+    return wait_until(app, lambda: window.selected_id == entity_id, 0.8)
 
 
 def actor_names(window: MeasurementEditorWindow) -> set[str]:
@@ -97,7 +112,9 @@ def run_a12(app: QApplication, root: Path) -> bool:
         if not select_ok:
             return False
 
-        click_actor(window, 'speaker-fl', app)
+        if not click_scene_entity(window, 'speaker-fl', app):
+            print('A12_MOUSE_SCENE_SELECT', False, flush=True)
+            return False
         position_before = window.working.committed_document.entity('speaker-fl').position
         moved = drag_selected_x(window, app, scale=1.05)
         position_after = window.working.committed_document.entity('speaker-fl').position
@@ -143,7 +160,9 @@ def run_a12(app: QApplication, root: Path) -> bool:
         if not ghost_ok:
             return False
 
-        click_actor(window, 'point-mlp', app)
+        if not click_scene_entity(window, 'point-mlp', app):
+            print('A12_MOUSE_POINT_SELECT', False, flush=True)
+            return False
         record_b = window.import_rew_text_bytes(
             b'Frequency SPL\n20 69.0\n40 70.0\n80 68.0\n160 67.5\n',
             'b-mlp-fl.txt',
