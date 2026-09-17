@@ -16,7 +16,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
 
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex, room_vertices
+from htdt.cad_scene import (
+    Position3,
+    RoomVertex,
+    SceneDocument,
+    SceneEntity,
+    make_empty_scene,
+    make_polygon_room,
+    room_vertices,
+)
+from htdt.cad_wall_models import WallConstraintBinding, WallOpening
+from htdt.cad_walls import add_constraint_binding, add_opening, make_wall_topology
 from htdt.wall_editor import WallEditorWindow
 
 if sys.platform != 'win32':
@@ -30,6 +40,73 @@ if hasattr(sys.stderr, 'reconfigure'):
 user32 = ctypes.windll.user32
 MOUSE_LEFTDOWN = 0x0002
 MOUSE_LEFTUP = 0x0004
+FIXTURE_ID = 'fixture-f3-a09'
+
+
+def make_f3_scene() -> SceneDocument:
+    points = (
+        (0.0, 0.0),
+        (6.0, 0.0),
+        (6.0, 4.0),
+        (4.0, 4.0),
+        (4.0, 2.0),
+        (2.0, 2.0),
+        (2.0, 4.0),
+        (0.0, 4.0),
+    )
+    room = make_polygon_room(
+        tuple(
+            RoomVertex(vertex_id=f'v{index + 1}', x_m=x_m, y_m=y_m)
+            for index, (x_m, y_m) in enumerate(points)
+        ),
+        height_m=2.4,
+    )
+    topology = make_wall_topology(room)
+    front_wall_id = topology.walls[0].wall_id
+    topology = add_opening(
+        room,
+        topology,
+        WallOpening(
+            opening_id='door-front',
+            wall_id=front_wall_id,
+            offset_m=0.5,
+            width_m=0.9,
+            height_m=2.0,
+            kind='door',
+        ),
+    )
+    topology = add_constraint_binding(
+        room,
+        topology,
+        WallConstraintBinding(
+            binding_id='clearance-front',
+            wall_ids=(front_wall_id,),
+            clearance_m=0.35,
+        ),
+    )
+    base = make_empty_scene(FIXTURE_ID)
+    candidate = base.model_copy(
+        update={
+            'schema_version': 3,
+            'room': room,
+            'wall_topology': topology,
+            'entities': (
+                SceneEntity(
+                    entity_id='seat-left',
+                    kind='measurement_point',
+                    name='Seat Left',
+                    position=Position3(x_m=2.4, y_m=1.2, z_m=1.1),
+                ),
+                SceneEntity(
+                    entity_id='seat-right',
+                    kind='measurement_point',
+                    name='Seat Right',
+                    position=Position3(x_m=3.6, y_m=1.2, z_m=1.1),
+                ),
+            ),
+        }
+    )
+    return SceneDocument.model_validate(candidate.model_dump(mode='python'))
 
 
 def pump(app: QApplication, seconds: float = 0.05) -> None:
@@ -89,7 +166,7 @@ def set_top_fixture_camera(window: WallEditorWindow) -> None:
     camera.SetPosition(3.0, -2.0, 10.0)
     camera.SetViewUp(0.0, 1.0, 0.0)
     camera.ParallelProjectionOn()
-    camera.SetParallelScale(3.4)
+    camera.SetParallelScale(3.6)
     renderer.ResetCameraClippingRange()
     window.viewport.render()
 
@@ -105,9 +182,17 @@ def wall_midpoint(window: WallEditorWindow, wall_id: str) -> tuple[float, float]
     return ((start.x_m + end.x_m) / 2.0, (start.y_m + end.y_m) / 2.0)
 
 
+def select_wall(window: WallEditorWindow, wall_id: str, app: QApplication) -> bool:
+    set_top_fixture_camera(window)
+    midpoint = wall_midpoint(window, wall_id)
+    click(window, qt_global(window, *midpoint), app)
+    return window.selected_wall_id == wall_id
+
+
 def run_a09(app: QApplication, root: Path) -> bool:
     repository = SceneRepository(root / 'scene.sqlite3')
-    window = WallEditorWindow(repository, F1_DOCUMENT_ID)
+    repository.save(make_f3_scene(), parent_revision_id=None)
+    window = WallEditorWindow(repository, FIXTURE_ID)
     foreground_window(window, app)
     try:
         japanese_ui_ok = (
@@ -119,40 +204,32 @@ def run_a09(app: QApplication, root: Path) -> bool:
         if not japanese_ui_ok:
             return False
 
-        window.start_wall_edit()
-        set_top_fixture_camera(window)
-        topology = window.working.committed_document.wall_topology
-        topology_ok = topology is not None and len(topology.walls) == 4
-        print('A09_TOPOLOGY', topology_ok, flush=True)
-        if not topology_ok or topology is None:
-            return False
-
-        front_wall_id = topology.walls[0].wall_id
-        before_select = window.working.history_length
-        midpoint = wall_midpoint(window, front_wall_id)
-        click(window, qt_global(window, *midpoint), app)
-        select_ok = window.selected_wall_id == front_wall_id and window.working.history_length == before_select
-        print('A09_MOUSE_SELECT', select_ok, window.selected_wall_id, flush=True)
-        if not select_ok:
-            return False
-
-        window.clearance_value.setValue(0.35)
-        before_binding = window.working.history_length
-        window.add_clearance_action.trigger()
-        pump(app, 0.12)
-        topology = window.working.committed_document.wall_topology
-        binding_ok = (
-            topology is not None
+        document = window.working.committed_document
+        topology = document.wall_topology
+        fixture_ok = (
+            document.room is not None
+            and len(room_vertices(document.room)) == 8
+            and topology is not None
+            and len(topology.walls) == 8
+            and len(topology.openings) == 1
             and len(topology.constraint_bindings) == 1
-            and topology.constraint_bindings[0].wall_ids == (front_wall_id,)
-            and abs(topology.constraint_bindings[0].clearance_m - 0.35) <= 1e-9
-            and window.working.history_length == before_binding + 1
+            and len(document.entities) == 2
+            and all(entity.kind == 'measurement_point' for entity in document.entities)
+            and window.working.history_length == 0
         )
-        print('A09_ADD_CLEARANCE', binding_ok, flush=True)
-        if not binding_ok:
+        print('A09_F3_FIXTURE', fixture_ok, flush=True)
+        if not fixture_ok or topology is None:
             return False
 
-        set_top_fixture_camera(window)
+        front_wall_id = 'wall:v1->v2'
+        opening_id = 'door-front'
+        binding_id = 'clearance-front'
+        window.start_wall_edit()
+        if not select_wall(window, front_wall_id, app):
+            print('A09_MOUSE_SELECT', False, window.selected_wall_id, flush=True)
+            return False
+        print('A09_MOUSE_SELECT', True, front_wall_id, flush=True)
+
         before_move = window.working.history_length
         drag(
             window,
@@ -163,19 +240,24 @@ def run_a09(app: QApplication, root: Path) -> bool:
         room = window.working.committed_document.room
         topology = window.working.committed_document.wall_topology
         vertices = {} if room is None else {vertex.vertex_id: vertex for vertex in room_vertices(room)}
-        front_wall = None if topology is None else next(
-            (wall for wall in topology.walls if wall.wall_id == front_wall_id), None
+        moved_opening = None if topology is None else next(
+            (opening for opening in topology.openings if opening.opening_id == opening_id), None
+        )
+        moved_binding = None if topology is None else next(
+            (binding for binding in topology.constraint_bindings if binding.binding_id == binding_id), None
         )
         move_ok = (
             room is not None
             and topology is not None
-            and front_wall is not None
-            and abs(vertices[front_wall.from_vertex_id].y_m + 0.40) <= 0.04
-            and abs(vertices[front_wall.to_vertex_id].y_m + 0.40) <= 0.04
-            and topology.constraint_bindings[0].wall_ids == (front_wall_id,)
+            and abs(vertices['v1'].y_m + 0.40) <= 0.04
+            and abs(vertices['v2'].y_m + 0.40) <= 0.04
+            and moved_opening is not None
+            and moved_opening.wall_id == front_wall_id
+            and moved_binding is not None
+            and moved_binding.wall_ids == (front_wall_id,)
             and window.working.history_length == before_move + 1
         )
-        print('A09_MOUSE_MOVE', move_ok, flush=True)
+        print('A09_MOUSE_MOVE_REFERENCES', move_ok, flush=True)
         if not move_ok:
             return False
 
@@ -183,33 +265,26 @@ def run_a09(app: QApplication, root: Path) -> bool:
         window.split_wall_action.trigger()
         pump(app, 0.15)
         split_topology = window.working.committed_document.wall_topology
-        split_selected = window.selected_wall_id
+        first_child = window.selected_wall_id
+        split_opening = None if split_topology is None else next(
+            (opening for opening in split_topology.openings if opening.opening_id == opening_id), None
+        )
+        split_binding = None if split_topology is None else next(
+            (binding for binding in split_topology.constraint_bindings if binding.binding_id == binding_id), None
+        )
         split_ok = (
             split_topology is not None
-            and len(split_topology.walls) == 5
-            and split_selected is not None
-            and len(split_topology.constraint_bindings) == 1
-            and len(split_topology.constraint_bindings[0].wall_ids) == 2
-            and split_topology.constraint_bindings[0].clearance_m == 0.35
+            and len(split_topology.walls) == 9
+            and first_child is not None
+            and split_opening is not None
+            and split_opening.wall_id == first_child
+            and split_binding is not None
+            and len(split_binding.wall_ids) == 2
+            and split_binding.clearance_m == 0.35
             and window.working.history_length == before_split + 1
         )
-        print('A09_SPLIT_REFERENCE', split_ok, split_selected, flush=True)
-        if not split_ok or split_selected is None:
-            return False
-
-        before_opening = window.working.history_length
-        window.add_opening_action.trigger()
-        pump(app, 0.12)
-        opening_topology = window.working.committed_document.wall_topology
-        opening_id = None if opening_topology is None or not opening_topology.openings else opening_topology.openings[0].opening_id
-        opening_ok = (
-            opening_topology is not None
-            and len(opening_topology.openings) == 1
-            and opening_topology.openings[0].wall_id == split_selected
-            and window.working.history_length == before_opening + 1
-        )
-        print('A09_ADD_OPENING', opening_ok, opening_id, flush=True)
-        if not opening_ok or opening_id is None:
+        print('A09_SPLIT_REFERENCE', split_ok, first_child, flush=True)
+        if not split_ok or first_child is None:
             return False
 
         before_merge = window.working.history_length
@@ -220,57 +295,80 @@ def run_a09(app: QApplication, root: Path) -> bool:
         merged_opening = None if merged_topology is None else next(
             (opening for opening in merged_topology.openings if opening.opening_id == opening_id), None
         )
+        merged_binding = None if merged_topology is None else next(
+            (binding for binding in merged_topology.constraint_bindings if binding.binding_id == binding_id), None
+        )
         merge_ok = (
             merged_topology is not None
+            and len(merged_topology.walls) == 8
             and merged_id is not None
-            and len(merged_topology.walls) == 4
             and merged_opening is not None
             and merged_opening.wall_id == merged_id
-            and merged_topology.constraint_bindings[0].wall_ids == (merged_id,)
+            and merged_binding is not None
+            and merged_binding.wall_ids == (merged_id,)
             and window.working.history_length == before_merge + 1
         )
         print('A09_MERGE_REFERENCE', merge_ok, merged_id, flush=True)
-        if not merge_ok:
+        if not merge_ok or merged_id is None:
             return False
 
         before_reject = window.working.history_length
-        wall_count = len(merged_topology.walls)
         window.delete_wall_action.trigger()
         pump(app, 0.12)
         after_reject = window.working.committed_document.wall_topology
         reject_ok = (
             after_reject is not None
-            and len(after_reject.walls) == wall_count
+            and len(after_reject.walls) == 8
             and window.working.history_length == before_reject
+            and any(opening.opening_id == opening_id for opening in after_reject.openings)
+            and any(binding.binding_id == binding_id for binding in after_reject.constraint_bindings)
         )
         print('A09_REFERENCED_DELETE_REJECT', reject_ok, flush=True)
         if not reject_ok:
             return False
 
-        # Select the rear wall with the real OS mouse. Its successor is also unreferenced.
-        rear_wall = next(
-            wall
-            for wall in after_reject.walls
-            if wall.wall_id != merged_id
-            and wall.from_vertex_id.startswith('rear')
+        # Ambiguous split: GUI-created centered door crosses the midpoint, so split must not commit.
+        ambiguous_wall_id = 'wall:v3->v4'
+        if not select_wall(window, ambiguous_wall_id, app):
+            print('A09_AMBIGUOUS_SELECT', False, window.selected_wall_id, flush=True)
+            return False
+        before_extra_opening = window.working.history_length
+        window.add_opening_action.trigger()
+        pump(app, 0.12)
+        if window.working.history_length != before_extra_opening + 1:
+            print('A09_AMBIGUOUS_OPENING_SETUP', False, flush=True)
+            return False
+        before_ambiguous_split = window.working.history_length
+        wall_count_before = len(window.working.committed_document.wall_topology.walls)
+        window.split_wall_action.trigger()
+        pump(app, 0.12)
+        ambiguous_topology = window.working.committed_document.wall_topology
+        ambiguous_ok = (
+            ambiguous_topology is not None
+            and len(ambiguous_topology.walls) == wall_count_before
+            and window.working.history_length == before_ambiguous_split
         )
-        set_top_fixture_camera(window)
-        rear_midpoint = wall_midpoint(window, rear_wall.wall_id)
-        click(window, qt_global(window, *rear_midpoint), app)
-        if window.selected_wall_id != rear_wall.wall_id:
-            print('A09_SELECT_DELETE_WALL', False, window.selected_wall_id, flush=True)
+        print('A09_AMBIGUOUS_SPLIT_REJECT', ambiguous_ok, flush=True)
+        if not ambiguous_ok:
             return False
 
+        delete_wall_id = 'wall:v7->v8'
+        if not select_wall(window, delete_wall_id, app):
+            print('A09_SELECT_DELETE_WALL', False, window.selected_wall_id, flush=True)
+            return False
         before_delete = window.working.history_length
         window.delete_wall_action.trigger()
         pump(app, 0.15)
-        deleted_topology = window.working.committed_document.wall_topology
+        deleted = window.working.committed_document
+        deleted_topology = deleted.wall_topology
         delete_ok = (
-            deleted_topology is not None
-            and len(deleted_topology.walls) == 3
+            deleted.room is not None
+            and deleted_topology is not None
+            and len(room_vertices(deleted.room)) == 7
+            and len(deleted_topology.walls) == 7
             and window.working.history_length == before_delete + 1
-            and all(opening.opening_id == opening_id for opening in deleted_topology.openings)
-            and deleted_topology.constraint_bindings[0].wall_ids == (merged_id,)
+            and any(opening.opening_id == opening_id and opening.wall_id == merged_id for opening in deleted_topology.openings)
+            and any(binding.binding_id == binding_id and binding.wall_ids == (merged_id,) for binding in deleted_topology.constraint_bindings)
         )
         print('A09_DELETE_UNREFERENCED', delete_ok, flush=True)
         if not delete_ok:
