@@ -231,20 +231,43 @@ class RewApiClient:
         self.timeout_s = timeout_s
         self._opener = opener
 
-    def _get_json(self, path: str, query: dict[str, str | int | float | bool] | None = None) -> Any:
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        query: dict[str, str | int | float | bool] | None = None,
+        payload: Any | None = None,
+    ) -> Any:
+        if method not in {'GET', 'PUT'}:
+            raise ValueError(f'Unsupported REW API method: {method}')
+        if not path.startswith('/') or '://' in path:
+            raise ValueError('REW API path must be an absolute local API path')
         url = f'{self.base_url}{path}'
         if query:
             url = f'{url}?{urlencode(query)}'
-        request = Request(url, headers={'Accept': 'application/json'}, method='GET')
+        headers = {'Accept': 'application/json'}
+        data: bytes | None = None
+        if payload is not None:
+            headers['Content-Type'] = 'application/json'
+            data = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        request = Request(url, data=data, headers=headers, method=method)
         try:
             with self._opener(request, timeout=self.timeout_s) as response:
                 raw = response.read()
         except (HTTPError, URLError, TimeoutError, OSError) as exc:
             raise RewApiUnavailable(str(exc)) from exc
+        if not raw:
+            return None
         try:
             return json.loads(raw.decode('utf-8'))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RewApiError('REW returned invalid JSON') from exc
+
+    def _get_json(self, path: str, query: dict[str, str | int | float | bool] | None = None) -> Any:
+        return self._request_json('GET', path, query=query)
+
+    def _put_json(self, path: str, payload: Any) -> Any:
+        return self._request_json('PUT', path, payload=payload)
 
     def list_measurements(self) -> list[dict[str, Any]]:
         return normalize_measurement_summaries(self._get_json('/measurements'))
@@ -402,6 +425,54 @@ class RewApiClient:
             head_position_rew=head, head_position_htdt=roomsim_position_to_htdt(room_depth, head),
             mic_position_offsets=offsets, active_sources=active, recognized_sources=recognized, mic_positions=mic_positions, sources=source_state,
         )
+
+
+    @staticmethod
+    def _validate_roomsim_position_payload(position: dict[str, Any]) -> dict[str, float | str]:
+        if position.get('unit') != 'metres':
+            raise ValueError('REW Room Simulator position unit must be metres')
+        result: dict[str, float | str] = {'unit': 'metres'}
+        for name in ('fromRear', 'fromLeft', 'fromFloor'):
+            value = position.get(name)
+            if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                raise ValueError(f'Invalid REW Room Simulator position field: {name}')
+            result[name] = float(value)
+        return result
+
+    def set_roomsim_room_size(self, room_size: dict[str, Any]) -> None:
+        if room_size.get('unit') != 'metres':
+            raise ValueError('REW Room Simulator room-size unit must be metres')
+        payload: dict[str, float | str] = {'unit': 'metres'}
+        for name in ('length', 'width', 'height'):
+            value = room_size.get(name)
+            if not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) <= 0:
+                raise ValueError(f'Invalid REW Room Simulator room-size field: {name}')
+            payload[name] = float(value)
+        self._put_json('/roomsim/room-size', payload)
+
+    def set_roomsim_sources(self, sources: tuple[str, ...] | list[str]) -> None:
+        ordered = tuple(sources)
+        if not ordered or len(ordered) != len(set(ordered)) or any(not isinstance(item, str) or not item for item in ordered):
+            raise ValueError('REW Room Simulator source list must contain unique non-empty names')
+        recognized = self._get_json('/roomsim/source-names')
+        if not isinstance(recognized, list) or any(not isinstance(item, str) for item in recognized):
+            raise RewApiError('Unexpected REW Room Simulator source-name response shape')
+        unknown = set(ordered) - set(recognized)
+        if unknown:
+            raise RewApiError('Unknown REW Room Simulator source(s): ' + ', '.join(sorted(unknown)))
+        self._put_json('/roomsim/sources', {'sources': list(ordered)})
+
+    def set_roomsim_head_position(self, position: dict[str, Any]) -> None:
+        self._put_json('/roomsim/head-position', self._validate_roomsim_position_payload(position))
+
+    def set_roomsim_source_position(self, source_name: str, position: dict[str, Any]) -> None:
+        recognized = self._get_json('/roomsim/source-names')
+        if not isinstance(recognized, list) or any(not isinstance(item, str) for item in recognized):
+            raise RewApiError('Unexpected REW Room Simulator source-name response shape')
+        if source_name not in recognized:
+            raise RewApiError(f'Unknown REW Room Simulator source: {source_name}')
+        escaped = quote(source_name, safe='')
+        self._put_json(f'/roomsim/{escaped}/position', self._validate_roomsim_position_payload(position))
 
 
     def get_roomsim_frequency_response(
