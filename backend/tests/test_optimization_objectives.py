@@ -61,7 +61,6 @@ def test_pair_and_seat_objectives_do_not_collapse_to_single_score() -> None:
     assert pair.metric('left_right.rms_difference_db').value == pytest.approx(2.0)
     assert pair.metric('left_right.shape_rms_db').value == pytest.approx(0.0)
 
-    unaligned = ResponseObjectiveSpec(low_hz=20.0, high_hz=160.0)
     seat = seat_pairwise_objectives(
         'candidate-a',
         (
@@ -69,10 +68,12 @@ def test_pair_and_seat_objectives_do_not_collapse_to_single_score() -> None:
             response((1.0, 1.0, 1.0, 1.0)),
             response((-1.0, -1.0, -1.0, -1.0)),
         ),
-        unaligned,
+        aligned,
     )
-    assert seat.metric('seat.pairwise_max_db').value == pytest.approx(2.0)
-    assert seat.metric('seat.pairwise_rms_db').value == pytest.approx(sqrt(2.0))
+    assert seat.metric('seat.pairwise_rms_difference_max_db').value == pytest.approx(2.0)
+    assert seat.metric('seat.pairwise_rms_difference_rms_db').value == pytest.approx(sqrt(2.0))
+    assert seat.metric('seat.pairwise_shape_max_db').value == pytest.approx(0.0)
+    assert seat.metric('seat.pairwise_shape_rms_db').value == pytest.approx(0.0)
 
 
 def test_movement_objectives_report_total_and_max_separately() -> None:

@@ -176,30 +176,46 @@ def seat_pairwise_objectives(
     if len(responses) < 2:
         raise ObjectiveError('seat spread objective requires at least two responses')
 
-    pair_values: list[float] = []
+    level_values: list[float] = []
+    shape_values: list[float] = []
     for a, b in combinations(responses, 2):
         result = _comparison(a, b, spec)
-        value = result.shape_rms_db if spec.reference_band_hz is not None else result.rms_difference_db
-        if value is None:
+        if result.rms_difference_db is None:
             raise ObjectiveError('seat spread objective requires at least two valid points per pair')
-        pair_values.append(float(value))
+        level_values.append(float(result.rms_difference_db))
+        if spec.reference_band_hz is not None:
+            if result.shape_rms_db is None:
+                raise ObjectiveError('seat shape objective requires at least two valid reference-band points per pair')
+            shape_values.append(float(result.shape_rms_db))
 
-    rms = sqrt(sum(value * value for value in pair_values) / len(pair_values))
-    return ObjectiveVector(
-        candidate_id=candidate_id,
-        metrics=(
-            ObjectiveMetric(
-                objective_id=f'{prefix}.pairwise_max_db',
-                value=max(pair_values),
-                unit='dB',
-            ),
-            ObjectiveMetric(
-                objective_id=f'{prefix}.pairwise_rms_db',
-                value=rms,
-                unit='dB',
-            ),
+    level_rms = sqrt(sum(value * value for value in level_values) / len(level_values))
+    metrics: list[ObjectiveMetric] = [
+        ObjectiveMetric(
+            objective_id=f'{prefix}.pairwise_rms_difference_max_db',
+            value=max(level_values),
+            unit='dB',
         ),
-    )
+        ObjectiveMetric(
+            objective_id=f'{prefix}.pairwise_rms_difference_rms_db',
+            value=level_rms,
+            unit='dB',
+        ),
+    ]
+    if shape_values:
+        shape_rms = sqrt(sum(value * value for value in shape_values) / len(shape_values))
+        metrics.extend((
+            ObjectiveMetric(
+                objective_id=f'{prefix}.pairwise_shape_max_db',
+                value=max(shape_values),
+                unit='dB',
+            ),
+            ObjectiveMetric(
+                objective_id=f'{prefix}.pairwise_shape_rms_db',
+                value=shape_rms,
+                unit='dB',
+            ),
+        ))
+    return ObjectiveVector(candidate_id=candidate_id, metrics=tuple(metrics))
 
 
 def _xyz(position: Mapping[str, float]) -> tuple[float, float, float]:
