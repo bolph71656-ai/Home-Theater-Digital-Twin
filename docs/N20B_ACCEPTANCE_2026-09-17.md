@@ -59,7 +59,7 @@ The key final latency correction changed the selection projection timer from a f
 
 - focused document/repository/snap regression passed throughout implementation;
 - Windows Actions patch gate passed backend regression, CAD compile/launcher checks, PowerShell syntax, frontend build and built-app smoke for the final interaction changes;
-- normal PR CI #125 passed on final documentation head `a06edf0b6f5fa6ea0a47e927b327f4cbb6ed4ea2`;
+- normal PR CI #125 passed before this final record-only edit; the current documentation head must also remain green before merge;
 - actual-machine A07 + F4 final harness exited 0;
 - temporary remote workflow branches were deleted;
 - N20b local temporary files were cleaned;
