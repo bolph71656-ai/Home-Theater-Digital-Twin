@@ -79,6 +79,15 @@ class TheaterWorkflowWindow(TheaterEditorWindow):
         self._rebuild(reset_camera=True)
         self.statusBar().showMessage(f'revision {source.revision_id[:8]} からドラフトを復旧しました · dirty')
 
+    def close_room_sketch(self) -> None:
+        was_sketching = self.room_mode == 'sketch'
+        super().close_room_sketch()
+        if was_sketching and self.room_mode == 'edit' and self._current_room() is not None:
+            self.finish_room_edit()
+            self.statusBar().showMessage(
+                '部屋を作成しました · オブジェクトを追加できます · 形状調整は「部屋編集」から行えます'
+            )
+
     def _aim_target_id(self) -> str | None:
         if self.working is None:
             return None
