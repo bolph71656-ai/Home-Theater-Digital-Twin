@@ -26,6 +26,13 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         if panel is None or isinstance(panel, QScrollArea):
             self.measurement_scroll = panel if isinstance(panel, QScrollArea) else None
             return
+
+        # QScrollArea(widgetResizable=True) may otherwise shrink this already-built
+        # panel to the viewport height. Its layout can then paint lower controls
+        # outside the panel while the scroll area still believes there is nothing
+        # to scroll. Preserve the layout's real vertical minimum so every control
+        # remains reachable at high DPI / short logical screen heights.
+        panel.setMinimumHeight(panel.minimumSizeHint().height())
         panel.setParent(None)
         scroll = QScrollArea(dock)
         scroll.setWidgetResizable(True)
