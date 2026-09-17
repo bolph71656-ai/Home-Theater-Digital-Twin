@@ -3,7 +3,7 @@ from __future__ import annotations
 from math import hypot
 
 from .cad_scene import RoomPrism, RoomVertex, make_polygon_room, room_vertices
-from .cad_wall_models import WallOpening, WallSegment, WallTopology
+from .cad_wall_models import WallConstraintBinding, WallOpening, WallSegment, WallTopology
 
 
 class WallTopologyError(ValueError):
@@ -61,7 +61,24 @@ def make_wall_topology(room: RoomPrism, *, thickness_m: float = 0.10) -> WallTop
 
 
 def add_opening(room: RoomPrism, topology: WallTopology, opening: WallOpening) -> WallTopology:
-    candidate = WallTopology(walls=topology.walls, openings=topology.openings + (opening,))
+    candidate = WallTopology(
+        walls=topology.walls,
+        openings=topology.openings + (opening,),
+        constraint_bindings=topology.constraint_bindings,
+    )
+    return validate_wall_topology(room, candidate)
+
+
+def add_constraint_binding(
+    room: RoomPrism,
+    topology: WallTopology,
+    binding: WallConstraintBinding,
+) -> WallTopology:
+    candidate = WallTopology(
+        walls=topology.walls,
+        openings=topology.openings,
+        constraint_bindings=topology.constraint_bindings + (binding,),
+    )
     return validate_wall_topology(room, candidate)
 
 
@@ -139,17 +156,17 @@ def split_wall(
     wall_index = walls.index(wall)
     walls[wall_index:wall_index + 1] = [first, second]
 
-    migrated: list[WallOpening] = []
+    migrated_openings: list[WallOpening] = []
     tolerance = 1e-9
     for opening in topology.openings:
         if opening.wall_id != wall.wall_id:
-            migrated.append(opening)
+            migrated_openings.append(opening)
             continue
         opening_end = opening.offset_m + opening.width_m
         if opening_end <= offset + tolerance:
-            migrated.append(opening.model_copy(update={'wall_id': first.wall_id}))
+            migrated_openings.append(opening.model_copy(update={'wall_id': first.wall_id}))
         elif opening.offset_m >= offset - tolerance:
-            migrated.append(
+            migrated_openings.append(
                 opening.model_copy(
                     update={'wall_id': second.wall_id, 'offset_m': opening.offset_m - offset}
                 )
@@ -158,7 +175,23 @@ def split_wall(
             raise WallTopologyError(
                 f'opening {opening.opening_id} crosses split point; resolve it before splitting the wall'
             )
-    candidate = WallTopology(walls=tuple(walls), openings=tuple(migrated))
+
+    migrated_bindings = tuple(
+        binding.model_copy(
+            update={
+                'wall_ids': _replace_binding_walls(
+                    binding.wall_ids,
+                    {wall.wall_id: (first.wall_id, second.wall_id)},
+                )
+            }
+        )
+        for binding in topology.constraint_bindings
+    )
+    candidate = WallTopology(
+        walls=tuple(walls),
+        openings=tuple(migrated_openings),
+        constraint_bindings=migrated_bindings,
+    )
     return split_room, validate_wall_topology(split_room, candidate)
 
 
@@ -207,19 +240,31 @@ def merge_walls(
         raise WallTopologyError('walls must be adjacent in topology order to merge')
     walls[first_index:second_index + 1] = [merged]
 
-    migrated: list[WallOpening] = []
+    migrated_openings: list[WallOpening] = []
     for opening in topology.openings:
         if opening.wall_id == first.wall_id:
-            migrated.append(opening.model_copy(update={'wall_id': merged.wall_id}))
+            migrated_openings.append(opening.model_copy(update={'wall_id': merged.wall_id}))
         elif opening.wall_id == second.wall_id:
-            migrated.append(
+            migrated_openings.append(
                 opening.model_copy(
                     update={'wall_id': merged.wall_id, 'offset_m': first_length + opening.offset_m}
                 )
             )
         else:
-            migrated.append(opening)
-    candidate = WallTopology(walls=tuple(walls), openings=tuple(migrated))
+            migrated_openings.append(opening)
+    replacements = {
+        first.wall_id: (merged.wall_id,),
+        second.wall_id: (merged.wall_id,),
+    }
+    migrated_bindings = tuple(
+        binding.model_copy(update={'wall_ids': _replace_binding_walls(binding.wall_ids, replacements)})
+        for binding in topology.constraint_bindings
+    )
+    candidate = WallTopology(
+        walls=tuple(walls),
+        openings=tuple(migrated_openings),
+        constraint_bindings=migrated_bindings,
+    )
     return merged_room, validate_wall_topology(merged_room, candidate)
 
 
@@ -252,10 +297,19 @@ def delete_wall(
     if abs(wall.thickness_m - successor.thickness_m) > 1e-9:
         raise WallTopologyError('affected walls have different thickness; deletion requires explicit resolution')
     affected = {wall.wall_id, successor.wall_id}
-    referenced = [opening.opening_id for opening in topology.openings if opening.wall_id in affected]
-    if referenced:
+    referenced_openings = [opening.opening_id for opening in topology.openings if opening.wall_id in affected]
+    if referenced_openings:
         raise WallTopologyError(
-            f'wall deletion would orphan openings {referenced}; reassign or remove them first'
+            f'wall deletion would orphan openings {referenced_openings}; reassign or remove them first'
+        )
+    referenced_bindings = [
+        binding.binding_id
+        for binding in topology.constraint_bindings
+        if any(bound_wall in affected for bound_wall in binding.wall_ids)
+    ]
+    if referenced_bindings:
+        raise WallTopologyError(
+            f'wall deletion would orphan constraint bindings {referenced_bindings}; resolve them first'
         )
 
     removed_vertex_id = wall.to_vertex_id
@@ -287,8 +341,24 @@ def delete_wall(
         if candidate is None:
             raise WallTopologyError(f'wall deletion cannot map replacement boundary edge {pair}')
         ordered_walls.append(candidate)
-    candidate_topology = WallTopology(walls=tuple(ordered_walls), openings=topology.openings)
+    candidate_topology = WallTopology(
+        walls=tuple(ordered_walls),
+        openings=topology.openings,
+        constraint_bindings=topology.constraint_bindings,
+    )
     return deleted_room, validate_wall_topology(deleted_room, candidate_topology)
+
+
+def _replace_binding_walls(
+    wall_ids: tuple[str, ...],
+    replacements: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    result: list[str] = []
+    for wall_id in wall_ids:
+        for replacement in replacements.get(wall_id, (wall_id,)):
+            if replacement not in result:
+                result.append(replacement)
+    return tuple(result)
 
 
 def _wall(topology: WallTopology, wall_id: str) -> WallSegment:
