@@ -87,7 +87,7 @@ class NativeEditorWindow(QMainWindow):
         self.capture_watch.timeout.connect(self._check_mouse_capture)
         self.gizmo_rebuild_timer = QTimer(self)
         self.gizmo_rebuild_timer.setSingleShot(True)
-        self.gizmo_rebuild_timer.setInterval(16)
+        self.gizmo_rebuild_timer.setInterval(0)
         self.gizmo_rebuild_timer.timeout.connect(self._rebuild_gizmo_after_selection)
         self.view_state_save_timer = QTimer(self)
         self.view_state_save_timer.setSingleShot(True)
