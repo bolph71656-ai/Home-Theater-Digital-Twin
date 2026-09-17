@@ -8,7 +8,7 @@ import tempfile
 import time
 
 from PySide6.QtCore import QThread, QTimer
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QDockWidget, QPushButton
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
@@ -20,7 +20,7 @@ from htdt.measurement_editor import MeasurementEditorWindow
 from htdt.native_cad import TheaterEditorWindow
 from htdt.rew_api import RewFrequencyResponse, RewFrequencyResponseSnapshot
 
-from validate_n40_windows import click_action, click_global, click_widget, drag_selected_x, foreground, pump, wait_until
+from validate_n40_windows import click_action, click_global, drag_selected_x, foreground, pump, wait_until
 
 if sys.platform != 'win32':
     raise SystemExit('This acceptance harness requires Windows.')
@@ -76,13 +76,66 @@ def find_button(window: MeasurementEditorWindow, text: str) -> QPushButton:
     raise AssertionError(f'button not found: {text}')
 
 
-def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> None:
+def _measurement_dock(window: MeasurementEditorWindow) -> QDockWidget | None:
+    return next(
+        (candidate for candidate in window.findChildren(QDockWidget) if candidate.windowTitle() == '実測'),
+        None,
+    )
+
+
+def measurement_button_diagnostics(window: MeasurementEditorWindow, text: str) -> str:
     button = find_button(window, text)
     scroll = getattr(window, 'measurement_scroll', None)
+    center = button.mapToGlobal(button.rect().center())
+    parts = [
+        f'enabled={button.isEnabled()}',
+        f'visible={button.isVisible()}',
+        f'visible_to_window={button.isVisibleTo(window)}',
+        f'center={center.x()},{center.y()}',
+    ]
     if scroll is not None:
-        scroll.ensureWidgetVisible(button, 8, 8)
-        pump(app, 0.08)
-    click_widget(button, app)
+        local = scroll.viewport().mapFromGlobal(center)
+        bar = scroll.verticalScrollBar()
+        panel = scroll.widget()
+        parts.extend(
+            (
+                f'center_in_viewport={local.x()},{local.y()}',
+                f'viewport={scroll.viewport().width()}x{scroll.viewport().height()}',
+                f'vscroll={bar.value()}/{bar.maximum()}',
+                f'panel_h={0 if panel is None else panel.height()}',
+            )
+        )
+    parts.append(f'selected={window.selected_id!r}')
+    parts.append(f'rew={None if window.rew_combo is None else window.rew_combo.currentData()!r}')
+    parts.append(f'status={window.statusBar().currentMessage()!r}')
+    return ' '.join(parts)
+
+
+def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> bool:
+    button = find_button(window, text)
+    foreground(window, app)
+    dock = _measurement_dock(window)
+    if dock is not None:
+        dock.raise_()
+        pump(app, 0.05)
+    scroll = getattr(window, 'measurement_scroll', None)
+    if scroll is not None:
+        panel = scroll.widget()
+        if panel is not None:
+            center_y = button.mapTo(panel, button.rect().center()).y()
+            bar = scroll.verticalScrollBar()
+            target = center_y - scroll.viewport().height() // 2
+            bar.setValue(max(bar.minimum(), min(bar.maximum(), target)))
+        scroll.ensureWidgetVisible(button, 16, 16)
+        pump(app, 0.10)
+        center = button.mapToGlobal(button.rect().center())
+        local = scroll.viewport().mapFromGlobal(center)
+        if not scroll.viewport().rect().contains(local):
+            return False
+    if not button.isEnabled() or not button.isVisibleTo(window):
+        return False
+    click_global(button.mapToGlobal(button.rect().center()), app)
+    return True
 
 
 def click_scene_entity(window: MeasurementEditorWindow, entity_id: str, app: QApplication) -> bool:
@@ -109,9 +162,16 @@ def configure_delayed_measurement(window: MeasurementEditorWindow, external_id: 
 
 def start_rew_read(window: MeasurementEditorWindow, app: QApplication) -> str | None:
     if not click_scene_entity(window, 'point-mlp', app):
+        print('A13_POINT_SELECTION', False, flush=True)
         return None
-    click_measurement_button(window, '選択REWを読込', app)
+    clicked = click_measurement_button(window, '選択REWを読込', app)
+    if not clicked:
+        print('A13_REW_BUTTON_CLICKABLE', False, flush=True)
+        print('A13_REW_BUTTON', measurement_button_diagnostics(window, '選択REWを読込'), flush=True)
+        return None
     if not wait_until(app, lambda: window._current_rew_token_id is not None, 0.6):
+        print('A13_REW_BUTTON_CLICKED_NO_TOKEN', True, flush=True)
+        print('A13_REW_BUTTON', measurement_button_diagnostics(window, '選択REWを読込'), flush=True)
         return None
     return window._current_rew_token_id
 
@@ -175,7 +235,11 @@ def run_a13(app: QApplication, root: Path) -> bool:
         if cancel_token_id is None:
             print('A13_START_CANCEL_JOB', False, flush=True)
             return False
-        click_measurement_button(window, '読込キャンセル', app)
+        cancel_clicked = click_measurement_button(window, '読込キャンセル', app)
+        if not cancel_clicked:
+            print('A13_CANCEL_BUTTON_CLICKABLE', False, flush=True)
+            print('A13_CANCEL_BUTTON', measurement_button_diagnostics(window, '読込キャンセル'), flush=True)
+            return False
         cancelled = wait_jobs_empty(window, app, 1.8)
         cancel_ok = (
             cancelled
