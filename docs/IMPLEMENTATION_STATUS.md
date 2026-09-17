@@ -5,20 +5,21 @@
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b の技術gateを実装・実機受入まで通過。** N30bはIssue #53 / PR #54で、stable wall topology、opening、wall clearance参照、壁move/split/merge/delete、atomic Undo/Redo、日本語優先native UI、F3/A09 Windows実機受入まで完了した。PR #54は最終CI確認後にmainへmergeする。
+**N05 / N10 / N20a / N20b / N30a / N30b の技術gateを実装・実機受入まで通過。** N30bはIssue #53 / PR #54で、stable wall topology、opening、wall clearance参照、壁move/split/merge/delete、atomic Undo/Redo、日本語優先native UI、N30a/N30b cross-tool guard、F3/A09 Windows実機受入まで完了した。PR #54は最終CI確認後にmainへmergeする。
 
 | 区分 | 現在の状態 |
 |---|---|
 | main | N30aまで反映済み。N30bはPR #54がmerge待ち |
 | N30b tracking | PR #54 / Issue #53 |
-| N30b実機受入 | commit `fccfdfbfb056a72906499a814f58f0957b0a65e4`、Windows 11 / 実OS 200% DPIでA09 PASS |
+| N30b実機受入 | commit `5ede848e8e0b0967a50c04c83ff679a649ca439b`、Windows 11 / 実OS 200% DPIでA09 PASS |
 | A09 | F3で実マウスwall選択・移動、split/merge/delete、opening/clearance追従、曖昧split拒否、Undo/RedoをPASS |
 | wall domain | stable wall ID、from/to vertex参照、wall-local opening、clearance binding、thickness表示属性 |
 | topology edit | move/split/merge/deleteをpure candidate editとして検証し、room+topologyを1 CommandHistory transactionで確定 |
 | 保存 | SceneDocument schema v3でwall topologyをSceneRevision/SQLiteへ保存。topologyなし旧sceneのcanonical hash互換を維持 |
-| native entry | `htdt-native` / `run-native.ps1` / package entryはN30b `WallEditorWindow` を起動 |
+| native entry | `htdt-native` / `run-native.ps1` / package entry はproduct composition `CadEditorWindow` (`htdt.native_cad`) を起動 |
 | GUI | 既存Editor/Room主要操作とN30b Wall操作を日本語優先表示 |
-| N30a/N20b継承 | room sketch、multi-select、common pivot、object/grid/angle snap、hide/lock、entity Undo/Redoを保持 |
+| cross-tool guard | topology作成後もroom頂点移動/寸法/高さは再validate。頂点数変更はwall split/deleteへ誘導しstable refsを暗黙破壊しない |
+| N20b継承 | multi-select、common pivot、object/grid/angle snap、hide/lock、entity Undo/Redoを保持 |
 | 次工程 | **N40 — theater objects、mouse主導のspeaker/seat/screen/furniture配置、A10** |
 
 実機記録:
@@ -34,10 +35,10 @@
 
 ### Scene / wall topology
 
-- `WallSegment` はstable `wall_id`、ordered room vertexへのfrom/to参照、wall thickness、split lineage用`source_wall_id`を保持する。
-- `WallOpening` はstable `opening_id`、`wall_id`、wall始点からのoffset、width、sill、height、kind/open stateをwall-localで保持する。
+- `WallSegment`はstable `wall_id`、ordered room vertexへのfrom/to参照、wall thickness、split lineage用`source_wall_id`を保持する。
+- `WallOpening`はstable `opening_id`、`wall_id`、wall始点からのoffset、width、sill、height、kind/open stateをwall-localで保持する。
 - N30b用`WallConstraintBinding`はwall IDとclearance値の参照連続性だけを担当し、本格solver semanticsはN50へ分離する。
-- `WallTopology` はRoomPrism境界edgeと1:1でなければ確定できず、opening/constraintのdangling参照を禁止する。
+- `WallTopology`はRoomPrism境界edgeと1:1でなければ確定できず、opening/constraintのdangling参照を禁止する。
 - thicknessは室内footprintを暗黙に縮めない表示属性として扱う。
 
 ### Topology edit / Undo
@@ -49,17 +50,20 @@
 - deleteは対象wallとsuccessorのopening/constraint参照が残る場合に確定拒否する。未参照時のみ明示replacement wallへ更新する。
 - room geometry + wall topology + migrated referencesは`RoomWorkingDocument.replace_room_topology()`で1 commandとしてUndo/Redoされる。
 
-### Native UI
+### Native UI / cross-tool coordination
 
 - wallをTop viewでクリック選択し、実マウスdragで移動できる。
 - toolbarから壁分割、次壁との結合、壁削除、ドア開口追加、クリアランス参照追加を行える。
 - Inspectorから壁厚と追加clearance値を数値精密化できる。
 - inherited Editor/Room toolbar、Inspector、scene tree、status messageを可能な範囲で日本語化した。
 - openingはviewport上にwall-local位置として表示し、selected wallを太線で識別する。
+- `CadEditorWindow`がroom toolとwall toolの境界を調停する。topology作成前はN30aのroom sketch/insert/deleteが利用できる。
+- topology作成後はvertex ID/orderを保つ頂点移動・edge寸法・天井高のみ既存wall/opening/constraintと再validateし、vertex数変更はwall split/deleteへ日本語statusで誘導する。
+- room変更でopening/clearance条件を満たせない場合は例外をUIへ漏らさず確定拒否する。
 
 ### A09結果
 
-所有Windows PC（Windows 11 Pro build 26200、2880×1800、200% DPI）で実Win32 mouse inputを使用した。F3はF2凹8頂点room + front opening + wall clearance 0.35 m + 2 measurement points。
+所有Windows PC（Windows 11 Pro build 26200、2880×1800、200% DPI）で通常起動と同じ`CadEditorWindow`と実Win32 mouse inputを使用した。F3はF2凹8頂点room + front opening + wall clearance 0.35 m + 2 measurement points。
 
 ```text
 A09_JAPANESE_UI True
@@ -107,7 +111,7 @@ POST_STATUS_COUNT=0
 N40では「room/wallを編集できるCAD」から「ホームシアターを構築できるCAD」へ進める。
 
 - speakerをrole付きtheater objectとしてmouse配置・向き調整
-- seat / measurement point、screen、furnitureの作成・編集
+- seat / measurement point、screen、furniture、AV機器の作成・編集
 - object palette / scene tree / Inspectorの日本語導線整理
 - 3.0.2等のtemplateは入力補助に留め、固定構成にしない
 - F3/N30b wall refsを壊さず保存・再open
