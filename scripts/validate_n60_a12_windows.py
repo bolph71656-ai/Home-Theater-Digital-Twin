@@ -39,10 +39,23 @@ def find_button(window: MeasurementEditorWindow, text: str) -> QPushButton:
     raise AssertionError(f'button not found: {text}')
 
 
+def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> None:
+    button = find_button(window, text)
+    scroll = getattr(window, 'measurement_scroll', None)
+    if scroll is not None:
+        scroll.ensureWidgetVisible(button, 8, 8)
+        pump(app, 0.08)
+    click_widget(button, app)
+
+
 def click_measurement(window: MeasurementEditorWindow, measurement_id: str, app: QApplication) -> bool:
     tree = window.measurement_tree
     if tree is None:
         return False
+    scroll = getattr(window, 'measurement_scroll', None)
+    if scroll is not None:
+        scroll.ensureWidgetVisible(tree, 8, 8)
+        pump(app, 0.05)
     for index in range(tree.topLevelItemCount()):
         item = tree.topLevelItem(index)
         if item.data(0, ROLE) != measurement_id:
@@ -98,7 +111,12 @@ def run_a12(app: QApplication, root: Path) -> bool:
     window = TheaterEditorWindow(repository, FIXTURE_ID)
     foreground(window, app)
     try:
-        product_ok = isinstance(window, MeasurementEditorWindow) and window.measurement_tree is not None and window.fr_plot is not None
+        product_ok = (
+            isinstance(window, MeasurementEditorWindow)
+            and window.measurement_tree is not None
+            and window.fr_plot is not None
+            and getattr(window, 'measurement_scroll', None) is not None
+        )
         print('A12_PRODUCT_COMPOSITION', product_ok, flush=True)
         if not product_ok:
             return False
@@ -176,7 +194,7 @@ def run_a12(app: QApplication, root: Path) -> bool:
             return False
         window.compare_a_combo.setCurrentIndex(index_a)
         window.compare_b_combo.setCurrentIndex(index_b)
-        click_widget(find_button(window, 'A/B比較を保存'), app)
+        click_measurement_button(window, 'A/B比較を保存', app)
         comparisons = measurement_repository.list_comparisons(FIXTURE_ID)
         comparison_ok = (
             len(comparisons) == 1
@@ -188,6 +206,12 @@ def run_a12(app: QApplication, root: Path) -> bool:
             and len(window.diff_plot.listDataItems()) >= 1
         )
         print('A12_AB_REVISION_BINDING', comparison_ok, flush=True)
+        if not comparison_ok:
+            print('A12_COMPARE_COUNT', len(comparisons), flush=True)
+            if comparisons:
+                print('A12_COMPARE_A', comparisons[0].scene_revision_a_id, flush=True)
+                print('A12_COMPARE_B', comparisons[0].scene_revision_b_id, flush=True)
+            print('A12_DIFF_ITEMS', 0 if window.diff_plot is None else len(window.diff_plot.listDataItems()), flush=True)
         return comparison_ok
     finally:
         window.close()
