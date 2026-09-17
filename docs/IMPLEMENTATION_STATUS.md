@@ -1,18 +1,18 @@
 # 実装ステータス
 
-> 更新: 2026-09-17 / N50実装・Windows A11受入完了、PR #60 merge待ち、次工程N60
+> 更新: 2026-09-17 / N50 merged・Windows A11受入完了・次工程N60
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
 **N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 の技術gateを実装し、N50までWindows実機受入を通過した。**
 
-N50はIssue #59 / PR #60で実装完了。最終A11はbranch head `a8ba8d0507c404a9058c0ffe12475fce4dca968c` でPASSし、最後のproduct-code変更 `8762c5e15c1f8c9442ce6ef6378f24881e0f5236` はGitHub Actions CI #238 / run `35201888464` で全項目PASSした。現在はPR #60のmerge待ち。
+N50はIssue #59 / PR #60で完了し、merge commit `f37ffdf8a4c9e67894afb52d7750562812313b0d` でmainへ反映済み。最終A11はbranch head `a8ba8d0507c404a9058c0ffe12475fce4dca968c` でPASSし、最後のproduct-code変更 `8762c5e15c1f8c9442ce6ef6378f24881e0f5236` はGitHub Actions CI #238 / run `35201888464` で全項目PASSした。Issue #59 は `completed` でclose済み。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N40までmerge済み**。N50 PR #60 は受入完了・merge待ち |
-| N50 tracking | Issue #59 / PR #60 |
+| main | **N50までmerge済み**。PR #60 merge `f37ffdf8a4c9e67894afb52d7750562812313b0d` |
+| N50 tracking | Issue #59 / PR #60（完了） |
 | N50 accepted runtime head | `a8ba8d0507c404a9058c0ffe12475fce4dca968c` |
 | N50 last product-code head | `8762c5e15c1f8c9442ce6ef6378f24881e0f5236` |
 | N50 CI | #238 / run `35201888464` PASS |
