@@ -9,9 +9,9 @@ import time
 
 import numpy as np
 import pyvista as pv
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
@@ -42,6 +42,53 @@ def pump(app: QApplication, seconds: float = 0.04) -> None:
 def p95(values: list[float]) -> float:
     return float(np.percentile(np.asarray(values, dtype=float), 95))
 
+
+
+class ClickLatencyProbe(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.press_serial = 0
+        self.paint_serial = 0
+        self.setFixedSize(240, 160)
+        self.setWindowTitle('HTDT input baseline')
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.press_serial += 1
+            self.update()
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        self.paint_serial += 1
+        super().paintEvent(event)
+
+
+def measure_input_baseline(app: QApplication, samples: int = 40) -> list[float]:
+    probe = ClickLatencyProbe()
+    probe.show()
+    probe.raise_()
+    probe.activateWindow()
+    pump(app, 0.16)
+    point = probe.mapToGlobal(probe.rect().center())
+    values: list[float] = []
+    try:
+        for _ in range(samples):
+            QCursor.setPos(point)
+            pump(app, 0.01)
+            before_press = probe.press_serial
+            before_paint = probe.paint_serial
+            start = time.perf_counter()
+            user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
+            user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
+            if not wait_until(app, lambda: probe.press_serial > before_press, 0.5):
+                raise AssertionError('input baseline press timeout')
+            if not wait_until(app, lambda: probe.paint_serial > before_paint, 0.5):
+                raise AssertionError('input baseline paint timeout')
+            values.append((time.perf_counter() - start) * 1000.0)
+        return values
+    finally:
+        probe.close()
+        pump(app, 0.10)
 
 def display_to_global(window: NativeEditorWindow, x: float, y: float) -> QPoint:
     widget = window.viewport.interactor
@@ -220,18 +267,26 @@ def add_markers(window: NativeEditorWindow) -> None:
     window.viewport.render()
 
 
-def actual_pick(app: QApplication, window: NativeEditorWindow, entity_id: str) -> float:
+def actual_pick(
+    app: QApplication,
+    window: NativeEditorWindow,
+    entity_id: str,
+    feedback_serial: list[int],
+) -> float:
     point = world_to_global(window, np.asarray(window.actors[entity_id].center, dtype=float))
     QCursor.setPos(point)
     pump(app, 0.01)
+    before_feedback = feedback_serial[0]
     start = time.perf_counter()
     user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
     user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
-    if not wait_until(app, lambda: window.selected_id == entity_id, 0.5):
-        raise AssertionError(f'viewport pick timeout: {entity_id}')
-    app.processEvents()
+    if not wait_until(
+        app,
+        lambda: window.selected_id == entity_id and feedback_serial[0] > before_feedback,
+        0.75,
+    ):
+        raise AssertionError(f'viewport pick/render timeout: {entity_id}')
     return (time.perf_counter() - start) * 1000.0
-
 
 def drag_path(window: NativeEditorWindow) -> tuple[QPoint, list[QPoint]]:
     assert isinstance(window.gizmo, TranslationWidget3D)
@@ -330,8 +385,12 @@ def run_f4(app: QApplication, root: Path, seconds: float) -> bool:
         window._top()
         pump(app, 0.15)
         assert len(window.working.committed_document.entities) == 55
+        feedback_serial = [0]
+        window.gizmo_rebuild_timer.timeout.connect(
+            lambda: feedback_serial.__setitem__(0, feedback_serial[0] + 1)
+        )
         ids = [f'perf-{i:02d}' for i in range(20)] * 2
-        picks = [actual_pick(app, window, entity_id) for entity_id in ids]
+        picks = [actual_pick(app, window, entity_id, feedback_serial) for entity_id in ids]
         pick_p95 = p95(picks)
         print('F4_PICK', 'N', len(picks), 'P95_MS', round(pick_p95, 2), 'MAX_MS', round(max(picks), 2), flush=True)
 
@@ -361,6 +420,11 @@ def main() -> int:
     args = parser.parse_args()
     app = QApplication.instance() or QApplication([])
     print('N20B_ENV', 'DPR', app.primaryScreen().devicePixelRatio(), 'SCREEN', app.primaryScreen().size().width(), app.primaryScreen().size().height(), flush=True)
+    baseline = measure_input_baseline(app)
+    print(
+        'INPUT_BASELINE', 'N', len(baseline), 'P95_MS', round(p95(baseline), 2),
+        'MAX_MS', round(max(baseline), 2), flush=True,
+    )
     with tempfile.TemporaryDirectory(prefix='htdt-n20b-', ignore_cleanup_errors=True) as tmp:
         root = Path(tmp)
         a07_ok = run_a07(app, root)
