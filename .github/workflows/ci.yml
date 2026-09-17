@@ -51,6 +51,10 @@ jobs:
         shell: pwsh
         run: .\scripts\run-n60-hardware-gate.ps1 -RepoRoot $PWD -PreflightOnly
 
+      - name: Preflight N70 hardware gate runner
+        shell: pwsh
+        run: .\scripts\run-n70-hardware-gate.ps1 -RepoRoot $PWD -PreflightOnly
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

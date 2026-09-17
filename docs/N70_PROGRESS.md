@@ -89,6 +89,23 @@ N70 uses a reusable bulk marker primitive instead of tying candidate-cloud rende
 
 The 64^3 scalar-grid part of F5 remains gated. N70a has no validated model that produces a scalar SPL field, so the product continues to disable heatmap/slice/volume controls instead of generating synthetic field data and treating it as prediction evidence.
 
+Product commit `76c21eed7d7efcff23905e8af977854669df2752` contains the bulk-marker primitive and benchmark harness. CI #309 / run `35270706491` passed completely on Windows, including the new focused marker tests and benchmark-script compile. This SHA is frozen as the N70 owned-Windows product acceptance target.
+
+## Owned-Windows gate preparation
+
+`run-n70-hardware-gate.ps1` is kept separate from product code and pins `76c21eed7d7efcff23905e8af977854669df2752` as `ExpectedProductHead`.
+
+The runner:
+
+- refuses a dirty working tree;
+- fetches the N70 branch and rejects unexpected product changes after the pinned SHA;
+- records OS/build, CPU, RAM, active GPU/driver/display, AppliedDPI and Python/PySide6/PyVista/VTK/PyQtGraph versions;
+- executes `validate_n70_windows.py` and `benchmark_n70_f5_windows.py` in one gate;
+- cleans residual harness processes between phases;
+- restores the exact original branch/detached SHA and requires a clean post-status even after failure.
+
+CI performs a syntax check and preflight only. The actual A13/A14/F5 gate remains an owned-Windows task and will use one bundled RDC execution.
+
 ## Planned focused verification
 
 - native SceneRevision/model/input immutable binding;
