@@ -89,22 +89,34 @@ N70 uses a reusable bulk marker primitive instead of tying candidate-cloud rende
 
 The 64^3 scalar-grid part of F5 remains gated. N70a has no validated model that produces a scalar SPL field, so the product continues to disable heatmap/slice/volume controls instead of generating synthetic field data and treating it as prediction evidence.
 
-Product commit `76c21eed7d7efcff23905e8af977854669df2752` contains the bulk-marker primitive and benchmark harness. CI #309 / run `35270706491` passed completely on Windows, including the new focused marker tests and benchmark-script compile. This SHA is frozen as the N70 owned-Windows product acceptance target.
+Product commit `76c21eed7d7efcff23905e8af977854669df2752` contains the bulk-marker primitive and benchmark harness. CI #309 / run `35270706491` passed completely on Windows, including the new focused marker tests and benchmark-script compile. This SHA is frozen as the N70 product-code acceptance target.
 
 ## Owned-Windows gate preparation
 
-`run-n70-hardware-gate.ps1` is kept separate from product code and pins `76c21eed7d7efcff23905e8af977854669df2752` as `ExpectedProductHead`.
+Commit `bdd7267630d82b4cd58821a65c83b32fb17a7359` added `run-n70-hardware-gate.ps1`. CI #310 / run `35271098365` passed completely, including PowerShell syntax and N70 gate preflight.
 
 The runner:
 
 - refuses a dirty working tree;
 - fetches the N70 branch and rejects unexpected product changes after the pinned SHA;
 - records OS/build, CPU, RAM, active GPU/driver/display, AppliedDPI and Python/PySide6/PyVista/VTK/PyQtGraph versions;
-- executes `validate_n70_windows.py` and `benchmark_n70_f5_windows.py` in one gate;
+- executes N70 A13/A14 and F5 in one gate;
 - cleans residual harness processes between phases;
 - restores the exact original branch/detached SHA and requires a clean post-status even after failure.
 
-CI performs a syntax check and preflight only. The actual A13/A14/F5 gate remains an owned-Windows task and will use one bundled RDC execution.
+### First owned-Windows gate — diagnostic result
+
+The first gate checked out product-code SHA `76c21eed7d7efcff23905e8af977854669df2752` on the owned Windows machine and restored the original detached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b` with `N70_POST_STATUS_COUNT=0`.
+
+- A13/A14 process: Windows native access violation `-1073741819` (`0xC0000005`) immediately after `A13_N70_PRODUCT_COMPOSITION True`.
+- F5: PASS.
+- F5 structure: 50 editable furniture objects, 10,000 analysis markers, marker actor delta `1`, non-pickable `True`.
+- F5 first render: `11.051 ms`.
+- F5 orbit: p50 `22.596 ms`, p95 `29.805 ms`, max `58.014 ms`.
+
+The A13 stale case used a fixed `0.80 s` delayed worker. At 200% DPI, real tab/mouse/VTK interaction can consume enough time for the prediction to complete and rebuild overlays before the drag/save step, creating a timing-dependent VTK interaction race. This is an acceptance-harness defect rather than evidence of a failed stale-result guard.
+
+The deterministic gate harness now preserves the original harness as `validate_n70_windows_base.py` and uses `validate_n70_windows.py` as a latch-controlled wrapper. The stale and document-switch workers are not released until the required user/state transition is complete; the cancel worker is not released until cancellation is registered. Product code remains unchanged from `76c21eed7d7efcff23905e8af977854669df2752`.
 
 ## Planned focused verification
 
@@ -116,7 +128,7 @@ CI performs a syntax check and preflight only. The actual A13/A14/F5 gate remain
 - prediction stale/cancel/document-switch guard;
 - measured vs predicted UI semantics;
 - reflection overlay identity and non-pickability;
-- A13/A14 Windows harness compile before real-hardware gate;
+- deterministic A13/A14 real-Windows acceptance;
 - F5 10,000-marker one-actor invariant in CI and performance measurement on owned Windows.
 
 ## External model decision boundary
