@@ -9,6 +9,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
 
 from htdt.cad_repository import SceneRepository
@@ -39,7 +40,6 @@ class TraceRoomEditorWindow(RoomEditorWindow):
         ):
             pos = event.position()
             vertices = self._room_vertices()
-            midpoint = None
             projected = None
             if len(vertices) >= 2:
                 a, b = vertices[0], vertices[1]
