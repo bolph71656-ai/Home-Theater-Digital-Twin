@@ -22,9 +22,10 @@ from PySide6.QtWidgets import (
 
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID, RoomPrism, RoomVertex, room_vertices
-from .cad_wall_models import WallOpening, WallSegment, WallTopology
+from .cad_wall_models import WallConstraintBinding, WallOpening, WallSegment, WallTopology
 from .cad_walls import (
     WallTopologyError,
+    add_constraint_binding,
     add_opening,
     delete_wall,
     make_wall_topology,
@@ -49,10 +50,11 @@ def _wall_prism(room: RoomPrism, wall: WallSegment) -> pv.PolyData:
     if length <= 1e-12:
         return pv.PolyData()
 
-    signed_area = 0.0
-    for index, vertex in enumerate(vertices):
-        nxt = vertices[(index + 1) % len(vertices)]
-        signed_area += vertex.x_m * nxt.y_m - nxt.x_m * vertex.y_m
+    signed_area = sum(
+        vertex.x_m * vertices[(index + 1) % len(vertices)].y_m
+        - vertices[(index + 1) % len(vertices)].x_m * vertex.y_m
+        for index, vertex in enumerate(vertices)
+    )
     if signed_area >= 0.0:
         nx, ny = dy / length, -dx / length
     else:
@@ -91,9 +93,10 @@ def _wall_prism(room: RoomPrism, wall: WallSegment) -> pv.PolyData:
 
 
 class WallEditorWindow(RoomEditorWindow):
-    """N30b wall/opening layer over the N30a room editor."""
+    """N30b wall/opening editor layered on the accepted N30a room editor."""
 
     def __init__(self, repository: SceneRepository, document_id: str = F1_DOCUMENT_ID) -> None:
+        # RoomEditorWindow calls virtual methods during construction.
         self.wall_edit_active = False
         self.selected_wall_id: str | None = None
         self.wall_drag_wall_id: str | None = None
@@ -104,11 +107,12 @@ class WallEditorWindow(RoomEditorWindow):
         self.wall_drag_preview_topology: WallTopology | None = None
         self._wall_actor_names: set[str] = set()
         super().__init__(repository, document_id)
+
         self.setWindowTitle('Home Theater Digital Twin — 壁・開口エディター')
         self._localize_inherited_ui()
 
-        wall_toolbar = QToolBar('壁', self)
-        self.addToolBar(wall_toolbar)
+        toolbar = QToolBar('壁', self)
+        self.addToolBar(toolbar)
         self.start_wall_action = QAction('壁を編集', self)
         self.start_wall_action.triggered.connect(self.start_wall_edit)
         self.finish_wall_action = QAction('壁編集を終了', self)
@@ -121,7 +125,9 @@ class WallEditorWindow(RoomEditorWindow):
         self.delete_wall_action.triggered.connect(self.delete_selected_wall)
         self.add_opening_action = QAction('ドア開口を追加', self)
         self.add_opening_action.triggered.connect(self.add_door_opening)
-        wall_toolbar.addActions(
+        self.add_clearance_action = QAction('クリアランス参照を追加', self)
+        self.add_clearance_action.triggered.connect(self.add_clearance_binding)
+        toolbar.addActions(
             (
                 self.start_wall_action,
                 self.finish_wall_action,
@@ -129,19 +135,22 @@ class WallEditorWindow(RoomEditorWindow):
                 self.merge_wall_action,
                 self.delete_wall_action,
                 self.add_opening_action,
+                self.add_clearance_action,
             )
         )
 
-        wall_inspector = QWidget()
-        wall_form = QFormLayout(wall_inspector)
+        inspector = QWidget()
+        form = QFormLayout(inspector)
         self.wall_mode_label = QLabel('オブジェクト編集')
         self.wall_id_label = QLabel('—')
         self.wall_length_label = QLabel('—')
         self.wall_openings_label = QLabel('—')
-        wall_form.addRow('操作モード', self.wall_mode_label)
-        wall_form.addRow('選択中の壁', self.wall_id_label)
-        wall_form.addRow('壁の長さ', self.wall_length_label)
-        wall_form.addRow('開口数', self.wall_openings_label)
+        self.wall_constraints_label = QLabel('—')
+        form.addRow('操作モード', self.wall_mode_label)
+        form.addRow('選択中の壁', self.wall_id_label)
+        form.addRow('壁の長さ', self.wall_length_label)
+        form.addRow('開口数', self.wall_openings_label)
+        form.addRow('クリアランス参照', self.wall_constraints_label)
 
         self.wall_thickness = QDoubleSpinBox()
         self.wall_thickness.setRange(0.001, 2.0)
@@ -150,11 +159,19 @@ class WallEditorWindow(RoomEditorWindow):
         self.wall_thickness.setSuffix(' m')
         self.wall_thickness.setKeyboardTracking(False)
         self.wall_thickness.editingFinished.connect(self._numeric_wall_thickness_edited)
-        wall_form.addRow('壁厚', self.wall_thickness)
+        form.addRow('壁厚', self.wall_thickness)
 
-        wall_dock = QDockWidget('壁・開口', self)
-        wall_dock.setWidget(wall_inspector)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, wall_dock)
+        self.clearance_value = QDoubleSpinBox()
+        self.clearance_value.setRange(0.0, 10.0)
+        self.clearance_value.setDecimals(3)
+        self.clearance_value.setSingleStep(0.05)
+        self.clearance_value.setValue(0.30)
+        self.clearance_value.setSuffix(' m')
+        form.addRow('追加するクリアランス', self.clearance_value)
+
+        dock = QDockWidget('壁・開口', self)
+        dock.setWidget(inspector)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self._refresh_wall_inspector()
         self._update_actions()
 
@@ -186,8 +203,9 @@ class WallEditorWindow(RoomEditorWindow):
             elif toolbar.windowTitle() == 'Room':
                 toolbar.setWindowTitle('部屋')
             for action in toolbar.actions():
-                if action.text() in action_labels:
-                    action.setText(action_labels[action.text()])
+                replacement = action_labels.get(action.text())
+                if replacement is not None:
+                    action.setText(replacement)
 
         self.draw_room_action.setText('部屋を作図')
         self.edit_room_action.setText('部屋を編集')
@@ -199,9 +217,9 @@ class WallEditorWindow(RoomEditorWindow):
         self.angle_step_field.setSuffix('° 角度')
 
         for dock in self.findChildren(QDockWidget):
+            layout = dock.widget().layout() if dock.widget() is not None else None
             if dock.windowTitle() == 'Inspector':
                 dock.setWindowTitle('インスペクター')
-                layout = dock.widget().layout() if dock.widget() is not None else None
                 if isinstance(layout, QFormLayout):
                     fields = (
                         (self.kind_label, '種類'),
@@ -221,7 +239,6 @@ class WallEditorWindow(RoomEditorWindow):
                             widget.setText(label)
             elif dock.windowTitle() == 'Room':
                 dock.setWindowTitle('部屋')
-                layout = dock.widget().layout() if dock.widget() is not None else None
                 if isinstance(layout, QFormLayout):
                     fields = (
                         (self.room_tool_label, '部屋ツール'),
@@ -251,10 +268,10 @@ class WallEditorWindow(RoomEditorWindow):
             if text == 'Room · not created':
                 item.setText(0, '部屋 · 未作成')
             elif text.startswith('Room · '):
-                text = text.replace('Room · ', '部屋 · ', 1)
-                text = text.replace(' vertices · ', ' 頂点 · ')
-                text = text.replace(' m high', ' m 高さ')
-                item.setText(0, text)
+                localized = text.replace('Room · ', '部屋 · ', 1)
+                localized = localized.replace(' vertices · ', ' 頂点 · ')
+                localized = localized.replace(' m high', ' m 高さ')
+                item.setText(0, localized)
             elif text in replacements:
                 item.setText(0, replacements[text])
 
@@ -274,12 +291,10 @@ class WallEditorWindow(RoomEditorWindow):
         if room is None:
             self.statusBar().showMessage('先に部屋を作成してください')
             return False
-        topology = self._current_topology()
-        if topology is not None:
+        if self._current_topology() is not None:
             return True
         topology = make_wall_topology(room)
-        changed = self.working.replace_room_topology(room, topology)
-        if changed:
+        if self.working.replace_room_topology(room, topology):
             self._sync_recovery()
             self._rebuild()
         return True
@@ -301,19 +316,19 @@ class WallEditorWindow(RoomEditorWindow):
         topology = topology or self._current_topology()
         if room is None or topology is None:
             return
+
         by_id = {vertex.vertex_id: vertex for vertex in room_vertices(room)}
         for wall in topology.walls:
             prism_name = f'wall-prism:{wall.wall_id}'
             prism = _wall_prism(room, wall)
             if prism.n_points:
-                actor = self.viewport.add_mesh(
+                self.viewport.add_mesh(
                     prism,
                     opacity=0.22,
                     pickable=False,
                     name=prism_name,
                     render=False,
                 )
-                actor.prop.line_width = 1
                 self._wall_actor_names.add(prism_name)
             start = by_id[wall.from_vertex_id]
             end = by_id[wall.to_vertex_id]
@@ -326,6 +341,7 @@ class WallEditorWindow(RoomEditorWindow):
                 render=False,
             )
             self._wall_actor_names.add(line_name)
+
         for opening in topology.openings:
             wall = next(wall for wall in topology.walls if wall.wall_id == opening.wall_id)
             start = by_id[wall.from_vertex_id]
@@ -383,9 +399,7 @@ class WallEditorWindow(RoomEditorWindow):
             distance = self._point_segment_distance(qt_x, qt_y, ax, ay, bx, by)
             if distance <= 12.0:
                 hits.append((distance, wall.wall_id))
-        if not hits:
-            return None
-        return min(hits, key=lambda item: item[0])[1]
+        return min(hits, default=(0.0, None), key=lambda item: item[0])[1]
 
     def start_wall_edit(self) -> None:
         if self.recovery_candidate is not None or self.working is None:
@@ -450,7 +464,6 @@ class WallEditorWindow(RoomEditorWindow):
         if not self.wall_edit_active or room is None or topology is None or self.selected_wall_id is None:
             return
         wall = next(wall for wall in topology.walls if wall.wall_id == self.selected_wall_id)
-        offset = wall_length(room, wall) / 2.0
         token = uuid4().hex[:10]
         first_id = f'wall-{token}-a'
         second_id = f'wall-{token}-b'
@@ -459,7 +472,7 @@ class WallEditorWindow(RoomEditorWindow):
                 room,
                 topology,
                 wall.wall_id,
-                offset_m=offset,
+                offset_m=wall_length(room, wall) / 2.0,
                 new_vertex_id=f'wall-v-{token}',
                 first_wall_id=first_id,
                 second_wall_id=second_id,
@@ -471,7 +484,7 @@ class WallEditorWindow(RoomEditorWindow):
             self._sync_recovery()
         self.selected_wall_id = first_id
         self._rebuild()
-        self.statusBar().showMessage('壁を中央で分割しました · 開口参照は子壁へ追従します')
+        self.statusBar().showMessage('壁を中央で分割しました · 開口とクリアランス参照は子壁へ追従します')
 
     def merge_selected_wall_with_next(self) -> None:
         room = self._current_room()
@@ -479,20 +492,19 @@ class WallEditorWindow(RoomEditorWindow):
         if not self.wall_edit_active or room is None or topology is None or self.selected_wall_id is None:
             return
         index = next(
-            (index for index, wall in enumerate(topology.walls) if wall.wall_id == self.selected_wall_id),
+            (i for i, wall in enumerate(topology.walls) if wall.wall_id == self.selected_wall_id),
             None,
         )
         if index is None or index + 1 >= len(topology.walls):
             self.statusBar().showMessage('この壁には順方向の結合対象がありません')
             return
-        second = topology.walls[index + 1]
         merged_id = f'wall-{uuid4().hex[:10]}'
         try:
             new_room, new_topology = merge_walls(
                 room,
                 topology,
                 self.selected_wall_id,
-                second.wall_id,
+                topology.walls[index + 1].wall_id,
                 merged_wall_id=merged_id,
             )
         except WallTopologyError as exc:
@@ -502,7 +514,7 @@ class WallEditorWindow(RoomEditorWindow):
             self._sync_recovery()
         self.selected_wall_id = merged_id
         self._rebuild()
-        self.statusBar().showMessage('壁を結合しました · 壁IDと開口参照を1操作で更新しました')
+        self.statusBar().showMessage('壁を結合しました · 開口とクリアランス参照を1操作で更新しました')
 
     def delete_selected_wall(self) -> None:
         room = self._current_room()
@@ -555,7 +567,27 @@ class WallEditorWindow(RoomEditorWindow):
         if self.working.replace_room_topology(room, new_topology):
             self._sync_recovery()
         self._rebuild()
-        self.statusBar().showMessage('ドア開口を追加しました · 壁移動時も壁ローカル位置を保持します')
+        self.statusBar().showMessage('ドア開口を追加しました · 壁ローカル位置で保持します')
+
+    def add_clearance_binding(self) -> None:
+        room = self._current_room()
+        topology = self._current_topology()
+        if not self.wall_edit_active or room is None or topology is None or self.selected_wall_id is None:
+            return
+        binding = WallConstraintBinding(
+            binding_id=f'clearance-{uuid4().hex[:10]}',
+            wall_ids=(self.selected_wall_id,),
+            clearance_m=float(self.clearance_value.value()),
+        )
+        try:
+            new_topology = add_constraint_binding(room, topology, binding)
+        except (ValueError, WallTopologyError) as exc:
+            self.statusBar().showMessage(f'クリアランス参照を追加できません · {exc}')
+            return
+        if self.working.replace_room_topology(room, new_topology):
+            self._sync_recovery()
+        self._rebuild()
+        self.statusBar().showMessage('クリアランス参照を追加しました · 壁IDの変更にも追従します')
 
     def _numeric_wall_thickness_edited(self) -> None:
         room = self._current_room()
@@ -567,7 +599,11 @@ class WallEditorWindow(RoomEditorWindow):
             if wall.wall_id == self.selected_wall_id:
                 walls[index] = wall.model_copy(update={'thickness_m': float(self.wall_thickness.value())})
                 break
-        candidate = WallTopology(walls=tuple(walls), openings=topology.openings)
+        candidate = WallTopology(
+            walls=tuple(walls),
+            openings=topology.openings,
+            constraint_bindings=topology.constraint_bindings,
+        )
         try:
             validate_wall_topology(room, candidate)
         except WallTopologyError as exc:
@@ -577,7 +613,7 @@ class WallEditorWindow(RoomEditorWindow):
         if self.working.replace_room_topology(room, candidate):
             self._sync_recovery()
             self._rebuild()
-            self.statusBar().showMessage('壁厚を変更しました · 室内境界は変えていません')
+            self.statusBar().showMessage('壁厚を変更しました · 室内境界と参照は維持されています')
         else:
             self._refresh_wall_inspector()
 
@@ -588,10 +624,12 @@ class WallEditorWindow(RoomEditorWindow):
         room = self._current_room()
         topology = self._current_topology()
         self.wall_thickness.setEnabled(False)
+        self.clearance_value.setEnabled(self.wall_edit_active and self.recovery_candidate is None)
         if room is None or topology is None or self.selected_wall_id is None:
             self.wall_id_label.setText('—')
             self.wall_length_label.setText('—')
             self.wall_openings_label.setText('—')
+            self.wall_constraints_label.setText('—')
             return
         wall = next((wall for wall in topology.walls if wall.wall_id == self.selected_wall_id), None)
         if wall is None:
@@ -599,8 +637,12 @@ class WallEditorWindow(RoomEditorWindow):
             return
         self.wall_id_label.setText(wall.wall_id)
         self.wall_length_label.setText(f'{wall_length(room, wall):.3f} m')
-        count = sum(1 for opening in topology.openings if opening.wall_id == wall.wall_id)
-        self.wall_openings_label.setText(str(count))
+        self.wall_openings_label.setText(
+            str(sum(1 for opening in topology.openings if opening.wall_id == wall.wall_id))
+        )
+        self.wall_constraints_label.setText(
+            str(sum(1 for binding in topology.constraint_bindings if wall.wall_id in binding.wall_ids))
+        )
         with QSignalBlocker(self.wall_thickness):
             self.wall_thickness.setValue(wall.thickness_m)
         self.wall_thickness.setEnabled(self.wall_edit_active and self.recovery_candidate is None)
@@ -610,14 +652,14 @@ class WallEditorWindow(RoomEditorWindow):
         if not hasattr(self, 'start_wall_action'):
             return
         blocked = self.recovery_candidate is not None or self.working is None
-        room_exists = self._current_room() is not None
         selected = self.wall_edit_active and self.selected_wall_id is not None
-        self.start_wall_action.setEnabled(not blocked and room_exists and not self.wall_edit_active)
+        self.start_wall_action.setEnabled(not blocked and self._current_room() is not None and not self.wall_edit_active)
         self.finish_wall_action.setEnabled(not blocked and self.wall_edit_active)
         self.split_wall_action.setEnabled(not blocked and selected)
         self.merge_wall_action.setEnabled(not blocked and selected)
         self.delete_wall_action.setEnabled(not blocked and selected)
         self.add_opening_action.setEnabled(not blocked and selected)
+        self.add_clearance_action.setEnabled(not blocked and selected)
         if self.wall_edit_active:
             for action in (
                 self.move_action,
