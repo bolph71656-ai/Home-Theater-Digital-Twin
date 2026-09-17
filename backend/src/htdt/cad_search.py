@@ -1,0 +1,233 @@
+from __future__ import annotations
+
+import json
+from typing import Iterable
+
+from .cad_constraint_models import CadConstraintSet
+from .cad_constraints import build_g10_constraint_request, scene_to_g10_context
+from .cad_document import EditStateError, TransformEntitiesCommand, WorkingDocument
+from .cad_repository import SceneRepository, SceneRevision
+from .cad_scene import Position3, SceneDocument, scene_content_hash
+from .cad_search_models import (
+    CadCandidate,
+    CadCandidateSetPage,
+    CadSearchAxis,
+    CadSearchSpec,
+    canonical_search_json,
+    canonical_search_sha256,
+    constraint_workspace_snapshot,
+    new_search_spec_id,
+    search_timestamp_utc,
+)
+from .placement_constraints import validate_constraint_set_for_context
+from .search_space import GridAxis, SearchSpecCreate, generate_search_space, validate_search_spec
+
+
+def _constraint_engine_spec(
+    revision: SceneRevision,
+    constraint_set: CadConstraintSet,
+) -> tuple[dict, str]:
+    context = scene_to_g10_context(revision.document)
+    request = build_g10_constraint_request(revision.document, constraint_set)
+    stored = validate_constraint_set_for_context(request, context)
+    return stored, canonical_search_sha256(stored)
+
+
+def build_cad_search_spec(
+    revision: SceneRevision,
+    constraint_set: CadConstraintSet,
+    axes: Iterable[CadSearchAxis],
+    *,
+    candidate_limit: int = 10_000,
+    name: str | None = None,
+) -> tuple[CadSearchSpec, dict]:
+    """Create an immutable native SearchSpec while reusing O10 only as an algorithm service."""
+
+    if constraint_set.document_id != revision.document_id:
+        raise ValueError('SearchSpec constraint workspace belongs to another document')
+
+    native_axes = tuple(axes)
+    if not native_axes:
+        raise ValueError('SearchSpec requires at least one axis')
+
+    constraint_snapshot_json, constraint_workspace_hash = constraint_workspace_snapshot(constraint_set)
+    engine_spec, engine_sha = _constraint_engine_spec(revision, constraint_set)
+    context = scene_to_g10_context(revision.document)
+    synthetic_constraint_id = f'cad-constraints:{constraint_workspace_hash[:20]}'
+    request = SearchSpecCreate(
+        constraint_set_id=synthetic_constraint_id,
+        name=name,
+        axes=[GridAxis.model_validate(item.model_dump(mode='json')) for item in native_axes],
+        candidate_limit=candidate_limit,
+    )
+    o10_spec, estimate = validate_search_spec(
+        request,
+        context,
+        context_id=f'cad-revision:{revision.revision_id}',
+        constraint_set_id=synthetic_constraint_id,
+        constraint_set_spec=engine_spec,
+        constraint_set_spec_sha256=engine_sha,
+    )
+    ordered_axes = tuple(CadSearchAxis.model_validate(item) for item in o10_spec['axes'])
+    identity = {
+        'schema_version': 1,
+        'document_id': revision.document_id,
+        'scene_revision_id': revision.revision_id,
+        'scene_content_hash': revision.content_hash,
+        'constraint_workspace_hash': constraint_workspace_hash,
+        'algorithm': 'deterministic_grid',
+        'algorithm_version': 'search-space-grid-1',
+        'axes': [item.model_dump(mode='json') for item in ordered_axes],
+        'candidate_limit': candidate_limit,
+    }
+    spec = CadSearchSpec(
+        search_spec_id=new_search_spec_id(),
+        document_id=revision.document_id,
+        scene_revision_id=revision.revision_id,
+        scene_content_hash=revision.content_hash,
+        constraint_workspace_hash=constraint_workspace_hash,
+        constraint_snapshot_json=constraint_snapshot_json,
+        constraint_engine_spec_json=canonical_search_json(engine_spec),
+        constraint_engine_spec_sha256=engine_sha,
+        axes=ordered_axes,
+        candidate_limit=candidate_limit,
+        o10_spec_json=canonical_search_json(o10_spec),
+        search_spec_sha256=canonical_search_sha256(identity),
+        name=name.strip() if name and name.strip() else None,
+        created_at_utc=search_timestamp_utc(),
+    )
+    return spec, estimate
+
+
+def generate_cad_candidates(
+    scene_repository: SceneRepository,
+    spec: CadSearchSpec,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+) -> CadCandidateSetPage:
+    source = scene_repository.get(spec.scene_revision_id)
+    if source is None:
+        raise ValueError('SearchSpec source revision no longer exists')
+    if source.document_id != spec.document_id:
+        raise ValueError('SearchSpec source revision belongs to another document')
+    if source.content_hash != spec.scene_content_hash:
+        raise ValueError('SearchSpec source content hash mismatch')
+
+    constraint_snapshot = CadConstraintSet.model_validate(json.loads(spec.constraint_snapshot_json))
+    _, snapshot_hash = constraint_workspace_snapshot(constraint_snapshot)
+    if snapshot_hash != spec.constraint_workspace_hash:
+        raise ValueError('SearchSpec constraint snapshot hash mismatch')
+    if constraint_snapshot.document_id != spec.document_id:
+        raise ValueError('SearchSpec constraint snapshot belongs to another document')
+
+    context = scene_to_g10_context(source.document)
+    engine_spec = json.loads(spec.constraint_engine_spec_json)
+    raw = generate_search_space(
+        context,
+        json.loads(spec.o10_spec_json),
+        search_spec_sha256=spec.search_spec_sha256,
+        constraint_set_spec=engine_spec,
+        constraint_set_spec_sha256=spec.constraint_engine_spec_sha256,
+        offset=offset,
+        limit=limit,
+    )
+    candidates = tuple(CadCandidate.model_validate(item) for item in raw['candidates'])
+    return CadCandidateSetPage(
+        search_spec_id=spec.search_spec_id,
+        search_spec_sha256=spec.search_spec_sha256,
+        candidate_set_sha256=raw['candidate_set_sha256'],
+        raw_candidate_count=raw['raw_candidate_count'],
+        feasible_candidate_count=raw['feasible_candidate_count'],
+        rejected_candidate_count=raw['rejected_candidate_count'],
+        duplicate_candidate_count=raw['duplicate_candidate_count'],
+        rejection_counts=raw['rejection_counts'],
+        offset=raw['offset'],
+        limit=raw['limit'],
+        candidates=candidates,
+    )
+
+
+def search_spec_current(
+    spec: CadSearchSpec,
+    current_revision: SceneRevision,
+    current_constraint_set: CadConstraintSet,
+) -> bool:
+    if current_revision.document_id != spec.document_id:
+        return False
+    if current_revision.revision_id != spec.scene_revision_id:
+        return False
+    if current_revision.content_hash != spec.scene_content_hash:
+        return False
+    if current_constraint_set.document_id != spec.document_id:
+        return False
+    _, current_constraint_hash = constraint_workspace_snapshot(current_constraint_set)
+    return current_constraint_hash == spec.constraint_workspace_hash
+
+
+def search_spec_current_working(
+    spec: CadSearchSpec,
+    working: WorkingDocument,
+    current_constraint_set: CadConstraintSet,
+) -> bool:
+    if working.committed_document.document_id != spec.document_id:
+        return False
+    if working.source_revision_id != spec.scene_revision_id:
+        return False
+    if scene_content_hash(working.committed_document) != spec.scene_content_hash:
+        return False
+    if current_constraint_set.document_id != spec.document_id:
+        return False
+    _, current_constraint_hash = constraint_workspace_snapshot(current_constraint_set)
+    return current_constraint_hash == spec.constraint_workspace_hash
+
+
+def require_search_spec_current(
+    spec: CadSearchSpec,
+    current_revision: SceneRevision,
+    current_constraint_set: CadConstraintSet,
+) -> None:
+    if not search_spec_current(spec, current_revision, current_constraint_set):
+        raise ValueError('SearchSpec is stale for the current scene revision or constraint workspace')
+
+
+def candidate_preview_document(document: SceneDocument, candidate: CadCandidate) -> SceneDocument:
+    """Return a non-authoritative candidate preview without mutating WorkingDocument."""
+
+    replacements = {}
+    for entity_id, raw_position in candidate.positions.items():
+        entity = document.entity(entity_id)
+        position = Position3.model_validate(raw_position)
+        replacements[entity_id] = entity.model_copy(update={'position': position})
+    entities = tuple(replacements.get(entity.entity_id, entity) for entity in document.entities)
+    return document.model_copy(update={'entities': entities})
+
+
+def apply_candidate_positions(
+    working: WorkingDocument,
+    candidate: CadCandidate,
+    *,
+    spec: CadSearchSpec,
+    current_constraint_set: CadConstraintSet,
+) -> bool:
+    """Apply candidate positions as one Undo command, after rechecking native authority."""
+
+    if working.has_preview:
+        raise EditStateError('cannot apply a candidate while an edit preview is active')
+    if not search_spec_current_working(spec, working, current_constraint_set):
+        raise ValueError('cannot apply candidate from a stale SearchSpec')
+    if not candidate.positions:
+        return False
+
+    before = tuple(working.committed_document.entity(entity_id) for entity_id in sorted(candidate.positions))
+    after = tuple(
+        entity.model_copy(update={'position': Position3.model_validate(candidate.positions[entity.entity_id])})
+        for entity in before
+    )
+    command = TransformEntitiesCommand(before=before, after=after)
+    before_hash = scene_content_hash(working.committed_document)
+
+    # Package-internal bridge into the accepted editor command stack. Keeping one
+    # TransformEntitiesCommand is what gives candidate application exactly one Undo.
+    working._document = working._history.push(command, working._document)  # noqa: SLF001
+    return scene_content_hash(working.committed_document) != before_hash
