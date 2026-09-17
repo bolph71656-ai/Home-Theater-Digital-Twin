@@ -184,7 +184,7 @@ def _safe_restore(
     conflicts: list[str] = []
 
     source_names = tuple(sorted(set(before.active_sources) | set(owned.active_sources)))
-    for source_name in reversed(source_names):
+    for source_name in source_names:
         if source_name not in before.sources or source_name not in owned.sources or source_name not in current.sources:
             conflicts.append(f'source-set:{source_name}')
             continue
