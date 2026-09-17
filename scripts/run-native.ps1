@@ -1,5 +1,6 @@
 param(
-    [string]$DataDir = ""
+    [string]$DataDir = "",
+    [string]$DocumentId = "fixture-f1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +10,7 @@ if (-not (Test-Path $Python)) {
     throw "Missing .venv. Create a Python 3.12 venv and install backend first."
 }
 
-$Arguments = @("-m", "htdt.native_editor")
+$Arguments = @("-m", "htdt.room_editor", "--document-id", $DocumentId)
 if ($DataDir) {
     $Arguments += @("--data-dir", $DataDir)
 }
