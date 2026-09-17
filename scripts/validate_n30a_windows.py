@@ -173,7 +173,17 @@ def run_a08(app: QApplication, root: Path) -> bool:
         set_top_fixture_camera(window)
         before_insert_history = window.working.history_length
         window.insert_vertex_action.setChecked(True)
-        click(domain_to_global(window, 3.0, 0.0))
+        current_vertices = room_vertices(window.working.committed_document.room)
+        edge_start = current_vertices[0]
+        edge_end = current_vertices[1]
+        insert_midpoint = (
+            (edge_start.x_m + edge_end.x_m) / 2.0,
+            (edge_start.y_m + edge_end.y_m) / 2.0,
+        )
+        insert_point = domain_to_global(window, *insert_midpoint)
+        insert_local = window.viewport.interactor.mapFromGlobal(insert_point)
+        print('A08_INSERT_TARGET', insert_midpoint, 'HIT', window._hit_room_handle(float(insert_local.x()), float(insert_local.y())), flush=True)
+        click(insert_point)
         pump(app, 0.16)
         inserted_room = window.working.committed_document.room
         insert_ok = (
