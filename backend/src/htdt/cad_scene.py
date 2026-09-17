@@ -3,9 +3,11 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from math import asin, atan2, cos, degrees, isfinite, radians, sin, sqrt
-from typing import Literal
+from typing import Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .geometry import polygon_from_vertices
 
 
 class SceneValidationError(ValueError):
@@ -185,12 +187,93 @@ class Size3(BaseModel):
     z_m: float = Field(gt=0)
 
 
+class RoomVertex(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    vertex_id: str = Field(min_length=1)
+    x_m: float
+    y_m: float
+
+    @field_validator('x_m', 'y_m')
+    @classmethod
+    def finite(cls, value: float) -> float:
+        value = float(value)
+        if not isfinite(value):
+            raise ValueError('room vertex values must be finite')
+        return value
+
+
 class RoomPrism(BaseModel):
+    """Single-room prism. Legacy rectangles omit footprint_vertices; N30+ rooms store them explicitly."""
+
     model_config = ConfigDict(frozen=True)
     room_id: str = 'room'
     width_m: float = Field(gt=0)
     depth_m: float = Field(gt=0)
     height_m: float = Field(gt=0)
+    footprint_vertices: tuple[RoomVertex, ...] | None = None
+
+    @model_validator(mode='after')
+    def valid_footprint(self) -> 'RoomPrism':
+        if self.footprint_vertices is None:
+            return self
+        vertices = self.footprint_vertices
+        if len(vertices) < 3:
+            raise ValueError('room footprint must have at least three vertices')
+        ids = [vertex.vertex_id for vertex in vertices]
+        if len(ids) != len(set(ids)):
+            raise ValueError('room vertex ids must be unique')
+        polygon = polygon_from_vertices([(vertex.x_m, vertex.y_m) for vertex in vertices])
+        min_x, min_y, max_x, max_y = (float(value) for value in polygon.bounds)
+        expected_width = max_x - min_x
+        expected_depth = max_y - min_y
+        tolerance = 1e-9
+        if abs(float(self.width_m) - expected_width) > tolerance:
+            raise ValueError('room width_m must match footprint bounds')
+        if abs(float(self.depth_m) - expected_depth) > tolerance:
+            raise ValueError('room depth_m must match footprint bounds')
+        return self
+
+    @property
+    def bounds_m(self) -> tuple[float, float, float, float]:
+        if self.footprint_vertices is None:
+            return (0.0, 0.0, float(self.width_m), float(self.depth_m))
+        xs = [vertex.x_m for vertex in self.footprint_vertices]
+        ys = [vertex.y_m for vertex in self.footprint_vertices]
+        return (min(xs), min(ys), max(xs), max(ys))
+
+
+def room_vertices(room: RoomPrism) -> tuple[RoomVertex, ...]:
+    if room.footprint_vertices is not None:
+        return room.footprint_vertices
+    return (
+        RoomVertex(vertex_id='front-left', x_m=0.0, y_m=0.0),
+        RoomVertex(vertex_id='front-right', x_m=room.width_m, y_m=0.0),
+        RoomVertex(vertex_id='rear-right', x_m=room.width_m, y_m=room.depth_m),
+        RoomVertex(vertex_id='rear-left', x_m=0.0, y_m=room.depth_m),
+    )
+
+
+def make_polygon_room(
+    vertices: Sequence[RoomVertex],
+    *,
+    height_m: float,
+    room_id: str = 'room',
+) -> RoomPrism:
+    ordered = tuple(vertices)
+    if len(ordered) < 3:
+        raise ValueError('room footprint must have at least three vertices')
+    ids = [vertex.vertex_id for vertex in ordered]
+    if len(ids) != len(set(ids)):
+        raise ValueError('room vertex ids must be unique')
+    polygon = polygon_from_vertices([(vertex.x_m, vertex.y_m) for vertex in ordered])
+    min_x, min_y, max_x, max_y = (float(value) for value in polygon.bounds)
+    return RoomPrism(
+        room_id=room_id,
+        width_m=max_x - min_x,
+        depth_m=max_y - min_y,
+        height_m=float(height_m),
+        footprint_vertices=ordered,
+    )
 
 
 class SceneEntity(BaseModel):
@@ -218,7 +301,7 @@ class SceneDocument(BaseModel):
     document_id: str = Field(min_length=1)
     schema_version: int = 1
     coordinate_system: Literal['htdt-x-right-y-rear-z-up-m'] = 'htdt-x-right-y-rear-z-up-m'
-    room: RoomPrism
+    room: RoomPrism | None
     entities: tuple[SceneEntity, ...]
 
     @model_validator(mode='after')
@@ -242,6 +325,9 @@ def canonical_scene_json(document: SceneDocument) -> str:
         orientation = entity.get('orientation')
         if orientation == IDENTITY_ORIENTATION.model_dump(mode='json'):
             entity.pop('orientation', None)
+    # Preserve N05/N10/N20 rectangular-room hashes by omitting the new optional field.
+    if isinstance(payload.get('room'), dict) and payload['room'].get('footprint_vertices') is None:
+        payload['room'].pop('footprint_vertices', None)
     return json.dumps(
         payload,
         ensure_ascii=False,
@@ -288,6 +374,10 @@ def render_delta_to_domain(delta_xyz: tuple[float, float, float], base: Position
 
 
 F1_DOCUMENT_ID = 'fixture-f1'
+
+
+def make_empty_scene(document_id: str) -> SceneDocument:
+    return SceneDocument(document_id=document_id, schema_version=2, room=None, entities=())
 
 
 def make_f1_scene() -> SceneDocument:
