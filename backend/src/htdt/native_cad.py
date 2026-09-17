@@ -10,9 +10,13 @@ from .cad_composition import CadEditorWindow
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID
 from .native_editor import default_data_dir
-from .theater_editor import TheaterEditorWindow
+from .theater_workflow import TheaterWorkflowWindow
 
-__all__ = ['CadEditorWindow', 'TheaterEditorWindow', 'main']
+# Preserve the N40 public name while the concrete product composition includes
+# the explicit acoustic workflow layer.
+TheaterEditorWindow = TheaterWorkflowWindow
+
+__all__ = ['CadEditorWindow', 'TheaterEditorWindow', 'TheaterWorkflowWindow', 'main']
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     app = QApplication([sys.argv[0]])
     repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
-    window = TheaterEditorWindow(repository, args.document_id)
+    window = TheaterWorkflowWindow(repository, args.document_id)
     window.show()
     return int(app.exec())
 
