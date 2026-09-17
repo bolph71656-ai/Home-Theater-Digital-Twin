@@ -57,9 +57,6 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         self.measurement_scroll: QScrollArea | None = None
         super().__init__(repository, document_id)
         self._fit_initial_size_to_screen()
-        # QMainWindow resolves dock geometry when the window is first shown. Clamp
-        # once more after that layout pass so a high-DPI size hint cannot restore an
-        # oversized pre-show geometry.
         QTimer.singleShot(0, self._fit_initial_size_to_screen)
 
     def _fit_initial_size_to_screen(self) -> None:
@@ -88,9 +85,7 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
             return
 
         # Keep the natural full-form height as the scrollable child extent without
-        # publishing that height as the QScrollArea/QDockWidget minimum. The previous
-        # widgetResizable=True + panel minimum-height combination left child geometry
-        # extending below the clamped main window at 200% Windows DPI.
+        # publishing that height as the QScrollArea/QDockWidget minimum.
         panel.setParent(None)
         scroll = _MeasurementScrollArea(panel, dock)
         dock.setMinimumSize(0, 0)
@@ -100,22 +95,33 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         self._unify_right_context_docks(dock)
 
     def _unify_right_context_docks(self, measurement_dock: QDockWidget) -> None:
-        """Rebuild all right-side context surfaces into one CAD-style tab stack."""
-        titles = ('Inspector', 'オブジェクト詳細', '制約', '実測')
-        docks_by_title = {
-            candidate.windowTitle(): candidate
+        """Rebuild every right-side context surface into one CAD-style tab stack."""
+        preferred_titles = (
+            'Inspector',
+            'Room',
+            '壁・開口',
+            'オブジェクト詳細',
+            '制約',
+            '実測',
+        )
+        right_docks = [
+            candidate
             for candidate in self.findChildren(QDockWidget)
-            if candidate.windowTitle() in titles
-        }
-        ordered = [docks_by_title[title] for title in titles if title in docks_by_title]
+            if self.dockWidgetArea(candidate) == Qt.DockWidgetArea.RightDockWidgetArea
+        ]
+        if measurement_dock not in right_docks:
+            right_docks.append(measurement_dock)
+        by_title = {candidate.windowTitle(): candidate for candidate in right_docks}
+        ordered = [by_title[title] for title in preferred_titles if title in by_title]
+        ordered.extend(candidate for candidate in right_docks if candidate not in ordered)
         if not ordered:
             return
 
-        # The base editors already created split rows before N60 exists. Qt keeps that
-        # split topology if tabifyDockWidget() is called in place, so the lower row can
-        # remain clipped below the main window even though every dock reports the same
-        # dock area. Remove and re-add the four alternative context surfaces first;
-        # removeDockWidget() hides them, so show them again before tabification.
+        # The inherited editors create Inspector, Room, wall/opening, object,
+        # constraint and measurement surfaces at different construction stages.
+        # Leaving even one of those right-area docks outside the final tab group can
+        # preserve a vertical split row and push the lower group below a 200% DPI
+        # desktop. Reset the entire right area, not only the newest N40-N60 panels.
         for candidate in ordered:
             candidate.setMinimumSize(0, 0)
             self.removeDockWidget(candidate)
@@ -124,7 +130,7 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
             self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, candidate)
             candidate.show()
 
-        anchor = docks_by_title.get('Inspector', ordered[0])
+        anchor = by_title.get('Inspector', ordered[0])
         for candidate in ordered:
             if candidate is not anchor:
                 self.tabifyDockWidget(anchor, candidate)
