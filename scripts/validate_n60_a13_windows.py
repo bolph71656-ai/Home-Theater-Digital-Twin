@@ -20,7 +20,7 @@ from htdt.measurement_editor import MeasurementEditorWindow
 from htdt.native_cad import TheaterEditorWindow
 from htdt.rew_api import RewFrequencyResponse, RewFrequencyResponseSnapshot
 
-from validate_n40_windows import click_action, click_actor, click_widget, drag_selected_x, foreground, pump, wait_until
+from validate_n40_windows import click_action, click_global, click_widget, drag_selected_x, foreground, pump, wait_until
 
 if sys.platform != 'win32':
     raise SystemExit('This acceptance harness requires Windows.')
@@ -76,6 +76,21 @@ def find_button(window: MeasurementEditorWindow, text: str) -> QPushButton:
     raise AssertionError(f'button not found: {text}')
 
 
+def click_scene_entity(window: MeasurementEditorWindow, entity_id: str, app: QApplication) -> bool:
+    item = window.items.get(entity_id)
+    if item is None:
+        return False
+    tree = window.tree
+    rect = tree.visualItemRect(item)
+    if rect.isEmpty():
+        tree.scrollToItem(item)
+        pump(app, 0.05)
+        rect = tree.visualItemRect(item)
+    foreground(window, app)
+    click_global(tree.viewport().mapToGlobal(rect.center()), app)
+    return wait_until(app, lambda: window.selected_id == entity_id, 0.8)
+
+
 def configure_delayed_measurement(window: MeasurementEditorWindow, external_id: str, delay_s: float) -> None:
     window.rew_client = DelayedRewClient(delay_s)
     window.rew_combo.clear()
@@ -84,7 +99,8 @@ def configure_delayed_measurement(window: MeasurementEditorWindow, external_id: 
 
 
 def start_rew_read(window: MeasurementEditorWindow, app: QApplication) -> str | None:
-    click_actor(window, 'point-mlp', app)
+    if not click_scene_entity(window, 'point-mlp', app):
+        return None
     click_widget(find_button(window, '選択REWを読込'), app)
     if not wait_until(app, lambda: window._current_rew_token_id is not None, 0.6):
         return None
@@ -119,8 +135,11 @@ def run_a13(app: QApplication, root: Path) -> bool:
         configure_delayed_measurement(window, 'rew-stale-after-edit', 1.20)
         token_id = start_rew_read(window, app)
         if token_id is None:
+            print('A13_START_STALE_JOB', False, flush=True)
             return False
-        click_actor(window, 'speaker-fl', app)
+        if not click_scene_entity(window, 'speaker-fl', app):
+            print('A13_MOUSE_SCENE_SELECT', False, flush=True)
+            return False
         moved = drag_selected_x(window, app, scale=1.05)
         click_action(window, window.save_action, app)
         revision_b = repository.latest(FIXTURE_ID)
@@ -145,6 +164,7 @@ def run_a13(app: QApplication, root: Path) -> bool:
         configure_delayed_measurement(window, 'rew-cancelled', 0.65)
         cancel_token_id = start_rew_read(window, app)
         if cancel_token_id is None:
+            print('A13_START_CANCEL_JOB', False, flush=True)
             return False
         click_widget(find_button(window, '読込キャンセル'), app)
         cancelled = wait_jobs_empty(window, app, 1.8)
@@ -162,6 +182,7 @@ def run_a13(app: QApplication, root: Path) -> bool:
         configure_delayed_measurement(window, 'rew-document-switch', 0.65)
         document_token_id = start_rew_read(window, app)
         if document_token_id is None:
+            print('A13_START_DOCUMENT_JOB', False, flush=True)
             return False
         window.document_id = OTHER_DOCUMENT_ID
         document_finished = wait_jobs_empty(window, app, 1.8)
@@ -180,6 +201,7 @@ def run_a13(app: QApplication, root: Path) -> bool:
         configure_delayed_measurement(window, 'rew-close-pending', 0.45)
         close_token_id = start_rew_read(window, app)
         if close_token_id is None:
+            print('A13_START_CLOSE_JOB', False, flush=True)
             return False
         timer.stop()
         window.close()
