@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QToolBar
 from .cad_document import EditStateError, EditorViewState
 from .cad_objects import TheaterObjectError, speaker_aim_replacements
 from .cad_repository import SceneRepository
-from .cad_scene import F1_DOCUMENT_ID, Position3, make_empty_scene, make_f1_scene
+from .cad_scene import F1_DOCUMENT_ID, Position3, Size3, make_empty_scene, make_f1_scene
 from .theater_document import TheaterWorkingDocument
 from .theater_editor import TheaterEditorWindow
 
@@ -88,18 +88,41 @@ class TheaterWorkflowWindow(TheaterEditorWindow):
                 '部屋を作成しました · オブジェクトを追加できます · 形状調整は「部屋編集」から行えます'
             )
 
-    def _object_position(self, kind: str, size=None) -> Position3:
-        if kind != 'screen':
-            return super()._object_position(kind, size)
+    def _object_position(self, kind: str, size: Size3 | None = None) -> Position3:
         room = self._current_room()
         if room is None:
             return super()._object_position(kind, size)
+
         min_x, min_y, max_x, max_y = room.bounds_m
-        center_x = min_x + (max_x - min_x) * 0.5
+        width = max_x - min_x
         depth = max_y - min_y
-        y_m = min_y + min(depth * 0.04, 0.15)
-        z_m = min(max(room.height_m * 0.55, 0.5), max(room.height_m - 0.1, 0.1))
-        return Position3(x_m=center_x, y_m=y_m, z_m=z_m)
+        center_x = min_x + width * 0.5
+
+        if kind == 'screen':
+            y_m = min_y + min(depth * 0.04, 0.15)
+            z_m = min(max(room.height_m * 0.55, 0.5), max(room.height_m - 0.1, 0.1))
+            return Position3(x_m=center_x, y_m=y_m, z_m=z_m)
+
+        base = super()._object_position(kind, size)
+        lane = min(max(width * 0.18, 0.45), 1.10)
+        offsets = {
+            'speaker': lane * 0.45,
+            'furniture': lane,
+            'av_equipment': -lane,
+            'measurement_point': -lane * 0.55,
+        }
+        offset = offsets.get(kind, 0.0)
+        if abs(offset) <= 1e-12:
+            return base
+
+        half_width = size.x_m * 0.5 if size is not None else 0.08
+        minimum_x = min_x + half_width + 0.05
+        maximum_x = max_x - half_width - 0.05
+        if minimum_x > maximum_x:
+            x_m = center_x
+        else:
+            x_m = min(max(base.x_m + offset, minimum_x), maximum_x)
+        return Position3(x_m=x_m, y_m=base.y_m, z_m=base.z_m)
 
     def _aim_target_id(self) -> str | None:
         if self.working is None:
