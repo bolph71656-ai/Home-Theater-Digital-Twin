@@ -43,7 +43,7 @@ def test_right_context_docks_are_rebuilt_as_one_tab_stack() -> None:
     window = QMainWindow()
     window.resize(900, 600)
 
-    titles = ('Inspector', 'オブジェクト詳細', '制約', '実測')
+    titles = ('Inspector', 'Room', '壁・開口', 'オブジェクト詳細', '制約', '実測')
     docks: dict[str, QDockWidget] = {}
     for title in titles:
         dock = QDockWidget(title, window)
@@ -51,8 +51,11 @@ def test_right_context_docks_are_rebuilt_as_one_tab_stack() -> None:
         window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         docks[title] = dock
 
-    # Reproduce the inherited pre-N60 topology: Inspector above a lower tab group.
-    window.splitDockWidget(docks['Inspector'], docks['オブジェクト詳細'], Qt.Orientation.Vertical)
+    # Reproduce the layered editor topology: older Inspector/Room/Wall panels occupy
+    # separate split rows while the newest object/constraint/measurement group is tabbed.
+    window.splitDockWidget(docks['Inspector'], docks['Room'], Qt.Orientation.Vertical)
+    window.splitDockWidget(docks['Room'], docks['壁・開口'], Qt.Orientation.Vertical)
+    window.splitDockWidget(docks['壁・開口'], docks['オブジェクト詳細'], Qt.Orientation.Vertical)
     window.tabifyDockWidget(docks['オブジェクト詳細'], docks['制約'])
     window.tabifyDockWidget(docks['制約'], docks['実測'])
     window.show()
@@ -62,8 +65,8 @@ def test_right_context_docks_are_rebuilt_as_one_tab_stack() -> None:
     app.processEvents()
 
     tabbed = window.tabifiedDockWidgets(docks['Inspector'])
-    assert len(tabbed) == 3
-    assert all(dock in tabbed for dock in (docks['オブジェクト詳細'], docks['制約'], docks['実測']))
+    assert len(tabbed) == len(titles) - 1
+    assert all(dock in tabbed for title, dock in docks.items() if title != 'Inspector')
     assert all(
         window.dockWidgetArea(dock) == Qt.DockWidgetArea.RightDockWidgetArea
         for dock in docks.values()
