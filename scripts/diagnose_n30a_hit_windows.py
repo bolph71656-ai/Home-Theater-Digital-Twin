@@ -6,6 +6,7 @@ import sys
 import tempfile
 
 from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +29,8 @@ if sys.platform != 'win32':
     raise SystemExit('Windows only')
 
 user32 = ctypes.windll.user32
+MOUSE_LEFTDOWN = 0x0002
+MOUSE_LEFTUP = 0x0004
 
 
 class TraceRoomEditorWindow(RoomEditorWindow):
@@ -65,9 +68,18 @@ class TraceRoomEditorWindow(RoomEditorWindow):
         super()._insert_room_vertex(edge_index)
 
 
+def projected_midpoint(window: RoomEditorWindow, a, b) -> tuple[float, float]:
+    midpoint = RoomVertex(
+        vertex_id='trace-mid',
+        x_m=(a.x_m + b.x_m) / 2.0,
+        y_m=(a.y_m + b.y_m) / 2.0,
+    )
+    return window._project_room_to_qt(midpoint)
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication([sys.argv[0]])
-    with tempfile.TemporaryDirectory(prefix='htdt-n30a-hit-') as temp:
+    with tempfile.TemporaryDirectory(prefix='htdt-n30a-hit-', ignore_cleanup_errors=True) as temp:
         repo = SceneRepository(Path(temp) / 'scene.sqlite3')
         repo.save(make_empty_scene('diag-hit'), parent_revision_id=None)
         window = TraceRoomEditorWindow(repo, 'diag-hit')
@@ -85,37 +97,46 @@ def main() -> int:
             print('TRACE_DRAW_FAILED', len(window.room_sketch_vertices), flush=True)
             window.close()
             return 2
+
         set_top_fixture_camera(window)
         window.insert_vertex_action.setChecked(True)
         vertices = room_vertices(room)
         a, b = vertices[0], vertices[1]
         midpoint = ((a.x_m + b.x_m) / 2.0, (a.y_m + b.y_m) / 2.0)
         point = domain_to_global(window, *midpoint)
-        local = window.viewport.interactor.mapFromGlobal(point)
+        before_local = window.viewport.interactor.mapFromGlobal(point)
         print(
             'TRACE_BEFORE',
             'MID', midpoint,
-            'LOCAL', (local.x(), local.y()),
-            'PROJECTED', self_projected(window, a, b),
-            'HIT', window._hit_room_handle(float(local.x()), float(local.y())),
+            'TARGET_GLOBAL', (point.x(), point.y()),
+            'TARGET_LOCAL', (before_local.x(), before_local.y()),
+            'PROJECTED', projected_midpoint(window, a, b),
+            'HIT', window._hit_room_handle(float(before_local.x()), float(before_local.y())),
             flush=True,
         )
-        settled_click(point, app)
-        pump(app, 0.15)
+
+        QCursor.setPos(point)
+        pump(app, 0.12)
+        actual = QCursor.pos()
+        actual_local = window.viewport.interactor.mapFromGlobal(actual)
+        print(
+            'TRACE_AFTER_SETPOS',
+            'ACTUAL_GLOBAL', (actual.x(), actual.y()),
+            'ACTUAL_LOCAL', (actual_local.x(), actual_local.y()),
+            'PROJECTED', projected_midpoint(window, a, b),
+            'HIT', window._hit_room_handle(float(actual_local.x()), float(actual_local.y())),
+            flush=True,
+        )
+        user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
+        pump(app, 0.04)
+        user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
+        pump(app, 0.18)
+
         after = window.working.committed_document.room
         print('TRACE_AFTER_COUNT', 0 if after is None else len(room_vertices(after)), 'SELECTED', window.selected_room_vertex_id, flush=True)
         window.close()
         pump(app, 0.1)
     return 0
-
-
-def self_projected(window: RoomEditorWindow, a, b):
-    midpoint = RoomVertex(
-        vertex_id='trace-mid',
-        x_m=(a.x_m + b.x_m) / 2.0,
-        y_m=(a.y_m + b.y_m) / 2.0,
-    )
-    return window._project_room_to_qt(midpoint)
 
 
 if __name__ == '__main__':
