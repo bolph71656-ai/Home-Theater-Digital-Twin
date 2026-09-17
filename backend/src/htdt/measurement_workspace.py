@@ -1,11 +1,52 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QAbstractScrollArea, QDockWidget, QScrollArea, QSizePolicy
+from PySide6.QtCore import QSize, QTimer
+from PySide6.QtWidgets import QAbstractScrollArea, QDockWidget, QScrollArea, QSizePolicy, QWidget
 
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID
 from .measurement_editor import MeasurementEditorWindow
+
+
+class _MeasurementScrollArea(QScrollArea):
+    """Scrollable form whose large content extent never becomes a dock minimum."""
+
+    def __init__(self, content: QWidget, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._content = content
+        self.setWidgetResizable(False)
+        self.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumSize(0, 0)
+
+        content.setMinimumSize(0, 0)
+        content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setWidget(content)
+        QTimer.singleShot(0, self._sync_content_extent)
+
+    def sizeHint(self) -> QSize:
+        # The content is deliberately taller than the viewport. Returning its size
+        # hint here would make QMainWindow allocate the whole form instead of letting
+        # this scroll area do its job.
+        return QSize(420, 560)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(240, 160)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._sync_content_extent()
+
+    def _sync_content_extent(self) -> None:
+        if self._content is None:
+            return
+        natural_height = max(
+            self._content.sizeHint().height(),
+            self._content.minimumSizeHint().height(),
+            self.viewport().height(),
+        )
+        self._content.resize(max(1, self.viewport().width()), max(1, natural_height))
 
 
 class MeasurementWorkspaceWindow(MeasurementEditorWindow):
@@ -45,35 +86,20 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
             self._unify_right_context_docks(dock)
             return
 
-        # Keep the complete measurement form as scrollable content, but do not let
-        # that content's large minimum height become a minimum for the top-level
-        # QMainWindow. At 200% DPI that would push controls below the usable desktop.
-        panel.setMinimumHeight(panel.minimumSizeHint().height())
+        # Keep the natural full-form height as the scrollable child extent without
+        # publishing that height as the QScrollArea/QDockWidget minimum. The previous
+        # widgetResizable=True + panel minimum-height combination left child geometry
+        # extending below the clamped main window at 200% Windows DPI.
         panel.setParent(None)
-        scroll = QScrollArea(dock)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored)
-        scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
-        scroll.setMinimumSize(0, 0)
-        scroll.setWidget(panel)
+        scroll = _MeasurementScrollArea(panel, dock)
         dock.setMinimumSize(0, 0)
-        dock.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        dock.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         dock.setWidget(scroll)
         self.measurement_scroll = scroll
         self._unify_right_context_docks(dock)
 
     def _unify_right_context_docks(self, measurement_dock: QDockWidget) -> None:
-        """Use one CAD-style context stack instead of vertically splitting panels.
-
-        Before N60, the base transform Inspector occupied a separate right-side dock
-        row while object details / constraints were tabified below it. Adding the
-        measurement workspace to that lower row made the rows' minimum heights add
-        together, which could force the whole window below the logical desktop at
-        200% Windows scaling. All four surfaces are alternative context views, so a
-        single tab group is both the intended CAD interaction and the correct sizing
-        boundary.
-        """
+        """Use one CAD-style context stack instead of vertically splitting panels."""
         titles = ('Inspector', 'オブジェクト詳細', '制約', '実測')
         docks_by_title = {
             candidate.windowTitle(): candidate
