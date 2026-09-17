@@ -81,6 +81,16 @@ def click(point: QPoint) -> None:
     user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
 
 
+def settled_click(point: QPoint, app: QApplication) -> None:
+    # Let the Qt/VTK MouseMove caused by SetPos drain before the OS press. This
+    # matters at 200% DPI where queued move/press coordinates can differ by 0.5 DIP.
+    QCursor.setPos(point)
+    pump(app, 0.04)
+    user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
+    pump(app, 0.02)
+    user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
+
+
 def drag(start: QPoint, end: QPoint, app: QApplication) -> None:
     QCursor.setPos(start)
     pump(app, 0.03)
@@ -100,8 +110,6 @@ def room_xy(window: RoomEditorWindow) -> tuple[tuple[float, float], ...]:
 
 
 def set_top_fixture_camera(window: RoomEditorWindow) -> None:
-    # Fix the physical VTK camera directly. At 200% DPI, relying on a reset
-    # against an empty scene can put F2 boundary points just outside the widget.
     renderer = window.viewport.renderer
     camera = renderer.GetActiveCamera()
     camera.SetFocalPoint(3.0, -2.0, 0.0)
@@ -181,9 +189,13 @@ def run_a08(app: QApplication, root: Path) -> bool:
             (edge_start.y_m + edge_end.y_m) / 2.0,
         )
         insert_point = domain_to_global(window, *insert_midpoint)
-        insert_local = window.viewport.interactor.mapFromGlobal(insert_point)
+        QCursor.setPos(insert_point)
+        pump(app, 0.04)
+        insert_local = window.viewport.interactor.mapFromGlobal(QCursor.pos())
         print('A08_INSERT_TARGET', insert_midpoint, 'HIT', window._hit_room_handle(float(insert_local.x()), float(insert_local.y())), flush=True)
-        click(insert_point)
+        user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
+        pump(app, 0.02)
+        user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
         pump(app, 0.16)
         inserted_room = window.working.committed_document.room
         insert_ok = (
@@ -229,7 +241,7 @@ def run_a08(app: QApplication, root: Path) -> bool:
         edge_start = vertices[1]
         edge_end = vertices[2]
         midpoint = ((edge_start.x_m + edge_end.x_m) / 2.0, (edge_start.y_m + edge_end.y_m) / 2.0)
-        click(domain_to_global(window, *midpoint))
+        settled_click(domain_to_global(window, *midpoint), app)
         pump(app, 0.08)
         edge_index = window.selected_room_edge_index
         before_dimension_history = window.working.history_length
@@ -262,7 +274,7 @@ def run_a08(app: QApplication, root: Path) -> bool:
         current_vertices = room_vertices(window.working.committed_document.room)
         current_inserted = next(vertex for vertex in current_vertices if vertex.vertex_id == inserted_id)
         set_top_fixture_camera(window)
-        click(domain_to_global(window, current_inserted.x_m, current_inserted.y_m))
+        settled_click(domain_to_global(window, current_inserted.x_m, current_inserted.y_m), app)
         pump(app, 0.05)
         before_delete_history = window.working.history_length
         window.delete_vertex_action.trigger()
@@ -278,8 +290,6 @@ def run_a08(app: QApplication, root: Path) -> bool:
         if not delete_ok:
             return False
 
-        # Drag the second F2 vertex to a self-intersecting configuration. The
-        # provisional preview may be invalid, but release must not commit it.
         room_before_invalid = window.working.committed_document.room
         assert room_before_invalid is not None
         second = room_vertices(room_before_invalid)[1]
