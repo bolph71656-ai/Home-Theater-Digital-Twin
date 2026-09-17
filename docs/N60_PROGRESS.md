@@ -1,112 +1,135 @@
 # N60 implementation progress
 
-Tracking: #61  
-Branch: `feat/n60-measurement-workspace`
+Tracking: Issue #61 / PR #62  
+Branch: `feat/n60-measurement-workspace`  
+Final technical gate: **PASS**
 
-## 2026-09-17 — start
+## 2026-09-17 — implementation summary
 
-- N50 merged to `main` as `f37ffdf8a4c9e67894afb52d7750562812313b0d`; main status advanced through docs commit `160c62e77ca9e1a32510795bf93604a6e7a3fd44`.
-- Re-read N60 roadmap plus A12/A13 acceptance contracts.
-- Reviewed `MEASUREMENT_WORKFLOW.md`, `DATA_AND_ANALYSIS.md`, `rew_api.py`, `rew_parser.py`, `database.py`, `comparison.py`, and `cad_repository.py` before coding.
-- Confirmed `RewApiClient.get_frequency_response_snapshot()` already provides a read-only stable REW snapshot guard.
-- Confirmed `rew_parser.py` already preserves original FR grid, source SHA-256, phase status/warnings, and parser version.
-- Confirmed the legacy Store persists raw assets, immutable FR arrays, quality/provenance fields, and comparison results, but its `contexts` history is separate from native `SceneRevision` and will not become the native authority.
-- Confirmed `SceneRepository` provides immutable revision ID/document ID/content hash and is the correct native measurement binding target.
-- Selected N60 architecture: new native measurement repository in the same `cad-scenes.sqlite3`, with FK to exact `scene_revisions.revision_id`; reuse REW/parser/comparison pure modules through adapters instead of migrating legacy Context history.
-- Historical placement ghost loads the exact saved SceneRevision, not coordinates from the mutable current scene.
-- Async REW reads capture document/revision/hash/measurement-point input and require token/current-context validation before UI apply.
-- Browser UI remains frozen.
+N60 connects the existing REW/measurement assets to the native CAD without making legacy `Context` authoritative.
 
-## Implemented
+Implemented boundaries and invariants:
 
-- Added frozen native measurement, FR dataset, and comparison models.
-- Added `CadMeasurementRepository` in the native scene database with immutable FK binding to exact `SceneRevision`, content-addressed raw assets, dataset storage, source-revision validation, and saved A/B comparison provenance.
-- Added REW API snapshot and REW text normalization adapters without making legacy `Context` authoritative.
-- External REW UUID remains provenance only; it is not the HTDT primary key.
-- Unknown SPL calibration/reference and unknown capture metadata remain unknown rather than inferred.
-- Added `MeasurementJobGuard` with submission-time revision/document/hash/point snapshot, cancellation, supersession, and stale-result rejection.
-- Added focused invariant tests for immutable binding, invalid revision/hash/point rejection, REW provenance identity, comparison revision binding, and stale/cancel guards.
-- Added PyQtGraph 0.14.0 to the backend dependency set and Windows lock.
-- Added native Japanese `実測` workspace with saved-measurement tree, provenance metadata, FR plot, REW text/API import, A/B comparison, difference plot, and exact-revision historical placement ghost.
-- Saved FR display reads local immutable datasets and does not require REW to be running.
-- Added QThread-based external REW reads; blocking REW I/O is not performed on the GUI thread.
-- Added A12/A13 Windows acceptance harnesses and CI compile coverage.
-- Added `scripts/run-n60-hardware-gate.ps1` so the owned-Windows gate can be driven from one mcp-bridge/RDC process: clean-state check, residual N60-harness cleanup, branch/product-head validation, environment capture, A12/A13, original-checkout restoration, and post-run clean verification.
-- Added a CI-safe `-PreflightOnly` path so Windows Actions exercises the gate runner's Git output handling before scarce RDC execution.
-- Product composition is `MeasurementWorkspaceWindow -> MeasurementEditorWindow -> ConstraintEditorWindow -> ...`; existing CAD layers remain inherited rather than duplicated.
+- immutable measurement binding to exact native `SceneRevision`, document ID, content hash and measurement/acoustic-reference entity;
+- native `CadMeasurementRepository` in `cad-scenes.sqlite3` with exact source-revision validation;
+- content-addressed raw measurement assets and immutable local FR datasets;
+- REW text import plus read-only REW API snapshot normalization;
+- external REW UUID retained as provenance only, never used as the HTDT primary key;
+- unknown calibration/reference/capture metadata remains unknown rather than inferred;
+- PyQtGraph-based native FR display, saved-measurement tree and provenance display;
+- saved FR remains available while REW is stopped;
+- exact source-revision historical placement ghost, non-pickable and visually distinct from the current scene;
+- saved A/B comparison retaining exact dataset IDs and source revision IDs;
+- QThread-based REW reads with submission-time document/revision/hash/point snapshot;
+- `MeasurementJobGuard` rejects cancelled, superseded and stale completions;
+- browser UI remains frozen; no duplicate N60 implementation was added there.
 
-## High-DPI / real-interaction findings
+## Focused verification
 
-Owned-Windows acceptance runs exposed interaction issues that CI compilation cannot reveal:
+The N60 test set covers the invariants that materially protect measurement evidence:
 
-1. Early A12/A13 runs showed that actor-center viewport clicks became unreliable after the added right dock. Entity selection in the acceptance harness was changed to the visible scene tree while retaining real Win32 mouse input.
-2. At 2880×1800 / 200% DPI, lower measurement controls were initially unreachable. A product `QScrollArea` wrapper was added instead of bypassing the UI from the harness.
-3. Diagnostics showed the scroll range itself existed, but lower measurement controls still reached approximately `Y=1046` in Qt global coordinates. The `制約` / `実測` tab itself was correctly activated with real mouse input; the remaining problem was top-level/right-dock layout, not missing scrolling.
-4. Product head `acfb0596691a3132cb9d096c49e708177598a9d5` made the measurement scroll area's vertical size hint ignorable and clamped the initial window to `QScreen.availableGeometry()`, but a later owned-Windows gate proved this was insufficient: the base `Inspector` remained in a separate right-side dock row above the tabified `オブジェクト詳細 / 制約 / 実測` row, so their vertical minimums were still additive.
-5. Current product head `8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79` unifies `Inspector / オブジェクト詳細 / 制約 / 実測` into one CAD-style right-side tab group, leaves the long measurement form internally scrollable, and re-clamps the window once after the first QMainWindow layout pass. This removes the structural source of the high-DPI vertical overflow instead of weakening the acceptance harness.
+- measurement round-trip remains bound to the original revision after later scene edits;
+- mismatched content hash, source position or missing measurement entity is rejected;
+- REW external UUID is provenance rather than internal identity;
+- A/B persistence retains exact dataset/revision IDs;
+- job guard rejects cancellation, supersession, revision staleness and document mismatch;
+- measurement scroll content can exceed its viewport without publishing a large dock minimum;
+- all inherited right-side context docks are normalized into one tab stack.
 
-The acceptance harness still requires actual OS mouse clicks for the relevant controls. Programmatic scrolling/tab lookup is used only to expose the same controls a user would navigate to; product callbacks are not invoked directly.
+Pixel snapshots and other low-value visual tests were not added.
+
+## Real-hardware findings and fixes
+
+Owned-Windows testing at 2880×1800 / 200% DPI found issues that CI compilation could not expose.
+
+1. Acceptance actor-center clicks became unreliable after the right-side workspace grew. The harness selects scene entities through the visible scene tree while still using real Win32 mouse input.
+2. Lower measurement controls were initially outside the usable desktop. The product gained `_MeasurementScrollArea`; its tall content remains internally scrollable while the form height no longer becomes the dock minimum.
+3. That alone was insufficient because inherited right-side docks still formed multiple vertical rows. Partial tabification missed `Room` and `壁・開口`.
+4. Final product code dynamically rebuilds every `RightDockWidgetArea` dock into one tab stack. Known surfaces are `Inspector`, `Room`, `壁・開口`, `オブジェクト詳細`, `制約`, `実測`; later unknown right-side docks are included as well.
+5. Product head `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb` is the first version on which A12 passed in full.
 
 ## GitHub verification
 
-Previous product head `acfb0596691a3132cb9d096c49e708177598a9d5` passed GitHub Actions CI #280 / run `35214514448` in full.
+Last product-code head:
 
-The gate-runner hardening path also passed Windows Actions:
+- `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb`
+- CI #300 / run `35223222374`: full PASS.
 
-- CI #283 / run `35217997514`: full PASS after introducing the one-shot runner.
-- CI #284 / run `35218254883`: full PASS after detached/local-old-SHA launch support.
-- CI #287 / run `35218671124`: full PASS including the first executable `Preflight N60 hardware gate runner` step.
-- CI #288 / run `35218969089`: full PASS including `git fetch --dry-run` in preflight, covering Windows PowerShell's successful-git-stderr behavior that had failed on the real machine.
+Final acceptance-harness head:
 
-Current product-code head is `8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79`; its CI must be green before the next real-hardware rerun. Branch changes after that product head are allowed only for the N60 gate runner, CI plumbing, and progress/acceptance documentation. The runner refuses acceptance if another product file changes after the declared product head.
+- `73b77866ebdc42f70a016e2ebd13ad99858b01b8`
+- only change after `8551963c...`: `scripts/validate_n60_a13_windows.py`
+- CI #301 / run `35225682111`, Windows job `105216542198`: full PASS.
 
-## Windows acceptance status
+The final A13 harness change replaced a fixed 0.65 s fake-REW delay with a controlled latch. The earlier delay was shorter than or comparable to the real 200%-DPI foreground/tab/scroll/mouse path, so the fake response could complete just before the cancel click. The deterministic harness now proves the worker is running, performs the real cancel click, confirms the guard recorded cancellation, and only then releases the delayed response. No product runtime code changed for this correction.
 
-A12/A13 are **not yet marked PASS**.
+## Final owned-Windows acceptance
 
-The owned Windows machine is responsive again. The one-shot gate established and preserved the real local state:
+Environment:
 
-- original detached SHA: `5ede848e8e0b0967a50c04c83ff679a649ca439b`
-- pre-run worktree: clean
-- residual N60 harness processes before gate: none
-- tested product SHA for the last completed product run: `acfb0596691a3132cb9d096c49e708177598a9d5`
-- environment: Windows 11 Pro build 26200; Ryzen 7 8845HS / Radeon 780M; driver 32.0.13032.11; 2880×1800; AppliedDPI 192; Python 3.12.10; PySide6 6.11.2; PyVista 0.49.0; VTK 9.7.0; PyQtGraph 0.14.0
-- restored SHA after run: `5ede848e8e0b0967a50c04c83ff679a649ca439b`
-- post-run worktree: clean
+- Windows 11 Pro build 26200
+- Ryzen 7 8845HS / Radeon 780M / driver 32.0.13032.11
+- 2880×1800 / AppliedDPI 192 (200%)
+- Python 3.12.10
+- PySide6 6.11.2
+- PyVista 0.49.0
+- VTK 9.7.0
+- PyQtGraph 0.14.0
 
-Two earlier attempts stopped before A12/A13 because of runner-only Windows PowerShell issues: scalar unwrapping of one-line Git output, then successful `git fetch` stderr becoming terminating output under `$ErrorActionPreference='Stop'`. Both were fixed on GitHub and corresponding CI preflight coverage was added; neither attempt evaluated product behavior.
+Final hardware-gate checkout/head: `73b77866ebdc42f70a016e2ebd13ad99858b01b8`.
 
-The first run that did reach the product (`acfb0596...`) produced:
+A12:
 
 ```text
 A12_PRODUCT_COMPOSITION True
-A12_MOUSE_SELECT_SAVED_A False
-A12_OFFLINE_FR False
-A12_RESULT FAIL
-
-A13_PRODUCT_COMPOSITION True
-A13_REW_BUTTON_CLICKED_NO_TOKEN True
-A13_REW_BUTTON ... center=1244,1046 ... viewport=564x434 ... vscroll=120/1102 panel_h=1536 ...
-A13_START_STALE_JOB False
-A13_RESULT FAIL
+A12_MOUSE_SELECT_SAVED_A True
+A12_OFFLINE_FR True
+A12_MOUSE_MOVE_SAVE_B True
+A12_A_BINDING_IMMUTABLE True
+A12_HISTORICAL_GHOST True
+A12_AB_REVISION_BINDING True
+A12_RESULT PASS
+N60_GATE_A12_EXIT=0
 ```
 
-The repeated `Y=1046` finding confirmed that the remaining defect was the vertically split right context docks at 200% DPI. Product head `8d4bfcd...` addresses that layout. Do not merge PR #62 or close Issue #61 until A12/A13 pass on this newer product head.
+A13:
 
-## Remaining sequence
+```text
+A13_PRODUCT_COMPOSITION True
+A13_EDIT_MAKES_RESULT_STALE True
+A13_UI_RESPONSIVE True 85
+A13_CANCEL_WORKER_STARTED True
+A13_CANCEL_REGISTERED True
+A13_CANCELLED_RESULT_NOT_APPLIED True
+A13_DOCUMENT_SWITCH_RESULT_NOT_APPLIED True
+A13_CLEAN_EXIT_NO_WORKER True 0
+A13_RESULT PASS
+N60_GATE_A13_EXIT=0
+```
 
-1. Require green CI for product head `8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79` and the latest gate-runner/preflight head.
-2. Run the owned-Windows gate again through the single bundled runner; do not perform separate RDC state probes because the runner owns cleanup/state capture/restoration.
-3. Require A12 PASS for saved-A mouse selection/offline FR, immutable A binding, mouse move/save B, historical ghost, and saved comparison bound to exact A/B dataset + revision IDs.
-4. Require A13 PASS for edit-stale rejection, UI responsiveness, explicit cancel, document-state change rejection, and clean close with no live worker.
-5. Only after the hardware gate passes, create `docs/N60_ACCEPTANCE_2026-09-17.md`, update `IMPLEMENTATION_STATUS.md` to N60 complete / N70 next, mark PR #62 ready, merge it, and close #61 as completed.
+Cleanup:
 
-## Key risks / invariants
+```text
+N60_RESTORED_SHA=5ede848e8e0b0967a50c04c83ff679a649ca439b
+N60_POST_STATUS_COUNT=0
+N60_RESTORE_OK=True
+N60_HARDWARE_GATE_RESULT=PASS
+```
 
-- Never attach an old measurement to whatever scene is current at display time.
-- Do not use external REW UUID or filename as HTDT primary identity.
-- Measurement point means acoustic reference/capsule position, not seat body center.
-- Do not infer capture time, calibration, phase validity, routing, or SPL reference when unknown.
-- N50 constraint workspace is mutable document state; any future job depending on it must capture a hash/snapshot at submission.
-- Saved measurement evidence remains valid historical evidence after scene edits; only its relationship to the current revision changes.
-- A cancelled/stale background result must not mutate current UI/scene state.
+Full record: [N60 Windows acceptance](N60_ACCEPTANCE_2026-09-17.md).
+
+## N60 completion
+
+A12/A13 technical acceptance is complete. PR #62 can move out of draft after the acceptance/status documentation commit passes CI. `Closes #61` remains in the PR body so the tracking issue should close with merge.
+
+Next roadmap milestone: **N70 — 予測・可視化**.
+
+## Invariants carried forward to N70+
+
+- Never attach old measurement evidence to whichever scene happens to be current.
+- Do not use REW UUID/filename as internal identity.
+- Measurement position means explicit acoustic reference/capsule position, not seat-body center.
+- Do not infer calibration, capture time, phase validity, routing or SPL reference when unknown.
+- A long-running calculation must capture all authoritative input versions at submission and reject stale completion.
+- Saved historical evidence remains valid after edits; only its relationship to the current scene changes.
+- Prediction/optimization outputs must remain distinguishable from measured evidence.

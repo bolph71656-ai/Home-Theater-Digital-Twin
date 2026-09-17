@@ -1,102 +1,116 @@
 # 実装ステータス
 
-> 更新: 2026-09-17 / N50 merged・Windows A11受入完了・次工程N60
+> 更新: 2026-09-17 / N60 A12・A13 Windows実機受入完了 / 次工程 N70
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 の技術gateを実装し、N50までWindows実機受入を通過した。**
+**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 の技術gateを実装し、N60までWindows実機受入を通過した。**
 
-N50はIssue #59 / PR #60で完了し、merge commit `f37ffdf8a4c9e67894afb52d7750562812313b0d` でmainへ反映済み。最終A11はbranch head `a8ba8d0507c404a9058c0ffe12475fce4dca968c` でPASSし、最後のproduct-code変更 `8762c5e15c1f8c9442ce6ef6378f24881e0f5236` はGitHub Actions CI #238 / run `35201888464` で全項目PASSした。Issue #59 は `completed` でclose済み。
+N60はIssue #61 / PR #62で実装。最終製品コード変更は `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb`、最終acceptance harness/headは `73b77866ebdc42f70a016e2ebd13ad99858b01b8`。後者はA13取消検証を時間依存から決定的ラッチへ変更しただけで、製品runtime codeは変更していない。A12/A13は2880×1800・200% DPIの実Win32 mouse interactionでPASSした。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N50までmerge済み**。PR #60 merge `f37ffdf8a4c9e67894afb52d7750562812313b0d` |
-| N50 tracking | Issue #59 / PR #60（完了） |
-| N50 accepted runtime head | `a8ba8d0507c404a9058c0ffe12475fce4dca968c` |
-| N50 last product-code head | `8762c5e15c1f8c9442ce6ef6378f24881e0f5236` |
-| N50 CI | #238 / run `35201888464` PASS |
-| A11 | 実Win32 mouse inputで壁離隔違反・通路違反→拒否→理由選択→対象/距離/壁/領域表示→通常編集復帰 PASS |
-| wording | feasibilityは`制約を満たす / 制約違反`のみ。音質評価・ランキングへ変換しない |
-| native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN50 `ConstraintEditorWindow` compositionを起動 |
+| main基準 | N50までmerge済み。N60はPR #62の受入・文書確定段階 |
+| N60 tracking | Issue #61 / PR #62 |
+| N60 last product-code head | `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb` |
+| N60 accepted gate head | `73b77866ebdc42f70a016e2ebd13ad99858b01b8` |
+| product CI | #300 / run `35223222374` PASS |
+| final harness CI | #301 / run `35225682111` PASS |
+| A12 | saved A選択、offline FR、mouse move/save B、A binding不変、historical ghost、A/B revision binding PASS |
+| A13 | edit-stale、UI responsiveness、明示cancel、document change、clean close/no worker PASS |
+| native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN60 `MeasurementWorkspaceWindow` compositionを起動 |
 | browser UI | 新CAD機能は凍結。二重実装しない |
-| 次工程 | **N60 — 実測workspace、REW読取/取込、SceneRevision↔測定点、FR dock、ghost配置、比較、A12/A13** |
+| 次工程 | **N70 — 予測・可視化** |
 
-## N50 — 完了内容
+## N60 — 完了内容
 
-### Constraint domain / G10 adapter
+### Measurement authority / persistence
 
-- 既存`placement_constraints.py`をG10 placement feasibility authorityのまま再利用し、solverを複製しない。
-- native側にallowed region / exclusion・walkway / wall clearance / pair distanceのimmutable constraint modelを追加した。
-- `SceneDocument` / `WallTopology`をG10 Context/ConstraintSetへ写す純粋adapterを追加した。
-- stable N30b `wall_id`を永続参照とし、legacy `from_vertex_id->to_vertex_id` edge IDは評価時だけ生成する。
-- physical bodyは現行G10 envelopeへ保守的な水平外接半径で写し、exact mesh collisionとは表示しない。
-- typed evaluation resultへsubject、wall/region、reason、actual、requiredを戻す。
+- 測定はexact `SceneRevision`、document ID、scene content hash、measurement/acoustic-reference entityへimmutable bindingする。
+- native `CadMeasurementRepository`を`cad-scenes.sqlite3`へ追加し、source revisionとの整合を保存時に検証する。
+- raw assetとFR datasetはlocalに不変保存し、REW停止中でも表示可能。
+- external REW UUIDはprovenanceであり、HTDT primary keyにはしない。
+- capture time、calibration/reference、phase、routing等のunknownを推測で埋めない。
+- legacy `Context`をnative authorityへ昇格させない。
 
-### Native UI / interaction
+### Native measurement workspace
 
-- N40 product workflowの上に`ConstraintEditorWindow`を重ね、通常native launcherへ接続した。
-- 日本語優先`制約` dockで制約状態、理由一覧、actual/required、authoring controlsを表示する。
-- allowed/exclusion regionを面＋線/パターンで表示し、色だけに依存しない。
-- violation選択時にsubject、counterpart wall/object/region、distance segment、rejected candidateをviewport上で強調する。
-- object move previewは既存N20/N40 transform pathをそのまま使い、release前にG10 evaluationを行う。
-- 新規hard violationまたは既存scalar violationの悪化はcommitせず、元poseへ戻して具体的理由を残す。
-- 既存region violationから脱出する途中の移動は許可し、invalid stateに物体を閉じ込めない。
-- full N50 constraintが参照するentity削除や曖昧なwall split/merge/deleteは無言で移行せず明示拒否する。
+- 日本語優先の`実測` workspaceをnative CADへ統合した。
+- 保存測定tree、provenance/measurement point/revision metadata、FR plot、REW text/API importを提供する。
+- A/B比較はexact dataset IDと各source SceneRevision IDを固定して保存する。
+- current sceneと異なる測定はexact source revisionからhistorical ghostを表示し、ghostはpick不可。
+- PyQtGraph 0.14.0をnative FR描画に採用した。
 
-### Persistence / state boundary
+### Async REW / stale-result boundary
 
-- constraint定義はsceneと同じSQLite内のdocument-scoped authoring workspaceとして保存する。
-- constraint evaluation resultは派生値でありauthorityとして保存しない。
-- hide/lockは`EditorViewState`のままでconstraint feasibility入力に混ぜない。
-- N50では既存SceneRevision hash contractを変更しない。N60/N70の非同期jobはSceneRevisionだけでなく、その時点のconstraint workspace hash/snapshotも入力として固定する必要がある。
+- REW I/OはQThread workerでGUI thread外へ出す。
+- job tokenはsubmission時のdocument/revision/hash/measurement point/queryを固定する。
+- `MeasurementJobGuard`はcancelled、superseded、stale revision、document mismatchをcurrent sceneへ適用しない。
+- close時はtokenをcancelし、bounded wait後にworkerを残さない。
 
-### Focused verification
+### 200% DPI composition fix
 
-- HTDT座標→G10 mapping
-- rectangular body→conservative envelope radius
-- stable wall ID↔legacy edge mapping（split後を含む）
-- wall/walkway rejectionのreason/actual/required mapping
-- position overrideがsceneをmutateしないこと
-- unknown wallを推測せず拒否すること
-- constraint workspace round-trip
-- candidate commit blocking policy
-- hide/lock変更でfeasibilityが変わらないこと
-- A11 Windows harness compile
+実機ではmeasurement form自体のscrollだけでは足りず、継承したright dockのvertical splitが下段controlを画面外へ押し出していた。
 
-pixel/color snapshotのような低価値testは追加していない。
+- `_MeasurementScrollArea`で長いcontent heightをscroll内部に閉じ、dock minimumへ伝播させない。
+- `RightDockWidgetArea`に存在する全dockをいったんrebuildし、単一のCAD-style tab stackへ統合する。
+- known dock: `Inspector`, `Room`, `壁・開口`, `オブジェクト詳細`, `制約`, `実測`。
+- future unknown right-side dockも動的に同じstackへ含める。
+- 以前の部分修正が見落としていた`Room` / `壁・開口`を含めたことで、200% DPIの構造的overflowを解消した。
 
-## A11 Windows受入
+## A12 / A13 Windows受入
 
-詳細: [N50 Windows acceptance](N50_ACCEPTANCE_2026-09-17.md)
+詳細: [N60 Windows acceptance](N60_ACCEPTANCE_2026-09-17.md)
 
 最終受入環境:
 
 - Windows 11 Pro build 26200
 - Ryzen 7 8845HS / Radeon 780M / 31.3 GiB
 - Radeon driver 32.0.13032.11
-- 2880×1800 / Windows 200% DPI
+- 2880×1800 / AppliedDPI 192 (200%)
 - Python 3.12.10
 - PySide6 6.11.2
 - PyVista 0.49.0
 - VTK 9.7.0
+- PyQtGraph 0.14.0
 
-最終結果:
+A12:
 
 ```text
-A11_PRODUCT_COMPOSITION True
-A11_INITIAL_FEASIBLE True
-A11_MOUSE_WALL_REJECT True
-A11_MOUSE_WALL_REASON True
-A11_MOUSE_WALKWAY_REJECT True
-A11_MOUSE_WALKWAY_REASON True
-A11_EDIT_AFTER_REJECT True
-A11_CONSTRAINT_PERSISTENCE True
-A11_QUALITY_WORDING_ABSENT True
-A11_RESULT PASS
-A11_EXIT=0
-PRE_STATUS_COUNT=0
-POST_STATUS_COUNT=0
+A12_PRODUCT_COMPOSITION True
+A12_MOUSE_SELECT_SAVED_A True
+A12_OFFLINE_FR True
+A12_MOUSE_MOVE_SAVE_B True
+A12_A_BINDING_IMMUTABLE True
+A12_HISTORICAL_GHOST True
+A12_AB_REVISION_BINDING True
+A12_RESULT PASS
+```
+
+A13:
+
+```text
+A13_PRODUCT_COMPOSITION True
+A13_EDIT_MAKES_RESULT_STALE True
+A13_UI_RESPONSIVE True 85
+A13_CANCEL_WORKER_STARTED True
+A13_CANCEL_REGISTERED True
+A13_CANCELLED_RESULT_NOT_APPLIED True
+A13_DOCUMENT_SWITCH_RESULT_NOT_APPLIED True
+A13_CLEAN_EXIT_NO_WORKER True 0
+A13_RESULT PASS
+```
+
+Runner cleanup:
+
+```text
+N60_GATE_A12_EXIT=0
+N60_GATE_A13_EXIT=0
+N60_RESTORED_SHA=5ede848e8e0b0967a50c04c83ff679a649ca439b
+N60_POST_STATUS_COUNT=0
+N60_RESTORE_OK=True
+N60_HARDWARE_GATE_RESULT=PASS
 ```
 
 ## 継承済みCAD基盤
@@ -105,6 +119,8 @@ POST_STATUS_COUNT=0
 - N30a: 凹polygon room、stable RoomVertex、頂点挿入/移動/削除、edge寸法、ceiling height、self-intersection拒否。
 - N30b: stable wall ID、opening、wall clearance binding、wall move/split/merge/delete、参照migration、曖昧操作拒否、room/topology atomic transaction。
 - N40: speaker / seat / screen / furniture / AV equipment / measurement point、3.0.2 template、duplicate、寸法、acoustic reference、explicit aim、A10。
+- N50: G10 adapter、allowed/exclusion、walkway/wall clearance、constraint reason overlay、invalid commit rejection、A11。
+- N60: immutable measurement/revision binding、REW import/read、FR dock、historical ghost、A/B comparison、stale/cancel guards、A12/A13。
 
 実機記録:
 
@@ -116,17 +132,18 @@ POST_STATUS_COUNT=0
 - [N30b A09](N30B_ACCEPTANCE_2026-09-17.md)
 - [N40 A10](N40_ACCEPTANCE_2026-09-17.md)
 - [N50 A11](N50_ACCEPTANCE_2026-09-17.md)
+- [N60 A12/A13](N60_ACCEPTANCE_2026-09-17.md)
 
-## 次工程 — N60
+## 次工程 — N70 予測・可視化
 
-ロードマップ上の次工程はN60実測workspace。
+ロードマップ上の次工程は**N70 — 予測・可視化**。
 
-- REW読取/取込をnative workspaceへ接続する。
-- measurementを不変なSceneRevisionと測定点へ対応付ける。
-- FR dockを追加し、保存済み実測と現在sceneを同じworkspaceで確認する。
-- 過去配置はghostとして現在配置と明確に区別する。
-- revision A/Bの比較でAの測定条件を不変に保つ。
-- job開始後の編集・cancel・project変更に対してstale/取消結果を現在sceneへ自動適用しない。
-- A12 / A13をWindows実機gateとする。
+- N50のconstraint stateと固定された入力versionを前提に、対応model gateを満たす予測のみnative CADへ載せる。
+- modes / reflection、prediction layer、候補雲を扱う。
+- fieldが存在する場合に限りheatmap / slice / volumeを表示する。
+- predictionはmeasured evidenceと明確に区別し、source revision・適用形状/帯域・再現性・stale状態を保持する。
+- 長い計算はsubmission時入力を固定し、編集後の古い結果をcurrent sceneへ自動適用しない。
+- GUIが非矩形室を扱えることと、個別の音響modelが非矩形室を正確に予測できることを混同しない。
+- roadmap gateはA13/A14およびF5。
 
-N50とN60はN40後に独立可能だが、正本の実装順に従いN50完了後にN60へ進む。
+N70でも「音質総合点」や根拠のないランキングへ変換しない。予測・実測・仮説を同じ証拠種別として混同しない。
