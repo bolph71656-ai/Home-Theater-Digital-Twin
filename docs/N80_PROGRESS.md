@@ -77,3 +77,25 @@ Detailed contract: [N80 design](N80_DESIGN.md).
 - Detailed record: [N80a Windows acceptance](N80A_ACCEPTANCE_2026-09-18.md).
 
 N80a is accepted and merged through PR #66 as `7473bb3efdbc511369c9a023b0b210eb5cde3553`. Issue #65 remains open: O20 requires a verified model contract, and O30/O40 objective/Pareto algorithms are not yet implemented.
+
+
+## 2026-09-18 — O30/O40 core started (PR #70)
+
+Branch `feat/n80-objectives-pareto` / draft PR #70 starts the algorithm-only part of N80b/c without bypassing the O20 model gate.
+
+Commit `88f8a348a211789a2d0f5d50278853eddcbf42e6` added:
+
+- frozen `ObjectiveMetric` / `ObjectiveVector` models with explicit minimize direction;
+- explicit response evaluation band/reference band/excluded bands;
+- target-response level RMS, peak excess, dip deficit and optional level-aligned shape RMS;
+- pair/left-right response difference metrics;
+- multi-seat pairwise difference metrics;
+- total/max physical movement objectives;
+- deterministic `pareto-front-1` dominance and non-dominated extraction;
+- focused synthetic tests for metric separation, movement math, known Pareto fronts, equal vectors, missing objectives and duplicate candidate rejection.
+
+Commit `0e01bd9b75c4f7886d1cc1730bafa1cd5db973fa` refined multi-seat evaluation so level-sensitive difference and level-aligned shape difference remain separate objectives rather than selecting one or the other.
+
+O20 batch prediction is still intentionally not connected. N70 currently exposes validated geometry candidates, not a validated FR/SPL predictor suitable for batch optimization. O30/O40 pure algorithms can be verified independently with synthetic data while preserving that boundary.
+
+No RDC is required for this algorithm-only slice. Windows real-interaction testing remains reserved for later native persistence/UI integration.

@@ -166,3 +166,39 @@ N80aでは次を実装しない。
 - legacy Context authority
 
 O30/O40の実装が存在しない現状では、ParetoはN80b/cの明示的な後続sliceとする。
+
+## 10. O30 objective-vector core
+
+O20のbatch prediction/model gateとは分離して、O30の純粋な評価算法を先に実装する。入力FRのevidence authorityは呼出し側が保持し、この層は数値を実測/予測へ勝手に昇格・変換しない。
+
+algorithm versionは `objective-vector-1`。
+
+初期objectiveはすべて `minimize` で、独立metricとして保持する。
+
+- `response.rms_difference_db`: targetとの差をlevel offset込みでRMS評価する。
+- `response.peak_excess_db`: targetより上側の最大超過量。負値は0へclampする。
+- `response.dip_deficit_db`: targetより下側の最大不足量。正方向の不足量として保存する。
+- `response.shape_rms_db`: 明示したreference bandでlevel offsetを求め、そのoffsetを除いた形状差RMS。reference bandがない場合は生成しない。
+- pair/left-rightも同じlevel-sensitive RMSと、明示reference bandがある場合だけshape RMSを別metricにする。
+- multi-seatは全seat pairについてlevel-sensitive RMS differenceのmax/RMSを保存し、reference bandがある場合はpairwise shape max/RMSも別metricとして保存する。
+- movementはcandidateが変更するentityごとの3D Euclidean distanceからtotalとmaxを別metricとして保存する。
+
+周波数比較は既存 `comparison.py` の96 points/octave log-grid、補間、excluded band semanticsを再利用する。band、reference band、excluded bandは評価条件として明示され、暗黙の平滑化や自動level alignmentを追加しない。
+
+objective vectorを統合する場合もmetric IDを維持し、weighted total scoreへ自動変換しない。
+
+## 11. O40 Pareto core
+
+algorithm versionは `pareto-front-1`。
+
+初期Pareto coreは決定論的な非劣集合抽出のみを担当する。
+
+候補Aが候補Bを支配する条件は、選択された全objectiveで `A <= B` かつ少なくとも1 objectiveで `A < B`。
+
+- 同値vector同士は互いを支配しないため、両方とも非劣集合に残る。
+- input candidate順を維持して結果を返す。
+- candidate ID重複、objective欠落、objective ID重複は拒否する。
+- objective subsetを明示指定できるが、暗黙weightやtie-break順位は導入しない。
+- dominated candidateについては、どのcandidateに支配されたかを保存可能な形で返す。
+
+このcoreだけではO40全体完了とはしない。粗探索→局所探索、候補多様性、native persistence/UI、measurement loopは後続sliceで実装する。
