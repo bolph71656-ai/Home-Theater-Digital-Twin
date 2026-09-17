@@ -32,9 +32,9 @@ The browser UI remains frozen. N50 is native PySide6/PyVista only.
 
 The native CAD integration is therefore an **adapter + presentation layer**.
 
-## 3. Native constraint document
+## 3. Native constraint workspace
 
-N50 adds a CAD-facing constraint document whose IDs are stable and whose definitions are independent from Qt/VTK.
+N50 adds a CAD-facing constraint workspace whose IDs are stable and whose definitions are independent from Qt/VTK.
 
 Initial native definition scope:
 
@@ -53,11 +53,11 @@ Each definition stores:
 - minimum/maximum distance values where applicable
 - short user-facing name
 
-The native document is persisted with the scene/revision path rather than relying on a live legacy HTTP Context. This keeps a CAD revision self-contained and deterministic.
+The authoring workspace is persisted beside native scene storage in the same SQLite file, keyed by `document_id`, rather than relying on a live legacy HTTP Context. It is intentionally separate from `SceneDocument` geometry revisions in N50, matching the existing G10 separation between Context and ConstraintSet. Before N60+ asynchronous jobs consume constraints, the job input must bind an immutable constraint-workspace hash/snapshot together with the exact SceneRevision; mutable latest workspace state must never be substituted for a running job's captured input.
 
 ## 4. G10 adapter
 
-Create a pure module, tentatively `cad_constraints.py`, with no Qt dependency.
+`cad_constraints.py` is a pure adapter module with no Qt dependency.
 
 ### 4.1 Scene → G10 context payload
 
@@ -69,7 +69,7 @@ The adapter builds the minimal dictionary required by `evaluate_constraint_set()
 
 This does **not** mean seats/furniture become speakers semantically. `placement_constraints._entity_baselines()` uses that collection only as an ID/position carrier. The adapter is the only place allowed to rely on this legacy shape.
 
-If no native measurement point exists, the adapter may use a private synthetic adapter-only measurement-point ID that is never surfaced as a CAD entity and is not targetable by native constraints.
+If no native measurement point exists, the adapter uses a private synthetic adapter-only measurement-point ID that is never surfaced as a CAD entity and is not targetable by native constraints.
 
 ### 4.2 Physical footprint → G10 profile
 
@@ -90,7 +90,9 @@ The adapter owns a bidirectional map:
 - CAD `wall_id` → G10 legacy edge ID
 - G10 legacy edge ID → CAD `wall_id`
 
-Mapping is generated from current `WallTopology`. A wall-clearance native definition stores only `wall_id`; the transient legacy edge ID is regenerated for evaluation. Split/merge therefore follows N30b wall-reference migration and does not persist a fragile legacy edge string.
+Mapping is generated from current `WallTopology`. A wall-clearance native definition stores only `wall_id`; the transient legacy edge ID is regenerated for each evaluation and is never persisted.
+
+A full N50 wall-clearance constraint is semantically stronger than the N30b `WallConstraintBinding`. When its referenced wall is split, merged, or deleted, automatically choosing whether the rule belongs to one replacement wall or several would be ambiguous. N50 therefore blocks those topology edits until the full constraint is explicitly removed/redefined. N30b lightweight bindings keep their own existing split/merge migration contract independently.
 
 The adapter rejects missing, duplicate, or direction-mismatched mappings rather than guessing.
 
@@ -104,7 +106,7 @@ A result contains:
 - native kind
 - stable involved entity IDs
 - optional stable `wall_id`
-- region ID/geometry when relevant
+- region role/geometry when relevant
 - `passed`
 - normalized reason code
 - Japanese short reason
@@ -123,19 +125,19 @@ Native regions are polygonal XY regions inside the exact room footprint:
 - allowed region: object envelope must stay inside
 - exclusion / walkway: object envelope must not intersect
 
-Viewport rendering uses translucent filled polygons plus a boundary line/pattern. State must remain distinguishable without color alone: allowed and exclusion overlays use different line/pattern/label conventions.
+Viewport rendering uses translucent filled polygons plus a boundary/pattern. State remains distinguishable without color alone: exclusion/walkway regions add line patterns and selected violations add explicit labels/detail text.
 
 ## 7. Native UI
 
-Add a `制約` dock layered over `TheaterWorkflowWindow` through a new composition class rather than growing the previous editor indefinitely.
+A `制約` dock is layered over `TheaterWorkflowWindow` through `ConstraintEditorWindow`, keeping previous editor behavior inherited rather than duplicating it.
 
 Initial UI:
 
 - summary: `制約を満たす` or `制約違反 N件`
 - list of constraints/violations with short Japanese labels
-- buttons for `通路/除外領域`, `許可領域`, `壁離隔`, `物体間距離`
+- buttons for `通路`, `許可領域`, `壁離隔`, `物体間離隔`
 - selected violation detail: actual vs required
-- viewport overlay for regions and wall-clearance envelope
+- viewport overlay for regions, selected wall/counterpart, rejected candidate, and distance segment
 
 Selecting a violation must:
 
@@ -151,17 +153,21 @@ Normal object drag stays on the accepted N20/N40 interaction path.
 During preview, the constraint adapter evaluates the candidate position. On release:
 
 - passed candidate: commit normally
-- hard-constraint violation: do not silently commit; keep/revert to the prior committed pose and show the concrete rejection reason
+- newly introduced hard violation: reject the commit and retain concrete rejection evidence
+- existing scalar-distance violation: reject only if the candidate worsens it
+- existing region violation: allow motion that does not introduce a new violation, so an object already inside a forbidden region is not trapped and can be moved out
 
-The initial implementation may evaluate after preview updates rather than adding a second transform engine.
+Rejected movement restores the prior committed pose, does not add history, and keeps the rejected candidate/actual-required explanation visible until the next accepted edit or constraint change.
 
 Hide/lock are editor view/edit state and are not inputs to constraint evaluation. Hidden objects still participate in constraints. Locked objects remain constrained; lock only prevents editing.
 
-## 9. Persistence
+## 9. Persistence and authority
 
-Native constraint definitions must round-trip with the scene revision. Adding the optional N50 constraint field may advance scene schema if needed, but canonical omission should preserve older hashes where practical.
+`CadConstraintRepository` persists the document-scoped authoring workspace in the same native SQLite file as `SceneRepository`. Reopening the document restores the exact current constraint definitions. Constraint evaluation results are derived data and are **not** persisted as authoritative state; they are recalculated from current scene + current workspace.
 
-Evaluation results are derived data and are **not** persisted as authoritative scene content. They are recalculated from scene + constraint definitions.
+The N50 workspace is not a SceneRevision payload and does not pretend to be one. This avoids silently changing the established scene revision/hash contract merely to deliver spatial visualization. The consequence is explicit: future jobs/optimization must capture both an exact SceneRevision identifier/hash and an immutable constraint-workspace hash/snapshot at submission time. N60/N70 stale-result guards must compare those captured inputs before applying results.
+
+Constraint-definition history/Undo is outside N50; geometry/object Undo remains unchanged. Constraint authoring operations are explicit and persist immediately to the workspace.
 
 ## 10. Focused automated verification
 
@@ -169,12 +175,12 @@ Add tests only for invariants with meaningful regression cost:
 
 - CAD room/entity payload → G10 evaluation preserves HTDT coordinates
 - physical body → conservative radius mapping
-- stable `wall_id` ↔ legacy edge ID mapping, including split/merge-created topology
+- stable `wall_id` ↔ legacy edge ID mapping, including split-created topology
 - native wall-clearance rejection maps actual/required values and stable wall ID correctly
 - exclusion/walkway violation maps stable subject/region IDs
 - hide/lock state is absent from adapter inputs and cannot change evaluation
-- a violating transform is rejected without changing committed entity pose/history
-- persisted native constraint definitions reopen exactly
+- violating-candidate policy blocks new/worsened violations without trapping recovery from an existing region violation
+- persisted native constraint definitions reopen exactly beside scene storage
 
 Do not add pixel/color snapshot tests.
 
@@ -182,17 +188,18 @@ Do not add pixel/color snapshot tests.
 
 RDC remains unused until the final A11 hardware gate.
 
-A11 fixture will use the normal native product composition and real Win32 mouse input:
+A11 fixture uses the normal native product composition and real Win32 mouse input:
 
-1. open a scene with a walkway/exclusion region and a wall-clearance constraint,
+1. open a scene whose current placement satisfies a walkway/exclusion region and a wall-clearance constraint,
 2. drag an object into a wall-clearance violation,
-3. verify the move is not silently committed,
-4. select the wall-clearance reason,
-5. verify subject + wall + actual/required distance indication,
-6. drag an object into the walkway/exclusion region,
-7. select that reason and verify subject + region highlighting,
+3. verify the move is not silently committed and history does not grow,
+4. select the wall-clearance reason with the real mouse,
+5. verify subject + wall + rejected candidate + actual/required distance indication,
+6. drag another object into the walkway/exclusion region,
+7. select that reason with the real mouse and verify subject + region highlighting,
 8. verify the UI uses constraint language only and does not describe feasibility as sound quality,
-9. verify normal editing still works after rejection.
+9. verify normal editing still works after rejection,
+10. verify the persisted workspace reopens unchanged.
 
 ## 12. Explicit non-goals
 
@@ -201,4 +208,6 @@ A11 fixture will use the normal native product composition and real Win32 mouse 
 - no generic collision engine rewrite
 - no browser implementation
 - no replacement of G10 placement constraint semantics
+- no automatic semantic migration of full wall-clearance constraints across topology changes
+- no constraint-definition Undo/history in N50
 - no RDC coding
