@@ -76,6 +76,15 @@ def find_button(window: MeasurementEditorWindow, text: str) -> QPushButton:
     raise AssertionError(f'button not found: {text}')
 
 
+def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> None:
+    button = find_button(window, text)
+    scroll = getattr(window, 'measurement_scroll', None)
+    if scroll is not None:
+        scroll.ensureWidgetVisible(button, 8, 8)
+        pump(app, 0.08)
+    click_widget(button, app)
+
+
 def click_scene_entity(window: MeasurementEditorWindow, entity_id: str, app: QApplication) -> bool:
     item = window.items.get(entity_id)
     if item is None:
@@ -101,7 +110,7 @@ def configure_delayed_measurement(window: MeasurementEditorWindow, external_id: 
 def start_rew_read(window: MeasurementEditorWindow, app: QApplication) -> str | None:
     if not click_scene_entity(window, 'point-mlp', app):
         return None
-    click_widget(find_button(window, '選択REWを読込'), app)
+    click_measurement_button(window, '選択REWを読込', app)
     if not wait_until(app, lambda: window._current_rew_token_id is not None, 0.6):
         return None
     return window._current_rew_token_id
@@ -126,14 +135,12 @@ def run_a13(app: QApplication, root: Path) -> bool:
     timer.timeout.connect(lambda: heartbeat.__setitem__('count', heartbeat['count'] + 1))
     timer.start()
     try:
-        product_ok = isinstance(window, MeasurementEditorWindow)
+        product_ok = isinstance(window, MeasurementEditorWindow) and getattr(window, 'measurement_scroll', None) is not None
         print('A13_PRODUCT_COMPOSITION', product_ok, flush=True)
         if not product_ok:
             return False
 
         # 1) Delayed A read. While the worker is running, edit and formally save B.
-        # Two seconds leaves margin for real-mouse rendering at 200% DPI so the
-        # external completion is guaranteed to arrive after the edit/save step.
         configure_delayed_measurement(window, 'rew-stale-after-edit', 2.00)
         token_id = start_rew_read(window, app)
         if token_id is None:
@@ -168,7 +175,7 @@ def run_a13(app: QApplication, root: Path) -> bool:
         if cancel_token_id is None:
             print('A13_START_CANCEL_JOB', False, flush=True)
             return False
-        click_widget(find_button(window, '読込キャンセル'), app)
+        click_measurement_button(window, '読込キャンセル', app)
         cancelled = wait_jobs_empty(window, app, 1.8)
         cancel_ok = (
             cancelled
