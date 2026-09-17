@@ -41,17 +41,14 @@ Branch: `feat/n50-constraint-visualization`
 
 N50 constraint definitions are document-scoped authoring state, persisted beside `SceneRepository`, not embedded in `SceneRevision`. This follows the existing G10 Context/ConstraintSet separation and avoids silently changing the established scene hash contract for N50. Future N60/N70 jobs must capture an immutable constraint-workspace hash/snapshot together with the exact SceneRevision at submission time; mutable latest workspace state must never replace captured job input.
 
-## Merge gate
+## Merge
 
-All N50 implementation and A11 acceptance conditions are complete. Remaining work is repository administration only:
+- PR #60 marked ready after A11 and accepted-code CI were complete.
+- PR #60 merged to `main` as merge commit `f37ffdf8a4c9e67894afb52d7750562812313b0d`.
+- Issue #59 closed automatically with state reason `completed`.
+- N50 is complete. Next roadmap milestone is N60.
 
-1. update `docs/IMPLEMENTATION_STATUS.md` to record N50 accepted / merge pending and N60 as next,
-2. mark PR #60 ready,
-3. merge PR #60,
-4. verify Issue #59 closes as completed,
-5. update main status with the final merge commit.
-
-No additional product test is warranted unless a new code change or CI/merge failure appears.
+No additional product test was run for the final documentation-only status updates.
 
 ## Known intentional limits
 
