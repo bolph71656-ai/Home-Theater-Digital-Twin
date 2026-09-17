@@ -26,9 +26,14 @@ from .search_space import GridAxis, SearchSpecCreate, generate_search_space, val
 def _constraint_engine_spec(
     revision: SceneRevision,
     constraint_set: CadConstraintSet,
+    search_entity_ids: Iterable[str] = (),
 ) -> tuple[dict, str]:
     context = scene_to_g10_context(revision.document)
-    request = build_g10_constraint_request(revision.document, constraint_set)
+    request = build_g10_constraint_request(
+        revision.document,
+        constraint_set,
+        additional_entity_ids=search_entity_ids,
+    )
     stored = validate_constraint_set_for_context(request, context)
     return stored, canonical_search_sha256(stored)
 
@@ -51,7 +56,11 @@ def build_cad_search_spec(
         raise ValueError('SearchSpec requires at least one axis')
 
     constraint_snapshot_json, constraint_workspace_hash = constraint_workspace_snapshot(constraint_set)
-    engine_spec, engine_sha = _constraint_engine_spec(revision, constraint_set)
+    engine_spec, engine_sha = _constraint_engine_spec(
+        revision,
+        constraint_set,
+        (axis.entity_id for axis in native_axes),
+    )
     context = scene_to_g10_context(revision.document)
     synthetic_constraint_id = f'cad-constraints:{constraint_workspace_hash[:20]}'
     request = SearchSpecCreate(
