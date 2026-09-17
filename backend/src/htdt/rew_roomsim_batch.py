@@ -172,30 +172,42 @@ def _same_position(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
 def _safe_restore(
     control: RoomSimPositionControl,
     before: RewRoomSimSnapshot,
-    intended: RewRoomSimSnapshot,
-    touched_sources: tuple[str, ...],
-    head_touched: bool,
+    owned: RewRoomSimSnapshot,
 ) -> None:
+    """Restore only fields still equal to the last state observed after our writes.
+
+    This also restores source-position side effects (for example paired movement)
+    while refusing to overwrite a field that changed again after our observation.
+    """
+
     current = control.get_roomsim_snapshot()
     conflicts: list[str] = []
 
-    for source_name in reversed(touched_sources):
+    source_names = tuple(sorted(set(before.active_sources) | set(owned.active_sources)))
+    for source_name in reversed(source_names):
+        if source_name not in before.sources or source_name not in owned.sources or source_name not in current.sources:
+            conflicts.append(f'source-set:{source_name}')
+            continue
+        before_position = before.sources[source_name]['position_rew']
+        owned_position = owned.sources[source_name]['position_rew']
         current_position = current.sources[source_name]['position_rew']
-        intended_position = intended.sources[source_name]['position_rew']
-        if _same_position(current_position, intended_position):
-            control.set_roomsim_source_position(
-                source_name,
-                before.sources[source_name]['position_rew'],
-            )
-        elif not _same_position(current_position, before.sources[source_name]['position_rew']):
+        if _same_position(owned_position, before_position):
+            if not _same_position(current_position, before_position):
+                conflicts.append(f'source:{source_name}')
+            continue
+        if _same_position(current_position, owned_position):
+            control.set_roomsim_source_position(source_name, before_position)
+        elif not _same_position(current_position, before_position):
             conflicts.append(f'source:{source_name}')
         current = control.get_roomsim_snapshot()
 
-    if head_touched:
-        if _same_position(current.head_position_rew, intended.head_position_rew):
+    if not _same_position(owned.head_position_rew, before.head_position_rew):
+        if _same_position(current.head_position_rew, owned.head_position_rew):
             control.set_roomsim_head_position(before.head_position_rew)
         elif not _same_position(current.head_position_rew, before.head_position_rew):
             conflicts.append('head')
+    elif not _same_position(current.head_position_rew, before.head_position_rew):
+        conflicts.append('head')
 
     final = control.get_roomsim_snapshot()
     if conflicts:
@@ -203,8 +215,10 @@ def _safe_restore(
             'Room Simulator state changed externally during transaction: ' + ', '.join(conflicts)
         )
     if roomsim_state_sha256(final) != roomsim_state_sha256(before):
-        raise RewRoomSimRestoreError('Room Simulator state did not restore to the exact pre-transaction snapshot')
-
+        raise RewRoomSimConcurrentChange(
+            'Room Simulator non-position state changed during transaction; '
+            'position changes were restored without overwriting that external state'
+        )
 
 def run_roomsim_position_batch(
     control: RoomSimPositionControl,
@@ -225,13 +239,16 @@ def run_roomsim_position_batch(
         raise RewRoomSimConcurrentChange('Room Simulator state changed before candidate apply')
 
     room_depth = float(before.room_size['length'])
-    touched_sources: list[str] = []
-    head_touched = False
+    owned = before
     response: RewRoomSimFrequencyResponse | None = None
     transaction_error: BaseException | None = None
 
     try:
         for source_name in sorted(request.source_positions_htdt):
+            if roomsim_state_sha256(control.get_roomsim_snapshot()) != roomsim_state_sha256(owned):
+                raise RewRoomSimConcurrentChange(
+                    'Room Simulator state changed before a source position update'
+                )
             control.set_roomsim_source_position(
                 source_name,
                 htdt_position_to_roomsim(
@@ -239,15 +256,18 @@ def run_roomsim_position_batch(
                     _position(request.source_positions_htdt[source_name]),
                 ),
             )
-            touched_sources.append(source_name)
+            owned = control.get_roomsim_snapshot()
 
+        if roomsim_state_sha256(control.get_roomsim_snapshot()) != roomsim_state_sha256(owned):
+            raise RewRoomSimConcurrentChange(
+                'Room Simulator state changed before the head position update'
+            )
         control.set_roomsim_head_position(
             htdt_position_to_roomsim(room_depth, _position(request.head_position_htdt))
         )
-        head_touched = True
+        owned = control.get_roomsim_snapshot()
 
-        applied = control.get_roomsim_snapshot()
-        if roomsim_state_sha256(applied) != intended_hash:
+        if roomsim_state_sha256(owned) != intended_hash:
             raise RewRoomSimConcurrentChange(
                 'Room Simulator state does not match the exact candidate state after apply'
             )
@@ -257,7 +277,7 @@ def run_roomsim_position_batch(
             source_name=request.source_name,
         )
 
-        if roomsim_state_sha256(control.get_roomsim_snapshot()) != intended_hash:
+        if roomsim_state_sha256(control.get_roomsim_snapshot()) != roomsim_state_sha256(owned):
             raise RewRoomSimConcurrentChange(
                 'Room Simulator state changed while candidate response was being read'
             )
@@ -269,9 +289,7 @@ def run_roomsim_position_batch(
         _safe_restore(
             control,
             before,
-            intended,
-            tuple(touched_sources),
-            head_touched,
+            owned,
         )
     except BaseException as exc:
         restore_error = exc

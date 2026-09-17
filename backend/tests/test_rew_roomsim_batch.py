@@ -63,6 +63,7 @@ class FakeControl:
         self.state = _snapshot()
         self.response_reads = 0
         self.external_change_after_response = False
+        self.paired_source_side_effect = False
         self.fail_restore = False
 
     def get_roomsim_snapshot(self) -> RewRoomSimSnapshot:
@@ -88,6 +89,15 @@ class FakeControl:
             'y_m': float(self.state.room_size['length']) - float(position_rew['fromRear']),
             'z_m': float(position_rew['fromFloor']),
         }
+        if self.paired_source_side_effect and source_name == 'Left':
+            paired = sources['Right']['position_rew'].copy()
+            paired['fromLeft'] = 2.8
+            sources['Right']['position_rew'] = paired
+            sources['Right']['position_htdt'] = {
+                'x_m': 2.8,
+                'y_m': float(self.state.room_size['length']) - float(paired['fromRear']),
+                'z_m': float(paired['fromFloor']),
+            }
         payload = self.state.__dict__.copy()
         payload['sources'] = sources
         self.state = RewRoomSimSnapshot(**payload)
@@ -161,6 +171,22 @@ def test_position_batch_rejects_inactive_source_before_writes() -> None:
     with pytest.raises(RewRoomSimBatchError, match='not active'):
         run_roomsim_position_batch(control, request)
     assert control.response_reads == 0
+
+
+def test_position_batch_restores_unrequested_source_side_effect() -> None:
+    control = FakeControl()
+    before_hash = roomsim_state_sha256(control.get_roomsim_snapshot())
+    control.paired_source_side_effect = True
+    request = RewRoomSimPositionBatchRequest(
+        candidate_id='candidate-a',
+        head_position_htdt={'x_m': 2.0, 'y_m': 3.2, 'z_m': 1.0},
+        source_positions_htdt={'Left': {'x_m': 1.1, 'y_m': 1.0, 'z_m': 1.0}},
+    )
+
+    with pytest.raises(RewRoomSimConcurrentChange, match='exact candidate state'):
+        run_roomsim_position_batch(control, request)
+
+    assert roomsim_state_sha256(control.get_roomsim_snapshot()) == before_hash
 
 
 def test_position_batch_restore_failure_is_hard_error() -> None:
