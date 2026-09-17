@@ -46,6 +46,17 @@ Topology関数はpureで、候補`(RoomPrism, WallTopology)`を返すか`WallTop
 
 SceneDocumentはwall topologyを持つ場合schema v3。`wall_topology=None`の旧sceneではcanonical JSONからfield自体を省略し、N05〜N30aのhash互換を維持する。
 
+## Cross-tool composition
+
+N30b完了時点では`CadEditorWindow`を通常product entryとする。これはN30a room toolとN30b wall toolの境界を調停する薄いcomposition layerで、domain logicをGUIへ重複実装しない。
+
+- wall topology作成前はN30a room sketch / vertex insert / deleteを従来どおり使える。
+- topology作成後も、vertex ID/orderを保つ頂点移動・edge寸法・天井高は既存topologyとopening/constraintを再validateして確定できる。
+- topology作成後のroom vertex insert/delete/room再作図は、stable wall refsを暗黙に作り直さず無効化し、wall split/deleteへ誘導する。
+- room変更でopening/constraint条件を満たせなくなる場合は例外をUIへ漏らさず確定拒否する。
+
+この境界により「N30aを壊さない」と「N30bのstable wall IDを無言で失わない」を両立する。
+
 ## Native interaction
 
 - Top viewでwallをクリック選択し、mouse dragでmoveする。
@@ -59,4 +70,4 @@ SceneDocumentはwall topologyを持つ場合schema v3。`wall_topology=None`の�
 
 A09はF3（F2凹room + opening + wall clearance + 2 measurement points）を使用する。実Windows mouse inputでwall select/moveを行い、split/merge/delete、opening/constraint参照追跡、曖昧split拒否、Undo/Redoを確認する。
 
-2026-09-17、commit `fccfdfbfb056a72906499a814f58f0957b0a65e4`でA09 PASS。詳細は[N30b A09 Windows acceptance](N30B_ACCEPTANCE_2026-09-17.md)。
+2026-09-17、通常起動と同じ`CadEditorWindow`を使うcommit `5ede848e8e0b0967a50c04c83ff679a649ca439b`でA09 PASS。詳細は[N30b A09 Windows acceptance](N30B_ACCEPTANCE_2026-09-17.md)。
