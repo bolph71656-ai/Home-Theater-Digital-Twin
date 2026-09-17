@@ -132,7 +132,9 @@ def run_a13(app: QApplication, root: Path) -> bool:
             return False
 
         # 1) Delayed A read. While the worker is running, edit and formally save B.
-        configure_delayed_measurement(window, 'rew-stale-after-edit', 1.20)
+        # Two seconds leaves margin for real-mouse rendering at 200% DPI so the
+        # external completion is guaranteed to arrive after the edit/save step.
+        configure_delayed_measurement(window, 'rew-stale-after-edit', 2.00)
         token_id = start_rew_read(window, app)
         if token_id is None:
             print('A13_START_STALE_JOB', False, flush=True)
@@ -143,7 +145,7 @@ def run_a13(app: QApplication, root: Path) -> bool:
         moved = drag_selected_x(window, app, scale=1.05)
         click_action(window, window.save_action, app)
         revision_b = repository.latest(FIXTURE_ID)
-        stale_finished = wait_jobs_empty(window, app, 2.5)
+        stale_finished = wait_jobs_empty(window, app, 3.5)
         stale_not_saved = (
             moved
             and revision_b is not None
