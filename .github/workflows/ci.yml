@@ -26,6 +26,9 @@ jobs:
       - name: Check backend launcher CLI
         run: python -m htdt --help
 
+      - name: Check native CAD launcher CLI
+        run: python -m htdt.room_editor --help
+
       - name: Compile Windows CAD acceptance harness
         run: python -m py_compile scripts\validate_n20b_windows.py
 
