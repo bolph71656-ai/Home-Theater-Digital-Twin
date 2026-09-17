@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QDockWidget, QPushButton
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
@@ -19,7 +19,7 @@ from htdt.measurement_editor import MeasurementEditorWindow
 from htdt.native_cad import TheaterEditorWindow
 from htdt.native_editor import ROLE
 
-from validate_n40_windows import click_action, click_global, click_widget, drag_selected_x, foreground, pump, wait_until
+from validate_n40_windows import click_action, click_global, drag_selected_x, foreground, pump, wait_until
 
 if sys.platform != 'win32':
     raise SystemExit('This acceptance harness requires Windows.')
@@ -39,13 +39,64 @@ def find_button(window: MeasurementEditorWindow, text: str) -> QPushButton:
     raise AssertionError(f'button not found: {text}')
 
 
-def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> None:
+def _measurement_dock(window: MeasurementEditorWindow) -> QDockWidget | None:
+    return next(
+        (candidate for candidate in window.findChildren(QDockWidget) if candidate.windowTitle() == '実測'),
+        None,
+    )
+
+
+def measurement_button_diagnostics(window: MeasurementEditorWindow, text: str) -> str:
     button = find_button(window, text)
     scroll = getattr(window, 'measurement_scroll', None)
+    center = button.mapToGlobal(button.rect().center())
+    parts = [
+        f'enabled={button.isEnabled()}',
+        f'visible={button.isVisible()}',
+        f'visible_to_window={button.isVisibleTo(window)}',
+        f'center={center.x()},{center.y()}',
+    ]
     if scroll is not None:
-        scroll.ensureWidgetVisible(button, 8, 8)
-        pump(app, 0.08)
-    click_widget(button, app)
+        local = scroll.viewport().mapFromGlobal(center)
+        bar = scroll.verticalScrollBar()
+        panel = scroll.widget()
+        parts.extend(
+            (
+                f'center_in_viewport={local.x()},{local.y()}',
+                f'viewport={scroll.viewport().width()}x{scroll.viewport().height()}',
+                f'vscroll={bar.value()}/{bar.maximum()}',
+                f'panel_h={0 if panel is None else panel.height()}',
+            )
+        )
+    parts.append(f'status={window.statusBar().currentMessage()!r}')
+    return ' '.join(parts)
+
+
+def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> bool:
+    button = find_button(window, text)
+    foreground(window, app)
+    dock = _measurement_dock(window)
+    if dock is not None:
+        dock.raise_()
+        pump(app, 0.05)
+    scroll = getattr(window, 'measurement_scroll', None)
+    if scroll is not None:
+        panel = scroll.widget()
+        if panel is not None:
+            center_y = button.mapTo(panel, button.rect().center()).y()
+            bar = scroll.verticalScrollBar()
+            target = center_y - scroll.viewport().height() // 2
+            bar.setValue(max(bar.minimum(), min(bar.maximum(), target)))
+        scroll.ensureWidgetVisible(button, 16, 16)
+        pump(app, 0.10)
+        center = button.mapToGlobal(button.rect().center())
+        local = scroll.viewport().mapFromGlobal(center)
+        if not scroll.viewport().rect().contains(local):
+            return False
+    if not button.isEnabled() or not button.isVisibleTo(window):
+        return False
+    click_global(button.mapToGlobal(button.rect().center()), app)
+    return True
 
 
 def click_measurement(window: MeasurementEditorWindow, measurement_id: str, app: QApplication) -> bool:
@@ -194,10 +245,11 @@ def run_a12(app: QApplication, root: Path) -> bool:
             return False
         window.compare_a_combo.setCurrentIndex(index_a)
         window.compare_b_combo.setCurrentIndex(index_b)
-        click_measurement_button(window, 'A/B比較を保存', app)
+        compare_clicked = click_measurement_button(window, 'A/B比較を保存', app)
         comparisons = measurement_repository.list_comparisons(FIXTURE_ID)
         comparison_ok = (
-            len(comparisons) == 1
+            compare_clicked
+            and len(comparisons) == 1
             and comparisons[0].dataset_a_id == dataset_a.dataset_id
             and comparisons[0].dataset_b_id == dataset_b.dataset_id
             and comparisons[0].scene_revision_a_id == revision_a.revision_id
@@ -207,6 +259,8 @@ def run_a12(app: QApplication, root: Path) -> bool:
         )
         print('A12_AB_REVISION_BINDING', comparison_ok, flush=True)
         if not comparison_ok:
+            print('A12_COMPARE_CLICKED', compare_clicked, flush=True)
+            print('A12_COMPARE_BUTTON', measurement_button_diagnostics(window, 'A/B比較を保存'), flush=True)
             print('A12_COMPARE_COUNT', len(comparisons), flush=True)
             if comparisons:
                 print('A12_COMPARE_A', comparisons[0].scene_revision_a_id, flush=True)
