@@ -1,6 +1,7 @@
 # N05 Windows package lock
 # Generated 2026-09-16 on Windows 11 x64 with Python 3.12.10.
 # Source: isolated `pip install backend[package]`, then `pip freeze` excluding the local HTDT package.
+# N60 adds PyQtGraph 0.14.0 and its Colorama dependency; existing NumPy already satisfies its requirement.
 # Reproduce with the package extra from backend/pyproject.toml. This lock freezes the resolved third-party closure for N05/A02.
 altgraph==0.17.5
 annotated-doc==0.0.5
@@ -10,6 +11,7 @@ attrs==26.1.0
 certifi==2026.7.22
 charset-normalizer==3.5.1
 click==8.5.0
+colorama==0.4.6
 contourpy==1.4.0
 cycler==0.12.1
 cyclopts==4.25.2
@@ -37,6 +39,7 @@ pyparsing==3.3.2
 PySide6==6.11.2
 PySide6_Addons==6.11.2
 PySide6_Essentials==6.11.2
+pyqtgraph==0.14.0
 python-dateutil==2.9.0.post0
 pyvista==0.49.0
 pyvista-validation==0.2.2
