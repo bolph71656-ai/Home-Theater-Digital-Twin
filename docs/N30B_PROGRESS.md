@@ -1,16 +1,17 @@
 # N30b progress
 
 Issue: #53  
+PR: #54  
 Branch: `feat/n30b-walls-openings`
 
 ## Current state
 
-N30b implementation is complete through the automated/compile gate. A09 Windows real-mouse acceptance is the remaining merge gate.
+N30b implementation and A09 Windows real-mouse acceptance are complete. Remaining work is final CI confirmation, status/PR normalization, and merge.
 
 Completed:
 - stable `WallSegment` identity and endpoint references;
 - wall-local `WallOpening` model;
-- wall-bound `WallConstraintBinding` for N30b clearance-reference continuity;
+- wall-bound `WallConstraintBinding` for clearance-reference continuity;
 - one-to-one RoomPrism boundary edge topology validation;
 - opening wall-length / room-height validation;
 - wall move preserving wall/opening/constraint IDs;
@@ -26,11 +27,18 @@ Completed:
 - GUI actions for wall move, split, merge, delete, door opening and clearance binding;
 - wall thickness edits preserving openings and clearance bindings;
 - normal native launcher switched to `htdt.wall_editor`;
-- `scripts/validate_n30b_windows.py` A09 harness using real Windows mouse input for wall select/drag and validating reference continuity, delete rejection/success, and Undo/Redo;
-- GitHub Actions forced to UTF-8 so Japanese native CLI help is portable on Windows runners.
+- `scripts/validate_n30b_windows.py` A09 harness with the required F3 fixture;
+- Windows Actions uses UTF-8 so Japanese native CLI help is portable;
+- A09 real Windows mouse acceptance PASS on commit `fccfdfbfb056a72906499a814f58f0957b0a65e4`;
+- acceptance evidence: [N30b A09 Windows acceptance](N30B_ACCEPTANCE_2026-09-17.md).
+
+## A09 result
+
+The owned Windows PC passed Japanese UI, F3 fixture, real-mouse wall selection/move, split reference migration, merge reference migration, referenced-delete rejection, ambiguous-split rejection, unreferenced wall deletion, and exact Undo/Redo. The worktree was clean before and after acceptance.
 
 ## Remaining gate
 
 1. latest PR-head GitHub Actions must be green;
-2. run A09 once on the owned Windows machine from a clean checkout of the PR head;
-3. record A09 evidence, update implementation status/PR body, then merge PR #54 and close Issue #53.
+2. update `IMPLEMENTATION_STATUS.md` and PR #54 body to the completed state;
+3. merge PR #54 and verify Issue #53 closes;
+4. proceed to N40 theater objects / A10.
