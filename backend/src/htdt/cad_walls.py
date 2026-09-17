@@ -223,6 +223,74 @@ def merge_walls(
     return merged_room, validate_wall_topology(merged_room, candidate)
 
 
+def delete_wall(
+    room: RoomPrism,
+    topology: WallTopology,
+    wall_id: str,
+    *,
+    replacement_wall_id: str,
+) -> tuple[RoomPrism, WallTopology]:
+    """Delete one boundary wall by removing its end vertex.
+
+    The selected wall and its successor become one replacement wall. The
+    operation is intentionally conservative: references on either affected
+    wall or conflicting thickness stop the commit instead of being guessed.
+    """
+
+    vertices = list(room_vertices(room))
+    if len(vertices) <= 3:
+        raise WallTopologyError('a room must keep at least three walls')
+    wall = _wall(topology, wall_id)
+    wall_index = _edge_index(room, wall)
+    successor_pair = _edge_pairs(room)[(wall_index + 1) % len(vertices)]
+    successor = next(
+        (candidate for candidate in topology.walls if (candidate.from_vertex_id, candidate.to_vertex_id) == successor_pair),
+        None,
+    )
+    if successor is None:
+        raise WallTopologyError('successor wall is missing from topology')
+    if abs(wall.thickness_m - successor.thickness_m) > 1e-9:
+        raise WallTopologyError('affected walls have different thickness; deletion requires explicit resolution')
+    affected = {wall.wall_id, successor.wall_id}
+    referenced = [opening.opening_id for opening in topology.openings if opening.wall_id in affected]
+    if referenced:
+        raise WallTopologyError(
+            f'wall deletion would orphan openings {referenced}; reassign or remove them first'
+        )
+
+    removed_vertex_id = wall.to_vertex_id
+    remaining_vertices = [vertex for vertex in vertices if vertex.vertex_id != removed_vertex_id]
+    try:
+        deleted_room = make_polygon_room(
+            remaining_vertices,
+            height_m=room.height_m,
+            room_id=room.room_id,
+        )
+    except ValueError as exc:
+        raise WallTopologyError(f'wall deletion would create invalid room geometry: {exc}') from exc
+
+    replacement = WallSegment(
+        wall_id=replacement_wall_id,
+        from_vertex_id=wall.from_vertex_id,
+        to_vertex_id=successor.to_vertex_id,
+        thickness_m=wall.thickness_m,
+    )
+    survivors = {
+        (candidate.from_vertex_id, candidate.to_vertex_id): candidate
+        for candidate in topology.walls
+        if candidate.wall_id not in affected
+    }
+    survivors[(replacement.from_vertex_id, replacement.to_vertex_id)] = replacement
+    ordered_walls: list[WallSegment] = []
+    for pair in _edge_pairs(deleted_room):
+        candidate = survivors.get(pair)
+        if candidate is None:
+            raise WallTopologyError(f'wall deletion cannot map replacement boundary edge {pair}')
+        ordered_walls.append(candidate)
+    candidate_topology = WallTopology(walls=tuple(ordered_walls), openings=topology.openings)
+    return deleted_room, validate_wall_topology(deleted_room, candidate_topology)
+
+
 def _wall(topology: WallTopology, wall_id: str) -> WallSegment:
     for wall in topology.walls:
         if wall.wall_id == wall_id:
