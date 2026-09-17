@@ -180,7 +180,11 @@ def search_spec_current_working(
     spec: CadSearchSpec,
     working: WorkingDocument,
     current_constraint_set: CadConstraintSet,
+    *,
+    current_document_id: str | None = None,
 ) -> bool:
+    if current_document_id is not None and current_document_id != spec.document_id:
+        return False
     if working.committed_document.document_id != spec.document_id:
         return False
     if working.source_revision_id != spec.scene_revision_id:
@@ -220,12 +224,18 @@ def apply_candidate_positions(
     *,
     spec: CadSearchSpec,
     current_constraint_set: CadConstraintSet,
+    current_document_id: str | None = None,
 ) -> bool:
     """Apply candidate positions as one Undo command, after rechecking native authority."""
 
     if working.has_preview:
         raise EditStateError('cannot apply a candidate while an edit preview is active')
-    if not search_spec_current_working(spec, working, current_constraint_set):
+    if not search_spec_current_working(
+        spec,
+        working,
+        current_constraint_set,
+        current_document_id=current_document_id,
+    ):
         raise ValueError('cannot apply candidate from a stale SearchSpec')
     if not candidate.positions:
         return False

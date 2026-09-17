@@ -434,7 +434,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             for spec in reversed(specs):
                 current = (
                     self.working is not None
-                    and search_spec_current_working(spec, self.working, self.constraint_set)
+                    and search_spec_current_working(
+                    spec,
+                    self.working,
+                    self.constraint_set,
+                    current_document_id=self.document_id,
+                )
                 )
                 item = QTreeWidgetItem(
                     [
@@ -490,7 +495,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         current = (
             spec is not None
             and self.working is not None
-            and search_spec_current_working(spec, self.working, self.constraint_set)
+            and search_spec_current_working(
+                    spec,
+                    self.working,
+                    self.constraint_set,
+                    current_document_id=self.document_id,
+                )
         )
         if self.search_binding_label is not None:
             if self.working is None or self.working.source_revision_id is None:
@@ -544,7 +554,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         if spec is None or self.working is None:
             self.statusBar().showMessage('生成する探索仕様を選択してください')
             return
-        if not search_spec_current_working(spec, self.working, self.constraint_set):
+        if not search_spec_current_working(
+            spec,
+            self.working,
+            self.constraint_set,
+            current_document_id=self.document_id,
+        ):
             self.statusBar().showMessage('staleな探索仕様から現在sceneへ候補を生成できません')
             self._refresh_search_binding_state()
             return
@@ -613,7 +628,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         if (
             spec is None
             or self.working is None
-            or not search_spec_current_working(spec, self.working, self.constraint_set)
+            or not search_spec_current_working(
+                        spec,
+                        self.working,
+                        self.constraint_set,
+                        current_document_id=self.document_id,
+                    )
         ):
             self.statusBar().showMessage('古い候補生成結果を破棄しました · scene/constraintが変更されています')
             self._refresh_search_binding_state()
@@ -724,6 +744,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 candidate,
                 spec=spec,
                 current_constraint_set=self.constraint_set,
+                current_document_id=self.document_id,
             )
         except Exception as exc:
             self.statusBar().showMessage(f'候補を適用できません · {exc}')
@@ -759,7 +780,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         if page is None or spec is None or self.working is None:
             self.viewport.render()
             return
-        if not search_spec_current_working(spec, self.working, self.constraint_set):
+        if not search_spec_current_working(
+            spec,
+            self.working,
+            self.constraint_set,
+            current_document_id=self.document_id,
+        ):
             self.viewport.render()
             return
 

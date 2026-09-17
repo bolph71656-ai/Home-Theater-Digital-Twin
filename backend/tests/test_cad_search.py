@@ -199,3 +199,35 @@ def test_candidate_generation_honors_cancellation_hook(tmp_path) -> None:
 
     with pytest.raises(RuntimeError, match='search generation cancelled'):
         generate_cad_candidates(scene_repository, spec, cancelled=lambda: True)
+
+
+def test_working_search_spec_rejects_current_document_switch(tmp_path) -> None:
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    revision, spec, _ = _build(scene_repository)
+    working = WorkingDocument(
+        revision.document,
+        source_revision_id=revision.revision_id,
+        saved_content_hash=revision.content_hash,
+    )
+    candidate = generate_cad_candidates(scene_repository, spec).candidates[-1]
+
+    assert search_spec_current_working(
+        spec,
+        working,
+        _constraints(),
+        current_document_id=DOCUMENT_ID,
+    )
+    assert not search_spec_current_working(
+        spec,
+        working,
+        _constraints(),
+        current_document_id='other-document',
+    )
+    with pytest.raises(ValueError, match='stale SearchSpec'):
+        apply_candidate_positions(
+            working,
+            candidate,
+            spec=spec,
+            current_constraint_set=_constraints(),
+            current_document_id='other-document',
+        )
