@@ -5,13 +5,18 @@
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 はmainへmerge済み。N80aはSearchSpec・candidate preview/applyのWindows実機受入まで完了し、N80b/cを継続する。**
+**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 / N80a はmainへmerge済み。N80aはSearchSpec・candidate preview/applyのWindows実機受入を完了し、N80b/cを継続する。**
 
-N70はIssue #63 / PR #64で完了し、merge commit `2ca8755b66af5521c2ed4fc98d39ce1aeb732c64` でmainへ反映済み。Issue #63は`completed`でclose済み。最終製品コード変更は `76c21eed7d7efcff23905e8af977854669df2752`、最終accepted gate/headは `2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93`、acceptance docs headは `bff12d4a379a5458f7dcf6cfa7e2b55b570ea4ec`。
+N70はIssue #63 / PR #64で完了済み。N80aはIssue #65の部分sliceとしてPR #66からmerge commit `7473bb3efdbc511369c9a023b0b210eb5cde3553` でmainへ反映済み。Issue #65はN80b/cのためopenのまま維持する。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N70までmerge済み**。PR #64 merge `2ca8755b66af5521c2ed4fc98d39ce1aeb732c64` |
+| main | **N80aまでmerge済み**。PR #66 merge `7473bb3efdbc511369c9a023b0b210eb5cde3553` |
+| N80 tracking | Issue #65（open） / PR #66（N80a merged） |
+| N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
+| N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |
+| N80a product CI | #321 / run `35280237062` PASS |
+| N80a acceptance docs CI | #324 / run `35286052855` PASS |
 | N70 tracking | Issue #63 / PR #64（完了） |
 | N70 last product-code head | `76c21eed7d7efcff23905e8af977854669df2752` |
 | N70 accepted gate head | `2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93` |
@@ -22,7 +27,7 @@ N70はIssue #63 / PR #64で完了し、merge commit `2ca8755b66af5521c2ed4fc98d3
 | A13 | stale、UI responsiveness、明示cancel、document change、clean close/no worker PASS |
 | A14 | 8頂点L-room、rectangular-only model=`unsupported`、無silent approximation、overlayなし、scalar control gated PASS |
 | F5 | 50 editable objects＋10,000 markers、1 non-pickable actor、初回11.406 ms、orbit p95 27.963 ms PASS |
-| native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN70 `PredictionWorkspaceWindow` compositionを起動 |
+| native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN80a `OptimizationWorkspaceWindow` compositionを起動 |
 | browser UI | 新CAD機能は凍結。二重実装しない |
 | 次工程 | **N80 — 最適化workspace** |
 

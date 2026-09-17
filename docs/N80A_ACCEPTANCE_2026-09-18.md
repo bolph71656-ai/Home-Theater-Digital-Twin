@@ -105,4 +105,4 @@ N80b/c remain open under Issue #65.
 - O40 must implement deterministic Pareto dominance/search without fabricating a single quality score.
 - O50 measurement-loop integration remains later work.
 
-N80a can merge independently without closing Issue #65.
+N80a merged through PR #66 as `7473bb3efdbc511369c9a023b0b210eb5cde3553`. Issue #65 remains open for N80b/c.

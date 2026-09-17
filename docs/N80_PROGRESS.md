@@ -76,4 +76,4 @@ Detailed contract: [N80 design](N80_DESIGN.md).
 - Local checkout restored to `5ede848e8e0b0967a50c04c83ff679a649ca439b` with post-status count `0`.
 - Detailed record: [N80a Windows acceptance](N80A_ACCEPTANCE_2026-09-18.md).
 
-N80a is accepted. N80 remains open: O20 requires a verified model contract, and O30/O40 objective/Pareto algorithms are not yet implemented. PR #66 must therefore merge as an N80a slice without closing Issue #65.
+N80a is accepted and merged through PR #66 as `7473bb3efdbc511369c9a023b0b210eb5cde3553`. Issue #65 remains open: O20 requires a verified model contract, and O30/O40 objective/Pareto algorithms are not yet implemented.
