@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-
 import validate_n40_windows as base
 
 
@@ -28,7 +26,17 @@ def set_top_fixture_camera(window) -> None:
     )
 
 
+def click_object_button(window, prefix: str, app) -> None:
+    button = base.object_button(window, prefix)
+    if not button.isEnabled() and window.room_mode == 'edit':
+        base.click_action(window, window.done_room_action, app)
+        print('A10_MOUSE_DONE_ROOM', window.room_mode == 'idle', flush=True)
+    base._original_click_object_button(window, prefix, app)
+
+
 base.set_top_fixture_camera = set_top_fixture_camera
+base._original_click_object_button = base.click_object_button
+base.click_object_button = click_object_button
 
 if __name__ == '__main__':
     raise SystemExit(base.main())
