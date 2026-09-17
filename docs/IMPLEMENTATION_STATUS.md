@@ -1,11 +1,11 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N70 merged・A13/A14/F5 Windows実機受入完了 / 次工程 N80
+> 更新: 2026-09-18 / N80a SearchSpec・candidate preview/apply Windows実機受入完了 / N80継続
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 の技術gateを実装し、N70までmainへmerge・Windows実機受入を完了した。**
+**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 はmainへmerge済み。N80aはSearchSpec・candidate preview/applyのWindows実機受入まで完了し、N80b/cを継続する。**
 
 N70はIssue #63 / PR #64で完了し、merge commit `2ca8755b66af5521c2ed4fc98d39ce1aeb732c64` でmainへ反映済み。Issue #63は`completed`でclose済み。最終製品コード変更は `76c21eed7d7efcff23905e8af977854669df2752`、最終accepted gate/headは `2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93`、acceptance docs headは `bff12d4a379a5458f7dcf6cfa7e2b55b570ea4ec`。
 
@@ -121,9 +121,18 @@ A14はN70–N80にまたがるgate。今回の`unsupported` branchでは候補�
 - [N60](N60_ACCEPTANCE_2026-09-17.md)
 - [N70](N70_ACCEPTANCE_2026-09-18.md)
 
-## 次工程 — N80 最適化workspace
+## N80 — 進行中
 
-ロードマップ上の次工程は**N80 — 最適化workspace**。
+N80a（native SearchSpec + candidate workspace）はWindows実機受入を完了した。詳細: [N80a Windows acceptance](N80A_ACCEPTANCE_2026-09-18.md)。
+
+- last product-code head: `c6cc15e76edbc1ac263911ee084803ca1e32b42c`
+- accepted gate head: `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`
+- product CI #321 / run `35280237062` PASS
+- final gate CI #323 / run `35280664154` PASS
+- A13 stale/cancel/document/clean close PASS
+- A14 SearchSpec→candidate preview→1-command apply→1 Undo exact restore PASS
+
+N80全体は未完了。次はO20〜O40の該当gateを満たす。
 
 - N50/N60/N70とO20〜O40の該当gateを前提にする。
 - SearchSpec編集とO10候補集合をnative Sceneへadapter接続する。

@@ -104,6 +104,7 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
             '制約',
             '実測',
             '予測',
+            '最適化',
         )
         right_docks = [
             candidate

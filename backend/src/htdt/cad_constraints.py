@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import hypot
-from typing import Any
+from typing import Any, Iterable
 
 from .cad_constraint_models import (
     CadAllowedRegionConstraint,
@@ -193,19 +193,18 @@ def _entity_profile(document: SceneDocument, entity_id: str) -> dict[str, Any] |
 def build_g10_constraint_request(
     document: SceneDocument,
     constraint_set: CadConstraintSet,
+    *,
+    additional_entity_ids: Iterable[str] = (),
 ) -> ConstraintSetCreate:
     if constraint_set.document_id != document.document_id:
         raise CadConstraintAdapterError(
             f'constraint workspace document_id {constraint_set.document_id} does not match scene {document.document_id}'
         )
-    if not constraint_set.constraints:
-        raise CadConstraintAdapterError('cannot build a G10 request for an empty constraint workspace')
-
     known_entities = {entity.entity_id for entity in document.entities}
-    relevant = _relevant_entity_ids(constraint_set)
+    relevant = _relevant_entity_ids(constraint_set) | {str(entity_id) for entity_id in additional_entity_ids}
     unknown = relevant - known_entities
     if unknown:
-        raise CadConstraintAdapterError('constraints reference unknown CAD entities: ' + ', '.join(sorted(unknown)))
+        raise CadConstraintAdapterError('constraints/search axes reference unknown CAD entities: ' + ', '.join(sorted(unknown)))
 
     needs_wall_map = any(isinstance(item, CadWallClearanceConstraint) for item in constraint_set.constraints)
     wall_to_edge = wall_edge_maps(document)[0] if needs_wall_map else None
