@@ -1,16 +1,16 @@
 # 実装ステータス
 
-> 更新: 2026-09-17 / N30b wall・opening・参照保持・Windows A09受入反映
+> 更新: 2026-09-17 / N30b merged・Windows A09受入反映・次工程N40
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b の技術gateを実装・実機受入まで通過。** N30bはIssue #53 / PR #54で、stable wall topology、opening、wall clearance参照、壁move/split/merge/delete、atomic Undo/Redo、日本語優先native UI、N30a/N30b cross-tool guard、F3/A09 Windows実機受入まで完了した。PR #54は最終CI確認後にmainへmergeする。
+**N05 / N10 / N20a / N20b / N30a / N30b の技術gateを実装・実機受入まで通過。** N30bはIssue #53 / PR #54で完了し、merge commit `c985e8e06ca58b1c30d5aa5ba195d596ee420e96` でmainへ反映済み。stable wall topology、opening、wall clearance参照、壁move/split/merge/delete、atomic Undo/Redo、日本語優先native UI、N30a/N30b cross-tool guard、F3/A09 Windows実機受入まで完了した。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | N30aまで反映済み。N30bはPR #54がmerge待ち |
-| N30b tracking | PR #54 / Issue #53 |
+| main | N30bまで反映済み。PR #54 merge `c985e8e06ca58b1c30d5aa5ba195d596ee420e96` |
+| N30b tracking | PR #54 / Issue #53（完了） |
 | N30b実機受入 | commit `5ede848e8e0b0967a50c04c83ff679a649ca439b`、Windows 11 / 実OS 200% DPIでA09 PASS |
 | A09 | F3で実マウスwall選択・移動、split/merge/delete、opening/clearance追従、曖昧split拒否、Undo/RedoをPASS |
 | wall domain | stable wall ID、from/to vertex参照、wall-local opening、clearance binding、thickness表示属性 |
