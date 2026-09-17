@@ -26,6 +26,15 @@ function Invoke-Git {
     return $output
 }
 
+function Get-GitFirstLine {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    $lines = @(Invoke-Git -Arguments $Arguments)
+    if ($lines.Count -lt 1) {
+        throw "git $($Arguments -join ' ') returned no output."
+    }
+    return ([string]$lines[0]).Trim()
+}
+
 function Get-N60HarnessProcesses {
     return @(
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
@@ -114,10 +123,10 @@ try {
         throw "Missing $Python. Use the existing Windows Python 3.12 environment before running the hardware gate."
     }
 
-    $OriginalSha = (Invoke-Git @('rev-parse', 'HEAD'))[0].Trim()
+    $OriginalSha = Get-GitFirstLine -Arguments @('rev-parse', 'HEAD')
     $branchOutput = @(& git -C $RepoRoot symbolic-ref --short -q HEAD 2>$null)
     if ($LASTEXITCODE -eq 0 -and $branchOutput.Count -gt 0) {
-        $OriginalBranch = $branchOutput[0].Trim()
+        $OriginalBranch = ([string]$branchOutput[0]).Trim()
     }
     Write-Output "N60_ORIGINAL_SHA=$OriginalSha"
     Write-Output "N60_ORIGINAL_BRANCH=$OriginalBranch"
@@ -133,7 +142,7 @@ try {
 
     Invoke-Git @('fetch', '--prune', 'origin', $Branch) | Out-Null
     $remoteRef = "origin/$Branch"
-    $branchHead = (Invoke-Git @('rev-parse', $remoteRef))[0].Trim()
+    $branchHead = Get-GitFirstLine -Arguments @('rev-parse', $remoteRef)
     Write-Output "N60_BRANCH_HEAD=$branchHead"
     Write-Output "N60_PRODUCT_HEAD=$ExpectedProductHead"
 
@@ -159,7 +168,7 @@ try {
     }
 
     Invoke-Git @('checkout', '--quiet', '--detach', $ExpectedProductHead) | Out-Null
-    $gateSha = (Invoke-Git @('rev-parse', 'HEAD'))[0].Trim()
+    $gateSha = Get-GitFirstLine -Arguments @('rev-parse', 'HEAD')
     Write-Output "N60_GATE_SHA=$gateSha"
     if ($gateSha -ne $ExpectedProductHead) {
         throw "Hardware gate checkout mismatch: expected $ExpectedProductHead, got $gateSha"
@@ -193,7 +202,7 @@ try {
                 Invoke-Git @('checkout', '--quiet', '--detach', $OriginalSha) | Out-Null
             }
 
-            $restoredSha = (Invoke-Git @('rev-parse', 'HEAD'))[0].Trim()
+            $restoredSha = Get-GitFirstLine -Arguments @('rev-parse', 'HEAD')
             $postStatus = @(Invoke-Git @('status', '--porcelain=v1', '--untracked-files=all'))
             Write-Output "N60_RESTORED_SHA=$restoredSha"
             Write-Output "N60_POST_STATUS_COUNT=$($postStatus.Count)"
