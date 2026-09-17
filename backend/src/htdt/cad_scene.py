@@ -30,6 +30,23 @@ class Position3(BaseModel):
         return value
 
 
+class Offset3(BaseModel):
+    """Entity-local metric offset, kept distinct from a world position."""
+
+    model_config = ConfigDict(frozen=True)
+    x_m: float = 0.0
+    y_m: float = 0.0
+    z_m: float = 0.0
+
+    @field_validator('x_m', 'y_m', 'z_m')
+    @classmethod
+    def finite(cls, value: float) -> float:
+        value = float(value)
+        if not isfinite(value):
+            raise ValueError('offset values must be finite')
+        return value
+
+
 class Direction3(BaseModel):
     model_config = ConfigDict(frozen=True)
     x: float
@@ -277,14 +294,20 @@ def make_polygon_room(
     )
 
 
+PhysicalEntityKind = Literal['speaker', 'seat', 'screen', 'furniture', 'av_equipment']
+EntityKind = Literal['speaker', 'seat', 'screen', 'furniture', 'av_equipment', 'measurement_point']
+PHYSICAL_ENTITY_KINDS = frozenset({'speaker', 'seat', 'screen', 'furniture', 'av_equipment'})
+
+
 class SceneEntity(BaseModel):
     model_config = ConfigDict(frozen=True)
     entity_id: str = Field(min_length=1)
-    kind: Literal['speaker', 'measurement_point', 'furniture']
+    kind: EntityKind
     name: str = Field(min_length=1)
     position: Position3
     orientation: Quaternion4 = Field(default_factory=Quaternion4)
     size_m: Size3 | None = None
+    acoustic_reference_offset_m: Offset3 | None = None
     speaker_role: str | None = None
     aim_xyz: Direction3 | None = None
 
@@ -294,7 +317,36 @@ class SceneEntity(BaseModel):
             raise ValueError('speaker_role is required for speakers')
         if self.kind != 'speaker' and (self.speaker_role is not None or self.aim_xyz is not None):
             raise ValueError('speaker fields are only valid for speakers')
+        if self.kind in PHYSICAL_ENTITY_KINDS and self.size_m is None:
+            raise ValueError(f'size_m is required for physical entity kind {self.kind}')
+        if self.kind == 'measurement_point':
+            if self.size_m is not None:
+                raise ValueError('measurement points do not have physical size_m')
+            if self.acoustic_reference_offset_m is not None:
+                raise ValueError('measurement points are already acoustic reference positions')
         return self
+
+
+def acoustic_reference_position(entity: SceneEntity) -> Position3 | None:
+    """Resolve an entity-local acoustic reference into world HTDT coordinates.
+
+    Standalone measurement points are already world reference positions. Physical
+    objects only expose a reference when an explicit local offset is present.
+    """
+
+    if entity.kind == 'measurement_point':
+        return entity.position
+    offset = entity.acoustic_reference_offset_m
+    if offset is None:
+        return None
+    matrix = quaternion_to_matrix3(entity.orientation)
+    local = (offset.x_m, offset.y_m, offset.z_m)
+    rotated = tuple(sum(matrix[row][column] * local[column] for column in range(3)) for row in range(3))
+    return Position3(
+        x_m=entity.position.x_m + rotated[0],
+        y_m=entity.position.y_m + rotated[1],
+        z_m=entity.position.z_m + rotated[2],
+    )
 
 
 class SceneDocument(BaseModel):
@@ -335,6 +387,9 @@ def canonical_scene_json(document: SceneDocument) -> str:
         orientation = entity.get('orientation')
         if orientation == IDENTITY_ORIENTATION.model_dump(mode='json'):
             entity.pop('orientation', None)
+        # N40 adds an optional body-local reference; omission preserves older scene hashes.
+        if entity.get('acoustic_reference_offset_m') is None:
+            entity.pop('acoustic_reference_offset_m', None)
     # Preserve N05/N10/N20 rectangular-room hashes by omitting the new optional field.
     if isinstance(payload.get('room'), dict) and payload['room'].get('footprint_vertices') is None:
         payload['room'].pop('footprint_vertices', None)
