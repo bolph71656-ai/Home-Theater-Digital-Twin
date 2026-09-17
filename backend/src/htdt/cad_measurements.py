@@ -9,8 +9,12 @@ from uuid import uuid4
 from .cad_measurement_models import CadFrequencyResponseDataset, CadMeasurementRecord
 from .cad_repository import SceneRevision
 from .cad_scene import Direction3, acoustic_reference_position
-from .rew_api import REW_API_ADAPTER_VERSION, REW_API_SNAPSHOT_FORMAT, RewFrequencyResponseSnapshot
+from .rew_api import RewFrequencyResponseSnapshot
 from .rew_parser import parse_rew_frequency_response
+
+
+CAD_REW_API_SNAPSHOT_FORMAT = 'htdt-rew-api-frequency-response-snapshot-1'
+CAD_REW_API_ADAPTER_VERSION = 'rew-api-snapshot-1'
 
 
 class CadMeasurementError(ValueError):
@@ -101,7 +105,7 @@ def normalize_rew_api_snapshot(
 ) -> tuple[CadMeasurementRecord, CadFrequencyResponseDataset, str, bytes]:
     decoded = snapshot.decoded
     wrapper = {
-        'format': REW_API_SNAPSHOT_FORMAT,
+        'format': CAD_REW_API_SNAPSHOT_FORMAT,
         'measurement_uuid': decoded.measurement_id,
         'query': snapshot.query,
         'measurement_summary': snapshot.measurement_summary,
@@ -129,7 +133,7 @@ def normalize_rew_api_snapshot(
         source_kind='rew_api',
         external_source_id=decoded.measurement_id,
         provenance={
-            'adapter_version': REW_API_ADAPTER_VERSION,
+            'adapter_version': CAD_REW_API_ADAPTER_VERSION,
             'rew_version': summary.get('rewVersion') if isinstance(summary.get('rewVersion'), str) else None,
             'requested': {
                 'unit': decoded.requested_unit,
@@ -164,7 +168,7 @@ def normalize_rew_api_snapshot(
             'returned_frequency_step_hz': decoded.frequency_step_hz,
         }),
         source_sha256=digest,
-        importer_version=REW_API_ADAPTER_VERSION,
+        importer_version=CAD_REW_API_ADAPTER_VERSION,
     )
     return record, dataset, f'rew-api-{decoded.measurement_id}.json', raw
 
