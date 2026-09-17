@@ -63,3 +63,17 @@ Detailed contract: [N80 design](N80_DESIGN.md).
 - Candidate feasibility is not a quality score.
 - Search candidates are not labeled recommended/optimal.
 - External or scalar-field prediction remains model-gated exactly as in N70.
+
+## 2026-09-18 — N80a owned-Windows acceptance
+
+- Last product-code head: `c6cc15e76edbc1ac263911ee084803ca1e32b42c`.
+- Product CI #321 / run `35280237062`: PASS.
+- Gate-only head: `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`.
+- Final gate CI #323 / run `35280664154`: PASS.
+- A13: stale revision, UI responsiveness, explicit cancel, document switch, and clean close/no-worker all PASS on owned Windows at 200% DPI.
+- A14: SearchSpec creation, deterministic candidate generation, real-mouse candidate selection, non-authoritative preview, one-command apply, and one-Undo exact restoration all PASS.
+- Hardware gate result: `N80_HARDWARE_GATE_RESULT=PASS`.
+- Local checkout restored to `5ede848e8e0b0967a50c04c83ff679a649ca439b` with post-status count `0`.
+- Detailed record: [N80a Windows acceptance](N80A_ACCEPTANCE_2026-09-18.md).
+
+N80a is accepted. N80 remains open: O20 requires a verified model contract, and O30/O40 objective/Pareto algorithms are not yet implemented. PR #66 must therefore merge as an N80a slice without closing Issue #65.
