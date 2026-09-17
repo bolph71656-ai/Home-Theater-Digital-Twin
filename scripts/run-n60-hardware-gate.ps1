@@ -19,12 +19,18 @@ $RestoreFailed = $false
 
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
-    $output = @(& git -C $RepoRoot @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
+    $previousErrorAction = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& git -C $RepoRoot @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
     if ($exitCode -ne 0) {
         throw "git $($Arguments -join ' ') failed with exit code ${exitCode}: $($output -join [Environment]::NewLine)"
     }
-    return $output
+    return @($output | ForEach-Object { [string]$_ })
 }
 
 function Get-GitFirstLine {
@@ -136,6 +142,7 @@ try {
     }
 
     if ($PreflightOnly) {
+        Invoke-Git @('fetch', '--dry-run', 'origin', $Branch) | Out-Null
         Write-Output "N60_PREFLIGHT_RESULT=PASS"
         return
     }
@@ -163,6 +170,7 @@ try {
     }
 
     $allowedAfterProduct = @(
+        '.github/workflows/ci.yml',
         'docs/N60_PROGRESS.md',
         'scripts/run-n60-hardware-gate.ps1'
     )
