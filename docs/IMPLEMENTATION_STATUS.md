@@ -1,22 +1,24 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N70 Windows実機受入完了 / PR #64 merge待ち / 次工程 N80
+> 更新: 2026-09-18 / N70 merged・A13/A14/F5 Windows実機受入完了 / 次工程 N80
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 の技術gateを実装し、N70までWindows実機受入を通過した。**
+**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 の技術gateを実装し、N70までmainへmerge・Windows実機受入を完了した。**
 
-N70はIssue #63 / PR #64で追跡中。最終製品コード変更は `76c21eed7d7efcff23905e8af977854669df2752`、最終accepted gate/headは `2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93`。後者までの追加変更はWindows acceptance harness / gate runnerの決定性修正で、N70 runtime製品コードは変更していない。
+N70はIssue #63 / PR #64で完了し、merge commit `2ca8755b66af5521c2ed4fc98d39ce1aeb732c64` でmainへ反映済み。Issue #63は`completed`でclose済み。最終製品コード変更は `76c21eed7d7efcff23905e8af977854669df2752`、最終accepted gate/headは `2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93`、acceptance docs headは `bff12d4a379a5458f7dcf6cfa7e2b55b570ea4ec`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N60までmerge済み**。N70 PR #64は実機受入完了・merge待ち |
-| N70 tracking | Issue #63 / PR #64 |
+| main | **N70までmerge済み**。PR #64 merge `2ca8755b66af5521c2ed4fc98d39ce1aeb732c64` |
+| N70 tracking | Issue #63 / PR #64（完了） |
 | N70 last product-code head | `76c21eed7d7efcff23905e8af977854669df2752` |
 | N70 accepted gate head | `2a6eaae351beb8b2cbbef23a07e3054bb4fb1c93` |
+| acceptance docs head | `bff12d4a379a5458f7dcf6cfa7e2b55b570ea4ec` |
 | product CI | #309 / run `35270706491` PASS |
 | final harness CI | #312 / run `35272332747` PASS |
+| acceptance docs CI | #313 / run `35276546531` PASS |
 | A13 | stale、UI responsiveness、明示cancel、document change、clean close/no worker PASS |
 | A14 | 8頂点L-room、rectangular-only model=`unsupported`、無silent approximation、overlayなし、scalar control gated PASS |
 | F5 | 50 editable objects＋10,000 markers、1 non-pickable actor、初回11.406 ms、orbit p95 27.963 ms PASS |

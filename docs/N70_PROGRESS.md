@@ -114,8 +114,14 @@ Gate cleanup:
 - post-status count `0`;
 - `N70_HARDWARE_GATE_RESULT=PASS`.
 
-## N70 status
+## Merge completion
 
-**N70 technical acceptance complete.**
+Acceptance documentation commit `bff12d4a379a5458f7dcf6cfa7e2b55b570ea4ec` added the final acceptance record and updated status. CI #313 / run `35276546531` passed completely.
 
-PR #64 has no review comments and is mergeable. After the acceptance-doc CI is green, mark it ready and merge. The roadmap next milestone is **N80 — 最適化workspace**, which will connect SearchSpec/O10 and the applicable O20–O40 gates for candidate preview/application and Pareto comparison.
+PR #64 was marked ready with no review comments and merged into main as:
+
+`2ca8755b66af5521c2ed4fc98d39ce1aeb732c64`
+
+Issue #63 closed automatically with state reason `completed`.
+
+**N70 is complete and merged.** The roadmap next milestone is **N80 — 最適化workspace**, which will connect SearchSpec/O10 and applicable O20–O40 gates for candidate preview/application, objective vectors and Pareto comparison.
