@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import gc
 from pathlib import Path
 import sys
 import tempfile
@@ -99,17 +100,28 @@ def set_top_fixture_camera(window: RoomEditorWindow) -> None:
     window.viewport.render()
 
 
+def foreground_window(window: RoomEditorWindow, app: QApplication) -> None:
+    window.show()
+    window.showNormal()
+    window.raise_()
+    window.activateWindow()
+    window.viewport.interactor.setFocus()
+    user32.SetForegroundWindow(int(window.winId()))
+    pump(app, 0.25)
+    print('A08_WINDOW_ACTIVE', bool(window.isActiveWindow()), flush=True)
+
+
 def run_a08(app: QApplication, root: Path) -> bool:
     document_id = 'fixture-f2-a08'
     repo = SceneRepository(root / 'scene.sqlite3')
     repo.save(make_empty_scene(document_id), parent_revision_id=None)
     window = RoomEditorWindow(repo, document_id)
-    window.show()
-    pump(app, 0.25)
+    foreground_window(window, app)
     try:
         set_top_fixture_camera(window)
         window.start_room_sketch()
         set_top_fixture_camera(window)
+        foreground_window(window, app)
         pump(app, 0.10)
 
         for x_m, y_m in F2_POINTS:
@@ -258,6 +270,11 @@ def run_a08(app: QApplication, root: Path) -> bool:
         return bool(undo_ok and redo_ok and exact_redo)
     finally:
         window.close()
+        pump(app, 0.12)
+        window.deleteLater()
+        pump(app, 0.12)
+        del window
+        gc.collect()
         pump(app, 0.12)
 
 
