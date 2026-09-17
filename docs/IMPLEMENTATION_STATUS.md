@@ -9,8 +9,8 @@
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | N20bまで反映済み。N30aはPR #52で最終CI確認中 |
-| N30a branch / Issue | `feat/n30a-room-sketch` / Issue #51 |
+| main | N30aまで反映済み。PR #52 merge `3a5db7f5c0101644e9e9a1271157f5756d4f88b3` |
+| N30a tracking | PR #52 / Issue #51（完了） |
 | N30a実機受入 | Windows 11 / 実OS 200% DPIでA08 pass |
 | A08 | F2を空sceneから8 clickで作図、midpoint挿入、vertex drag、edge寸法、天井高、削除、invalid拒否、Undo/Redoをpass |
 | room domain | stable vertex ID、凹simple polygon、負XY、footprint由来bounds、self-intersection拒否 |
