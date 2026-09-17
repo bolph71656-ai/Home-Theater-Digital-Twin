@@ -8,6 +8,7 @@ from htdt.cad_measurement_repository import CadMeasurementRepository
 from htdt.cad_measurements import measurement_record_for_revision, normalize_rew_api_snapshot, normalize_rew_text
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, make_f1_scene
+from htdt.comparison import FrequencyResponse, compare_frequency_responses
 from htdt.rew_api import RewFrequencyResponse, RewFrequencyResponseSnapshot
 
 
@@ -124,6 +125,52 @@ def test_rew_api_normalization_keeps_external_uuid_as_provenance_not_primary_key
     assert dataset.phase_status == 'absent'
     assert filename == 'rew-api-rew-external-uuid.json'
     assert raw
+
+
+def test_saved_comparison_keeps_exact_dataset_and_scene_revision_ids(tmp_path: Path) -> None:
+    scene_repository, revision_a = _saved_f1(tmp_path)
+    repository = CadMeasurementRepository(scene_repository)
+    record_a, dataset_a, filename_a, raw_a = normalize_rew_text(
+        revision_a,
+        'point-mlp',
+        b'20 70\n40 71\n80 69\n',
+        filename='a.txt',
+        imported_at='2026-09-17T09:30:00+00:00',
+    )
+    repository.save(record_a, dataset_a, raw_filename=filename_a, raw_bytes=raw_a)
+
+    working = WorkingDocument(
+        revision_a.document,
+        source_revision_id=revision_a.revision_id,
+        saved_content_hash=revision_a.content_hash,
+    )
+    working.move_entity('speaker-fl', Position3(x_m=1.55, y_m=0.75, z_m=1.05))
+    revision_b = scene_repository.save(working.committed_document, parent_revision_id=revision_a.revision_id).revision
+    record_b, dataset_b, filename_b, raw_b = normalize_rew_text(
+        revision_b,
+        'point-mlp',
+        b'20 69\n40 70\n80 68\n',
+        filename='b.txt',
+        imported_at='2026-09-17T09:31:00+00:00',
+    )
+    repository.save(record_b, dataset_b, raw_filename=filename_b, raw_bytes=raw_b)
+
+    result = compare_frequency_responses(
+        FrequencyResponse(dataset_a.frequency_hz, dataset_a.level_db),
+        FrequencyResponse(dataset_b.frequency_hz, dataset_b.level_db),
+        20.0,
+        80.0,
+    )
+    saved = repository.save_comparison(dataset_a.dataset_id, dataset_b.dataset_id, result)
+    reopened = repository.get_comparison(saved.comparison_id)
+
+    assert reopened == saved
+    assert reopened.dataset_a_id == dataset_a.dataset_id
+    assert reopened.dataset_b_id == dataset_b.dataset_id
+    assert reopened.scene_revision_a_id == revision_a.revision_id
+    assert reopened.scene_revision_b_id == revision_b.revision_id
+    assert reopened.difference_db == saved.difference_db
+    assert repository.list_comparisons(revision_a.document_id) == (saved,)
 
 
 def test_job_guard_rejects_cancelled_superseded_and_stale_results(tmp_path: Path) -> None:
