@@ -1,4 +1,4 @@
-from htdt.room_editor import main
+from htdt.native_cad import main
 
 
 if __name__ == '__main__':

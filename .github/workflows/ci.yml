@@ -8,6 +8,8 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -27,10 +29,10 @@ jobs:
         run: python -m htdt --help
 
       - name: Check native CAD launcher CLI
-        run: python -m htdt.room_editor --help
+        run: python -m htdt.native_cad --help
 
       - name: Compile Windows CAD acceptance harnesses
-        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py
+        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py scripts\validate_n30b_windows.py
 
       - name: Validate PowerShell scripts syntax
         shell: pwsh

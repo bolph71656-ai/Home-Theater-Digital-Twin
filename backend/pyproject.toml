@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-htdt-native = "htdt.room_editor:main"
+htdt-native = "htdt.native_cad:main"
 
 [project.optional-dependencies]
 dev = [
