@@ -61,8 +61,9 @@ def test_right_context_docks_are_rebuilt_as_one_tab_stack() -> None:
     MeasurementWorkspaceWindow._unify_right_context_docks(window, docks['実測'])
     app.processEvents()
 
-    tabbed = set(window.tabifiedDockWidgets(docks['Inspector']))
-    assert tabbed == {docks['オブジェクト詳細'], docks['制約'], docks['実測']}
+    tabbed = window.tabifiedDockWidgets(docks['Inspector'])
+    assert len(tabbed) == 3
+    assert all(dock in tabbed for dock in (docks['オブジェクト詳細'], docks['制約'], docks['実測']))
     assert all(
         window.dockWidgetArea(dock) == Qt.DockWidgetArea.RightDockWidgetArea
         for dock in docks.values()
