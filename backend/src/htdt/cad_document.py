@@ -116,19 +116,25 @@ class TransformEntitiesCommand:
 
 
 @dataclass(frozen=True)
-class AddEntityCommand:
-    entity: SceneEntity
+class AddEntitiesCommand:
+    entities: tuple[SceneEntity, ...]
     index: int
 
     @property
     def is_noop(self) -> bool:
-        return False
+        return not self.entities
 
     def apply(self, document: SceneDocument) -> SceneDocument:
-        return _insert(document, self.index, self.entity)
+        updated = document
+        for offset, entity in enumerate(self.entities):
+            updated = _insert(updated, self.index + offset, entity)
+        return updated
 
     def revert(self, document: SceneDocument) -> SceneDocument:
-        return _delete(document, self.entity.entity_id)
+        updated = document
+        for entity in reversed(self.entities):
+            updated = _delete(updated, entity.entity_id)
+        return updated
 
 
 @dataclass(frozen=True)
@@ -445,21 +451,31 @@ class WorkingDocument:
         self._document = self._history.push(command, self._document)
         return scene_content_hash(self._document) != before_hash
 
-    def add_entity(self, entity: SceneEntity, *, index: int | None = None) -> bool:
+    def add_entities(self, entities: tuple[SceneEntity, ...], *, index: int | None = None) -> bool:
         if self.has_preview:
-            raise EditStateError('cannot add an entity while a preview is active')
-        validated = SceneEntity.model_validate(entity.model_dump(mode='python'))
+            raise EditStateError('cannot add entities while a preview is active')
+        if not entities:
+            return False
+        validated = tuple(SceneEntity.model_validate(entity.model_dump(mode='python')) for entity in entities)
+        ids = [entity.entity_id for entity in validated]
+        if len(ids) != len(set(ids)):
+            raise EditStateError('added entity ids must be unique')
+        existing = {entity.entity_id for entity in self._document.entities}
+        duplicates = existing.intersection(ids)
+        if duplicates:
+            raise EditStateError(f'entities already exist: {sorted(duplicates)}')
         insertion_index = len(self._document.entities) if index is None else int(index)
         if not 0 <= insertion_index <= len(self._document.entities):
             raise EditStateError(f'entity insertion index out of range: {insertion_index}')
-        if any(item.entity_id == validated.entity_id for item in self._document.entities):
-            raise EditStateError(f'entity already exists: {validated.entity_id}')
         before_hash = scene_content_hash(self._document)
         self._document = self._history.push(
-            AddEntityCommand(entity=validated, index=insertion_index),
+            AddEntitiesCommand(entities=validated, index=insertion_index),
             self._document,
         )
         return scene_content_hash(self._document) != before_hash
+
+    def add_entity(self, entity: SceneEntity, *, index: int | None = None) -> bool:
+        return self.add_entities((entity,), index=index)
 
     def duplicate_entity(
         self,
@@ -481,15 +497,15 @@ class WorkingDocument:
         duplicate = SceneEntity.model_validate(payload)
         return self.add_entity(duplicate, index=source_index + 1)
 
-    def update_entity(self, entity_id: str, **updates: Any) -> bool:
+    def update_entity(self, target_entity_id: str, **updates: Any) -> bool:
         if self.has_preview:
             raise EditStateError('cannot update an entity while a preview is active')
-        if 'entity_id' in updates and updates['entity_id'] != entity_id:
+        if 'entity_id' in updates and updates['entity_id'] != target_entity_id:
             raise EditStateError('entity_id cannot be changed')
-        before = self._document.entity(entity_id)
+        before = self._document.entity(target_entity_id)
         payload = before.model_dump(mode='python')
         payload.update(updates)
-        payload['entity_id'] = entity_id
+        payload['entity_id'] = target_entity_id
         after = SceneEntity.model_validate(payload)
         before_hash = scene_content_hash(self._document)
         self._document = self._history.push(ReplaceEntityCommand(before=before, after=after), self._document)
