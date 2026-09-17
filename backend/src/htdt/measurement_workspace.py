@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QAbstractScrollArea, QDockWidget, QScrollArea, QSizePolicy
 
 from .cad_repository import SceneRepository
@@ -14,6 +15,10 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         self.measurement_scroll: QScrollArea | None = None
         super().__init__(repository, document_id)
         self._fit_initial_size_to_screen()
+        # QMainWindow resolves dock geometry when the window is first shown. Clamp
+        # once more after that layout pass so a high-DPI size hint cannot restore an
+        # oversized pre-show geometry.
+        QTimer.singleShot(0, self._fit_initial_size_to_screen)
 
     def _fit_initial_size_to_screen(self) -> None:
         """Keep the first product window inside the usable logical screen area."""
@@ -37,6 +42,7 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         panel = dock.widget()
         if panel is None or isinstance(panel, QScrollArea):
             self.measurement_scroll = panel if isinstance(panel, QScrollArea) else None
+            self._unify_right_context_docks(dock)
             return
 
         # Keep the complete measurement form as scrollable content, but do not let
@@ -55,3 +61,31 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         dock.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         dock.setWidget(scroll)
         self.measurement_scroll = scroll
+        self._unify_right_context_docks(dock)
+
+    def _unify_right_context_docks(self, measurement_dock: QDockWidget) -> None:
+        """Use one CAD-style context stack instead of vertically splitting panels.
+
+        Before N60, the base transform Inspector occupied a separate right-side dock
+        row while object details / constraints were tabified below it. Adding the
+        measurement workspace to that lower row made the rows' minimum heights add
+        together, which could force the whole window below the logical desktop at
+        200% Windows scaling. All four surfaces are alternative context views, so a
+        single tab group is both the intended CAD interaction and the correct sizing
+        boundary.
+        """
+        titles = ('Inspector', 'オブジェクト詳細', '制約', '実測')
+        docks_by_title = {
+            candidate.windowTitle(): candidate
+            for candidate in self.findChildren(QDockWidget)
+            if candidate.windowTitle() in titles
+        }
+        anchor = docks_by_title.get('Inspector', measurement_dock)
+        for title in titles:
+            candidate = docks_by_title.get(title)
+            if candidate is None:
+                continue
+            candidate.setMinimumSize(0, 0)
+            if candidate is not anchor:
+                self.tabifyDockWidget(anchor, candidate)
+        measurement_dock.raise_()
