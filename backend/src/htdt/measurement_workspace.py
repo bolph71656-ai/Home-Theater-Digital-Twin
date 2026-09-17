@@ -39,14 +39,15 @@ class _MeasurementScrollArea(QScrollArea):
         self._sync_content_extent()
 
     def _sync_content_extent(self) -> None:
-        if self._content is None:
+        content = getattr(self, '_content', None)
+        if content is None:
             return
         natural_height = max(
-            self._content.sizeHint().height(),
-            self._content.minimumSizeHint().height(),
+            content.sizeHint().height(),
+            content.minimumSizeHint().height(),
             self.viewport().height(),
         )
-        self._content.resize(max(1, self.viewport().width()), max(1, natural_height))
+        content.resize(max(1, self.viewport().width()), max(1, natural_height))
 
 
 class MeasurementWorkspaceWindow(MeasurementEditorWindow):
