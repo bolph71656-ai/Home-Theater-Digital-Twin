@@ -1,7 +1,8 @@
 param(
     [string]$RepoRoot = "",
     [string]$Branch = "feat/n60-measurement-workspace",
-    [string]$ExpectedProductHead = "acfb0596691a3132cb9d096c49e708177598a9d5"
+    [string]$ExpectedProductHead = "acfb0596691a3132cb9d096c49e708177598a9d5",
+    [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,10 +120,6 @@ function Invoke-N60Harness {
 }
 
 try {
-    if (-not (Test-Path $Python)) {
-        throw "Missing $Python. Use the existing Windows Python 3.12 environment before running the hardware gate."
-    }
-
     $OriginalSha = Get-GitFirstLine -Arguments @('rev-parse', 'HEAD')
     $branchOutput = @(& git -C $RepoRoot symbolic-ref --short -q HEAD 2>$null)
     if ($LASTEXITCODE -eq 0 -and $branchOutput.Count -gt 0) {
@@ -136,6 +133,15 @@ try {
     if ($preStatus.Count -gt 0) {
         $preStatus | ForEach-Object { Write-Output "N60_PRE_STATUS=$_" }
         throw "Refusing hardware gate because the repository is not clean."
+    }
+
+    if ($PreflightOnly) {
+        Write-Output "N60_PREFLIGHT_RESULT=PASS"
+        return
+    }
+
+    if (-not (Test-Path $Python)) {
+        throw "Missing $Python. Use the existing Windows Python 3.12 environment before running the hardware gate."
     }
 
     Stop-N60HarnessProcesses
@@ -220,6 +226,10 @@ try {
             Write-Output "N60_RESTORE_ERROR=$($_.Exception.Message)"
         }
     }
+}
+
+if ($PreflightOnly) {
+    exit $(if ($GateFailed -or $RestoreFailed) { 1 } else { 0 })
 }
 
 $passed = -not $GateFailed -and -not $RestoreFailed
