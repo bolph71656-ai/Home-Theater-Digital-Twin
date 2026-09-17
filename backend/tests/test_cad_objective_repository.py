@@ -160,3 +160,40 @@ def test_pareto_repository_rejects_result_not_matching_evaluations(tmp_path) -> 
     })
     with pytest.raises(ValueError, match='does not match referenced objective evaluations'):
         repository.save_pareto_set(tampered)
+
+
+def test_objective_input_ref_order_is_canonical(tmp_path) -> None:
+    _scene_repo, revision, spec, candidates, _repository = _fixture(tmp_path)
+    candidate_id = candidates[0].candidate_id
+    vector = _vector(candidate_id, 1.0, 1.0)
+    refs = (
+        CadObjectiveInputRef(
+            evidence_class='predicted',
+            source_kind='prediction_fixture',
+            source_id='prediction-a',
+        ),
+        CadObjectiveInputRef(
+            evidence_class='derived',
+            source_kind='candidate_geometry',
+            source_id=candidate_id,
+        ),
+    )
+    first = build_objective_evaluation(
+        revision,
+        spec,
+        candidate_id,
+        vector,
+        evaluation_spec={'objectives': ['response.shape_rms_db', 'movement.total_m']},
+        input_refs=refs,
+    )
+    second = build_objective_evaluation(
+        revision,
+        spec,
+        candidate_id,
+        vector,
+        evaluation_spec={'objectives': ['response.shape_rms_db', 'movement.total_m']},
+        input_refs=tuple(reversed(refs)),
+    )
+
+    assert first.input_refs == second.input_refs
+    assert first.evaluation_sha256 == second.evaluation_sha256

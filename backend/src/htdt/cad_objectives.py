@@ -39,6 +39,10 @@ def build_objective_evaluation(
     if not input_refs:
         raise ValueError('objective evaluation requires at least one evidence/input reference')
 
+    ordered_refs = tuple(sorted(
+        input_refs,
+        key=lambda ref: (ref.evidence_class, ref.source_kind, ref.source_id),
+    ))
     evaluation_spec_json = canonical_objective_json(evaluation_spec)
     payload = {
         'schema_version': 1,
@@ -48,7 +52,7 @@ def build_objective_evaluation(
         'search_spec_id': search_spec.search_spec_id,
         'search_spec_sha256': search_spec.search_spec_sha256,
         'candidate_id': candidate_id,
-        'input_refs': [ref.model_dump(mode='json') for ref in input_refs],
+        'input_refs': [ref.model_dump(mode='json') for ref in ordered_refs],
         'evaluation_spec': evaluation_spec,
         'vector': vector.model_dump(mode='json'),
     }
@@ -60,7 +64,7 @@ def build_objective_evaluation(
         search_spec_id=search_spec.search_spec_id,
         search_spec_sha256=search_spec.search_spec_sha256,
         candidate_id=candidate_id,
-        input_refs=tuple(input_refs),
+        input_refs=ordered_refs,
         evaluation_spec_json=evaluation_spec_json,
         evaluation_spec_sha256=canonical_objective_sha256(evaluation_spec),
         vector=vector,
