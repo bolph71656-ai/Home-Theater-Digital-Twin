@@ -1,6 +1,6 @@
 # N20b A07 acceptance — 2026-09-17
 
-Status: **functional pass / final performance remeasurement pending**
+Status: **functional pass / F4 pick final gate pending**
 
 Branch: `feat/n20b-multiselect-snap`
 
@@ -15,7 +15,7 @@ Branch: `feat/n20b-multiselect-snap`
 
 ## Functional A07 result
 
-GitHub commit `2331cd74f6bf6db429cc3c70d848d94c4ef8f05e` was checked through the actual Qt/VTK renderer and Windows input path. The run completed with `N20B_A07_FUNCTIONAL_PASS`.
+Actual Qt/VTK renderer and Windows input runs have repeatedly passed the A07 functional gate through the current performance work.
 
 Confirmed behavior:
 
@@ -23,9 +23,9 @@ Confirmed behavior:
 - screen-space snap uses 8 DIP acquire / 12 DIP retain hysteresis;
 - Ctrl-click creates a two-entity ordered selection with a primary entity;
 - group Move uses one common world-axis delta and preserves relative placement;
-- actual mouse group Move snapped to `speaker-fr:vertex:0:x` and committed as one history command;
+- actual mouse group Move snaps to `speaker-fr:vertex:0:x` and commits as one history command;
 - group Rotate uses the common selection pivot and commits as one history command;
-- 15° angle snap produced a -45° actual mouse rotation;
+- 15° angle snap supports the validated -45° actual-mouse rotation;
 - Undo restores the complete group atomically;
 - unknown speaker aim remains unknown through group transforms;
 - object transforms do not move the camera;
@@ -36,54 +36,64 @@ Confirmed behavior:
 
 The screen-distance selector was checked at Qt scale factors corresponding to DPR 1.0, 1.5 and 2.0. A 7 DIP probe acquired the candidate and a 10 DIP probe retained the same candidate at all three scales. Geometric tolerance and device pixels remain separate.
 
-The translation gizmo originally depended on direct world-geometry picking and was marginal under 200% DPI cursor rounding. Commit `2331cd7` changed Move handle acquisition to a 12 DIP screen-space distance against the projected axis segment while leaving the visible arrow geometry unchanged. This was the source state used by the successful actual-mouse A07 run.
+Commit `2331cd7` changed Move handle acquisition to a 12 DIP screen-space distance against the projected axis segment while leaving the visible arrow geometry unchanged. This removed the 200% DPI cursor-rounding weakness of direct world-geometry handle picking.
 
 ## Input conflict correction
 
 A real rotation-ring press previously exposed a conflict between generic PyVista scene mesh picking and gizmo picking: the same press could select an entity behind the handle and rebuild the group selection.
 
-The final design separates the two input paths:
-
-- commit `e927fe3` replaces generic scene mesh picking with an entity-only `vtkPropPicker` PickList;
-- gizmo observers run independently from scene selection;
-- scene picking skips a press once the gizmo owns the interaction;
-- re-picking an entity already in the current selection without Ctrl does not collapse the group.
-
-The actual-mouse group Move/Rotate run at `2331cd7` passed after this separation.
+The corrected design separates the input paths and preserves the existing multi-selection when a selected entity is re-picked without Ctrl. The successful actual-mouse A07 runs use this separated scene/gizmo path.
 
 ## F4 performance measurements
 
 Load: F1 plus 50 editable objects and 1,000 analysis markers represented as one point-cloud actor, not 1,000 actors.
 
-At commit `2331cd7`, the measured F4 run reported:
+The initial F4 run at `2331cd7` reported:
 
-- pick / selection feedback: 40 samples, p95 **151.66 ms**, max 163.09 ms;
-- Move drag: 929 samples, p95 **101.16 ms**, max 121.43 ms;
+- pick / selection feedback p95 **151.66 ms**;
+- Move drag p95 **101.16 ms**;
 - 50 drag samples exceeded 100 ms.
 
-These figures do **not** satisfy the initial targets in `CAD_EDITOR_ACCEPTANCE.md`; they are not treated as a pass.
+Subsequent semantics-preserving performance work included stable snap projection caching, retained-candidate fast paths, removal of duplicate renders, a dedicated scene picker path, delayed view-state persistence, release recovery, and removal of Inspector work from the drag hot path.
 
-Subsequent GitHub performance slices are deliberately semantics-preserving:
+At `76dbb608`, the formal Windows harness reported:
 
-- `8181d10`: cache stable snap feature screen projections during one drag;
-- `2762104`: regression coverage for projection-cache reuse;
-- `834ccb0`: remove constructor-time gizmo render so selection rebuild has one final render rather than two;
-- `e05c3a2`: evaluate the retained snap candidate first and avoid scoring every candidate while 12 DIP hysteresis retains it.
+- pick: p95 **122.32 ms**, max 128.44 ms;
+- Move drag: p95 **29.52 ms**, max 97.72 ms, **0** samples over 100 ms;
+- orbit: p95 **24.77 ms**, max 45.29 ms, **0** samples over 100 ms.
 
-A partial run at `2762104` measured pick p95 at approximately **127.9 ms**; that run was not used as final acceptance because the complete drag result was not captured. The latest performance slices require one final combined actual-machine remeasurement.
+At `b78b889`, selection rendering was consolidated with the delayed gizmo rebuild. The formal harness reported:
+
+- pick: p95 **119.41 ms**;
+- Move drag: p95 **33.86 ms**, max 96.47 ms, **0** samples over 100 ms;
+- orbit: p95 **25.39 ms**, **0** samples over 100 ms.
+
+At `fe650fb`, scene selection switched to a camera/viewport-keyed screen-space entity bounds/depth cache rather than running VTK geometry picking on every click. The formal harness reported:
+
+- A07 functional: **pass**;
+- pick: p95 **112.36 ms**, max 149.15 ms;
+- Move drag: p95 **30.38 ms**, max 92.57 ms, **0** samples over 100 ms;
+- orbit: p95 **24.67 ms**, max 55.64 ms, **0** samples over 100 ms;
+- camera movement during orbit: confirmed.
+
+Therefore drag and orbit satisfy the initial F4 target. The only remaining performance miss is pick p95 versus the **100 ms** target.
+
+Commit `529f21f` moves tree selection projection, edge highlighting, Inspector/action refresh, old-gizmo removal, new-gizmo creation and render to the existing 16 ms deferred selection UI pass. The ordered selection model and `selected_id` are still committed synchronously in the click callback. Focused document/repository/snap regression and `py_compile` passed in GitHub Actions before the commit was pushed. A final actual-machine measurement is still required for this candidate.
 
 ## Automated validation
 
 - focused document/repository/snap tests passed during implementation;
-- Windows GitHub Actions CI run #103 for `2762104` completed successfully, including backend tests, launcher/script checks, frontend build and built-app smoke;
-- later performance-only commits must also have green CI before merge.
+- the branch has repeatedly passed the normal Windows CI suite, including backend tests, launcher/script checks, frontend build and built-app smoke;
+- CI run #119 passed for `fe650fb`;
+- the patch workflow that produced `529f21f` passed its focused regression before pushing the canonical branch;
+- the current documentation commit is intended to trigger the normal PR CI against the same code state.
 
 ## Remaining gate
 
 Before N20b is closed:
 
-1. obtain green CI for the final branch head;
-2. run one combined Windows actual-machine check against that exact GitHub head: A07 functional smoke plus F4 pick/drag/orbit timing;
-3. record the final measurements here and in the PR;
-4. if the initial F4 target is still missed, either improve the measured bottleneck or revise the target only with an explicit measurement-based rationale;
-5. clean temporary local acceptance directories, mark PR #50 ready, and merge.
+1. obtain green normal CI for the final branch head;
+2. run one combined Windows actual-machine check against that exact GitHub head: A07 functional plus F4 pick/drag/orbit timing;
+3. require pick p95 ≤100 ms, drag/orbit p95 ≤33 ms, and no >100 ms drag/orbit stalls;
+4. record the final measurements here and in PR #50;
+5. remove temporary workflow branches/files used only to apply the GitHub-cloud patch, clean N20b local acceptance residue, mark PR #50 ready, and merge.
