@@ -14,7 +14,7 @@ from htdt.cad_scene import (
     make_polygon_room,
 )
 from htdt.cad_wall_models import WallOpening
-from htdt.cad_walls import add_opening, make_wall_topology, move_wall
+from htdt.cad_walls import add_opening, make_wall_topology
 
 
 def _room():
@@ -47,6 +47,18 @@ def _room_and_topology():
     return room, topology
 
 
+def _room_with_renamed_vertex():
+    return make_polygon_room(
+        (
+            RoomVertex(vertex_id='a', x_m=0.0, y_m=0.0),
+            RoomVertex(vertex_id='b2', x_m=6.0, y_m=0.0),
+            RoomVertex(vertex_id='c', x_m=6.0, y_m=4.0),
+            RoomVertex(vertex_id='d', x_m=0.0, y_m=4.0),
+        ),
+        height_m=2.4,
+    )
+
+
 def test_legacy_scene_canonical_json_does_not_gain_wall_topology_field() -> None:
     payload = json.loads(canonical_scene_json(make_f1_scene()))
     assert 'wall_topology' not in payload
@@ -70,10 +82,9 @@ def test_wall_topology_requires_schema_v3_and_matching_room_boundary() -> None:
     )
     assert document.wall_topology == topology
 
-    moved_room, _ = move_wall(room, topology, 'wall:a->b', delta_x_m=0.0, delta_y_m=-7.0)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='one-to-one'):
         SceneDocument.model_validate(
-            document.model_copy(update={'room': moved_room}).model_dump(mode='python')
+            document.model_copy(update={'room': _room_with_renamed_vertex()}).model_dump(mode='python')
         )
 
 
@@ -102,17 +113,8 @@ def test_plain_room_edit_cannot_leave_existing_topology_dangling() -> None:
     before = working.committed_document
     before_history = working.history_length
 
-    changed_room = make_polygon_room(
-        (
-            RoomVertex(vertex_id='a', x_m=0.0, y_m=0.0),
-            RoomVertex(vertex_id='b2', x_m=6.0, y_m=0.0),
-            RoomVertex(vertex_id='c', x_m=6.0, y_m=4.0),
-            RoomVertex(vertex_id='d', x_m=0.0, y_m=4.0),
-        ),
-        height_m=2.4,
-    )
-    with pytest.raises(ValueError):
-        working.replace_room(changed_room)
+    with pytest.raises(ValueError, match='one-to-one'):
+        working.replace_room(_room_with_renamed_vertex())
 
     assert working.committed_document == before
     assert working.history_length == before_history
