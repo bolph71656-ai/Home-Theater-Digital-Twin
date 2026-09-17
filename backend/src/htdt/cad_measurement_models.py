@@ -97,3 +97,45 @@ class CadFrequencyResponseDataset(BaseModel):
         if self.phase_deg is not None and any(not isfinite(float(value)) for value in self.phase_deg):
             raise ValueError('phase values must be finite')
         return self
+
+
+class CadMeasurementComparison(BaseModel):
+    """Saved A/B result with exact datasets and source scene revisions."""
+
+    model_config = ConfigDict(frozen=True)
+
+    comparison_id: str = Field(min_length=1)
+    document_id: str = Field(min_length=1)
+    dataset_a_id: str = Field(min_length=1)
+    dataset_b_id: str = Field(min_length=1)
+    scene_revision_a_id: str = Field(min_length=1)
+    scene_revision_b_id: str = Field(min_length=1)
+    created_at: str = Field(min_length=1)
+    requested_band_hz: tuple[float, float]
+    actual_band_hz: tuple[float, float]
+    grid_hz: tuple[float, ...]
+    a_db: tuple[float, ...]
+    b_db: tuple[float, ...]
+    difference_db: tuple[float, ...]
+    mean_difference_db: float | None = None
+    rms_difference_db: float | None = None
+    level_offset_db: float | None = None
+    shape_rms_db: float | None = None
+    valid_points: int = Field(ge=0)
+    total_grid_points: int = Field(ge=0)
+    algorithm_version: str = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_result(self) -> 'CadMeasurementComparison':
+        if self.dataset_a_id == self.dataset_b_id:
+            raise ValueError('comparison requires two different datasets')
+        if self.requested_band_hz[1] <= self.requested_band_hz[0]:
+            raise ValueError('requested comparison band is invalid')
+        if self.actual_band_hz[1] <= self.actual_band_hz[0]:
+            raise ValueError('actual comparison band is invalid')
+        count = len(self.grid_hz)
+        if len(self.a_db) != count or len(self.b_db) != count or len(self.difference_db) != count:
+            raise ValueError('comparison arrays must have equal length')
+        if self.valid_points != count:
+            raise ValueError('valid_points must match comparison array length')
+        return self
