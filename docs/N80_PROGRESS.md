@@ -99,3 +99,24 @@ Commit `0e01bd9b75c4f7886d1cc1730bafa1cd5db973fa` refined multi-seat evaluation 
 O20 batch prediction is still intentionally not connected. N70 currently exposes validated geometry candidates, not a validated FR/SPL predictor suitable for batch optimization. O30/O40 pure algorithms can be verified independently with synthetic data while preserving that boundary.
 
 No RDC is required for this algorithm-only slice. Windows real-interaction testing remains reserved for later native persistence/UI integration.
+
+
+## 2026-09-18 — O30/O40 native persistence
+
+Commit `0bbec7295936b5cf7154a14f839e1004df4039dc` added immutable native persistence for objective vectors and Pareto sets:
+
+- each `CadObjectiveEvaluation` binds to exact document / SceneRevision / scene content hash / SearchSpec ID+SHA / candidate ID;
+- evaluation spec is canonical JSON + SHA-256;
+- evidence references preserve explicit `measured / derived / predicted / hypothesis` classification and source identity;
+- each stored vector keeps its independent objective IDs/units/direction;
+- each `CadParetoSet` stores exact objective IDs plus referenced evaluation IDs/hashes/candidate IDs;
+- Pareto save re-loads all referenced immutable evaluations and recomputes the front; a mismatched/tampered Pareto result is rejected;
+- native SceneRevision/SearchSpec binding mismatch is rejected before persistence.
+
+Commit `02965d0136a330a2ef0bad2733698a22a8665e91` canonicalized evidence-ref ordering so equivalent input-reference sets produce the same evaluation identity regardless of caller ordering.
+
+The first persistence CI exposed only a test-fixture defect: the new physical speaker fixture omitted mandatory `size_m`. Commit `911b44c647c65c53c94febf6033432dc1b0927ae` fixed the fixture using the same physical speaker dimensions as the accepted N80a tests.
+
+CI #335 / run `35288664125` passed completely on `911b44c647c65c53c94febf6033432dc1b0927ae`, including backend tests, native launcher checks, Windows acceptance-harness compile, N60/N70/N80 gate preflights, frontend build and smoke test.
+
+This slice is algorithm/persistence only. It does not require a new real-Windows interaction gate and does not close Issue #65. O20 batch prediction and later native Pareto UI/measurement loop remain separate work.
