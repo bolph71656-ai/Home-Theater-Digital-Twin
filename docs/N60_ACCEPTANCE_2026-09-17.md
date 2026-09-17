@@ -32,6 +32,8 @@ Final gate/head `73b77866ebdc42f70a016e2ebd13ad99858b01b8` passed:
 - Windows job `105216542198`
 - all steps PASS, including backend tests, native launcher, acceptance-harness compile, PowerShell syntax, N60 preflight, frontend build and smoke.
 
+Final acceptance-document head `5cd8c3f02e31e6e46af0a81b8a213364bd055c94` passed CI #302 / run `35226382149` before merge.
+
 ## Owned-Windows environment
 
 The final A12/A13 gate ran on the owned Windows machine with the repository initially clean.
@@ -154,4 +156,8 @@ N60 satisfies its A12/A13 technical gate:
 - the native measurement workspace is usable at the owned machine's 200% DPI through real Win32 mouse interaction;
 - close/cleanup leaves no worker behind.
 
-N60 may be merged. The next roadmap milestone is **N70 — 予測・可視化**.
+## Merge completion
+
+PR #62 was merged to `main` as `f1694eb879a250835efa026ac5dacdec18362788`. Issue #61 closed automatically with state reason `completed`.
+
+N60 is complete on `main`. The next roadmap milestone is **N70 — 予測・可視化**.

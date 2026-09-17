@@ -1,22 +1,24 @@
 # 実装ステータス
 
-> 更新: 2026-09-17 / N60 A12・A13 Windows実機受入完了 / 次工程 N70
+> 更新: 2026-09-17 / N60 merged・A12/A13 Windows実機受入完了 / 次工程 N70
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
 **N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 の技術gateを実装し、N60までWindows実機受入を通過した。**
 
-N60はIssue #61 / PR #62で実装。最終製品コード変更は `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb`、最終acceptance harness/headは `73b77866ebdc42f70a016e2ebd13ad99858b01b8`。後者はA13取消検証を時間依存から決定的ラッチへ変更しただけで、製品runtime codeは変更していない。A12/A13は2880×1800・200% DPIの実Win32 mouse interactionでPASSした。
+N60はIssue #61 / PR #62で完了し、merge commit `f1694eb879a250835efa026ac5dacdec18362788` でmainへ反映済み。Issue #61は`completed`でclose済み。最終製品コード変更は `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb`、最終acceptance harness/headは `73b77866ebdc42f70a016e2ebd13ad99858b01b8`。後者はA13取消検証を時間依存から決定的ラッチへ変更しただけで、製品runtime codeは変更していない。A12/A13は2880×1800・200% DPIの実Win32 mouse interactionでPASSした。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main基準 | N50までmerge済み。N60はPR #62の受入・文書確定段階 |
-| N60 tracking | Issue #61 / PR #62 |
+| main | **N60までmerge済み**。PR #62 merge `f1694eb879a250835efa026ac5dacdec18362788` |
+| N60 tracking | Issue #61 / PR #62（完了） |
 | N60 last product-code head | `8551963c4dc3e5eb5a22bd0683edbaea6e891cdb` |
 | N60 accepted gate head | `73b77866ebdc42f70a016e2ebd13ad99858b01b8` |
+| acceptance docs head | `5cd8c3f02e31e6e46af0a81b8a213364bd055c94` |
 | product CI | #300 / run `35223222374` PASS |
 | final harness CI | #301 / run `35225682111` PASS |
+| acceptance docs CI | #302 / run `35226382149` PASS |
 | A12 | saved A選択、offline FR、mouse move/save B、A binding不変、historical ghost、A/B revision binding PASS |
 | A13 | edit-stale、UI responsiveness、明示cancel、document change、clean close/no worker PASS |
 | native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN60 `MeasurementWorkspaceWindow` compositionを起動 |

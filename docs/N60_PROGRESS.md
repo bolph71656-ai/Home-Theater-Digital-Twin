@@ -2,7 +2,8 @@
 
 Tracking: Issue #61 / PR #62  
 Branch: `feat/n60-measurement-workspace`  
-Final technical gate: **PASS**
+Final technical gate: **PASS**  
+Merge: `f1694eb879a250835efa026ac5dacdec18362788`
 
 ## 2026-09-17 — implementation summary
 
@@ -60,6 +61,11 @@ Final acceptance-harness head:
 - `73b77866ebdc42f70a016e2ebd13ad99858b01b8`
 - only change after `8551963c...`: `scripts/validate_n60_a13_windows.py`
 - CI #301 / run `35225682111`, Windows job `105216542198`: full PASS.
+
+Final acceptance-document head:
+
+- `5cd8c3f02e31e6e46af0a81b8a213364bd055c94`
+- CI #302 / run `35226382149`: full PASS.
 
 The final A13 harness change replaced a fixed 0.65 s fake-REW delay with a controlled latch. The earlier delay was shorter than or comparable to the real 200%-DPI foreground/tab/scroll/mouse path, so the fake response could complete just before the cancel click. The deterministic harness now proves the worker is running, performs the real cancel click, confirms the guard recorded cancellation, and only then releases the delayed response. No product runtime code changed for this correction.
 
@@ -120,9 +126,9 @@ Full record: [N60 Windows acceptance](N60_ACCEPTANCE_2026-09-17.md).
 
 ## N60 completion
 
-A12/A13 technical acceptance is complete. PR #62 can move out of draft after the acceptance/status documentation commit passes CI. `Closes #61` remains in the PR body so the tracking issue should close with merge.
+A12/A13 technical acceptance is complete. PR #62 was merged to `main` as `f1694eb879a250835efa026ac5dacdec18362788`, and Issue #61 closed automatically with state reason `completed`.
 
-Next roadmap milestone: **N70 — 予測・可視化**.
+N60 is complete on `main`. Next roadmap milestone: **N70 — 予測・可視化**.
 
 ## Invariants carried forward to N70+
 
