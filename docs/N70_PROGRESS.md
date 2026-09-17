@@ -64,9 +64,11 @@ Commit `332ec93803b3bec981a605ca19f483051d02a86c` added the native prediction wo
 
 CI #307 / run `35231396558` passed completely on Windows after the N70a workspace integration, including backend tests, native launcher import, existing acceptance-harness compile, PowerShell syntax, frontend build and smoke test.
 
+Commit `32cc06be125a054416df4c6ebf9c0bf12560f7df` added `scripts/validate_n70_windows.py` for owned-Windows A13/A14 acceptance preparation. CI #308 / run `35231929534` passed completely, including compile of the new harness.
+
 ## A13/A14 acceptance preparation
 
-`scripts/validate_n70_windows.py` is being added for the final owned-Windows gate. It exercises the production prediction workspace with real mouse/tab/button operations and controlled worker timing:
+`scripts/validate_n70_windows.py` exercises the production prediction workspace with real mouse/tab/button operations and controlled worker timing:
 
 - A13: start prediction, edit/save scene while job is pending, verify stale completion is not saved/applied;
 - A13: deterministic explicit cancel, delayed completion, document-ID switch and close-with-worker checks;
@@ -74,6 +76,18 @@ CI #307 / run `35231396558` passed completely on Windows after the N70a workspac
 - A14: verify scalar-field visualization remains gated while no scalar field exists.
 
 The harness is compile-only in CI. RDC remains reserved for the final owned-Windows acceptance after the remaining N70 implementation slices are green.
+
+## F5 bulk analysis-marker slice
+
+N70 uses a reusable bulk marker primitive instead of tying candidate-cloud rendering to legacy O10 Context authority:
+
+- `analysis_marker_polydata()` converts arbitrary native-domain `N×3` points to one render-space `PyVista.PolyData`;
+- `render_analysis_marker_cloud()` submits that cloud through exactly one `add_mesh()` call and marks the actor non-pickable;
+- the focused test builds 10,000 points and fixes the structural invariant that the renderer uses one mesh actor rather than one actor per marker;
+- `scripts/benchmark_n70_f5_windows.py` builds F5 with 50 editable furniture objects plus 10,000 analysis markers, records first-render time and 40-frame orbit p50/p95/max, and checks that the marker cloud adds exactly one non-pickable actor;
+- the first owned-PC run is deliberately measure-only. The F5 regression budget will be derived from the observed hardware result rather than invented before measurement.
+
+The 64^3 scalar-grid part of F5 remains gated. N70a has no validated model that produces a scalar SPL field, so the product continues to disable heatmap/slice/volume controls instead of generating synthetic field data and treating it as prediction evidence.
 
 ## Planned focused verification
 
@@ -86,7 +100,7 @@ The harness is compile-only in CI. RDC remains reserved for the final owned-Wind
 - measured vs predicted UI semantics;
 - reflection overlay identity and non-pickability;
 - A13/A14 Windows harness compile before real-hardware gate;
-- F5 benchmark only when the relevant rendering/storage slice exists.
+- F5 10,000-marker one-actor invariant in CI and performance measurement on owned Windows.
 
 ## External model decision boundary
 
