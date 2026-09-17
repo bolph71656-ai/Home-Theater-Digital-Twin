@@ -491,13 +491,25 @@ class NativeEditorWindow(QMainWindow):
         if cancel_preview and self.working and self.working.has_preview:
             self.cancel_preview()
         self.gizmo_rebuild_timer.stop()
-        self._remove_gizmo()
         valid: list[str] = []
         if self.working is not None:
             known = {entity.entity_id for entity in self.working.committed_document.entities}
             valid = [entity_id for entity_id in entity_ids if entity_id in known]
         self.view_state.set_selection(valid, primary_id=primary_id)
         self.selected_id = self.view_state.selected_id
+        if persist:
+            self._schedule_view_state_persist()
+            self._schedule_gizmo_rebuild()
+            return
+        self._rebuild_gizmo_after_selection()
+
+    def _schedule_gizmo_rebuild(self) -> None:
+        self.gizmo_rebuild_timer.start()
+
+    def _rebuild_gizmo_after_selection(self) -> None:
+        if self.working is None or self.working.has_preview:
+            return
+        self._remove_gizmo()
         with QSignalBlocker(self.tree):
             self.tree.clearSelection()
             for entity_id in self.view_state.selection:
@@ -512,21 +524,9 @@ class NativeEditorWindow(QMainWindow):
             actor.prop.show_edges = key in selected_set
             actor.prop.line_width = 4 if key == self.selected_id else (2 if key in selected_set else 1)
         self._inspect(self.selected_id)
-        if persist:
-            self._schedule_view_state_persist()
         self._update_actions()
-        self._schedule_gizmo_rebuild()
-
-    def _schedule_gizmo_rebuild(self) -> None:
-        self.gizmo_rebuild_timer.start()
-
-    def _rebuild_gizmo_after_selection(self) -> None:
-        if self.working is None or self.working.has_preview:
-            return
-        self._remove_gizmo()
         self._create_gizmo(self.selected_id)
         self.viewport.render()
-
     def _schedule_view_state_persist(self) -> None:
         self.view_state_save_timer.start()
 
