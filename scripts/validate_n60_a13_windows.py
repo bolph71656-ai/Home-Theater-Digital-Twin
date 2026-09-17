@@ -5,6 +5,7 @@ import gc
 from pathlib import Path
 import sys
 import tempfile
+from threading import Event
 import time
 
 from PySide6.QtCore import QThread, QTimer
@@ -66,6 +67,33 @@ class DelayedRewClient:
             query={'unit': unit},
             raw_frequency_response={'unit': 'SPL', 'startFreq': 20.0, 'freqStep': 20.0},
             decoded=decoded,
+        )
+
+
+class BlockingRewClient(DelayedRewClient):
+    """A deterministic worker used to prove that a post-cancel completion is discarded."""
+
+    def __init__(self) -> None:
+        super().__init__(0.0)
+        self.started = Event()
+        self.release = Event()
+
+    def get_frequency_response_snapshot(
+        self,
+        measurement_uuid: str,
+        *,
+        ppo=None,
+        unit='SPL',
+        smoothing=None,
+    ) -> RewFrequencyResponseSnapshot:
+        self.started.set()
+        if not self.release.wait(5.0):
+            raise TimeoutError('A13 controlled REW response was not released')
+        return super().get_frequency_response_snapshot(
+            measurement_uuid,
+            ppo=ppo,
+            unit=unit,
+            smoothing=smoothing,
         )
 
 
@@ -172,11 +200,19 @@ def click_scene_entity(window: MeasurementEditorWindow, entity_id: str, app: QAp
     return wait_until(app, lambda: window.selected_id == entity_id, 0.8)
 
 
-def configure_delayed_measurement(window: MeasurementEditorWindow, external_id: str, delay_s: float) -> None:
-    window.rew_client = DelayedRewClient(delay_s)
+def configure_measurement_client(
+    window: MeasurementEditorWindow,
+    external_id: str,
+    client: DelayedRewClient,
+) -> None:
+    window.rew_client = client
     window.rew_combo.clear()
     window.rew_combo.addItem(external_id, external_id)
     window.rew_combo.setCurrentIndex(0)
+
+
+def configure_delayed_measurement(window: MeasurementEditorWindow, external_id: str, delay_s: float) -> None:
+    configure_measurement_client(window, external_id, DelayedRewClient(delay_s))
 
 
 def start_rew_read(window: MeasurementEditorWindow, app: QApplication) -> str | None:
@@ -248,20 +284,38 @@ def run_a13(app: QApplication, root: Path) -> bool:
         if not responsive:
             return False
 
-        # 2) Explicit cancel. The worker may still return, but the result must not save/apply.
-        configure_delayed_measurement(window, 'rew-cancelled', 0.65)
+        # 2) Explicit cancel. Hold the fake REW response behind a latch so real
+        # mouse/tab/scroll latency cannot let it complete just before cancellation.
+        cancel_client = BlockingRewClient()
+        configure_measurement_client(window, 'rew-cancelled', cancel_client)
         cancel_token_id = start_rew_read(window, app)
         if cancel_token_id is None:
+            cancel_client.release.set()
             print('A13_START_CANCEL_JOB', False, flush=True)
+            return False
+        worker_started = wait_until(app, cancel_client.started.is_set, 0.8)
+        print('A13_CANCEL_WORKER_STARTED', worker_started, flush=True)
+        if not worker_started:
+            cancel_client.release.set()
             return False
         cancel_clicked = click_measurement_button(window, '読込キャンセル', app)
         if not cancel_clicked:
+            cancel_client.release.set()
             print('A13_CANCEL_BUTTON_CLICKABLE', False, flush=True)
             print('A13_CANCEL_BUTTON', measurement_button_diagnostics(window, '読込キャンセル'), flush=True)
             return False
+        cancel_token = window._rew_tokens.get(cancel_token_id)
+        cancel_registered = (
+            cancel_token is not None
+            and window.rew_job_guard.is_cancelled(cancel_token)
+            and window._current_rew_token_id is None
+        )
+        print('A13_CANCEL_REGISTERED', cancel_registered, flush=True)
+        cancel_client.release.set()
         cancelled = wait_jobs_empty(window, app, 1.8)
         cancel_ok = (
-            cancelled
+            cancel_registered
+            and cancelled
             and len(measurement_repository.list_measurements(FIXTURE_ID)) == 0
             and window.measurement_selected_id is None
         )
