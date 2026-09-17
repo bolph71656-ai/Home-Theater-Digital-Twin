@@ -31,6 +31,7 @@ Branch: `feat/n60-measurement-workspace`
 - Saved FR display reads local immutable datasets and does not require REW to be running.
 - Added QThread-based external REW reads; blocking REW I/O is not performed on the GUI thread.
 - Added A12/A13 Windows acceptance harnesses and CI compile coverage.
+- Added `scripts/run-n60-hardware-gate.ps1` so the final owned-Windows gate can be executed as one RDC/mcp-bridge process: it checks/cleans only residual N60 harness processes, requires a clean repository, fetches the branch, verifies the accepted product-code SHA is still the product head, runs A12 then A13, records environment/version data, restores the original checkout, and verifies the post-run worktree is clean.
 - Product composition is `MeasurementWorkspaceWindow -> MeasurementEditorWindow -> ConstraintEditorWindow -> ...`; existing CAD layers remain inherited rather than duplicated.
 
 ## High-DPI / real-interaction findings
@@ -61,6 +62,8 @@ GitHub Actions CI #280 / run `35214514448` completed successfully on that exact 
 
 Earlier diagnostic/product heads also passed CI while the real 200% DPI interaction problem was being isolated; CI success alone is not treated as A12/A13 acceptance.
 
+After product head `acfb0596...`, branch-only changes are restricted to N60 progress documentation and the one-shot hardware-gate runner. That runner deliberately refuses acceptance if another product file changes after the declared product head, forcing the accepted product SHA to be updated instead of silently testing stale code.
+
 ## Windows acceptance status
 
 A12/A13 are **not yet marked PASS**.
@@ -76,7 +79,7 @@ After `acfb0596...`, two bundled RDC attempts received no response from the auth
 
 ## Remaining sequence
 
-1. When RDC is responsive, use one bundled call where possible: detect any residual A12/A13 process, restore the known original checkout if required, fetch/check out the current branch head, run A12 and A13, restore the original SHA, and confirm a clean worktree.
+1. When RDC is responsive, invoke `scripts/run-n60-hardware-gate.ps1` in one mcp-bridge/RDC process where possible. The script performs residual N60-harness cleanup, clean-state verification, branch fetch/product-head validation, A12/A13 execution, environment capture, original-checkout restoration, and final clean-state verification.
 2. Require A12 PASS for immutable A binding, offline FR, historical ghost, and saved comparison bound to exact A/B dataset + revision IDs.
 3. Require A13 PASS for edit-stale rejection, UI responsiveness, explicit cancel, document-state change rejection, and clean close with no live worker.
 4. Only after the hardware gate passes, create `docs/N60_ACCEPTANCE_2026-09-17.md`, update `IMPLEMENTATION_STATUS.md` to N60 complete / N70 next, mark PR #62 ready, merge it, and close #61 as completed.
