@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 
-from PySide6.QtWidgets import QApplication, QDockWidget, QPushButton
+from PySide6.QtWidgets import QApplication, QDockWidget, QPushButton, QTabBar
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
@@ -46,14 +46,36 @@ def _measurement_dock(window: MeasurementEditorWindow) -> QDockWidget | None:
     )
 
 
+def activate_measurement_tab(window: MeasurementEditorWindow, app: QApplication) -> bool:
+    foreground(window, app)
+    for tab_bar in window.findChildren(QTabBar):
+        for index in range(tab_bar.count()):
+            if tab_bar.tabText(index) != '実測':
+                continue
+            rect = tab_bar.tabRect(index)
+            if rect.isEmpty():
+                continue
+            click_global(tab_bar.mapToGlobal(rect.center()), app)
+            dock = _measurement_dock(window)
+            if dock is None:
+                return False
+            return wait_until(app, lambda: not dock.visibleRegion().isEmpty(), 0.8)
+    return False
+
+
 def measurement_button_diagnostics(window: MeasurementEditorWindow, text: str) -> str:
     button = find_button(window, text)
     scroll = getattr(window, 'measurement_scroll', None)
     center = button.mapToGlobal(button.rect().center())
+    dock = _measurement_dock(window)
+    hit = QApplication.widgetAt(center)
     parts = [
         f'enabled={button.isEnabled()}',
         f'visible={button.isVisible()}',
         f'visible_to_window={button.isVisibleTo(window)}',
+        f'visible_region_empty={button.visibleRegion().isEmpty()}',
+        f'dock_region_empty={True if dock is None else dock.visibleRegion().isEmpty()}',
+        f'hit={None if hit is None else type(hit).__name__}',
         f'center={center.x()},{center.y()}',
     ]
     if scroll is not None:
@@ -73,12 +95,9 @@ def measurement_button_diagnostics(window: MeasurementEditorWindow, text: str) -
 
 
 def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QApplication) -> bool:
+    if not activate_measurement_tab(window, app):
+        return False
     button = find_button(window, text)
-    foreground(window, app)
-    dock = _measurement_dock(window)
-    if dock is not None:
-        dock.raise_()
-        pump(app, 0.05)
     scroll = getattr(window, 'measurement_scroll', None)
     if scroll is not None:
         panel = scroll.widget()
@@ -93,13 +112,15 @@ def click_measurement_button(window: MeasurementEditorWindow, text: str, app: QA
         local = scroll.viewport().mapFromGlobal(center)
         if not scroll.viewport().rect().contains(local):
             return False
-    if not button.isEnabled() or not button.isVisibleTo(window):
+    if not button.isEnabled() or button.visibleRegion().isEmpty():
         return False
     click_global(button.mapToGlobal(button.rect().center()), app)
     return True
 
 
 def click_measurement(window: MeasurementEditorWindow, measurement_id: str, app: QApplication) -> bool:
+    if not activate_measurement_tab(window, app):
+        return False
     tree = window.measurement_tree
     if tree is None:
         return False
