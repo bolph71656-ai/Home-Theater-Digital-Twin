@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from pyvistaqt import QtInteractor
-from vtkmodules.vtkRenderingCore import vtkPicker
+from vtkmodules.vtkRenderingCore import vtkCellPicker
 
 from .cad_document import EditorViewState, WorkingDocument
 from .cad_gizmo import RotationWidget3D, TranslationWidget3D
@@ -99,7 +99,7 @@ class NativeEditorWindow(QMainWindow):
 
         self.viewport = QtInteractor(self)
         self.setCentralWidget(self.viewport.interactor)
-        self.scene_picker = vtkPicker()
+        self.scene_picker = vtkCellPicker()
         self.scene_picker.PickFromListOn()
         self.scene_picker.SetTolerance(0.005)
         self.scene_pick_observer: int | None = self.viewport.iren.interactor.AddObserver(
@@ -456,7 +456,6 @@ class NativeEditorWindow(QMainWindow):
         if persist:
             self._schedule_view_state_persist()
         self._update_actions()
-        self.viewport.render()
         self._schedule_gizmo_rebuild()
 
     def _schedule_gizmo_rebuild(self) -> None:
@@ -467,8 +466,7 @@ class NativeEditorWindow(QMainWindow):
             return
         self._remove_gizmo()
         self._create_gizmo(self.selected_id)
-        if self.gizmo is not None:
-            self.viewport.render()
+        self.viewport.render()
 
     def _schedule_view_state_persist(self) -> None:
         self.view_state_save_timer.start()
