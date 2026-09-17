@@ -191,9 +191,14 @@ def configure_and_save_search(
 def start_search(window: OptimizationWorkspaceWindow, app: QApplication) -> str | None:
     if not click_optimization_button(window, '候補を生成', app):
         return None
-    if not wait_until(app, lambda: window._current_search_task_id is not None, 0.8):
-        return None
-    return window._current_search_task_id
+    if wait_until(app, lambda: window._current_search_task_id is not None, 0.35):
+        return window._current_search_task_id
+    # A tiny feasible set can complete and clear the task id before the harness
+    # observes it. A completed page is stronger evidence than a transient token.
+    if window.search_candidate_page is not None and not window._search_tasks:
+        print('A14_N80_FAST_GENERATION_OBSERVED', True, flush=True)
+        return 'completed-before-task-observation'
+    return None
 
 
 def wait_search_empty(
@@ -377,6 +382,8 @@ def run_a13(app: QApplication, root: Path) -> bool:
         if not document_ok:
             return False
         window.document_id = FIXTURE_ID
+        window._refresh_search_binding_state()
+        pump(app, 0.08)
 
         def close_delayed_generate(*args, **kwargs):
             time.sleep(0.45)
