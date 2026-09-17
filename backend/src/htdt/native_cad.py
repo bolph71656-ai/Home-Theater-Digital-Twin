@@ -9,14 +9,21 @@ from PySide6.QtWidgets import QApplication
 from .cad_composition import CadEditorWindow
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID
+from .constraint_editor import ConstraintEditorWindow
 from .native_editor import default_data_dir
 from .theater_workflow import TheaterWorkflowWindow
 
-# Preserve the N40 public name while the concrete product composition includes
-# the explicit acoustic workflow layer.
-TheaterEditorWindow = TheaterWorkflowWindow
+# Preserve the public theater-editor alias while the concrete product composition
+# advances through N50. Earlier N40 behavior remains inherited unchanged.
+TheaterEditorWindow = ConstraintEditorWindow
 
-__all__ = ['CadEditorWindow', 'TheaterEditorWindow', 'TheaterWorkflowWindow', 'main']
+__all__ = [
+    'CadEditorWindow',
+    'TheaterEditorWindow',
+    'TheaterWorkflowWindow',
+    'ConstraintEditorWindow',
+    'main',
+]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     app = QApplication([sys.argv[0]])
     repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
-    window = TheaterWorkflowWindow(repository, args.document_id)
+    window = ConstraintEditorWindow(repository, args.document_id)
     window.show()
     return int(app.exec())
 
