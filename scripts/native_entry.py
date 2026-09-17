@@ -1,4 +1,4 @@
-from htdt.room_editor import main
+from htdt.wall_editor import main
 
 
 if __name__ == '__main__':
