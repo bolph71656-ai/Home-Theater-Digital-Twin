@@ -1,18 +1,18 @@
 # 実装ステータス
 
-> 更新: 2026-09-17 / N40実装・Windows A10受入完了、PR #56 merge gate
+> 更新: 2026-09-17 / N40 merged・Windows A10受入完了・次工程N50
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
 **N05 / N10 / N20a / N20b / N30a / N30b / N40 の技術gateを実装し、N40までWindows実機受入を通過した。**
 
-N40はIssue #55 / PR #56で実装中の最終merge gateにあり、accepted product codeは `2e2a3f814276bc3fcd3f392addfd70a10efbe295`。GitHub Actions CI #220と、所有Windows PCでのA10 core / numeric precisionの両方がPASSしている。
+N40はIssue #55 / PR #56で完了し、merge commit `16474b53403ec03f9fb819a0421928c2ea49be33` でmainへ反映済み。accepted product codeは `2e2a3f814276bc3fcd3f392addfd70a10efbe295` で、GitHub Actions CI #220と所有Windows PCでのA10 core / numeric precisionの両方がPASSした。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | N30bまでmerge済み。N40はPR #56のmerge待ち |
-| N40 tracking | Issue #55 / Draft PR #56 |
+| main | **N40までmerge済み**。PR #56 merge `16474b53403ec03f9fb819a0421928c2ea49be33` |
+| N40 tracking | Issue #55 / PR #56（完了） |
 | N40 accepted code | `2e2a3f814276bc3fcd3f392addfd70a10efbe295` |
 | N40 CI | run #220 (`35196621511`) PASS |
 | A10 core | 実Win32 mouse inputでL字室→3.0.2→seat/aim→screen/furniture→距離修正→Undo→duplicate→hide/lock→Save/reopen PASS |
