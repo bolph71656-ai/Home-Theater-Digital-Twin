@@ -1,44 +1,62 @@
 # N30b wall / opening design
 
-> 2026-09-17 / Issue #53
+> 2026-09-17 / Issue #53 / PR #54
 
-N30aのroom footprintを正本とし、N30bでは壁と開口の**参照identity**を別layerとして追加する。footprintは室内仕上げ面、wall thicknessは外側表示属性であり、厚さによって室内容積を暗黙に縮めない。
+N30aのroom footprintを正本とし、N30bでは壁・開口・壁別clearanceの**stable reference identity**を追加する。footprintは室内仕上げ面であり、wall thicknessは表示属性として外側へ表現する。厚さによって室内footprintや容積を暗黙に縮めない。
 
 ## Domain boundary
 
-- `RoomPrism`: ordered room vertices and height. Geometry validity is authoritative.
-- `WallSegment`: stable `wall_id`, from/to vertex IDs, thickness, optional `source_wall_id`.
-- `WallOpening`: stable `opening_id`, `wall_id`, wall-start offset, width, sill, height, kind/open state.
-- `WallTopology`: boundary-edge-to-wall one-to-one mapping plus openings.
+- `RoomPrism`: ordered room vertices and height。幾何妥当性の正本。
+- `WallSegment`: stable `wall_id`, from/to vertex IDs, thickness, optional `source_wall_id`。
+- `WallOpening`: stable `opening_id`, `wall_id`, wall-start offset, width, sill, height, kind/open state。
+- `WallConstraintBinding`: N30bではwall IDとclearance値の参照連続性だけを保持。本格constraint solver semanticsはN50へ分離。
+- `WallTopology`: boundary-edge-to-wall 1:1 mapping + openings + constraint bindings。
 
-`WallTopology` is not a second polygon model. Every wall must correspond exactly to one ordered RoomPrism boundary edge.
+`WallTopology`は第二のpolygon modelではない。すべてのwallは`RoomPrism`のordered boundary edgeへ正確に1:1対応し、opening/constraintは存在するwall IDだけを参照できる。
 
 ## Edit rules
 
 ### Move wall
 
-Move both endpoint vertices by one XY delta. Wall/opening IDs remain unchanged. The resulting RoomPrism must remain a valid simple polygon and all wall-local openings must still fit their referenced wall.
+対象wallの両endpoint vertexを同じXY deltaで移動する。wall/opening/constraint IDは変更しない。結果のRoomPrismがsimple polygonであり、すべてのwall-local openingが参照wall内に収まる場合だけ確定する。
 
 ### Split wall
 
-Insert one stable room vertex and replace the old wall with two new wall IDs. Both children retain `source_wall_id=old wall_id`.
+1つのstable room vertexを挿入し、旧wallを2つの新wall IDへ置換する。両childは`source_wall_id=old wall_id`を保持する。
 
-An opening fully before the split remains on the first child. An opening fully after it moves to the second child and subtracts the split offset. An opening crossing the split point is ambiguous and rejects the entire edit before commit.
+openingがsplit前側へ完全包含される場合はfirst childへ、後側へ完全包含される場合はsecond childへ移し、後側ではsplit offsetを差し引く。split pointを跨ぐopeningは曖昧なので編集全体を確定拒否する。
+
+clearance bindingが旧wallを参照していた場合、binding IDとclearance値を維持したまま両child wall IDへ展開する。
 
 ### Merge walls
 
-Only ordered neighboring walls that are collinear, point in the same direction and have matching wall attributes can merge. The shared room vertex is removed. Openings on the second wall add the first wall length to their wall-local offset. Attribute conflicts reject instead of silently choosing one side.
+ordered隣接wallで、共線・同方向・同thicknessの場合だけmergeを許可する。共有room vertexを除去し、新wall IDを生成する。second wall側openingはfirst wall lengthをoffsetへ加算して移送する。両wallを参照するclearance bindingは重複を除いてmerged wall IDへ統合する。
+
+異なるwall属性や非共線cornerを無言で片側へ寄せない。
+
+### Delete wall
+
+選択wallの終点vertexを除去し、選択wallとsuccessorを明示replacement wallへ置換する。3壁未満にはしない。affected pairにopeningまたはconstraint bindingが残る場合は参照切れを推測解決せず確定拒否する。thickness conflictやinvalid room geometryも拒否する。
 
 ## Transaction boundary
 
-Topology functions are pure: they return a candidate `(RoomPrism, WallTopology)` or raise `WallTopologyError`. They do not touch CommandHistory or SQLite. The editor/WorkingDocument layer will validate the entire Scene snapshot and commit room + topology + migrated references as one command.
+Topology関数はpureで、候補`(RoomPrism, WallTopology)`を返すか`WallTopologyError`を送出する。CommandHistoryやSQLiteは直接触らない。
 
-This separation is deliberate: preview can be invalid or ambiguous, while the saved SceneRevision cannot contain dangling wall/opening references.
+`RoomWorkingDocument.replace_room_topology()`がSceneDocument全体を再validateし、room geometry + wall topology + migrated opening/constraint referencesを**1 command**として確定する。Undo/Redoはそのsnapshotを一括復元する。
 
-## Next slice
+SceneDocumentはwall topologyを持つ場合schema v3。`wall_topology=None`の旧sceneではcanonical JSONからfield自体を省略し、N05〜N30aのhash互換を維持する。
 
-1. persist wall topology in SceneDocument without changing legacy N05/N10/N20 canonical hashes;
-2. add one atomic room+topology command to CommandHistory;
-3. add constraint-reference migration adapter;
-4. add native wall/opening editing UI;
-5. run F3/A09 on the owned Windows machine.
+## Native interaction
+
+- Top viewでwallをクリック選択し、mouse dragでmoveする。
+- toolbarからsplit / merge / delete / door opening / clearance bindingを操作する。
+- Inspectorでwall thicknessとclearance値を数値精密化する。
+- selected wall、wall prism、openingをviewportへ可視化する。
+- N20b object editとN30a room editの入力モードとは排他的にし、既存編集を壊さない。
+- 製品GUIは日本語を優先し、技術用語やIDなど翻訳すると不明瞭になる箇所だけ英語を残す。
+
+## Acceptance
+
+A09はF3（F2凹room + opening + wall clearance + 2 measurement points）を使用する。実Windows mouse inputでwall select/moveを行い、split/merge/delete、opening/constraint参照追跡、曖昧split拒否、Undo/Redoを確認する。
+
+2026-09-17、commit `fccfdfbfb056a72906499a814f58f0957b0a65e4`でA09 PASS。詳細は[N30b A09 Windows acceptance](N30B_ACCEPTANCE_2026-09-17.md)。
