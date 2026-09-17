@@ -94,7 +94,7 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         self.measurement_scroll = scroll
         self._unify_right_context_docks(dock)
 
-    def _unify_right_context_docks(self, measurement_dock: QDockWidget) -> None:
+    def _unify_right_context_docks(self, active_dock: QDockWidget) -> None:
         """Rebuild every right-side context surface into one CAD-style tab stack."""
         preferred_titles = (
             'Inspector',
@@ -103,25 +103,24 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
             'オブジェクト詳細',
             '制約',
             '実測',
+            '予測',
         )
         right_docks = [
             candidate
             for candidate in self.findChildren(QDockWidget)
             if self.dockWidgetArea(candidate) == Qt.DockWidgetArea.RightDockWidgetArea
         ]
-        if measurement_dock not in right_docks:
-            right_docks.append(measurement_dock)
+        if active_dock not in right_docks:
+            right_docks.append(active_dock)
         by_title = {candidate.windowTitle(): candidate for candidate in right_docks}
         ordered = [by_title[title] for title in preferred_titles if title in by_title]
         ordered.extend(candidate for candidate in right_docks if candidate not in ordered)
         if not ordered:
             return
 
-        # The inherited editors create Inspector, Room, wall/opening, object,
-        # constraint and measurement surfaces at different construction stages.
-        # Leaving even one of those right-area docks outside the final tab group can
-        # preserve a vertical split row and push the lower group below a 200% DPI
-        # desktop. Reset the entire right area, not only the newest N40-N60 panels.
+        # The inherited editors create context surfaces at different construction
+        # stages. Leaving any right-area dock outside the final tab group can preserve
+        # a vertical split row and push a lower panel below a 200% DPI desktop.
         for candidate in ordered:
             candidate.setMinimumSize(0, 0)
             self.removeDockWidget(candidate)
@@ -134,4 +133,4 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         for candidate in ordered:
             if candidate is not anchor:
                 self.tabifyDockWidget(anchor, candidate)
-        measurement_dock.raise_()
+        active_dock.raise_()

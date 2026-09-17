@@ -13,11 +13,12 @@ from .constraint_editor import ConstraintEditorWindow
 from .measurement_editor import MeasurementEditorWindow
 from .measurement_workspace import MeasurementWorkspaceWindow
 from .native_editor import default_data_dir
+from .prediction_workspace import PredictionWorkspaceWindow
 from .theater_workflow import TheaterWorkflowWindow
 
 # Preserve the public theater-editor alias while the concrete product composition
-# advances through N60. N40/N50 behavior remains inherited unchanged.
-TheaterEditorWindow = MeasurementWorkspaceWindow
+# advances through N70. N40-N60 behavior remains inherited unchanged.
+TheaterEditorWindow = PredictionWorkspaceWindow
 
 __all__ = [
     'CadEditorWindow',
@@ -26,6 +27,7 @@ __all__ = [
     'ConstraintEditorWindow',
     'MeasurementEditorWindow',
     'MeasurementWorkspaceWindow',
+    'PredictionWorkspaceWindow',
     'main',
 ]
 
@@ -37,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     app = QApplication([sys.argv[0]])
     repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
-    window = MeasurementWorkspaceWindow(repository, args.document_id)
+    window = PredictionWorkspaceWindow(repository, args.document_id)
     window.show()
     return int(app.exec())
 
