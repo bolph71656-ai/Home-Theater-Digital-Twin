@@ -198,9 +198,6 @@ def build_g10_constraint_request(
         raise CadConstraintAdapterError(
             f'constraint workspace document_id {constraint_set.document_id} does not match scene {document.document_id}'
         )
-    if not constraint_set.constraints:
-        raise CadConstraintAdapterError('cannot build a G10 request for an empty constraint workspace')
-
     known_entities = {entity.entity_id for entity in document.entities}
     relevant = _relevant_entity_ids(constraint_set)
     unknown = relevant - known_entities

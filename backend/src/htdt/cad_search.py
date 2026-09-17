@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable
+from typing import Callable, Iterable
 
 from .cad_constraint_models import CadConstraintSet
 from .cad_constraints import build_g10_constraint_request, scene_to_g10_context
-from .cad_document import EditStateError, TransformEntitiesCommand, WorkingDocument
+from .cad_document import EditStateError, WorkingDocument
 from .cad_repository import SceneRepository, SceneRevision
 from .cad_scene import Position3, SceneDocument, scene_content_hash
 from .cad_search_models import (
@@ -105,6 +105,7 @@ def generate_cad_candidates(
     *,
     offset: int = 0,
     limit: int = 100,
+    cancelled: Callable[[], bool] | None = None,
 ) -> CadCandidateSetPage:
     source = scene_repository.get(spec.scene_revision_id)
     if source is None:
@@ -131,6 +132,7 @@ def generate_cad_candidates(
         constraint_set_spec_sha256=spec.constraint_engine_spec_sha256,
         offset=offset,
         limit=limit,
+        cancelled=cancelled,
     )
     candidates = tuple(CadCandidate.model_validate(item) for item in raw['candidates'])
     return CadCandidateSetPage(
@@ -224,10 +226,4 @@ def apply_candidate_positions(
         entity.model_copy(update={'position': Position3.model_validate(candidate.positions[entity.entity_id])})
         for entity in before
     )
-    command = TransformEntitiesCommand(before=before, after=after)
-    before_hash = scene_content_hash(working.committed_document)
-
-    # Package-internal bridge into the accepted editor command stack. Keeping one
-    # TransformEntitiesCommand is what gives candidate application exactly one Undo.
-    working._document = working._history.push(command, working._document)  # noqa: SLF001
-    return scene_content_hash(working.committed_document) != before_hash
+    return working.transform_entities(before, after)

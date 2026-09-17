@@ -5,7 +5,7 @@ from hashlib import sha256
 from itertools import product
 import json
 from math import isfinite
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -15,6 +15,10 @@ from .placement_constraints import PlacementEvaluationRequest, evaluate_constrai
 SEARCH_SPACE_ALGORITHM_VERSION = 'search-space-grid-1'
 SYSTEM_MAX_RAW_CANDIDATES = 50_000
 _AXES = ('x', 'y', 'z')
+
+
+class SearchGenerationCancelled(RuntimeError):
+    pass
 
 
 class GridAxis(BaseModel):
@@ -282,6 +286,7 @@ def generate_search_space(
     constraint_set_spec_sha256: str,
     offset: int = 0,
     limit: int = 100,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     if offset < 0:
         raise ValueError('offset must be >= 0')
@@ -314,7 +319,11 @@ def generate_search_space(
     seen_candidate_ids: set[str] = set()
     rejected_count = 0
     duplicate_count = 0
+    if cancelled is not None and cancelled():
+        raise SearchGenerationCancelled('search generation cancelled')
     for raw_index, combination in enumerate(product(*value_lists)):
+        if cancelled is not None and cancelled():
+            raise SearchGenerationCancelled('search generation cancelled')
         resolved = _copy_baselines(baselines)
         touched: set[str] = set()
         for axis_spec, value in zip(ordered_axes, combination, strict=True):

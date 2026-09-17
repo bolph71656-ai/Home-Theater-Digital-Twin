@@ -174,7 +174,7 @@ class ConstraintSetCreate(BaseModel):
     context_id: str = Field(min_length=1)
     name: str | None = Field(default=None, max_length=200)
     entity_profiles: list[EntityProfile] = Field(default_factory=list)
-    constraints: list[PlacementConstraint] = Field(min_length=1)
+    constraints: list[PlacementConstraint] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def unique_ids(self) -> 'ConstraintSetCreate':
@@ -318,7 +318,7 @@ class StoredConstraintSetSpec(BaseModel):
     engine_version: Literal['placement-constraints-1']
     geometry_version: str
     entity_profiles: list[EntityProfile] = Field(default_factory=list)
-    constraints: list[PlacementConstraint] = Field(min_length=1)
+    constraints: list[PlacementConstraint] = Field(default_factory=list)
 
 
 def evaluate_constraint_set(

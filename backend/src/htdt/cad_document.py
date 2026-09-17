@@ -433,6 +433,29 @@ class WorkingDocument:
         self._clear_preview()
         return True
 
+    def transform_entities(
+        self,
+        before: tuple[SceneEntity, ...],
+        after: tuple[SceneEntity, ...],
+    ) -> bool:
+        """Apply an exact multi-entity replacement as one history command."""
+
+        if self.has_preview:
+            raise EditStateError('cannot transform entities while a preview is active')
+        if not before:
+            return False
+        before_ids = tuple(entity.entity_id for entity in before)
+        after_ids = tuple(entity.entity_id for entity in after)
+        if len(set(before_ids)) != len(before_ids) or before_ids != after_ids:
+            raise EditStateError('transform entities must preserve a unique ordered entity-id set')
+        current = tuple(self._document.entity(entity_id) for entity_id in before_ids)
+        if current != before:
+            raise EditStateError('transform before state does not match the current document')
+        command = TransformEntitiesCommand(before=before, after=after)
+        before_hash = scene_content_hash(self._document)
+        self._document = self._history.push(command, self._document)
+        return scene_content_hash(self._document) != before_hash
+
     def move_entity(self, entity_id: str, position: Position3) -> bool:
         if self.has_preview:
             raise EditStateError('cannot commit a numeric move while a preview is active')

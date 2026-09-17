@@ -171,3 +171,31 @@ def test_candidate_apply_rejects_dirty_or_constraint_stale_working_state(tmp_pat
             spec=spec,
             current_constraint_set=_constraints(center_x=4.0),
         )
+
+
+def test_room_boundary_only_search_allows_empty_explicit_constraint_workspace(tmp_path) -> None:
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    revision = scene_repository.save(_scene(), parent_revision_id=None).revision
+    spec, estimate = build_cad_search_spec(
+        revision,
+        CadConstraintSet(document_id=DOCUMENT_ID, constraints=()),
+        (CadSearchAxis(entity_id='speaker-fl', axis='x', min_m=0.0, max_m=1.0, step_m=1.0),),
+        candidate_limit=10,
+        name='Room-boundary-only sweep',
+    )
+
+    assert estimate['raw_candidate_count'] == 2
+    page = generate_cad_candidates(scene_repository, spec)
+    assert page.raw_candidate_count == 2
+    assert page.feasible_candidate_count == 1
+    assert page.rejected_candidate_count == 1
+    assert page.candidates[0].positions['speaker-fl']['x_m'] == 1.0
+    assert any(key.startswith('__room_boundary__:') for key in page.rejection_counts)
+
+
+def test_candidate_generation_honors_cancellation_hook(tmp_path) -> None:
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    _revision, spec, _estimate = _build(scene_repository)
+
+    with pytest.raises(RuntimeError, match='search generation cancelled'):
+        generate_cad_candidates(scene_repository, spec, cancelled=lambda: True)
