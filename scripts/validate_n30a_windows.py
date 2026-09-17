@@ -17,11 +17,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
 
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import RoomVertex, make_empty_scene, room_vertices
+from htdt.cad_scene import make_empty_scene, room_vertices
 from htdt.room_editor import RoomEditorWindow
 
 if sys.platform != 'win32':
     raise SystemExit('This acceptance harness requires Windows.')
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(errors='backslashreplace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(errors='backslashreplace')
 
 user32 = ctypes.windll.user32
 MOUSE_LEFTDOWN = 0x0002
@@ -65,6 +70,11 @@ def domain_to_global(window: RoomEditorWindow, x_m: float, y_m: float) -> QPoint
     return display_to_global(window, *world_to_display(window, (x_m, -y_m, 0.0)))
 
 
+def point_inside_viewport(window: RoomEditorWindow, point: QPoint) -> bool:
+    local = window.viewport.interactor.mapFromGlobal(point)
+    return bool(window.viewport.interactor.rect().contains(local))
+
+
 def click(point: QPoint) -> None:
     QCursor.setPos(point)
     user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
@@ -90,13 +100,16 @@ def room_xy(window: RoomEditorWindow) -> tuple[tuple[float, float], ...]:
 
 
 def set_top_fixture_camera(window: RoomEditorWindow) -> None:
-    window._top()
-    camera = window.viewport.camera
-    camera.focal_point = (3.0, -2.0, 0.0)
-    camera.position = (3.0, -2.0, 10.0)
-    camera.up = (0.0, 1.0, 0.0)
-    camera.parallel_scale = 3.2
-    window.viewport.enable_parallel_projection()
+    # Fix the physical VTK camera directly. At 200% DPI, relying on a reset
+    # against an empty scene can put F2 boundary points just outside the widget.
+    renderer = window.viewport.renderer
+    camera = renderer.GetActiveCamera()
+    camera.SetFocalPoint(3.0, -2.0, 0.0)
+    camera.SetPosition(3.0, -2.0, 10.0)
+    camera.SetViewUp(0.0, 1.0, 0.0)
+    camera.ParallelProjectionOn()
+    camera.SetParallelScale(3.5)
+    renderer.ResetCameraClippingRange()
     window.viewport.render()
 
 
@@ -111,6 +124,17 @@ def foreground_window(window: RoomEditorWindow, app: QApplication) -> None:
     print('A08_WINDOW_ACTIVE', bool(window.isActiveWindow()), flush=True)
 
 
+def fixture_points_are_visible(window: RoomEditorWindow) -> bool:
+    visible = True
+    for x_m, y_m in F2_POINTS:
+        point = domain_to_global(window, x_m, y_m)
+        local = window.viewport.interactor.mapFromGlobal(point)
+        inside = point_inside_viewport(window, point)
+        print('A08_POINT', x_m, y_m, 'LOCAL', local.x(), local.y(), 'INSIDE', inside, flush=True)
+        visible = visible and inside
+    return visible
+
+
 def run_a08(app: QApplication, root: Path) -> bool:
     document_id = 'fixture-f2-a08'
     repo = SceneRepository(root / 'scene.sqlite3')
@@ -118,11 +142,13 @@ def run_a08(app: QApplication, root: Path) -> bool:
     window = RoomEditorWindow(repo, document_id)
     foreground_window(window, app)
     try:
-        set_top_fixture_camera(window)
         window.start_room_sketch()
         set_top_fixture_camera(window)
         foreground_window(window, app)
         pump(app, 0.10)
+        if not fixture_points_are_visible(window):
+            print('A08_FIXTURE_VISIBLE False', flush=True)
+            return False
 
         for x_m, y_m in F2_POINTS:
             click(domain_to_global(window, x_m, y_m))
@@ -141,6 +167,7 @@ def run_a08(app: QApplication, root: Path) -> bool:
         )
         print('A08_DRAW_F2', draw_ok, 'HISTORY', window.working.history_length, 'BOUNDS', None if room is None else room.bounds_m, flush=True)
         if not draw_ok:
+            print('A08_SKETCH_COUNT', len(window.room_sketch_vertices), 'MODE', window.room_mode, flush=True)
             return False
 
         set_top_fixture_camera(window)
@@ -241,9 +268,8 @@ def run_a08(app: QApplication, root: Path) -> bool:
         if not delete_ok:
             return False
 
-        # Drag the second F2 vertex onto a position that makes the first edge cross
-        # the non-adjacent notch vertex. The preview may be invalid, but release
-        # must reject it without adding history or changing the committed room.
+        # Drag the second F2 vertex to a self-intersecting configuration. The
+        # provisional preview may be invalid, but release must not commit it.
         room_before_invalid = window.working.committed_document.room
         assert room_before_invalid is not None
         second = room_vertices(room_before_invalid)[1]
