@@ -69,6 +69,8 @@ class NativeEditorWindow(QMainWindow):
         self.recovery_candidate: RecoverySnapshot | None = None
         self.actors: dict[str, pv.Actor] = {}
         self.actor_ids: dict[int, str] = {}
+        self.scene_pick_cache: tuple[tuple[str, float, float, float, float, float], ...] = ()
+        self.scene_pick_cache_signature: tuple[int, int, int, int] | None = None
         self.items: dict[str, QTreeWidgetItem] = {}
         self.gizmo: TranslationWidget3D | RotationWidget3D | None = None
         self.drag_base_position: Position3 | None = None
@@ -281,6 +283,61 @@ class NativeEditorWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f'F1 · revision {revision.revision_id[:8]} · clean')
 
+    def _invalidate_scene_pick_cache(self) -> None:
+        self.scene_pick_cache = ()
+        self.scene_pick_cache_signature = None
+
+    def _scene_pick_state(self) -> tuple[int, int, int, int]:
+        renderer = self.viewport.renderer
+        width, height = renderer.GetSize()
+        return (int(renderer.GetActiveCamera().GetMTime()), int(width), int(height), len(self.actors))
+
+    def _rebuild_scene_pick_cache(self) -> None:
+        renderer = self.viewport.renderer
+        dpr = max(float(self.viewport.interactor.devicePixelRatioF()), 1.0)
+        padding = 3.0 * dpr
+        entries: list[tuple[str, float, float, float, float, float]] = []
+        for entity_id, actor in self.actors.items():
+            bounds = actor.GetBounds()
+            if bounds is None or len(bounds) != 6 or not all(np.isfinite(value) for value in bounds):
+                continue
+            xs: list[float] = []
+            ys: list[float] = []
+            depths: list[float] = []
+            for world_x in (bounds[0], bounds[1]):
+                for world_y in (bounds[2], bounds[3]):
+                    for world_z in (bounds[4], bounds[5]):
+                        renderer.SetWorldPoint(float(world_x), float(world_y), float(world_z), 1.0)
+                        renderer.WorldToDisplay()
+                        display_x, display_y, display_z = renderer.GetDisplayPoint()
+                        if np.isfinite(display_x) and np.isfinite(display_y) and np.isfinite(display_z):
+                            xs.append(float(display_x))
+                            ys.append(float(display_y))
+                            depths.append(float(display_z))
+            if not xs:
+                continue
+            entries.append((
+                entity_id,
+                min(xs) - padding,
+                max(xs) + padding,
+                min(ys) - padding,
+                max(ys) + padding,
+                min(depths),
+            ))
+        self.scene_pick_cache = tuple(entries)
+        self.scene_pick_cache_signature = self._scene_pick_state()
+
+    def _screen_pick_entity(self, x: float, y: float) -> str | None:
+        signature = self._scene_pick_state()
+        if signature != self.scene_pick_cache_signature:
+            self._rebuild_scene_pick_cache()
+        hits: list[tuple[float, float, str]] = []
+        for entity_id, min_x, max_x, min_y, max_y, depth in self.scene_pick_cache:
+            if min_x <= x <= max_x and min_y <= y <= max_y:
+                area = max((max_x - min_x) * (max_y - min_y), 0.0)
+                hits.append((depth, area, entity_id))
+        return None if not hits else min(hits)[2]
+
     def _rebuild(self, *, reset_camera: bool = False) -> None:
         if self.working is None:
             return
@@ -289,6 +346,7 @@ class NativeEditorWindow(QMainWindow):
         self.gizmo_rebuild_timer.stop()
         self.preview_inspect_timer.stop()
         self._reset_drag_snap_state()
+        self._invalidate_scene_pick_cache()
         self._remove_gizmo()
         self.viewport.clear()
         self.viewport.add_axes()
@@ -362,13 +420,14 @@ class NativeEditorWindow(QMainWindow):
         if self.gizmo is not None and getattr(self.gizmo, 'pressing', False):
             return
         x, y = interactor.GetEventPosition()
-        self.scene_picker.Pick(int(x), int(y), 0, self.viewport.renderer)
-        actor = self.scene_picker.GetActor()
-        if actor is None:
+        entity_id = self._screen_pick_entity(float(x), float(y))
+        if entity_id is None:
             if self.view_state.selection:
                 self._select(None)
             return
-        self._picked(actor)
+        actor = self.actors.get(entity_id)
+        if actor is not None:
+            self._picked(actor)
 
     def _picked(self, actor: Any) -> None:
         entity_id = self.actor_ids.get(id(actor))
