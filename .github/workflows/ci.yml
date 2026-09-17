@@ -8,6 +8,8 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -18,10 +20,10 @@ jobs:
           cache-dependency-path: backend/pyproject.toml
 
       - name: Install backend
-        run: python -m pip install -e ".\backend[dev]"
+        run: python -m pip install -e ".\\backend[dev]"
 
       - name: Test backend
-        run: python -m pytest backend\tests
+        run: python -m pytest backend\\tests
 
       - name: Check backend launcher CLI
         run: python -m htdt --help
@@ -30,12 +32,12 @@ jobs:
         run: python -m htdt.wall_editor --help
 
       - name: Compile Windows CAD acceptance harnesses
-        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py
+        run: python -m py_compile scripts\\validate_n20b_windows.py scripts\\validate_n30a_windows.py
 
       - name: Validate PowerShell scripts syntax
         shell: pwsh
         run: |
-          Get-ChildItem '.\scripts\*.ps1' | ForEach-Object {
+          Get-ChildItem '.\\scripts\\*.ps1' | ForEach-Object {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
@@ -60,4 +62,4 @@ jobs:
         run: npm run build
 
       - name: Smoke test built local app
-        run: python -m pytest backend\tests\test_built_frontend.py -q
+        run: python -m pytest backend\\tests\\test_built_frontend.py -q
