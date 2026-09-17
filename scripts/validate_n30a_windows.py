@@ -99,14 +99,16 @@ def click(point: QPoint, app: QApplication, *, settle_s: float = 0.04) -> None:
 
 
 def drag(start: QPoint, end: QPoint, app: QApplication) -> None:
+    # Windows/Qt at 200% DPI needs the pointer move and the mouse-grab transition
+    # to settle before the synthetic OS move. These values are verified on A08.
     QCursor.setPos(start)
-    pump(app, 0.08)
-    user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
-    pump(app, 0.05)
-    QCursor.setPos(end)
-    pump(app, 0.10)
-    user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
     pump(app, 0.12)
+    user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
+    pump(app, 0.08)
+    QCursor.setPos(end)
+    pump(app, 0.15)
+    user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
+    pump(app, 0.18)
 
 
 def room_xy(window: RoomEditorWindow) -> tuple[tuple[float, float], ...]:
@@ -189,7 +191,11 @@ def run_a08(app: QApplication, root: Path) -> bool:
         midpoint = midpoint_vertex(current[0], current[1])
         insert_point = handle_to_global(window, midpoint)
         local = window.viewport.interactor.mapFromGlobal(insert_point)
-        print('A08_INSERT_TARGET', (midpoint.x_m, midpoint.y_m), 'HIT', window._hit_room_handle(float(local.x()), float(local.y())), flush=True)
+        print(
+            'A08_INSERT_TARGET', (midpoint.x_m, midpoint.y_m),
+            'HIT', window._hit_room_handle(float(local.x()), float(local.y())),
+            flush=True,
+        )
         click(insert_point, app, settle_s=0.10)
         inserted_room = window.working.committed_document.room
         inserted_id = window.selected_room_vertex_id
