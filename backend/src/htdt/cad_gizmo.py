@@ -138,18 +138,17 @@ class TranslationWidget3D:
         world = np.linalg.inv(modelview) @ camera_coords
         return world[:3] * self.actor_length * 2
 
-    def _pick_handle(self, interactor) -> pv.Actor | None:
-        renderer = self.plotter.iren.get_poked_renderer()
+    def hit_test_display(self, x: float, y: float, renderer) -> bool:
+        return self._pick_handle_at(float(x), float(y), renderer) is not None
+
+    def _pick_handle_at(self, x: float, y: float, renderer) -> pv.Actor | None:
         if renderer is None:
             return None
-        x, y = interactor.GetEventPosition()
         cursor = np.array((float(x), float(y)), dtype=float)
         tolerance_px = self.hit_tolerance_dip * _device_pixel_ratio(self.plotter)
         best_index: int | None = None
         best_distance = float('inf')
         arrow_length = self.actor_length * 0.75
-        # Skip the common pivot center where all three axes overlap, but keep
-        # enough of the shaft for easy acquisition at high DPI.
         for index, axis in enumerate(self.axes):
             start = _world_to_display(renderer, self.origin + axis * arrow_length * 0.12)
             end = _world_to_display(renderer, self.origin + axis * arrow_length)
@@ -158,6 +157,13 @@ class TranslationWidget3D:
                 best_distance = distance
                 best_index = index
         return None if best_index is None else self.handles[best_index]
+
+    def _pick_handle(self, interactor) -> pv.Actor | None:
+        renderer = self.plotter.iren.get_poked_renderer()
+        if renderer is None:
+            return None
+        x, y = interactor.GetEventPosition()
+        return self._pick_handle_at(float(x), float(y), renderer)
 
     def _move(self, interactor, _event) -> None:
         if self.pressing and self.selected is not None and self.initial_world is not None:
@@ -281,12 +287,22 @@ class RotationWidget3D:
     def active_axis_index(self) -> int | None:
         return self.handles.index(self.selected) if self.selected in self.handles else None
 
-    def _pick_handle(self, interactor) -> pv.Actor | None:
-        x, y = interactor.GetEventPosition()
-        renderer = self.plotter.iren.get_poked_renderer()
-        self.handle_picker.Pick(x, y, 0, renderer)
+    def hit_test_display(self, x: float, y: float, renderer) -> bool:
+        return self._pick_handle_at(float(x), float(y), renderer) is not None
+
+    def _pick_handle_at(self, x: float, y: float, renderer) -> pv.Actor | None:
+        if renderer is None:
+            return None
+        self.handle_picker.Pick(int(round(x)), int(round(y)), 0, renderer)
         picked = self.handle_picker.GetActor()
         return picked if picked in self.handles else None
+
+    def _pick_handle(self, interactor) -> pv.Actor | None:
+        renderer = self.plotter.iren.get_poked_renderer()
+        if renderer is None:
+            return None
+        x, y = interactor.GetEventPosition()
+        return self._pick_handle_at(float(x), float(y), renderer)
 
     def _world_ray(self, interactor) -> tuple[np.ndarray, np.ndarray]:
         x, y = interactor.GetEventPosition()

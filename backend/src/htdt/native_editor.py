@@ -71,6 +71,7 @@ class NativeEditorWindow(QMainWindow):
         self.actor_ids: dict[int, str] = {}
         self.scene_pick_cache: tuple[tuple[str, float, float, float, float, float], ...] = ()
         self.scene_pick_cache_signature: tuple[int, int, int, int] | None = None
+        self.scene_press_consumed = False
         self.items: dict[str, QTreeWidgetItem] = {}
         self.gizmo: TranslationWidget3D | RotationWidget3D | None = None
         self.drag_base_position: Position3 | None = None
@@ -104,9 +105,8 @@ class NativeEditorWindow(QMainWindow):
         self.scene_picker = vtkCellPicker()
         self.scene_picker.PickFromListOn()
         self.scene_picker.SetTolerance(0.005)
-        self.scene_pick_observer: int | None = self.viewport.iren.interactor.AddObserver(
-            'LeftButtonPressEvent', self._scene_left_press, -1.0
-        )
+        self.scene_pick_observer: int | None = None
+        self.viewport.interactor.installEventFilter(self)
         self.viewport.add_key_event('Escape', self.cancel_preview)
 
         self.tree = QTreeWidget()
@@ -1159,6 +1159,40 @@ class NativeEditorWindow(QMainWindow):
             return
         if QWidget.mouseGrabber() is not self.viewport.interactor:
             self.cancel_preview()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if watched is self.viewport.interactor:
+            event_type = event.type()
+            if event_type == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                dpr = max(float(self.viewport.interactor.devicePixelRatioF()), 1.0)
+                _, render_height = self.viewport.render_window.GetSize()
+                position = event.position()
+                x = float(position.x()) * dpr
+                y = float(render_height) - float(position.y()) * dpr
+                renderer = self.viewport.renderer
+                if self.gizmo is not None and self.gizmo.hit_test_display(x, y, renderer):
+                    self.scene_press_consumed = False
+                    return False
+                entity_id = self._screen_pick_entity(x, y)
+                if entity_id is None:
+                    self.scene_press_consumed = False
+                    if self.view_state.selection:
+                        self._select(None)
+                        self._remove_gizmo()
+                    return False
+                actor = self.actors.get(entity_id)
+                if actor is not None:
+                    self._picked(actor)
+                    self.scene_press_consumed = True
+                    return True
+            elif (
+                event_type == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+                and self.scene_press_consumed
+            ):
+                self.scene_press_consumed = False
+                return True
+        return super().eventFilter(watched, event)
 
     def event(self, event) -> bool:
         if (
