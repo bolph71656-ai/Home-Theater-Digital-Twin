@@ -31,7 +31,8 @@ Branch: `feat/n60-measurement-workspace`
 - Saved FR display reads local immutable datasets and does not require REW to be running.
 - Added QThread-based external REW reads; blocking REW I/O is not performed on the GUI thread.
 - Added A12/A13 Windows acceptance harnesses and CI compile coverage.
-- Added `scripts/run-n60-hardware-gate.ps1` so the final owned-Windows gate can be executed as one RDC/mcp-bridge process: it checks/cleans only residual N60 harness processes, requires a clean repository, fetches the branch, verifies the accepted product-code SHA is still the product head, runs A12 then A13, records environment/version data, restores the original checkout, and verifies the post-run worktree is clean.
+- Added `scripts/run-n60-hardware-gate.ps1` so the owned-Windows gate can be driven from one mcp-bridge/RDC process: clean-state check, residual N60-harness cleanup, branch/product-head validation, environment capture, A12/A13, original-checkout restoration, and post-run clean verification.
+- Added a CI-safe `-PreflightOnly` path so Windows Actions exercises the gate runner's Git output handling before scarce RDC execution.
 - Product composition is `MeasurementWorkspaceWindow -> MeasurementEditorWindow -> ConstraintEditorWindow -> ...`; existing CAD layers remain inherited rather than duplicated.
 
 ## High-DPI / real-interaction findings
@@ -40,49 +41,65 @@ Owned-Windows acceptance runs exposed interaction issues that CI compilation can
 
 1. Early A12/A13 runs showed that actor-center viewport clicks became unreliable after the added right dock. Entity selection in the acceptance harness was changed to the visible scene tree while retaining real Win32 mouse input.
 2. At 2880×1800 / 200% DPI, lower measurement controls were initially unreachable. A product `QScrollArea` wrapper was added instead of bypassing the UI from the harness.
-3. Further diagnostics showed the scroll range itself existed, but the lower button global coordinate reached approximately `Y=1046`; the top-level window was exceeding the usable logical desktop. The right-side `制約` / `実測` docks are also tabified, so the harness now selects the `実測` tab with real mouse input before using its controls.
-4. Product head `acfb0596691a3132cb9d096c49e708177598a9d5` makes the measurement scroll area's vertical size hint ignorable by the parent layout, keeps the full form as scrollable content, and clamps initial window size to `QScreen.availableGeometry()` with margin. This is a product usability fix, not an acceptance bypass.
+3. Diagnostics showed the scroll range itself existed, but lower measurement controls still reached approximately `Y=1046` in Qt global coordinates. The `制約` / `実測` tab itself was correctly activated with real mouse input; the remaining problem was top-level/right-dock layout, not missing scrolling.
+4. Product head `acfb0596691a3132cb9d096c49e708177598a9d5` made the measurement scroll area's vertical size hint ignorable and clamped the initial window to `QScreen.availableGeometry()`, but a later owned-Windows gate proved this was insufficient: the base `Inspector` remained in a separate right-side dock row above the tabified `オブジェクト詳細 / 制約 / 実測` row, so their vertical minimums were still additive.
+5. Current product head `8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79` unifies `Inspector / オブジェクト詳細 / 制約 / 実測` into one CAD-style right-side tab group, leaves the long measurement form internally scrollable, and re-clamps the window once after the first QMainWindow layout pass. This removes the structural source of the high-DPI vertical overflow instead of weakening the acceptance harness.
 
-The acceptance harness still requires actual OS mouse clicks for the relevant controls. Programmatic scrolling/tab lookup is used only to expose the same controls a user would navigate to; the product callbacks are not invoked directly.
+The acceptance harness still requires actual OS mouse clicks for the relevant controls. Programmatic scrolling/tab lookup is used only to expose the same controls a user would navigate to; product callbacks are not invoked directly.
 
 ## GitHub verification
 
-Latest product head before final hardware rerun: `acfb0596691a3132cb9d096c49e708177598a9d5`.
+Previous product head `acfb0596691a3132cb9d096c49e708177598a9d5` passed GitHub Actions CI #280 / run `35214514448` in full.
 
-GitHub Actions CI #280 / run `35214514448` completed successfully on that exact head. It passed:
+The gate-runner hardening path also passed Windows Actions:
 
-- backend dependency install
-- backend tests
-- backend launcher CLI
-- native CAD launcher CLI
-- Windows CAD acceptance harness compilation, including A12/A13
-- PowerShell syntax validation
-- frontend install/build
-- built frontend smoke test
+- CI #283 / run `35217997514`: full PASS after introducing the one-shot runner.
+- CI #284 / run `35218254883`: full PASS after detached/local-old-SHA launch support.
+- CI #287 / run `35218671124`: full PASS including the first executable `Preflight N60 hardware gate runner` step.
+- CI #288 / run `35218969089`: full PASS including `git fetch --dry-run` in preflight, covering Windows PowerShell's successful-git-stderr behavior that had failed on the real machine.
 
-Earlier diagnostic/product heads also passed CI while the real 200% DPI interaction problem was being isolated; CI success alone is not treated as A12/A13 acceptance.
-
-After product head `acfb0596...`, branch-only changes are restricted to N60 progress documentation and the one-shot hardware-gate runner. That runner deliberately refuses acceptance if another product file changes after the declared product head, forcing the accepted product SHA to be updated instead of silently testing stale code.
+Current product-code head is `8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79`; its CI must be green before the next real-hardware rerun. Branch changes after that product head are allowed only for the N60 gate runner, CI plumbing, and progress/acceptance documentation. The runner refuses acceptance if another product file changes after the declared product head.
 
 ## Windows acceptance status
 
 A12/A13 are **not yet marked PASS**.
 
-The most recent completed diagnostic run before the final product-size fix established:
+The owned Windows machine is responsive again. The one-shot gate established and preserved the real local state:
 
-- A12 immutable revision binding, offline FR, mouse move/save B, and historical ghost were already working.
-- The A/B save click did not reach the intended visible control because the overall window extended below the usable desktop.
-- A13 similarly failed to start the delayed REW job; diagnostics showed the REW control's center at the same out-of-desktop Y coordinate and the selection changed instead of the intended button receiving the click.
-- The checkout was restored to the prior detached SHA and clean after that completed diagnostic run.
+- original detached SHA: `5ede848e8e0b0967a50c04c83ff679a649ca439b`
+- pre-run worktree: clean
+- residual N60 harness processes before gate: none
+- tested product SHA for the last completed product run: `acfb0596691a3132cb9d096c49e708177598a9d5`
+- environment: Windows 11 Pro build 26200; Ryzen 7 8845HS / Radeon 780M; driver 32.0.13032.11; 2880×1800; AppliedDPI 192; Python 3.12.10; PySide6 6.11.2; PyVista 0.49.0; VTK 9.7.0; PyQtGraph 0.14.0
+- restored SHA after run: `5ede848e8e0b0967a50c04c83ff679a649ca439b`
+- post-run worktree: clean
 
-After `acfb0596...`, two bundled RDC attempts received no response from the authorized Windows device, including a follow-up residual-process check. Therefore the exact current local checkout/process state after those connection timeouts is **not re-confirmed** and must not be guessed. Do not merge PR #62 or close Issue #61 until the owned-Windows device is responsive and A12/A13 pass on the current product head.
+Two earlier attempts stopped before A12/A13 because of runner-only Windows PowerShell issues: scalar unwrapping of one-line Git output, then successful `git fetch` stderr becoming terminating output under `$ErrorActionPreference='Stop'`. Both were fixed on GitHub and corresponding CI preflight coverage was added; neither attempt evaluated product behavior.
+
+The first run that did reach the product (`acfb0596...`) produced:
+
+```text
+A12_PRODUCT_COMPOSITION True
+A12_MOUSE_SELECT_SAVED_A False
+A12_OFFLINE_FR False
+A12_RESULT FAIL
+
+A13_PRODUCT_COMPOSITION True
+A13_REW_BUTTON_CLICKED_NO_TOKEN True
+A13_REW_BUTTON ... center=1244,1046 ... viewport=564x434 ... vscroll=120/1102 panel_h=1536 ...
+A13_START_STALE_JOB False
+A13_RESULT FAIL
+```
+
+The repeated `Y=1046` finding confirmed that the remaining defect was the vertically split right context docks at 200% DPI. Product head `8d4bfcd...` addresses that layout. Do not merge PR #62 or close Issue #61 until A12/A13 pass on this newer product head.
 
 ## Remaining sequence
 
-1. When RDC is responsive, invoke `scripts/run-n60-hardware-gate.ps1` in one mcp-bridge/RDC process where possible. The script performs residual N60-harness cleanup, clean-state verification, branch fetch/product-head validation, A12/A13 execution, environment capture, original-checkout restoration, and final clean-state verification.
-2. Require A12 PASS for immutable A binding, offline FR, historical ghost, and saved comparison bound to exact A/B dataset + revision IDs.
-3. Require A13 PASS for edit-stale rejection, UI responsiveness, explicit cancel, document-state change rejection, and clean close with no live worker.
-4. Only after the hardware gate passes, create `docs/N60_ACCEPTANCE_2026-09-17.md`, update `IMPLEMENTATION_STATUS.md` to N60 complete / N70 next, mark PR #62 ready, merge it, and close #61 as completed.
+1. Require green CI for product head `8d4bfcd4af7589ab51c1363407ed2d94d1f7ea79` and the latest gate-runner/preflight head.
+2. Run the owned-Windows gate again through the single bundled runner; do not perform separate RDC state probes because the runner owns cleanup/state capture/restoration.
+3. Require A12 PASS for saved-A mouse selection/offline FR, immutable A binding, mouse move/save B, historical ghost, and saved comparison bound to exact A/B dataset + revision IDs.
+4. Require A13 PASS for edit-stale rejection, UI responsiveness, explicit cancel, document-state change rejection, and clean close with no live worker.
+5. Only after the hardware gate passes, create `docs/N60_ACCEPTANCE_2026-09-17.md`, update `IMPLEMENTATION_STATUS.md` to N60 complete / N70 next, mark PR #62 ready, merge it, and close #61 as completed.
 
 ## Key risks / invariants
 
