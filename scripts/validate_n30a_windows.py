@@ -71,7 +71,6 @@ def domain_to_global(window: RoomEditorWindow, x_m: float, y_m: float) -> QPoint
 
 
 def handle_to_global(window: RoomEditorWindow, vertex: RoomVertex) -> QPoint:
-    """Use the editor's own Qt logical-pixel projection for handle presses."""
     qt_x, qt_y = window._project_room_to_qt(vertex)
     return window.viewport.interactor.mapToGlobal(QPoint(int(round(qt_x)), int(round(qt_y))))
 
@@ -98,9 +97,26 @@ def click(point: QPoint, app: QApplication, *, settle_s: float = 0.04) -> None:
     pump(app, 0.04)
 
 
-def drag(start: QPoint, end: QPoint, app: QApplication) -> None:
-    # Windows/Qt at 200% DPI needs the pointer move and the mouse-grab transition
-    # to settle before the synthetic OS move. These values are verified on A08.
+def foreground_window(window: RoomEditorWindow, app: QApplication) -> None:
+    window.show()
+    window.showNormal()
+    window.raise_()
+    window.activateWindow()
+    window.viewport.interactor.setFocus()
+    user32.SetForegroundWindow(int(window.winId()))
+    pump(app, 0.25)
+    print('A08_WINDOW_ACTIVE', bool(window.isActiveWindow()), flush=True)
+
+
+def prepare_handle_input(window: RoomEditorWindow, app: QApplication) -> None:
+    """Restore the editor as foreground target and normalize OS left-button state."""
+    foreground_window(window, app)
+    user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
+    pump(app, 0.05)
+
+
+def drag(window: RoomEditorWindow, start: QPoint, end: QPoint, app: QApplication) -> None:
+    prepare_handle_input(window, app)
     QCursor.setPos(start)
     pump(app, 0.12)
     user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
@@ -128,17 +144,6 @@ def set_top_fixture_camera(window: RoomEditorWindow) -> None:
     camera.SetParallelScale(3.5)
     renderer.ResetCameraClippingRange()
     window.viewport.render()
-
-
-def foreground_window(window: RoomEditorWindow, app: QApplication) -> None:
-    window.show()
-    window.showNormal()
-    window.raise_()
-    window.activateWindow()
-    window.viewport.interactor.setFocus()
-    user32.SetForegroundWindow(int(window.winId()))
-    pump(app, 0.25)
-    print('A08_WINDOW_ACTIVE', bool(window.isActiveWindow()), flush=True)
 
 
 def fixture_points_are_visible(window: RoomEditorWindow) -> bool:
@@ -185,23 +190,19 @@ def run_a08(app: QApplication, root: Path) -> bool:
             return False
 
         set_top_fixture_camera(window)
+        prepare_handle_input(window, app)
         before_insert = window.working.history_length
         window.insert_vertex_action.setChecked(True)
         current = room_vertices(room)
         midpoint = midpoint_vertex(current[0], current[1])
         insert_point = handle_to_global(window, midpoint)
         local = window.viewport.interactor.mapFromGlobal(insert_point)
-        print(
-            'A08_INSERT_TARGET', (midpoint.x_m, midpoint.y_m),
-            'HIT', window._hit_room_handle(float(local.x()), float(local.y())),
-            flush=True,
-        )
+        print('A08_INSERT_TARGET', (midpoint.x_m, midpoint.y_m), 'HIT', window._hit_room_handle(float(local.x()), float(local.y())), flush=True)
         click(insert_point, app, settle_s=0.10)
         inserted_room = window.working.committed_document.room
         inserted_id = window.selected_room_vertex_id
         inserted_vertex = None if inserted_room is None else next(
-            (v for v in room_vertices(inserted_room) if v.vertex_id == inserted_id),
-            None,
+            (v for v in room_vertices(inserted_room) if v.vertex_id == inserted_id), None
         )
         insert_ok = (
             inserted_room is not None
@@ -216,15 +217,10 @@ def run_a08(app: QApplication, root: Path) -> bool:
 
         set_top_fixture_camera(window)
         before_move = window.working.history_length
-        drag(
-            handle_to_global(window, inserted_vertex),
-            domain_to_global(window, 3.0, 0.5),
-            app,
-        )
+        drag(window, handle_to_global(window, inserted_vertex), domain_to_global(window, 3.0, 0.5), app)
         moved_room = window.working.committed_document.room
         moved_vertex = None if moved_room is None else next(
-            (v for v in room_vertices(moved_room) if v.vertex_id == inserted_id),
-            None,
+            (v for v in room_vertices(moved_room) if v.vertex_id == inserted_id), None
         )
         move_ok = (
             moved_vertex is not None
@@ -237,6 +233,7 @@ def run_a08(app: QApplication, root: Path) -> bool:
             return False
 
         set_top_fixture_camera(window)
+        prepare_handle_input(window, app)
         current = room_vertices(window.working.committed_document.room)
         edge_midpoint = midpoint_vertex(current[1], current[2])
         click(handle_to_global(window, edge_midpoint), app, settle_s=0.10)
@@ -271,6 +268,7 @@ def run_a08(app: QApplication, root: Path) -> bool:
         current = room_vertices(window.working.committed_document.room)
         current_inserted = next(v for v in current if v.vertex_id == inserted_id)
         set_top_fixture_camera(window)
+        prepare_handle_input(window, app)
         click(handle_to_global(window, current_inserted), app, settle_s=0.10)
         before_delete = window.working.history_length
         window.delete_vertex_action.trigger()
@@ -291,11 +289,7 @@ def run_a08(app: QApplication, root: Path) -> bool:
         second = room_vertices(room_before_invalid)[1]
         before_invalid = window.working.history_length
         set_top_fixture_camera(window)
-        drag(
-            handle_to_global(window, second),
-            domain_to_global(window, 3.0, 3.0),
-            app,
-        )
+        drag(window, handle_to_global(window, second), domain_to_global(window, 3.0, 3.0), app)
         invalid_ok = (
             window.working.committed_document.room == room_before_invalid
             and window.working.history_length == before_invalid
