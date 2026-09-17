@@ -82,12 +82,12 @@ def click(point: QPoint) -> None:
 
 
 def settled_click(point: QPoint, app: QApplication) -> None:
-    # Let the Qt/VTK MouseMove caused by SetPos drain before the OS press. This
-    # matters at 200% DPI where queued move/press coordinates can differ by 0.5 DIP.
+    # Drain the Qt/VTK MouseMove caused by SetPos before the OS press. Give the
+    # renderer enough time to settle on the 200% DPI acceptance machine.
     QCursor.setPos(point)
-    pump(app, 0.04)
+    pump(app, 0.10)
     user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
-    pump(app, 0.02)
+    pump(app, 0.03)
     user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
 
 
@@ -190,13 +190,13 @@ def run_a08(app: QApplication, root: Path) -> bool:
         )
         insert_point = domain_to_global(window, *insert_midpoint)
         QCursor.setPos(insert_point)
-        pump(app, 0.04)
+        pump(app, 0.12)
         insert_local = window.viewport.interactor.mapFromGlobal(QCursor.pos())
         print('A08_INSERT_TARGET', insert_midpoint, 'HIT', window._hit_room_handle(float(insert_local.x()), float(insert_local.y())), flush=True)
         user32.mouse_event(MOUSE_LEFTDOWN, 0, 0, 0, 0)
-        pump(app, 0.02)
+        pump(app, 0.04)
         user32.mouse_event(MOUSE_LEFTUP, 0, 0, 0, 0)
-        pump(app, 0.16)
+        pump(app, 0.18)
         inserted_room = window.working.committed_document.room
         insert_ok = (
             inserted_room is not None
