@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 from array import array
+from dataclasses import asdict
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
 import sqlite3
+from uuid import uuid4
 
-from .cad_measurement_models import CadFrequencyResponseDataset, CadMeasurementRecord
+from .cad_measurement_models import CadFrequencyResponseDataset, CadMeasurementComparison, CadMeasurementRecord
 from .cad_repository import SceneRepository, SceneRevision
 from .cad_scene import acoustic_reference_position
+from .comparison import ComparisonResult
 
 
 def _pack(values: tuple[float, ...] | None) -> bytes | None:
@@ -31,6 +35,10 @@ def _unpack(blob: bytes | None) -> tuple[float, ...] | None:
     if os.sys.byteorder != 'little':
         payload.byteswap()
     return tuple(payload)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class CadMeasurementRepository:
@@ -98,6 +106,18 @@ class CadMeasurementRepository:
                     source_sha256 TEXT NOT NULL REFERENCES cad_measurement_assets(sha256),
                     importer_version TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS cad_measurement_comparisons (
+                    comparison_id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    dataset_a_id TEXT NOT NULL REFERENCES cad_frequency_responses(dataset_id),
+                    dataset_b_id TEXT NOT NULL REFERENCES cad_frequency_responses(dataset_id),
+                    scene_revision_a_id TEXT NOT NULL REFERENCES scene_revisions(revision_id),
+                    scene_revision_b_id TEXT NOT NULL REFERENCES scene_revisions(revision_id),
+                    created_at TEXT NOT NULL,
+                    result_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_cad_measurement_comparisons_document_created
+                    ON cad_measurement_comparisons(document_id, created_at DESC);
                 '''
             )
 
@@ -265,8 +285,75 @@ class CadMeasurementRepository:
         record = self.get_measurement(measurement_id)
         if record is None:
             raise KeyError(measurement_id)
-        revision = self._validated_revision(record)
-        return revision
+        return self._validated_revision(record)
+
+    def save_comparison(
+        self,
+        dataset_a_id: str,
+        dataset_b_id: str,
+        result: ComparisonResult,
+    ) -> CadMeasurementComparison:
+        if dataset_a_id == dataset_b_id:
+            raise ValueError('comparison requires two different datasets')
+        with self._connect() as connection:
+            rows = []
+            for dataset_id in (dataset_a_id, dataset_b_id):
+                row = connection.execute(
+                    '''SELECT d.dataset_id, m.document_id, m.scene_revision_id
+                       FROM cad_frequency_responses d
+                       JOIN cad_measurements m ON m.measurement_id=d.measurement_id
+                       WHERE d.dataset_id=?''',
+                    (dataset_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f'dataset not found: {dataset_id}')
+                rows.append(row)
+            if rows[0]['document_id'] != rows[1]['document_id']:
+                raise ValueError('comparison datasets belong to different documents')
+            comparison = CadMeasurementComparison(
+                comparison_id=str(uuid4()),
+                document_id=rows[0]['document_id'],
+                dataset_a_id=dataset_a_id,
+                dataset_b_id=dataset_b_id,
+                scene_revision_a_id=rows[0]['scene_revision_id'],
+                scene_revision_b_id=rows[1]['scene_revision_id'],
+                created_at=_utc_now(),
+                **asdict(result),
+            )
+            connection.execute(
+                '''INSERT INTO cad_measurement_comparisons(
+                    comparison_id, document_id, dataset_a_id, dataset_b_id,
+                    scene_revision_a_id, scene_revision_b_id, created_at, result_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (
+                    comparison.comparison_id,
+                    comparison.document_id,
+                    comparison.dataset_a_id,
+                    comparison.dataset_b_id,
+                    comparison.scene_revision_a_id,
+                    comparison.scene_revision_b_id,
+                    comparison.created_at,
+                    json.dumps(asdict(result), ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False),
+                ),
+            )
+            connection.commit()
+        return comparison
+
+    def get_comparison(self, comparison_id: str) -> CadMeasurementComparison | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT * FROM cad_measurement_comparisons WHERE comparison_id=?',
+                (comparison_id,),
+            ).fetchone()
+        return None if row is None else self._row_to_comparison(row)
+
+    def list_comparisons(self, document_id: str) -> tuple[CadMeasurementComparison, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                'SELECT * FROM cad_measurement_comparisons WHERE document_id=? ORDER BY created_at DESC, comparison_id',
+                (document_id,),
+            ).fetchall()
+        return tuple(self._row_to_comparison(row) for row in rows)
 
     @staticmethod
     def _row_to_measurement(row: sqlite3.Row) -> CadMeasurementRecord:
@@ -309,3 +396,17 @@ class CadMeasurementRepository:
             source_sha256=row['source_sha256'],
             importer_version=row['importer_version'],
         )
+
+    @staticmethod
+    def _row_to_comparison(row: sqlite3.Row) -> CadMeasurementComparison:
+        result = json.loads(row['result_json'])
+        return CadMeasurementComparison.model_validate({
+            'comparison_id': row['comparison_id'],
+            'document_id': row['document_id'],
+            'dataset_a_id': row['dataset_a_id'],
+            'dataset_b_id': row['dataset_b_id'],
+            'scene_revision_a_id': row['scene_revision_a_id'],
+            'scene_revision_b_id': row['scene_revision_b_id'],
+            'created_at': row['created_at'],
+            **result,
+        })
