@@ -1,6 +1,7 @@
 # N70 implementation progress
 
 Tracking: Issue #63  
+PR: #64  
 Branch: `feat/n70-prediction-visualization`  
 Base main: `86354dd58200738b33ae27261a5308e3551bcbac`
 
@@ -36,6 +37,43 @@ First build a native immutable prediction authority and geometry visualization l
 7. enable heatmap/slice/volume only when a real model result contains a scalar field.
 
 Detailed contract: [N70 design](N70_DESIGN.md).
+
+## N70a implemented so far
+
+Commit `305a05c238e0a01b4faecbda6e3c826d8cbffde5` added the immutable native prediction authority:
+
+- `CadPredictionResult` with exact SceneRevision/content hash, model ID/version, canonical parameters, canonical input snapshot and SHA-256 input hash;
+- separate SQLite prediction repository in the existing native CAD database;
+- exact axis-aligned rectangle detection including shifted polygon rectangles;
+- explicit `unsupported` results for non-rectangular polygon rooms with no silent rectangular approximation;
+- world-coordinate first-order reflection identities and room-mode candidates;
+- prediction-specific stale/cancel/document/constraint guard;
+- focused repository, geometry compatibility and guard tests.
+
+Commit `332ec93803b3bec981a605ca19f483051d02a86c` added the native prediction workspace:
+
+- canonical request-identity helper used before async submission and checked again against completed model output;
+- Japanese `予測` dock integrated into the single right-side CAD tab stack;
+- saved prediction history and model/assumption/compatibility/input-revision display;
+- GUI-thread-free prediction task with cancel/stale/document/constraint rejection before persistence/application;
+- saved predictions are only overlaid when the current scene content hash matches the source input revision;
+- direct path + first-order reflection path/point overlays are analysis actors and non-pickable;
+- room-mode frequencies are listed as predicted geometry only, not rendered as a fake spatial field;
+- heatmap/slice/volume control remains disabled until a real scalar-field result exists;
+- native launcher now composes `PredictionWorkspaceWindow` while preserving N40-N60 inheritance.
+
+CI #307 / run `35231396558` passed completely on Windows after the N70a workspace integration, including backend tests, native launcher import, existing acceptance-harness compile, PowerShell syntax, frontend build and smoke test.
+
+## A13/A14 acceptance preparation
+
+`scripts/validate_n70_windows.py` is being added for the final owned-Windows gate. It exercises the production prediction workspace with real mouse/tab/button operations and controlled worker timing:
+
+- A13: start prediction, edit/save scene while job is pending, verify stale completion is not saved/applied;
+- A13: deterministic explicit cancel, delayed completion, document-ID switch and close-with-worker checks;
+- A14: run the rectangular-only model on the 8-vertex L-room fixture and verify `unsupported`, no payload, no silent rectangular approximation and no prediction overlay;
+- A14: verify scalar-field visualization remains gated while no scalar field exists.
+
+The harness is compile-only in CI. RDC remains reserved for the final owned-Windows acceptance after the remaining N70 implementation slices are green.
 
 ## Planned focused verification
 
