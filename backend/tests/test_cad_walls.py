@@ -5,6 +5,7 @@ from htdt.cad_walls import (
     WallOpening,
     WallTopologyError,
     add_opening,
+    delete_wall,
     make_wall_topology,
     merge_walls,
     move_wall,
@@ -257,4 +258,47 @@ def test_merge_rejects_non_collinear_or_different_thickness_walls() -> None:
             'wall-a-mid',
             'wall-mid-b',
             merged_wall_id='bad-thickness',
+        )
+
+
+def test_delete_wall_removes_end_vertex_and_creates_explicit_replacement_wall() -> None:
+    room = _rect_room()
+    topology = make_wall_topology(room)
+
+    deleted_room, deleted_topology = delete_wall(
+        room,
+        topology,
+        'wall:a->b',
+        replacement_wall_id='wall:a->c',
+    )
+
+    assert [vertex.vertex_id for vertex in deleted_room.footprint_vertices or ()] == ['a', 'c', 'd']
+    assert [wall.wall_id for wall in deleted_topology.walls] == [
+        'wall:a->c',
+        'wall:c->d',
+        'wall:d->a',
+    ]
+    assert validate_wall_topology(deleted_room, deleted_topology) == deleted_topology
+
+
+def test_delete_wall_rejects_referenced_opening_in_affected_pair() -> None:
+    room = _rect_room()
+    topology = add_opening(
+        room,
+        make_wall_topology(room),
+        WallOpening(
+            opening_id='door-next',
+            wall_id='wall:b->c',
+            offset_m=1.0,
+            width_m=0.9,
+            height_m=2.0,
+        ),
+    )
+
+    with pytest.raises(WallTopologyError, match='would orphan openings'):
+        delete_wall(
+            room,
+            topology,
+            'wall:a->b',
+            replacement_wall_id='wall:a->c',
         )
