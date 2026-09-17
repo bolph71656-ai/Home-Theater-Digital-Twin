@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
-from .cad_scene import Position3, Quaternion4, SceneDocument, SceneEntity, scene_content_hash
+from .cad_scene import (
+    Position3, Quaternion4, SceneDocument, SceneEntity,
+    rotate_orientation_world, rotate_position_world, scene_content_hash,
+)
 
 
 class EditStateError(RuntimeError):
@@ -12,6 +15,18 @@ class EditStateError(RuntimeError):
 
 def _replace_entity(document: SceneDocument, replacement: SceneEntity) -> SceneDocument:
     entities = tuple(replacement if item.entity_id == replacement.entity_id else item for item in document.entities)
+    return document.model_copy(update={'entities': entities})
+
+
+def _replace_entities(document: SceneDocument, replacements: tuple[SceneEntity, ...]) -> SceneDocument:
+    mapping = {entity.entity_id: entity for entity in replacements}
+    if len(mapping) != len(replacements):
+        raise EditStateError('replacement entity ids must be unique')
+    existing = {entity.entity_id for entity in document.entities}
+    missing = set(mapping) - existing
+    if missing:
+        raise EditStateError(f'cannot replace unknown entities: {sorted(missing)}')
+    entities = tuple(mapping.get(item.entity_id, item) for item in document.entities)
     return document.model_copy(update={'entities': entities})
 
 
@@ -82,6 +97,22 @@ class RotateEntityCommand:
 
 
 @dataclass(frozen=True)
+class TransformEntitiesCommand:
+    before: tuple[SceneEntity, ...]
+    after: tuple[SceneEntity, ...]
+
+    @property
+    def is_noop(self) -> bool:
+        return self.before == self.after
+
+    def apply(self, document: SceneDocument) -> SceneDocument:
+        return _replace_entities(document, self.after)
+
+    def revert(self, document: SceneDocument) -> SceneDocument:
+        return _replace_entities(document, self.before)
+
+
+@dataclass(frozen=True)
 class DeleteEntityCommand:
     entity: SceneEntity
     index: int
@@ -99,16 +130,51 @@ class DeleteEntityCommand:
 
 @dataclass
 class EditorViewState:
-    """Non-physical editor state. It must never change SceneDocument semantics."""
+    """Non-physical editor state. Selection order is stable; selected_id is the primary item."""
 
     selected_id: str | None = None
+    selected_ids: list[str] = field(default_factory=list)
     hidden_ids: set[str] = field(default_factory=set)
     locked_ids: set[str] = field(default_factory=set)
     transform_mode: Literal['move', 'rotate'] = 'move'
+    object_snap_enabled: bool = True
     grid_snap_enabled: bool = False
     grid_step_m: float = 0.05
     angle_snap_enabled: bool = False
     angle_step_deg: float = 15.0
+
+    def __post_init__(self) -> None:
+        if self.selected_id is not None and self.selected_id not in self.selected_ids:
+            self.selected_ids.append(self.selected_id)
+        self._dedupe_selection()
+        if self.selected_id is None and self.selected_ids:
+            self.selected_id = self.selected_ids[-1]
+
+    @property
+    def selection(self) -> tuple[str, ...]:
+        return tuple(self.selected_ids)
+
+    def set_selection(self, entity_ids: tuple[str, ...] | list[str], *, primary_id: str | None = None) -> None:
+        self.selected_ids = list(entity_ids)
+        self._dedupe_selection()
+        if not self.selected_ids:
+            self.selected_id = None
+            return
+        self.selected_id = primary_id if primary_id in self.selected_ids else self.selected_ids[-1]
+
+    def select_only(self, entity_id: str | None) -> None:
+        self.set_selection(() if entity_id is None else (entity_id,), primary_id=entity_id)
+
+    def toggle_selected(self, entity_id: str) -> None:
+        if entity_id in self.selected_ids:
+            self.selected_ids.remove(entity_id)
+            self.selected_id = self.selected_ids[-1] if self.selected_ids else None
+        else:
+            self.selected_ids.append(entity_id)
+            self.selected_id = entity_id
+
+    def is_selected(self, entity_id: str) -> bool:
+        return entity_id in self.selected_ids
 
     def is_hidden(self, entity_id: str) -> bool:
         return entity_id in self.hidden_ids
@@ -132,8 +198,19 @@ class EditorViewState:
         valid = {entity.entity_id for entity in document.entities}
         self.hidden_ids.intersection_update(valid)
         self.locked_ids.intersection_update(valid)
-        if self.selected_id not in valid:
-            self.selected_id = None
+        self.selected_ids = [entity_id for entity_id in self.selected_ids if entity_id in valid]
+        self._dedupe_selection()
+        if self.selected_id not in self.selected_ids:
+            self.selected_id = self.selected_ids[-1] if self.selected_ids else None
+
+    def _dedupe_selection(self) -> None:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for entity_id in self.selected_ids:
+            if entity_id not in seen:
+                seen.add(entity_id)
+                ordered.append(entity_id)
+        self.selected_ids = ordered
 
 
 class CommandHistory:
@@ -176,21 +253,14 @@ class CommandHistory:
 
 
 class WorkingDocument:
-    def __init__(
-        self,
-        document: SceneDocument,
-        *,
-        source_revision_id: str | None = None,
-        saved_content_hash: str | None = None,
-    ) -> None:
+    def __init__(self, document: SceneDocument, *, source_revision_id: str | None = None, saved_content_hash: str | None = None) -> None:
         self._document = document
         self._source_revision_id = source_revision_id
         self._saved_hash = saved_content_hash or scene_content_hash(document)
         self._history = CommandHistory()
         self._preview_kind: Literal['move', 'rotate'] | None = None
-        self._preview_entity_id: str | None = None
-        self._preview_before_position: Position3 | None = None
-        self._preview_before_orientation: Quaternion4 | None = None
+        self._preview_entity_ids: tuple[str, ...] = ()
+        self._preview_before_entities: tuple[SceneEntity, ...] = ()
         self._preview_document: SceneDocument | None = None
 
     @property
@@ -233,52 +303,80 @@ class WorkingDocument:
     def is_dirty(self) -> bool:
         return scene_content_hash(self._document) != self._saved_hash
 
-    def _begin_preview(self, entity_id: str, kind: Literal['move', 'rotate']) -> SceneEntity:
+    def _begin_preview(self, entity_ids: tuple[str, ...], kind: Literal['move', 'rotate']) -> tuple[SceneEntity, ...]:
         if self.has_preview:
             raise EditStateError('another preview is already active')
-        entity = self._document.entity(entity_id)
+        if not entity_ids:
+            raise EditStateError('preview requires at least one entity')
+        if len(set(entity_ids)) != len(entity_ids):
+            raise EditStateError('preview entity ids must be unique')
+        entities = tuple(self._document.entity(entity_id) for entity_id in entity_ids)
         self._preview_kind = kind
-        self._preview_entity_id = entity_id
+        self._preview_entity_ids = entity_ids
+        self._preview_before_entities = entities
         self._preview_document = self._document
-        return entity
+        return entities
 
     def begin_move(self, entity_id: str) -> None:
-        entity = self._begin_preview(entity_id, 'move')
-        self._preview_before_position = entity.position
+        self._begin_preview((entity_id,), 'move')
+
+    def begin_group_move(self, entity_ids: tuple[str, ...]) -> None:
+        self._begin_preview(entity_ids, 'move')
 
     def preview_move(self, position: Position3) -> None:
-        if not self.has_preview or self._preview_kind != 'move' or self._preview_entity_id is None:
-            raise EditStateError('move preview has not started')
-        self._preview_document = _move(self._document, self._preview_entity_id, position)
+        if not self.has_preview or self._preview_kind != 'move' or len(self._preview_before_entities) != 1:
+            raise EditStateError('single-entity move preview has not started')
+        replacement = self._preview_before_entities[0].model_copy(update={'position': position})
+        self._preview_document = _replace_entities(self._document, (replacement,))
+
+    def preview_group_move(self, delta_xyz: tuple[float, float, float]) -> None:
+        if not self.has_preview or self._preview_kind != 'move' or not self._preview_before_entities:
+            raise EditStateError('group move preview has not started')
+        dx, dy, dz = (float(value) for value in delta_xyz)
+        replacements = tuple(
+            entity.model_copy(update={'position': Position3(
+                x_m=entity.position.x_m + dx,
+                y_m=entity.position.y_m + dy,
+                z_m=entity.position.z_m + dz,
+            )})
+            for entity in self._preview_before_entities
+        )
+        self._preview_document = _replace_entities(self._document, replacements)
 
     def begin_rotate(self, entity_id: str) -> None:
-        entity = self._begin_preview(entity_id, 'rotate')
-        self._preview_before_orientation = entity.orientation
+        self._begin_preview((entity_id,), 'rotate')
+
+    def begin_group_rotate(self, entity_ids: tuple[str, ...]) -> None:
+        self._begin_preview(entity_ids, 'rotate')
 
     def preview_rotate(self, orientation: Quaternion4) -> None:
-        if not self.has_preview or self._preview_kind != 'rotate' or self._preview_entity_id is None:
-            raise EditStateError('rotate preview has not started')
-        self._preview_document = _rotate(self._document, self._preview_entity_id, orientation)
+        if not self.has_preview or self._preview_kind != 'rotate' or len(self._preview_before_entities) != 1:
+            raise EditStateError('single-entity rotate preview has not started')
+        replacement = self._preview_before_entities[0].model_copy(update={'orientation': orientation})
+        self._preview_document = _replace_entities(self._document, (replacement,))
+
+    def preview_group_rotate(
+        self,
+        axis: Literal['x', 'y', 'z'],
+        angle_deg: float,
+        pivot: Position3,
+    ) -> None:
+        if not self.has_preview or self._preview_kind != 'rotate' or not self._preview_before_entities:
+            raise EditStateError('group rotate preview has not started')
+        replacements = tuple(
+            entity.model_copy(update={
+                'position': rotate_position_world(entity.position, pivot, axis, angle_deg),
+                'orientation': rotate_orientation_world(entity.orientation, axis, angle_deg),
+            })
+            for entity in self._preview_before_entities
+        )
+        self._preview_document = _replace_entities(self._document, replacements)
 
     def commit_preview(self) -> bool:
-        if not self.has_preview or self._preview_entity_id is None or self._preview_document is None:
+        if not self.has_preview or self._preview_document is None or not self._preview_before_entities:
             return False
-        if self._preview_kind == 'move' and self._preview_before_position is not None:
-            after = self._preview_document.entity(self._preview_entity_id).position
-            command: EditCommand = MoveEntityCommand(
-                self._preview_entity_id,
-                self._preview_before_position,
-                after,
-            )
-        elif self._preview_kind == 'rotate' and self._preview_before_orientation is not None:
-            after = self._preview_document.entity(self._preview_entity_id).orientation
-            command = RotateEntityCommand(
-                self._preview_entity_id,
-                self._preview_before_orientation,
-                after,
-            )
-        else:
-            raise EditStateError('preview state is incomplete')
+        after = tuple(self._preview_document.entity(entity.entity_id) for entity in self._preview_before_entities)
+        command: EditCommand = TransformEntitiesCommand(self._preview_before_entities, after)
         self._clear_preview()
         before_hash = scene_content_hash(self._document)
         self._document = self._history.push(command, self._document)
@@ -342,7 +440,6 @@ class WorkingDocument:
 
     def _clear_preview(self) -> None:
         self._preview_kind = None
-        self._preview_entity_id = None
-        self._preview_before_position = None
-        self._preview_before_orientation = None
+        self._preview_entity_ids = ()
+        self._preview_before_entities = ()
         self._preview_document = None

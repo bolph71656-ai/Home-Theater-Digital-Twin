@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -116,6 +117,7 @@ def test_editor_view_state_round_trip_is_not_part_of_scene_revision(tmp_path: Pa
     repository.save_view_state(
         first.document_id,
         selected_id='speaker-fl',
+        selected_ids=('speaker-c', 'speaker-fl'),
         hidden_ids={'speaker-fr'},
         locked_ids={'speaker-fl', 'speaker-c'},
     )
@@ -123,6 +125,31 @@ def test_editor_view_state_round_trip_is_not_part_of_scene_revision(tmp_path: Pa
 
     assert state is not None
     assert state.selected_id == 'speaker-fl'
+    assert state.selected_ids == ('speaker-c', 'speaker-fl')
     assert state.hidden_ids == ('speaker-fr',)
     assert state.locked_ids == ('speaker-c', 'speaker-fl')
     assert repository.latest(first.document_id).content_hash == first.content_hash
+
+
+def test_legacy_view_state_schema_migrates_primary_selection(tmp_path: Path) -> None:
+    path = tmp_path / 'legacy.sqlite3'
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            '''CREATE TABLE editor_view_states (
+                document_id TEXT PRIMARY KEY,
+                selected_id TEXT,
+                hidden_ids_json TEXT NOT NULL,
+                locked_ids_json TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            )'''
+        )
+        connection.execute(
+            "INSERT INTO editor_view_states VALUES (?, ?, ?, ?, ?)",
+            ('doc', 'speaker-fl', '[]', '[]', '2026-09-17T00:00:00+00:00'),
+        )
+
+    repository = SceneRepository(path)
+    state = repository.view_state('doc')
+    assert state is not None
+    assert state.selected_id == 'speaker-fl'
+    assert state.selected_ids == ('speaker-fl',)

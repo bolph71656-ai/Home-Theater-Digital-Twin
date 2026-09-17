@@ -39,6 +39,7 @@ class RecoverySnapshot:
 class EditorViewRecord:
     document_id: str
     selected_id: str | None
+    selected_ids: tuple[str, ...]
     hidden_ids: tuple[str, ...]
     locked_ids: tuple[str, ...]
 
@@ -98,6 +99,11 @@ class SceneRepository:
                 )
                 '''
             )
+            columns = {row['name'] for row in connection.execute('PRAGMA table_info(editor_view_states)')}
+            if 'selected_ids_json' not in columns:
+                connection.execute(
+                    "ALTER TABLE editor_view_states ADD COLUMN selected_ids_json TEXT NOT NULL DEFAULT '[]'"
+                )
 
     def latest(self, document_id: str) -> SceneRevision | None:
         with self._connect() as connection:
@@ -235,9 +241,14 @@ class SceneRepository:
         document_id: str,
         *,
         selected_id: str | None,
+        selected_ids: tuple[str, ...] | list[str] | None = None,
         hidden_ids: set[str],
         locked_ids: set[str],
     ) -> None:
+        ordered_selected = list(dict.fromkeys(selected_ids or (() if selected_id is None else (selected_id,))))
+        if selected_id is not None and selected_id not in ordered_selected:
+            ordered_selected.append(selected_id)
+        selected_json = json.dumps(ordered_selected, separators=(',', ':'))
         hidden_json = json.dumps(sorted(hidden_ids), separators=(',', ':'))
         locked_json = json.dumps(sorted(locked_ids), separators=(',', ':'))
         updated_at = datetime.now(timezone.utc).isoformat()
@@ -245,15 +256,16 @@ class SceneRepository:
             connection.execute(
                 '''
                 INSERT INTO editor_view_states(
-                    document_id, selected_id, hidden_ids_json, locked_ids_json, updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?)
+                    document_id, selected_id, selected_ids_json, hidden_ids_json, locked_ids_json, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(document_id) DO UPDATE SET
                     selected_id=excluded.selected_id,
+                    selected_ids_json=excluded.selected_ids_json,
                     hidden_ids_json=excluded.hidden_ids_json,
                     locked_ids_json=excluded.locked_ids_json,
                     updated_at_utc=excluded.updated_at_utc
                 ''',
-                (document_id, selected_id, hidden_json, locked_json, updated_at),
+                (document_id, selected_id, selected_json, hidden_json, locked_json, updated_at),
             )
 
     def view_state(self, document_id: str) -> EditorViewRecord | None:
@@ -264,11 +276,15 @@ class SceneRepository:
             ).fetchone()
         if row is None:
             return None
+        selected = tuple(str(value) for value in json.loads(row['selected_ids_json']))
+        if not selected and row['selected_id'] is not None:
+            selected = (str(row['selected_id']),)
         hidden = tuple(str(value) for value in json.loads(row['hidden_ids_json']))
         locked = tuple(str(value) for value in json.loads(row['locked_ids_json']))
         return EditorViewRecord(
             document_id=row['document_id'],
             selected_id=row['selected_id'],
+            selected_ids=selected,
             hidden_ids=hidden,
             locked_ids=locked,
         )

@@ -35,6 +35,30 @@ def _event_inside_renderer(plotter: pv.Plotter, interactor) -> bool:
     return ox <= x < ox + width and oy <= y < oy + height
 
 
+def _device_pixel_ratio(plotter: pv.Plotter) -> float:
+    widget = getattr(plotter, 'interactor', None)
+    if widget is not None and hasattr(widget, 'devicePixelRatioF'):
+        return max(float(widget.devicePixelRatioF()), 1.0)
+    return 1.0
+
+
+def _world_to_display(renderer, point: np.ndarray) -> np.ndarray:
+    renderer.SetWorldPoint(float(point[0]), float(point[1]), float(point[2]), 1.0)
+    renderer.WorldToDisplay()
+    x, y, _ = renderer.GetDisplayPoint()
+    return np.array((float(x), float(y)), dtype=float)
+
+
+def _distance_to_segment_2d(point: np.ndarray, start: np.ndarray, end: np.ndarray) -> float:
+    segment = end - start
+    length_sq = float(np.dot(segment, segment))
+    if length_sq <= 1e-12:
+        return float(np.linalg.norm(point - start))
+    fraction = float(np.clip(np.dot(point - start, segment) / length_sq, 0.0, 1.0))
+    closest = start + segment * fraction
+    return float(np.linalg.norm(point - closest))
+
+
 class TranslationWidget3D:
     """Three-axis translation-only widget for HTDT's physical domain axes."""
 
@@ -46,6 +70,7 @@ class TranslationWidget3D:
         interact_callback: MatrixCallback | None = None,
         release_callback: MatrixCallback | None = None,
         cancel_callback: CancelCallback | None = None,
+        origin: tuple[float, float, float] | np.ndarray | None = None,
     ) -> None:
         self.plotter = plotter
         self.actor = actor
@@ -54,7 +79,7 @@ class TranslationWidget3D:
         self.cancel_callback = cancel_callback
         # Polar vectors use C=diag(1,-1,1): domain +Y is render -Y.
         self.axes = np.array(((1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)))
-        self.origin = np.asarray(actor.center, dtype=float)
+        self.origin = np.asarray(actor.center if origin is None else origin, dtype=float)
         self.actor_length = max(float(actor.GetLength()), 0.25)
         self.handles: list[pv.Actor] = []
         self.selected: pv.Actor | None = None
@@ -62,7 +87,10 @@ class TranslationWidget3D:
         self.pressing = False
         self.matrix = np.eye(4)
         self.observers: list[int] = []
+        # Kept for diagnostic/acceptance probes. Runtime hit-testing uses a
+        # DPI-aware screen-space distance so the visible arrow need not be widened.
         self.handle_picker = vtkPropPicker()
+        self.hit_tolerance_dip = 12.0
         colors = (
             pv.global_theme.axes.x_color,
             pv.global_theme.axes.y_color,
@@ -86,7 +114,6 @@ class TranslationWidget3D:
                 plotter.iren.add_observer('LeftButtonReleaseEvent', self._release, interactor_style_fallback=False),
             )
         )
-        plotter.render()
 
     @property
     def active_axis_index(self) -> int | None:
@@ -111,12 +138,32 @@ class TranslationWidget3D:
         world = np.linalg.inv(modelview) @ camera_coords
         return world[:3] * self.actor_length * 2
 
+    def hit_test_display(self, x: float, y: float, renderer) -> bool:
+        return self._pick_handle_at(float(x), float(y), renderer) is not None
+
+    def _pick_handle_at(self, x: float, y: float, renderer) -> pv.Actor | None:
+        if renderer is None:
+            return None
+        cursor = np.array((float(x), float(y)), dtype=float)
+        tolerance_px = self.hit_tolerance_dip * _device_pixel_ratio(self.plotter)
+        best_index: int | None = None
+        best_distance = float('inf')
+        arrow_length = self.actor_length * 0.75
+        for index, axis in enumerate(self.axes):
+            start = _world_to_display(renderer, self.origin + axis * arrow_length * 0.12)
+            end = _world_to_display(renderer, self.origin + axis * arrow_length)
+            distance = _distance_to_segment_2d(cursor, start, end)
+            if distance <= tolerance_px and distance < best_distance:
+                best_distance = distance
+                best_index = index
+        return None if best_index is None else self.handles[best_index]
+
     def _pick_handle(self, interactor) -> pv.Actor | None:
-        x, y = interactor.GetEventPosition()
         renderer = self.plotter.iren.get_poked_renderer()
-        self.handle_picker.Pick(x, y, 0, renderer)
-        picked = self.handle_picker.GetActor()
-        return picked if picked in self.handles else None
+        if renderer is None:
+            return None
+        x, y = interactor.GetEventPosition()
+        return self._pick_handle_at(float(x), float(y), renderer)
 
     def _move(self, interactor, _event) -> None:
         if self.pressing and self.selected is not None and self.initial_world is not None:
@@ -184,13 +231,14 @@ class RotationWidget3D:
         interact_callback: RotationCallback | None = None,
         release_callback: RotationCallback | None = None,
         cancel_callback: CancelCallback | None = None,
+        origin: tuple[float, float, float] | np.ndarray | None = None,
     ) -> None:
         self.plotter = plotter
         self.actor = actor
         self.interact_callback = interact_callback
         self.release_callback = release_callback
         self.cancel_callback = cancel_callback
-        self.origin = np.asarray(actor.center, dtype=float)
+        self.origin = np.asarray(actor.center if origin is None else origin, dtype=float)
         self.actor_length = max(float(actor.GetLength()), 0.25)
         self.radius = self.actor_length * 0.82
         # Axial vectors under reflection use det(C)*C = -C. These normals make a
@@ -234,18 +282,27 @@ class RotationWidget3D:
                 plotter.iren.add_observer('LeftButtonReleaseEvent', self._release, interactor_style_fallback=False),
             )
         )
-        plotter.render()
 
     @property
     def active_axis_index(self) -> int | None:
         return self.handles.index(self.selected) if self.selected in self.handles else None
 
-    def _pick_handle(self, interactor) -> pv.Actor | None:
-        x, y = interactor.GetEventPosition()
-        renderer = self.plotter.iren.get_poked_renderer()
-        self.handle_picker.Pick(x, y, 0, renderer)
+    def hit_test_display(self, x: float, y: float, renderer) -> bool:
+        return self._pick_handle_at(float(x), float(y), renderer) is not None
+
+    def _pick_handle_at(self, x: float, y: float, renderer) -> pv.Actor | None:
+        if renderer is None:
+            return None
+        self.handle_picker.Pick(int(round(x)), int(round(y)), 0, renderer)
         picked = self.handle_picker.GetActor()
         return picked if picked in self.handles else None
+
+    def _pick_handle(self, interactor) -> pv.Actor | None:
+        renderer = self.plotter.iren.get_poked_renderer()
+        if renderer is None:
+            return None
+        x, y = interactor.GetEventPosition()
+        return self._pick_handle_at(float(x), float(y), renderer)
 
     def _world_ray(self, interactor) -> tuple[np.ndarray, np.ndarray]:
         x, y = interactor.GetEventPosition()
