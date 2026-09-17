@@ -27,7 +27,7 @@ from htdt.cad_scene import (
 )
 from htdt.cad_wall_models import WallConstraintBinding, WallOpening
 from htdt.cad_walls import add_constraint_binding, add_opening, make_wall_topology
-from htdt.wall_editor import WallEditorWindow
+from htdt.native_cad import CadEditorWindow as WallEditorWindow
 
 if sys.platform != 'win32':
     raise SystemExit('This acceptance harness requires Windows.')
@@ -327,7 +327,6 @@ def run_a09(app: QApplication, root: Path) -> bool:
         if not reject_ok:
             return False
 
-        # Ambiguous split: GUI-created centered door crosses the midpoint, so split must not commit.
         ambiguous_wall_id = 'wall:v3->v4'
         if not select_wall(window, ambiguous_wall_id, app):
             print('A09_AMBIGUOUS_SELECT', False, window.selected_wall_id, flush=True)
