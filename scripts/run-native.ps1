@@ -10,7 +10,7 @@ if (-not (Test-Path $Python)) {
     throw "Missing .venv. Create a Python 3.12 venv and install backend first."
 }
 
-$Arguments = @("-m", "htdt.room_editor", "--document-id", $DocumentId)
+$Arguments = @("-m", "htdt.wall_editor", "--document-id", $DocumentId)
 if ($DataDir) {
     $Arguments += @("--data-dir", $DataDir)
 }
