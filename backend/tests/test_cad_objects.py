@@ -112,6 +112,38 @@ def test_add_duplicate_and_property_update_are_individual_undo_units() -> None:
         working.update_entity('speaker-fl-copy', entity_id='renamed')
 
 
+def test_batch_add_is_one_atomic_undo_unit() -> None:
+    working = WorkingDocument(make_f1_scene())
+    before_ids = tuple(entity.entity_id for entity in working.committed_document.entities)
+    screen = SceneEntity(
+        entity_id='screen-template',
+        kind='screen',
+        name='Screen',
+        position=Position3(x_m=3.0, y_m=0.2, z_m=1.3),
+        size_m=Size3(x_m=2.4, y_m=0.04, z_m=1.35),
+    )
+    seat = SceneEntity(
+        entity_id='seat-template',
+        kind='seat',
+        name='Seat',
+        position=Position3(x_m=3.0, y_m=3.0, z_m=0.45),
+        size_m=Size3(x_m=0.7, y_m=0.8, z_m=0.9),
+        acoustic_reference_offset_m=Offset3(z_m=0.65),
+    )
+
+    assert working.add_entities((screen, seat))
+    assert working.history_length == 1
+    assert tuple(entity.entity_id for entity in working.committed_document.entities)[-2:] == (
+        'screen-template',
+        'seat-template',
+    )
+    assert working.undo()
+    assert tuple(entity.entity_id for entity in working.committed_document.entities) == before_ids
+    assert working.redo()
+    assert working.committed_document.entity('screen-template') == screen
+    assert working.committed_document.entity('seat-template') == seat
+
+
 def test_n40_entities_round_trip_exactly_through_scene_repository(tmp_path: Path) -> None:
     document = SceneDocument(
         document_id='fixture-n40-roundtrip',
