@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from .cad_scene import (
     Position3, Quaternion4, SceneDocument, SceneEntity,
@@ -14,6 +14,7 @@ class EditStateError(RuntimeError):
 
 
 def _replace_entity(document: SceneDocument, replacement: SceneEntity) -> SceneDocument:
+    document.entity(replacement.entity_id)
     entities = tuple(replacement if item.entity_id == replacement.entity_id else item for item in document.entities)
     return document.model_copy(update={'entities': entities})
 
@@ -48,6 +49,8 @@ def _delete(document: SceneDocument, entity_id: str) -> SceneDocument:
 def _insert(document: SceneDocument, index: int, entity: SceneEntity) -> SceneDocument:
     if any(item.entity_id == entity.entity_id for item in document.entities):
         raise EditStateError(f'entity already exists: {entity.entity_id}')
+    if not 0 <= index <= len(document.entities):
+        raise EditStateError(f'entity insertion index out of range: {index}')
     entities = list(document.entities)
     entities.insert(index, entity)
     return document.model_copy(update={'entities': tuple(entities)})
@@ -110,6 +113,42 @@ class TransformEntitiesCommand:
 
     def revert(self, document: SceneDocument) -> SceneDocument:
         return _replace_entities(document, self.before)
+
+
+@dataclass(frozen=True)
+class AddEntityCommand:
+    entity: SceneEntity
+    index: int
+
+    @property
+    def is_noop(self) -> bool:
+        return False
+
+    def apply(self, document: SceneDocument) -> SceneDocument:
+        return _insert(document, self.index, self.entity)
+
+    def revert(self, document: SceneDocument) -> SceneDocument:
+        return _delete(document, self.entity.entity_id)
+
+
+@dataclass(frozen=True)
+class ReplaceEntityCommand:
+    before: SceneEntity
+    after: SceneEntity
+
+    def __post_init__(self) -> None:
+        if self.before.entity_id != self.after.entity_id:
+            raise EditStateError('replace entity command must preserve entity_id')
+
+    @property
+    def is_noop(self) -> bool:
+        return self.before == self.after
+
+    def apply(self, document: SceneDocument) -> SceneDocument:
+        return _replace_entity(document, self.after)
+
+    def revert(self, document: SceneDocument) -> SceneDocument:
+        return _replace_entity(document, self.before)
 
 
 @dataclass(frozen=True)
@@ -404,6 +443,56 @@ class WorkingDocument:
         command = RotateEntityCommand(entity_id, before, orientation)
         before_hash = scene_content_hash(self._document)
         self._document = self._history.push(command, self._document)
+        return scene_content_hash(self._document) != before_hash
+
+    def add_entity(self, entity: SceneEntity, *, index: int | None = None) -> bool:
+        if self.has_preview:
+            raise EditStateError('cannot add an entity while a preview is active')
+        validated = SceneEntity.model_validate(entity.model_dump(mode='python'))
+        insertion_index = len(self._document.entities) if index is None else int(index)
+        if not 0 <= insertion_index <= len(self._document.entities):
+            raise EditStateError(f'entity insertion index out of range: {insertion_index}')
+        if any(item.entity_id == validated.entity_id for item in self._document.entities):
+            raise EditStateError(f'entity already exists: {validated.entity_id}')
+        before_hash = scene_content_hash(self._document)
+        self._document = self._history.push(
+            AddEntityCommand(entity=validated, index=insertion_index),
+            self._document,
+        )
+        return scene_content_hash(self._document) != before_hash
+
+    def duplicate_entity(
+        self,
+        entity_id: str,
+        *,
+        new_entity_id: str,
+        name: str | None = None,
+        position: Position3 | None = None,
+    ) -> bool:
+        if self.has_preview:
+            raise EditStateError('cannot duplicate an entity while a preview is active')
+        source_index = next(index for index, entity in enumerate(self._document.entities) if entity.entity_id == entity_id)
+        source = self._document.entities[source_index]
+        payload = source.model_dump(mode='python')
+        payload['entity_id'] = new_entity_id
+        payload['name'] = name or f'{source.name} Copy'
+        if position is not None:
+            payload['position'] = position
+        duplicate = SceneEntity.model_validate(payload)
+        return self.add_entity(duplicate, index=source_index + 1)
+
+    def update_entity(self, entity_id: str, **updates: Any) -> bool:
+        if self.has_preview:
+            raise EditStateError('cannot update an entity while a preview is active')
+        if 'entity_id' in updates and updates['entity_id'] != entity_id:
+            raise EditStateError('entity_id cannot be changed')
+        before = self._document.entity(entity_id)
+        payload = before.model_dump(mode='python')
+        payload.update(updates)
+        payload['entity_id'] = entity_id
+        after = SceneEntity.model_validate(payload)
+        before_hash = scene_content_hash(self._document)
+        self._document = self._history.push(ReplaceEntityCommand(before=before, after=after), self._document)
         return scene_content_hash(self._document) != before_hash
 
     def delete_entity(self, entity_id: str) -> bool:
