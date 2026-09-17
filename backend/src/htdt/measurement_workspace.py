@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, QTimer
+from PySide6.QtCore import QSize, QTimer, Qt
 from PySide6.QtWidgets import QAbstractScrollArea, QDockWidget, QScrollArea, QSizePolicy, QWidget
 
 from .cad_repository import SceneRepository
@@ -100,19 +100,31 @@ class MeasurementWorkspaceWindow(MeasurementEditorWindow):
         self._unify_right_context_docks(dock)
 
     def _unify_right_context_docks(self, measurement_dock: QDockWidget) -> None:
-        """Use one CAD-style context stack instead of vertically splitting panels."""
+        """Rebuild all right-side context surfaces into one CAD-style tab stack."""
         titles = ('Inspector', 'オブジェクト詳細', '制約', '実測')
         docks_by_title = {
             candidate.windowTitle(): candidate
             for candidate in self.findChildren(QDockWidget)
             if candidate.windowTitle() in titles
         }
-        anchor = docks_by_title.get('Inspector', measurement_dock)
-        for title in titles:
-            candidate = docks_by_title.get(title)
-            if candidate is None:
-                continue
+        ordered = [docks_by_title[title] for title in titles if title in docks_by_title]
+        if not ordered:
+            return
+
+        # The base editors already created split rows before N60 exists. Qt keeps that
+        # split topology if tabifyDockWidget() is called in place, so the lower row can
+        # remain clipped below the main window even though every dock reports the same
+        # dock area. Remove and re-add the four alternative context surfaces first;
+        # this resets the split topology, after which tabification creates one row.
+        for candidate in ordered:
             candidate.setMinimumSize(0, 0)
+            self.removeDockWidget(candidate)
+        for candidate in ordered:
+            candidate.setFloating(False)
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, candidate)
+
+        anchor = docks_by_title.get('Inspector', ordered[0])
+        for candidate in ordered:
             if candidate is not anchor:
                 self.tabifyDockWidget(anchor, candidate)
         measurement_dock.raise_()
