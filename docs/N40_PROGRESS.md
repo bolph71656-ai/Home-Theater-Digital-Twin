@@ -1,7 +1,8 @@
 # N40 implementation progress
 
 Tracking: #55  
-Branch: `feat/n40-theater-objects`
+Branch: `feat/n40-theater-objects`  
+Merged: PR #56 → `16474b53403ec03f9fb819a0421928c2ea49be33`
 
 ## 2026-09-17 — start
 
@@ -10,7 +11,7 @@ Branch: `feat/n40-theater-objects`
 - Re-read the N40 roadmap and A10 acceptance contract before implementation.
 - Reviewed current `SceneEntity`, `WorkingDocument`, native editor, room editor, wall editor, and view-state contracts.
 - Reuse decision: keep `SceneEntity` / `SceneDocument`, command history, accepted move/rotate gizmos, `EditorViewState` hide/lock, and `CadEditorWindow` as product composition.
-- New N40 scope is limited to typed theater-object semantics, add/duplicate/property commands, palette/Inspector/rendering, persistence tests, and A10.
+- New N40 scope was limited to typed theater-object semantics, add/duplicate/property commands, palette/Inspector/rendering, persistence tests, and A10.
 - Browser UI remains frozen.
 - RDC was reserved for the final Windows A10 gate; all implementation changes were made on GitHub.
 
@@ -25,7 +26,7 @@ Branch: `feat/n40-theater-objects`
 - Added explicit `座席へ向ける` acoustic action. It updates only speaker `aim_xyz`, never body pose, and can update multiple speakers atomically in one Undo unit.
 - Added focused domain/repository tests for physical dimensions, acoustic references, atomic add/property commands, speaker aim, Undo/Redo, and save/reopen exactness.
 - Added `scripts/validate_n40_windows.py` plus viewport-aware `validate_n40_windows_gate.py` for the mouse-first A10 flow, and `validate_n40_precision_windows.py` for numeric dimension/role refinement and exact reopen.
-- Accidental placeholder Issues #57 and #58 were immediately closed as `not planned`; N40 tracking remains Issue #55 / PR #56.
+- Accidental placeholder Issues #57 and #58 were immediately closed as `not planned`; N40 tracking remained Issue #55 / PR #56.
 
 ## 2026-09-17 — final A10 iterations
 
@@ -37,7 +38,7 @@ The Windows gate was used to discover first-use friction and the product was cor
 - Staggered default insertion lanes for furniture, AV equipment, measurement points, and standalone speakers so newly added objects are not stacked on the seat or each other.
 - The repository-supported Python 3.12 `.venv` was used for the final gate; the machine's unrelated default Python 3.14 had no PySide6 installed.
 
-Final accepted code is `2e2a3f814276bc3fcd3f392addfd70a10efbe295`.
+Final accepted product code is `2e2a3f814276bc3fcd3f392addfd70a10efbe295`.
 
 GitHub Actions CI #220 (`35196621511`) passed on that code.
 
@@ -53,6 +54,13 @@ Owned Windows hardware A10 also passed on that code:
 
 Full evidence: `docs/N40_ACCEPTANCE_2026-09-17.md`.
 
+## 2026-09-17 — completion
+
+- PR #56 was marked ready after design, focused tests, CI, and Windows A10 were complete.
+- PR #56 merged to `main` as merge commit `16474b53403ec03f9fb819a0421928c2ea49be33`.
+- Issue #55 closed automatically with state reason `completed`.
+- N40 is complete. The roadmap's next milestone is N50 — constraint spatial visualization / A11.
+
 ## Implementation sequence
 
 1. ~~Extend N40 entity semantics and acoustic reference helper.~~
@@ -64,7 +72,7 @@ Full evidence: `docs/N40_ACCEPTANCE_2026-09-17.md`.
 7. ~~Complete final CI on accepted product code.~~
 8. ~~Run A10 core + numeric precision acceptance on owned Windows hardware using real mouse input.~~
 9. ~~Record acceptance evidence.~~
-10. Update `IMPLEMENTATION_STATUS.md`, mark PR ready, and merge.
+10. ~~Update implementation status, mark PR ready, and merge.~~
 
 ## Resolved design risks
 
