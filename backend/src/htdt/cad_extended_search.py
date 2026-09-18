@@ -100,7 +100,7 @@ class CadExtendedModelCapability(BaseModel):
             and self.model_id in {'rew-room-simulator', 'rew-roomsim'}
         ):
             raise ValueError(
-                'REW Room Simulator does not model speaker aim/toe-in; '
+                'REW Room Simulator does not model speaker acoustic aim; '
                 'aim_yaw_deg capability is forbidden'
             )
         if self.capability_sha256 != _digest(self.identity_payload()):
