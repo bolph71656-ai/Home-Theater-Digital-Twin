@@ -40,6 +40,8 @@ from .cad_search import (
 from .cad_search_models import CadCandidate, CadCandidateSetPage, CadSearchAxis, CadSearchSpec
 from .cad_search_repository import CadSearchRepository
 from .measurement_workspace import _MeasurementScrollArea
+from .cad_measurement_repository import CadMeasurementRepository
+from .cad_measurement_loop import build_measurement_plan
 from .native_editor import ROLE
 from .prediction_workspace import PredictionWorkspaceWindow
 
@@ -106,6 +108,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
     def __init__(self, repository: SceneRepository, document_id: str = F1_DOCUMENT_ID) -> None:
         self.search_repository = CadSearchRepository(repository)
         self.objective_repository = CadObjectiveRepository(repository, self.search_repository)
+        self.measurement_repository = CadMeasurementRepository(repository)
         self.search_selected_spec_id: str | None = None
         self.search_selected_candidate_id: str | None = None
         self.search_preview_candidate_id: str | None = None
@@ -130,6 +133,8 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_preview_button: QPushButton | None = None
         self.search_clear_preview_button: QPushButton | None = None
         self.search_apply_button: QPushButton | None = None
+        self.measurement_plan_button: QPushButton | None = None
+        self.measurement_plan_label: QLabel | None = None
         self.objective_list: QListWidget | None = None
         self.pareto_tree: QTreeWidget | None = None
         self.pareto_summary_label: QLabel | None = None
@@ -256,6 +261,14 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         candidate_actions.addWidget(self.search_apply_button)
         layout.addLayout(candidate_actions)
 
+        self.measurement_plan_button = QPushButton('現在の保存版を実測候補として記録')
+        self.measurement_plan_button.setToolTip('候補適用後にSceneを保存してから、候補とその正確なSceneRevisionをimmutableに結びます')
+        self.measurement_plan_button.clicked.connect(self.create_measurement_plan_for_selected_candidate)
+        layout.addWidget(self.measurement_plan_button)
+        self.measurement_plan_label = QLabel('実測候補未登録')
+        self.measurement_plan_label.setWordWrap(True)
+        layout.addWidget(self.measurement_plan_label)
+
         comparison_label = QLabel('Pareto比較 · objectiveは独立指標のまま保持します')
         comparison_label.setWordWrap(True)
         layout.addWidget(comparison_label)
@@ -286,6 +299,31 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self._unify_right_context_docks(dock)
         dock.raise_()
+
+    def create_measurement_plan_for_selected_candidate(self) -> None:
+        if self.search_selected_spec_id is None or self.search_selected_candidate_id is None:
+            self.statusBar().showMessage('探索仕様と候補を選択してください')
+            return
+        latest = self.repository.latest(self.document_id)
+        if latest is None or self.working is None or self.working.is_dirty:
+            self.statusBar().showMessage('候補適用後のSceneを保存してから実測候補を記録してください')
+            return
+        try:
+            plan = build_measurement_plan(
+                self.repository, self.search_repository,
+                search_spec_id=self.search_selected_spec_id,
+                candidate_id=self.search_selected_candidate_id,
+                applied_scene_revision_id=latest.revision_id,
+            )
+            self.measurement_repository.save_measurement_plan(plan)
+        except Exception as exc:
+            self.statusBar().showMessage(f'実測候補を記録できません · {exc}')
+            return
+        if self.measurement_plan_label is not None:
+            self.measurement_plan_label.setText(
+                f'planned · {plan.candidate_id[:12]} · Scene {plan.applied_scene_revision_id[:8]}'
+            )
+        self.statusBar().showMessage('実測候補をimmutable保存しました · 実際の配置変更と測定は人が行います')
 
     def refresh_pareto_comparison(self) -> None:
         spec_id = self.search_selected_spec_id
