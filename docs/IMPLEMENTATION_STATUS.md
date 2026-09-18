@@ -265,4 +265,5 @@ Issue #90で、実測待ちをソフトウェア完成のblockerにしないdeve
 - 次測定候補はnormalized residual uncertainty acquisitionで決め、単一の「音質総合点」は作らない。
 - SearchSpec SHA、candidate-set SHA、ValidationRecord SHA、algorithm/version、length scale、training/measured candidate、全proposalをimmutable保存する。
 - synthetic planはproduction recommendationを開かず、実室妥当性の主張に使わない。
+- native最適化dockにAdaptive Planner UIを統合し、ValidationRecord選択→scope/length scale/proposal上限→immutable plan保存→proposalの補正値/不確実性表示→candidate選択同期まで接続した。
 
