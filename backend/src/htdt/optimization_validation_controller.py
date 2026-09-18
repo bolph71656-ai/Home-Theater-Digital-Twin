@@ -117,7 +117,7 @@ class ValidationControllerMixin:
             self.statusBar().showMessage('検証条件へ追加する候補を選択してください')
             return
         if split not in {'calibration', 'holdout'}:
-            raise ValueError('campaign split must be calibration or holdout')
+            raise ValueError('検証条件の区分は調整用または検証用である必要があります')
         self.campaign_assignments[candidate_id] = split
         self._refresh_campaign_assignment_tree()
         self.statusBar().showMessage(
@@ -427,11 +427,11 @@ class ValidationControllerMixin:
             detail = detail_widget.text().strip()
             if state == 'pass' and not detail:
                 self.statusBar().showMessage(
-                    f'{code}をPASSにする場合は確認根拠を入力してください'
+                    f'{code}を合格にする場合は確認根拠を入力してください'
                 )
                 return
             if not detail:
-                detail = '未確認' if state == 'unverified' else '適用条件FAIL'
+                detail = '未確認' if state == 'unverified' else '適用条件不合格'
             checks.append(CadApplicabilityCheck(
                 code=code,
                 passed=state == 'pass',
