@@ -267,6 +267,13 @@ class CadSystemVariantRepository:
         baseline = self.scene_repository.get(variant.baseline_revision_id)
         if baseline is None:
             raise ValueError('SystemVariant baseline SceneRevision does not exist')
+        latest = self.scene_repository.latest(variant.document_id)
+        if (
+            latest is None
+            or latest.revision_id != baseline.revision_id
+            or latest.content_hash != baseline.content_hash
+        ):
+            raise ValueError('cannot apply SystemVariant from a stale baseline SceneRevision')
         proposed = materialize_system_variant(baseline, variant)
         proposed_hash = scene_content_hash(proposed)
         if proposed_hash == baseline.content_hash:
