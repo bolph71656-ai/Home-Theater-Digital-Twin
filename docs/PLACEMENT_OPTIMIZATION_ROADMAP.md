@@ -2,7 +2,7 @@
 
 > 改訂: 2026-09-19 / O90 robust/tolerance-aware optimization正式化
 > 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とし、任意形状solverの技術判断は[ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md)に従う。
-> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。**O90はplanned**で、nominal最適化に設置・入力ばらつき耐性を追加する。詳細authorityは[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
+> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。**O90はplanned**で、nominal最適化に設置・入力ばらつき耐性を追加する。trackingは[Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140)、詳細authorityは[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
 > 以下の既存座標/G00/G10契約を新Sceneへ接続する際は[編集契約](CAD_EDITOR_SPEC.md)のadapterを用いる。
 
 ## 1. 目的
