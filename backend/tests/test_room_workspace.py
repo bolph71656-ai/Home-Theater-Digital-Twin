@@ -9,7 +9,9 @@ from PySide6.QtWidgets import QApplication, QDockWidget, QFrame
 
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex
+from htdt.cad_input import CadAxis
 from htdt.room_geometry_input import RoomGeometryInputController
+from htdt.room_transform_input import RoomEntityTransformController
 from htdt.room_viewport import RoomOverlayState
 from htdt.room_workspace import (
     RoomWorkspace,
@@ -64,6 +66,43 @@ class GeometryFakeViewport(FakeRoomViewport):
         super().__init__(parent)
         self.interactor = self
         self.plotter = _FakePlotter()
+
+
+class _FakeRenderWindow:
+    def GetSize(self):
+        return (1200, 1000)
+
+
+class _FakeCamera:
+    def GetPosition(self):
+        return (0.0, -10.0, 0.0)
+
+    def GetFocalPoint(self):
+        return (0.0, 0.0, 0.0)
+
+    def GetViewUp(self):
+        return (0.0, 0.0, 1.0)
+
+    def GetParallelProjection(self):
+        return True
+
+    def GetParallelScale(self):
+        return 5.0
+
+    def GetViewAngle(self):
+        return 30.0
+
+
+class _TransformFakePlotter(_FakePlotter):
+    def __init__(self) -> None:
+        self.camera = _FakeCamera()
+        self.render_window = _FakeRenderWindow()
+
+
+class TransformFakeViewport(GeometryFakeViewport):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.plotter = _TransformFakePlotter()
 
 
 def test_room_controller_reuses_repository_working_document_and_recovery(tmp_path) -> None:
@@ -233,6 +272,79 @@ def test_room_geometry_sketch_commits_through_working_document_and_recovery(tmp_
     assert workspace.controller.document.room == original_room
 
     geometry.dispose()
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+def test_room_move_preview_is_visible_and_commits_as_one_undoable_command(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: TransformFakeViewport(parent),
+    )
+    workspace.select_entity("speaker-fl")
+    before = workspace.controller.committed_document.entity("speaker-fl").position
+
+    transform = RoomEntityTransformController(workspace, workspace.viewport)
+    workspace.attach_transform_input(transform)
+    transform.arm_move()
+    transform.set_axis(CadAxis.X)
+
+    assert transform.begin_at(workspace.rect().center()) is True
+    start = workspace.rect().center()
+    target = type(start)(start.x() + 100, start.y())
+    assert transform.drag_to(target) is True
+
+    preview = workspace.controller.document.entity("speaker-fl").position
+    committed_before_release = workspace.controller.committed_document.entity("speaker-fl").position
+    assert preview.x_m == before.x_m + 1.0
+    assert preview.y_m == before.y_m
+    assert committed_before_release == before
+
+    assert transform.finish_at(target) is True
+    committed = workspace.controller.committed_document.entity("speaker-fl").position
+    assert committed == preview
+    assert repository.recovery(F1_DOCUMENT_ID) is not None
+
+    assert workspace.undo() is True
+    assert workspace.controller.committed_document.entity("speaker-fl").position == before
+
+    transform.dispose()
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+def test_room_rotate_respects_axis_constraint_and_escape_cancels(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: TransformFakeViewport(parent),
+    )
+    workspace.select_entity("speaker-fl")
+    before = workspace.controller.committed_document.entity("speaker-fl").orientation
+
+    transform = RoomEntityTransformController(workspace, workspace.viewport)
+    workspace.attach_transform_input(transform)
+    transform.arm_rotate()
+    transform.set_axis(CadAxis.Z)
+    start = workspace.rect().center()
+    target = type(start)(start.x() + 60, start.y())
+    assert transform.begin_at(start) is True
+    assert transform.drag_to(target) is True
+
+    preview = workspace.controller.document.entity("speaker-fl").orientation
+    assert preview != before
+    assert transform.cancel() is True
+    assert workspace.controller.committed_document.entity("speaker-fl").orientation == before
+    assert not workspace.controller.working.has_preview
+
+    transform.dispose()
     workspace.close()
     workspace.deleteLater()
     app.processEvents()
