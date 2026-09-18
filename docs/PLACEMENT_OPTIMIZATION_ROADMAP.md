@@ -1,8 +1,8 @@
 # 配置探索・シミュレーション最適化ロードマップ
 
-> 改訂: 2026-09-18
+> 改訂: 2026-09-19 / O90 robust optimization＋O100 system expansion正式化
 > 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とし、任意形状solverの技術判断は[ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md)に従う。
-> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。
+> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。**O90はplanned**で、nominal最適化に設置・入力ばらつき耐性を追加する。trackingは[Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140)、詳細authorityは[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。**O100もplanned**で、現在存在しないspeaker/channelをProposed entityとして追加しsystem topology/equipment/placement自体を探索対象へ拡張する。trackingは[Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142)、詳細は[O100 System Expansion](O100_SYSTEM_EXPANSION_OPTIMIZATION.md)。
 > 以下の既存座標/G00/G10契約を新Sceneへ接続する際は[編集契約](CAD_EDITOR_SPEC.md)のadapterを用いる。
 
 ## 1. 目的
@@ -146,8 +146,10 @@ cache artifactとPredictionRunのexact SceneRevision bindingを分離する。�
 | O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。実室ではmeasurement前のValidation Campaign preregistrationを必須とし、calibration/holdout、共通target response、objective条件、sensitivity、repeatability、candidate separation、applicabilityを固定する。post-hoc splitやcampaign以前のmeasurementでは推薦gateを開かない |
 | O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **software実装済み / synthetic acceptance PASS**。O60 calibration残差のobjective別GP補正と不確実性から次測定候補を決定し、SearchSpec/candidate-set/ValidationRecordへimmutable保存する。`development_synthetic`は完全PASS synthetic fixtureを許可するがproduction gateを開かない。`production_owned_room`はcurrent campaign-backed eligible ValidationRecordを必須とする |
 | O80 | Extended Search / Adaptive Extended | 多席、多チャンネル、acoustic aim、physical toe-in、高さ等 | **software実装済み**。`aim_yaw_deg`と`body_yaw_deg`を明示capability付きで扱い、physical toe-inはorientation-aware hard constraintを再評価する。Adaptive Extended Planはbase XYZ + extended parameterをaxis span正規化してobjective別residual GP/uncertainty acquisitionへ入力し、exact O80 authorityへimmutable bindingする。synthetic laneはproduction gateを開かず、owned-room有効化はdirectional modelの独立O60 gate後だけ |
+| O90 | Robust / Tolerance-aware Optimization | 設置誤差・入力不確かさに対する性能分布、感度、feasible fraction、robust Pareto | **planned / 未実装**。immutable `RobustnessSpec`で±位置/aim/seat等のuncertaintyを定義し、nominal・local sensitivity・sampled envelope・明示distribution時のみpercentileを別objectiveとして保持する。有限samplingを真のworst-caseと呼ばない。perturbationごとにG10/O80 hard constraintを再評価し、infeasible sampleもevidenceとして保存する。software laneはsyntheticで検証可。production robustness recommendationは対象model/observable/perturbation domainのeligible O60/R180 evidenceを必須とする |
+| O100 | System Expansion / Virtual Channel Topology | 現在存在しないSL/SR等を仮想追加し、topology・equipment/source・配置範囲・aimを含めて比較 | **planned / 未実装**。baseline SceneRevisionを変更せずSystemVariant/ProposedEntitySpecを作り、role別allowed regionからG10/O10/O80でcandidate生成。source/directivity/SPL等はcapability/provenance付きEquipmentDefinitionへbindingし、coverage/SPL/FR等は成立するobjectiveだけ評価する。3.0.2 vs 5.0.2等をPareto比較し、selected proposal→As-built→Measuredをappend-only lineageで保持。O90 robustnessとO60/R180 gateを再利用する |
 
-O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。
+O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。O90はO10〜O80を置換せずnominal候補へrobustness evidenceを追加し、O100はbaseline topologyを壊さずProposed system variantを探索へ追加する後続milestoneとする。
 
 ## 6. 探索空間と制約
 
@@ -199,6 +201,42 @@ G00でpolygon演算にShapely 2.1.2をpinした。CPython 3.12 / Windows x86-64 
 | 実装コスト | 現在位置からの移動量 | 音響指標と別目的として扱う |
 
 標準UIは目的ベクトルとPareto集合を表示する。ユーザーが重み付けを指定した場合は並べ替えを提供してよいが、その結果を「真の最適」と表示しない。
+
+### 7.1 O90 robust objective
+
+O90ではnominal objectiveを残したまま、明示したuncertainty/toleranceに対する派生指標を独立objectiveとして追加できる。
+
+例:
+
+- nominal objective;
+- nominalからのdegradation;
+- local sensitivity;
+- sampled range / sampled adverse value;
+- explicit distributionがある場合だけadverse percentile / exceedance probability;
+- feasible-sample fraction / constraint violation rate.
+
+`±20 mm`のようなbounded intervalだけから確率分布を捏造しない。有限sampleの最大/最小は`sampled_worst`とし、数学的・探索的に保証していない`worst_case`と呼ばない。
+
+robust Paretoでも単一scoreへ縮約しない。例えば「nominal FRはAが優位、±20 mm耐性はBが優位」を同時に保持する。詳細は[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
+
+### 7.2 O100 system topology / expansion objective
+
+O100では「存在しているspeakerをどこへ動かすか」だけでなく、**どのroleを追加するか・どの機種/source modelを使うか・どのinstallation zoneへ置くか**を明示的なdesign variableとして扱える。
+
+例:
+
+- baseline 3.0.2を保持;
+- `+SL/SR` の5.0.2 SystemVariantを派生;
+- SL/SRそれぞれにallowed/exclusion、高さ、pair symmetry、aim範囲を指定;
+- EquipmentDefinitionをbinding;
+- feasible placementをO10/O80で生成;
+- layout/coverage/SPL/FR等、現在のcapabilityで成立するobjectiveだけをO30へ追加;
+- O40 Paretoでbaselineとproposalを比較;
+- surviving proposalをO90でtolerance評価。
+
+baselineにSL/SRが存在しないことをresponse=0として数値比較しない。channel topologyの差はSystemVariantとして保持する。multi-channel acoustic comparisonはper-channel transferまたはrouting/gain/delay/filterを固定した明示excitation scenarioだけで行い、無関係channelを未定義coherent sumにしない。
+
+詳細は[O100 System Expansion](O100_SYSTEM_EXPANSION_OPTIMIZATION.md)。
 
 ## 8. 実測閉ループ
 
@@ -281,6 +319,13 @@ ROM/adjointはO-series production gateの依存にしない。採用する場合
 - MeasurementPlan: 実測する候補と手順。
 - ValidationRecord: 予測対実測、保留配置、感度分析、判定根拠。
 - AdaptiveModel: 学習Measurement、特徴量、モデル版、不確実性情報。
+- RobustnessSpec: base candidate-set/model/objective、uncertainty axis/model/correlation、sampling/fidelity/budget、算法版。
+- PerturbationSample: candidate、exact delta、resulting Scene/config identity、feasibility、PredictionRun、ObjectiveVector、failure/reuse provenance。
+- RobustnessEvaluation: nominal、sensitivity、sampled envelope、explicit distribution時のpercentile、feasible fraction、robust objective/provenance。
+- SystemVariant: baseline SceneRevisionから派生したtopology/equipment/placement構成。current/proposed/as-built/measured stateとexact diffを保持。
+- TopologySearchSpec: add/remove/replace可能なrole/group、installation zone、equipment alternative等を明示。
+- ProposedEntitySpec: 未導入speaker等のrole、physical envelope、source/equipment、placement/aim constraint、provenance。
+- ChannelRoleBinding / EquipmentDefinition reference: role/layout-profileとsource capabilityを名前だけでなくversion/provenance付きでbinding。
 
 予測結果を再計算して過去の表示を上書きしない。再計算は新しいPredictionRunとして保存し、旧結果から新結果への参照を持てるようにする。
 
@@ -294,6 +339,7 @@ ROM/adjointはO-series production gateの依存にしない。採用する場合
 | 候補詳細 | 配置、予測曲線、既存実測を重ねる | モデル版、入力Context、警告 |
 | 測定キュー | 実測対象を選ぶ、完了測定を対応付ける | 候補ID、変更点、測定状態 |
 | モデル検証 | 予測対実測、残差、保留配置を見る | 学習/検証区分、適用帯域、感度 |
+| ばらつき耐性 / O90 | 設置誤差axis・範囲を設定し、nominal対robust候補を比較 | nominal値、感度、sampled/percentile semantics、feasible fraction、model/validation scope |
 
 3Dは候補理解を助ける表示であり、探索計算の必須UIにしない。数値表、平面図、グラフだけでも同じ候補を再現できることを優先する。
 
@@ -315,6 +361,10 @@ ROM/adjointはO-series production gateの依存にしない。採用する場合
 - frequency-domain resultからIRを得る場合は、周波数grid/範囲、位相、正規化、時間span、再構成法を固定して遅延既知transferと打切りfixtureを検証する。FR合格をIR合格や広帯域decayへ転用しない。
 - R160ではoverlap bandのlevel/energy continuity、direct-arrival timing、unsupported high-band phaseを生成しないことを検証する。
 - CPU/GPU backend差は同一authority inputで数値許容差を定義し、device/backend/versionを保存する。
+- O90では同一RobustnessSpec/seedから同一sample identityを再生成し、bounded intervalだけではpercentileを生成しない。
+- O90ではperturbationでhard constraint違反になったsampleを捨てず、feasible fraction/violation evidenceへ含める。
+- O90の有限sample最大/最小はsampled worstとして表示し、未証明のworst-caseへ昇格しない。
+- O90 production robust recommendationは対象model/observable/perturbation domainのeligible O60/R180 evidenceが無ければfail-closedにする。
 
 ## 13. 自動推薦を止める条件
 
@@ -327,5 +377,7 @@ ROM/adjointはO-series production gateの依存にしない。採用する場合
 - 必要な部屋形状、境界条件、チャンネル対応が不明である。
 - 非矩形実室に対し、矩形近似モデルしか検証できていない。
 - feasible regionが空、または候補数が少なすぎて探索結果が制約境界だけで決まる。
+- O90で小さな現実的perturbationにより候補順位が不安定だが、そのrobustness評価が未完了である。
+- O90のproduction robustness claimに必要なO60/R180 sensitivity/applicability evidenceが不足している。
 
 この停止条件は失敗ではなく、モデルの信頼範囲を越えて断定しないための通常動作とする。

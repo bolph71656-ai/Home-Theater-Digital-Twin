@@ -1,7 +1,7 @@
 {
-  "schema_version": "r100a-1",
+  "schema_version": "r100a-2",
   "manifest_id": "htdt-issue-101-r100a-benchmark-authority",
-  "revision": 1,
+  "revision": 2,
   "purpose": "Freeze solver-neutral geometry, boundary/material, source/receiver/environment, numerical comparison, observable/tolerance and resource contracts before R100B solver bakeoff.",
   "hard_gates": [
     {
@@ -240,7 +240,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -570,7 +571,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -604,7 +606,7 @@
           "tolerance": {
             "absolute": 0.02,
             "relative": 0.02,
-            "phase_deg": 0,
+            "phase_deg": null,
             "null_mask_below_db": null,
             "statistical_stddev_max": null,
             "minimum_difference": null
@@ -626,7 +628,8 @@
       "random_seed": null,
       "notes": [
         "Refinement parameter and interpolation location must be recorded by the adapter.",
-        "Finite-time/FR postprocessing must use the declared source normalization and time reference."
+        "Finite-time/FR postprocessing must use the declared source normalization and time reference.",
+        "Complex field convergence uses complex RMS absolute/relative error; phase is not double-scored as a separate zero-degree tolerance."
       ]
     },
     {
@@ -857,7 +860,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -1248,7 +1252,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -1696,7 +1701,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -2012,7 +2018,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -2299,7 +2306,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -2798,7 +2806,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -3087,7 +3096,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",
@@ -3347,7 +3357,8 @@
         "temperature_c": 20,
         "sound_speed_m_s": 343,
         "relative_humidity_percent": 50,
-        "pressure_pa": 101325
+        "pressure_pa": 101325,
+        "density_kg_m3": 1.2
       },
       "comparison": {
         "coordinate_system": "x_right_y_rear_z_up",

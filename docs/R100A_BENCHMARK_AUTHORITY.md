@@ -1,8 +1,16 @@
 # R100A Acoustic Benchmark Authority
 
 > Issue #101 / R-series first implementation slice  
-> Schema: `r100a-1`  
+> Schema: `r100a-2`  
 > Canonical machine-readable manifest: `benchmarks/acoustics/r100a_manifest.json`
+
+## Revision 2 pressure authority correction
+
+R100B pressure-field work exposed an omission in revision 1: the research contract required both density and sound speed to be fixed, but `BenchmarkEnvironment` did not carry density. Revision 2 makes `density_kg_m3` mandatory and fixes the canonical fixture density at 1.2 kg/m3. This is required for adapters whose native state is not pressure; for example, PFFDTD evolves acoustic velocity potential and HTDT converts it using `P/Q = -i*omega*rho*Phi/Q` under the manifest Fourier convention.
+
+The complex-pressure convergence observable continues to use the original 0.02 Pa absolute and 2% relative tolerances. Its redundant `phase_deg: 0` field was removed because phase is already contained in the complex RMS error; keeping a second exact-zero-degree requirement would contradict an unsampled numerical convergence test.
+
+Revision 2 changes the manifest semantic SHA-256 intentionally. Revision-1 R100B artifacts remain historical records, but they cannot satisfy current solver-selection gates until replayed against revision 2.
 
 ## Purpose
 
@@ -18,7 +26,7 @@ The implementation is intentionally backend-independent:
 - `AcousticObstacle` represents participating solid/thin objects separately from editor visibility.
 - wave material capability and geometric material capability are independent.
 - phase-bearing wave impedance is explicit complex authority; it is never synthesized from scalar absorption.
-- source excitation/normalization, receiver calibration/timing and environment are part of each fixture.
+- source excitation/normalization, receiver calibration/timing and environment, including explicit air density, are part of each fixture.
 - coordinate system, Fourier sign, time zero, precision, interpolation, frequency/time sampling, window and filter are fixed in the numerical comparison contract.
 - expected observables carry quantity-specific tolerances.
 - correctness hard gates are separate from compile/solve/postprocess/resource budgets.

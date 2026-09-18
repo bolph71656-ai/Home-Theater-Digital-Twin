@@ -293,7 +293,7 @@ measurementとsceneの相互selectionは維持し、必要なら小さい3D cont
 
 ## 9. Optimize workspace
 
-現行一枚scroll panelを廃止し、少数のsub-contextへ分ける。
+現行一枚scroll panelを廃止し、少数のsub-contextへ分ける。O100では既存systemの配置だけでなく、現在存在しないspeaker/channelをProposed entityとして追加したSystemVariantも同じworkspaceで比較する。
 
 ### Setup
 - movable entities
@@ -301,16 +301,39 @@ measurementとsceneの相互selectionは維持し、必要なら小さい3D cont
 - objective selection
 - model / valid band
 
+### 構成比較 / O100
+- baseline topology（例: current 3.0.2）
+- proposed topology（例: +SL/SRで5.0.2）
+- Proposed speaker role
+- EquipmentDefinition / source capability
+- role別配置可能範囲
+- add/remove/replace差分
+- objective availability / unavailable reason
+- current / proposed / as-built / measured state
+
 ### Candidates
 - list/table + spatial preview
 - filter
 - failure reason
+- proposed entityはcurrent/as-builtと異なるghost/outline + 「仮想」/「提案」badge
+- topology/equipment/placement identityを同じcandidate詳細で確認
 
 ### Compare
 - objective vectors
 - Pareto
 - selected candidate A/B
 - confidence/uncertainty
+- nominal性能とO90ばらつき耐性を別指標で比較
+
+### ばらつき耐性 / O90
+- 設置誤差axisと範囲
+- local sensitivity
+- sampled envelope
+- 明示distributionがある場合だけpercentile
+- feasible fraction / constraint violation
+- 3D tolerance / aim overlay
+- sampled evidenceと近似envelopeを区別
+- overall robustness scoreは作らない
 
 ### Measure / Validate
 - MeasurementPlan
@@ -686,6 +709,8 @@ UI簡略化のためにdomain authorityを弱めない。
 - contextual tools
 - selection Inspector
 - object palette
+- O100用にspeaker追加時のcurrent/proposed stateとrole/source modelを扱えるinterfaceを維持
+- 「仮想スピーカーとして追加」「配置可能範囲を設定」をRoom/Optimizeの共通authorityへ接続
 - standard CAD mouse/keyboard shortcut implementation
 - MMB pan / Shift+MMB orbit / wheel zoom / RMB context menu
 - neutral scene lighting / low-contrast grid / selection outline
@@ -697,8 +722,11 @@ UI簡略化のためにdomain authorityを弱めない。
 - plots/cards/tablesをpage layout化
 
 ### UX140 — Optimize
-- Setup / Candidates / Compare / Measure-Validate
+- Setup / 構成比較 / Candidates / Compare / ばらつき耐性 / Measure-Validate
 - current monolithic right scroll panelを廃止
+- O90Dではnominal/robust比較、感度、sampled/percentile semantics、feasible fraction、3D tolerance overlayを同workspaceへ統合
+- O100Gではcurrent topologyから仮想SL/SR等を追加し、配置範囲・機種/source modelを設定→候補計算→構成比較→提案適用へ進める
+- proposed speakerはinstalled/measured entityと視覚的に区別し、applyしても「設置済み」とは扱わない
 
 ### UX150 — visual / motion / language / perceived-quality polish
 - dark-first appearanceをauthoritativeにfreeze

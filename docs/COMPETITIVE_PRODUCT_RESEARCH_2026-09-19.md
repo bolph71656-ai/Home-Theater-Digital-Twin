@@ -471,11 +471,13 @@ Useful behavior:
 
 ### K. Robust optimization / tolerance analysis
 
-**Priority: high-value differentiator**
+**Status: promoted to canonical O90 plan / high-value differentiator**
+
+Detailed authority: [O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)
 
 Competitors generally present exact geometry/equipment as if installation were exact. HCD itself notes that installation variance and equipment tolerances cause real measurements to diverge.
 
-HTDT should eventually support uncertainty/tolerance envelopes:
+O90 formally supports a staged path to uncertainty/tolerance envelopes:
 
 - speaker position ±x cm;
 - aim ±x°;
@@ -710,7 +712,7 @@ Do not attempt to reproduce Dirac/Trinnov before the forward model, measurement 
 9. richer room primitives + 3D import path;
 10. design/as-built/measured state model;
 11. calibration plan + device-neutral export;
-12. robust/tolerance optimization.
+12. robust/tolerance optimization — **promoted to O90 canonical milestone**.
 
 ### P2 — make it complete as a home-theater design tool
 
