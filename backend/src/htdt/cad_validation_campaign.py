@@ -81,10 +81,10 @@ class CadValidationCampaign(BaseModel):
     trend_min_comparable_pairs: int = Field(default=1, ge=1)
     trend_min_agreement_ratio: float = Field(default=0.75, ge=0, le=1)
 
-    sensitivity: tuple[CadValidationCampaignSensitivity, ...] = ()
-    repeatability: tuple[CadValidationCampaignRepeatability, ...] = ()
-    separation: tuple[CadValidationCampaignSeparation, ...] = ()
-    required_applicability_codes: tuple[str, ...] = ()
+    sensitivity: tuple[CadValidationCampaignSensitivity, ...] = Field(min_length=1)
+    repeatability: tuple[CadValidationCampaignRepeatability, ...] = Field(min_length=1)
+    separation: tuple[CadValidationCampaignSeparation, ...] = Field(min_length=1)
+    required_applicability_codes: tuple[str, ...] = Field(min_length=1)
 
     created_at_utc: str = Field(min_length=1)
     campaign_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
@@ -101,8 +101,13 @@ class CadValidationCampaign(BaseModel):
         split_by_candidate = {item.candidate_id: item.split for item in self.candidates}
         if 'calibration' not in split_by_candidate.values():
             raise ValueError('validation campaign requires calibration candidates')
-        if 'holdout' not in split_by_candidate.values():
-            raise ValueError('validation campaign requires holdout candidates')
+        holdout_ids = [
+            candidate_id
+            for candidate_id, split in split_by_candidate.items()
+            if split == 'holdout'
+        ]
+        if len(holdout_ids) < 2:
+            raise ValueError('validation campaign requires at least two holdout candidates')
 
         if len(self.objective_ids) != len(set(self.objective_ids)):
             raise ValueError('validation campaign objective ids must be unique')
