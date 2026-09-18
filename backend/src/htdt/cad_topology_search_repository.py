@@ -104,7 +104,7 @@ class CadTopologySearchRepository:
                     topology_search_id TEXT NOT NULL,
                     option_id TEXT NOT NULL,
                     template_variant_id TEXT NOT NULL,
-                    PRIMARY KEY(topology_search_id, option_id),
+                    UNIQUE(topology_search_id, option_id),
                     FOREIGN KEY(topology_search_id)
                         REFERENCES cad_topology_spaces(topology_search_id),
                     FOREIGN KEY(template_variant_id)
