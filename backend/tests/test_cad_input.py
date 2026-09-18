@@ -309,6 +309,7 @@ def test_scene_shortcuts_are_disabled_while_text_or_numeric_input_has_focus() ->
         viewport=viewport,
         registry=registry,
         viewport_port=port,
+        command_bindings=CadCommandBindings(move=lambda: None),
     )
     host.show()
     app.processEvents()
@@ -318,7 +319,7 @@ def test_scene_shortcuts_are_disabled_while_text_or_numeric_input_has_focus() ->
         for command_id, shortcut in controller.shortcuts._shortcuts
         if command_id == "room.transform.move"
     )
-    assert move_shortcut.context() is Qt.ShortcutContext.WidgetWithChildrenShortcut
+    assert move_shortcut.context() == Qt.ShortcutContext.WidgetWithChildrenShortcut
 
     search.setFocus()
     app.processEvents()
