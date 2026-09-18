@@ -166,7 +166,9 @@ synthetic laneの目的はUI、保存、stale guard、adaptive algorithm、exten
 
 2026-09-18、PR #92/#93/#94でこのsoftware-completion laneを完了した。final authorityはPR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8`、CI #548 / run `35313405578` PASS、Windows Release Artifact #93 / run `35313405629` PASS。以後の未完了事項はIssue #83の実室owned-room evidence gateであり、software実装不足ではない。
 
-現行O70のGP feature vectorはbase O10 SearchSpecのXYZ axisだけであり、O80のextended parameterをadaptive acquisitionへ含めない。O70とO80の個別software pathはcompleteだが、両者を結合したAdaptive Extended Searchは別の将来拡張として扱う。
+現行O70のGP feature vectorはbase O10 SearchSpecのXYZ axisだけであり、O80のextended parameterをadaptive acquisitionへ含めない。O70とO80の個別software pathはcompleteだが、両者を結合したAdaptive Extended SearchはIssue #99で追跡する。
+
+O80Pでは`body_yaw_deg`をphysical cabinet toe-inとして追加する。body yawは`orientation`を回転し、同じyaw deltaを`aim_xyz`へ適用してbody/aim関係を維持する。新規O10 SearchSpecはsource orientationの実筐体XY footprintをconstraint snapshotへ固定し、O80P候補では回転後footprintでroom/allowed/exclusion/wall/envelope pair constraintを再評価する。
 
 ## 9. 適応探索の導入条件
 
