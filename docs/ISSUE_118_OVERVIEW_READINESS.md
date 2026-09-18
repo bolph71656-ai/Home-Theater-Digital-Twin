@@ -4,16 +4,16 @@ Issue #118 の「概要」は、機能一覧ではなく、保存済み project 
 
 ## Scope
 
-実装は `backend/src/htdt/overview_readiness.py` に閉じる。
+readiness ruleは `backend/src/htdt/overview_readiness.py` に閉じ、描画だけを `backend/src/htdt/overview_workspace.py` が担当する。
 
 - Scene / DB を変更しない。
-- repository を Overview 内部で construct しない。既存 instance を read protocol として注入する。
+- repository を Overview widget/service 内部で construct しない。application composition root が既存 repository class を所有し、read protocol として注入する。
 - domain gate を再計算しない。
-- Qt widget、shell、router、workspace mount は実装しない。
+- readiness serviceはQt/shell/routerを知らない。Qt widgetはview modelを描画し、navigationはshared deep-linkをshellへ委譲する。
 - UUID / hash / schema / job ID を user-facing copy に埋め込まない。
 - entity ID は navigation metadata として保持できるが、通常表示文字列には含めない。
 
-Agent A は `OverviewReadinessService.read(document_id)` が返す `OverviewReadinessViewModel` を描画すればよい。Overview layer 自体は navigation を実行しない。
+`OverviewWorkspace` は `OverviewReadinessService.read(document_id)` が返す `OverviewReadinessViewModel` を描画する。Overview layer 自体は navigation authorityを持たず、shared `WorkspaceDeepLink` をshellへ渡す。
 
 ## View model
 
@@ -26,7 +26,7 @@ Agent A は `OverviewReadinessService.read(document_id)` が返す `OverviewRead
 - `optimization_ready`: candidate/optimization setup へ進めるか
 - 各 action の `OverviewNavigationTarget`: `workspace / subsection / entity_id`
 
-navigation target は router implementation ではなく transport data である。Agent A の canonical context と合わせて次を使用する。
+navigation target は router implementation ではなく transport data である。`workflow_navigation.py` のcanonical contextと合わせて次を使用する。
 
 | 状態 | workspace | subsection |
 | --- | --- | --- |
@@ -106,9 +106,9 @@ Overview は複数状態を同時に表示しても primary action は 1 個に�
 
 validation の `disabled` は「自動推薦」を block する authority であり、candidate exploration 自体を禁止する意味には使わない。このため `optimization_ready=True` と validation blocker は同時に成立し得る。
 
-## Agent A integration
+## Shell integration
 
-Agent A は repository/service instance を application composition 側から注入する。
+`native_cad.py` のapplication composition rootが既存repository classを所有し、serviceへ注入する。
 
 ```python
 overview = OverviewReadinessService(
@@ -126,17 +126,17 @@ view_model = overview.read(
 
 重要事項:
 
-- Overview のためだけに repository を新規 construct しない。
-- `next_action.target.workspace` を Agent A の `WorkflowShellWindow.navigate()` へ渡す。
-- `subsection` があれば `select_context()` へ渡す。
+- Overview widget/service自身はrepositoryをconstructしない。composition rootでのみ既存repository classを組み立てる。
+- `next_action.target` はshared `WorkspaceDeepLink` として `WorkflowShellWindow.handle_deep_link()` へ渡す。
+- `subsection` はshellのcanonical context selectionへ渡す。
 - `entity_id` は destination workspace の selection API が受け取る。shell/router は domain entity を解釈しない。
 - view refresh は save/import/prediction/validation 更新後に呼ぶ。Overview は event source や job lifecycle を所有しない。
 
-## Parallel-agent integration note
+## Navigation contract
 
-2026-09-18 の並列 branch 確認時点で Agent A は workspace ID に `measurement`、Agent C command branch は `measurements` を使用している。Overview は Agent A が組み込む interface であるため `measurement` に合わせた。
-
-この命名差は本 PR の scope 外であり、command system / shell integration 時に 1 つの canonical ID へ統合する。Overview 側で両方を受け入れる alias や第二の router authority は作らない。
+Shell / command / Overview は `backend/src/htdt/workflow_navigation.py` の
+`WorkspaceId` / `WorkspaceDeepLink` を共有する。canonical workspace ID は
+`overview / room / measurement / optimization` であり、aliasや第二authorityは作らない。
 
 ## Verification
 
