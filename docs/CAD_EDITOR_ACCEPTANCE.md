@@ -89,6 +89,9 @@ Issue #118は既存A01〜A15のdomain/editor correctnessを置き換えない。
 | UX-A09 / UX150 | dark RoomでF2/F4をViewing/Edit/Acoustics focus modeに切替え、orbit/select/drag/overlay比較 | room edge・surface orientation・speaker/seat・selection/gizmoが背景から識別可能。grid/labels/chromeがgeometryより目立たず、overlayを重ねても主対象を見失わない |
 | UX-A10 / UX150 | hover→press→drag→commit/cancel、Inspector selection変更、workspace/context移動を連続実行 | feedbackが一貫し、layout jumpやfocus lossがない。motionは因果関係を示すだけで、操作を待たせない。interrupt可能 |
 | UX-A11 / UX150 | FR/heatmap/waterfallをdark appearanceでmeasured/predicted/stale/warning付き表示 | trace/grid/textが読め、scientific colormapとselection/warning colorが競合しない。色だけに依存せず状態を識別できる |
+| UX-A12 / UX120 | 3D viewportで中button drag→Shift+中button drag→wheel→右click、M/R/F/Home、Esc/Enter、Ctrl+Z/Y/S/Dを連続実行 | MMB=pan、Shift+MMB=orbit、wheel=zoom、RMB=contextが競合なく成立。shortcutはtextbox focus中にsceneへ誤発火せず、tool hint/menuの表示と一致 |
+| UX-A13 / UX150 | 概要/部屋/測定/最適化、menu、tooltip、empty/blocked/error stateを巡回 | GUIは日本語が基本。内部class/job/schema名や不要な英語labelを露出しない。REW/FR/SPL/RT60/CPU/GPU/CAD/3D/dB/Hz等の合理的な英語・略語例外は一貫して使用 |
+| UX-A14 / UX160 | 初見ユーザーにshortcut一覧を事前提示せず、部屋でpan/orbit/zoom/move/rotate/fitを実施 | 主要操作はtoolbar tooltip/context hintから発見でき、MMB navigationは一般CAD操作として自然に完遂できる。shortcutを知らなくてもUI操作でも同じcommandへ到達できる |
 
 ### UX visual evidence
 
@@ -119,3 +122,8 @@ headless screenshotは補助資料にできるが、Windows実機mouse/focus/DPI
 - hover/pressed/focus/disabled/selectedの区別が曖昧
 - decorative blur/glassがplot/table/textの可読性を下げる
 - animationが操作完了を待たせる、または常時動いて注意を奪う
+- 右drag orbitと右click contextが競合する等、navigation gestureが曖昧
+- 中button pan / Shift+中button orbit / wheel zoomが一貫して使えない
+- button/menu/navigationに不要な英語が残り、日本語と英語が無規則に混在する
+- 直訳調の長い日本語でbutton/panelが肥大化する
+- 英語placeholderでlayout gateを通し、日本語実文字列でclippingする
