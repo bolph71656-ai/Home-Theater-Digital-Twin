@@ -433,16 +433,25 @@ def restore_backup(
                 database_path=live_database,
                 manifest=manifest,
             )
-        except Exception:
+        except Exception as restore_error:
+            rollback_error: Exception | None = None
             try:
                 _remove_managed_data(data_dir)
                 if moved_database and (rollback_root / DATABASE_NAME).exists():
                     os.replace(rollback_root / DATABASE_NAME, data_dir / DATABASE_NAME)
                 if moved_assets and (rollback_root / 'measurement-assets').exists():
                     os.replace(rollback_root / 'measurement-assets', data_dir / 'measurement-assets')
-            finally:
+            except Exception as exc:
+                rollback_error = exc
+
+            if rollback_error is None:
                 shutil.rmtree(rollback_root, ignore_errors=True)
-            raise
+                raise
+
+            raise RuntimeError(
+                'restore failed and rollback could not be completed; '
+                f'original managed data is retained at {rollback_root}: {rollback_error}'
+            ) from restore_error
         else:
             shutil.rmtree(rollback_root, ignore_errors=True)
         return manifest, pre_backup
