@@ -197,6 +197,15 @@ class CadObjectiveRepository:
                 ),
             )
 
+    def find_pareto_set_by_sha(self, search_spec_id: str, pareto_sha256: str) -> CadParetoSet | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_pareto_sets WHERE search_spec_id=? AND pareto_sha256=? '
+                'ORDER BY seq DESC LIMIT 1',
+                (search_spec_id, pareto_sha256),
+            ).fetchone()
+        return None if row is None else CadParetoSet.model_validate_json(row['payload_json'])
+
     def get_pareto_set(self, pareto_set_id: str) -> CadParetoSet | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -204,6 +213,20 @@ class CadObjectiveRepository:
                 (pareto_set_id,),
             ).fetchone()
         return None if row is None else CadParetoSet.model_validate_json(row['payload_json'])
+
+    def latest_evaluations_by_candidate(
+        self,
+        search_spec_id: str,
+    ) -> tuple[CadObjectiveEvaluation, ...]:
+        """Return the latest immutable evaluation for each candidate, preserving candidate first-seen order."""
+        evaluations = self.list_evaluations(search_spec_id)
+        order: list[str] = []
+        latest: dict[str, CadObjectiveEvaluation] = {}
+        for evaluation in evaluations:
+            if evaluation.candidate_id not in latest:
+                order.append(evaluation.candidate_id)
+            latest[evaluation.candidate_id] = evaluation
+        return tuple(latest[candidate_id] for candidate_id in order)
 
     def list_pareto_sets(self, search_spec_id: str) -> tuple[CadParetoSet, ...]:
         with self._connect() as connection:

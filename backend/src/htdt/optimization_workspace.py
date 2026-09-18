@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QTreeWidget,
+    QListWidget,
+    QListWidgetItem,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -26,6 +28,8 @@ from PySide6.QtWidgets import (
 
 from .analysis_markers import render_analysis_marker_cloud
 from .cad_repository import SceneRepository, SceneRevision
+from .cad_objectives import build_pareto_set
+from .cad_objective_repository import CadObjectiveRepository
 from .cad_scene import F1_DOCUMENT_ID
 from .cad_search import (
     apply_candidate_positions,
@@ -36,6 +40,8 @@ from .cad_search import (
 from .cad_search_models import CadCandidate, CadCandidateSetPage, CadSearchAxis, CadSearchSpec
 from .cad_search_repository import CadSearchRepository
 from .measurement_workspace import _MeasurementScrollArea
+from .cad_measurement_repository import CadMeasurementRepository
+from .cad_measurement_loop import build_measurement_plan, complete_measurement_plan
 from .native_editor import ROLE
 from .prediction_workspace import PredictionWorkspaceWindow
 
@@ -101,6 +107,8 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
 
     def __init__(self, repository: SceneRepository, document_id: str = F1_DOCUMENT_ID) -> None:
         self.search_repository = CadSearchRepository(repository)
+        self.objective_repository = CadObjectiveRepository(repository, self.search_repository)
+        self.measurement_repository = CadMeasurementRepository(repository)
         self.search_selected_spec_id: str | None = None
         self.search_selected_candidate_id: str | None = None
         self.search_preview_candidate_id: str | None = None
@@ -125,6 +133,15 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_preview_button: QPushButton | None = None
         self.search_clear_preview_button: QPushButton | None = None
         self.search_apply_button: QPushButton | None = None
+        self.measurement_plan_button: QPushButton | None = None
+        self.measurement_plan_label: QLabel | None = None
+        self.measurement_plan_tree: QTreeWidget | None = None
+        self.measurement_match_list: QListWidget | None = None
+        self.measurement_complete_button: QPushButton | None = None
+        self.objective_list: QListWidget | None = None
+        self.pareto_tree: QTreeWidget | None = None
+        self.pareto_summary_label: QLabel | None = None
+        self.pareto_refresh_button: QPushButton | None = None
         self._search_actor_names: set[str] = set()
         self._search_tasks: dict[str, tuple[QThread, _SearchTask]] = {}
         self._search_task_spec_ids: dict[str, str] = {}
@@ -246,6 +263,55 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_apply_button.clicked.connect(self.apply_selected_candidate)
         candidate_actions.addWidget(self.search_apply_button)
         layout.addLayout(candidate_actions)
+
+        self.measurement_plan_button = QPushButton('現在の保存版を実測候補として記録')
+        self.measurement_plan_button.setToolTip('候補適用後にSceneを保存してから、候補とその正確なSceneRevisionをimmutableに結びます')
+        self.measurement_plan_button.clicked.connect(self.create_measurement_plan_for_selected_candidate)
+        layout.addWidget(self.measurement_plan_button)
+        self.measurement_plan_label = QLabel('実測候補未登録')
+        self.measurement_plan_label.setWordWrap(True)
+        layout.addWidget(self.measurement_plan_label)
+
+        self.measurement_plan_tree = QTreeWidget()
+        self.measurement_plan_tree.setHeaderLabels(['実測候補', '状態', 'Scene', '測定'])
+        self.measurement_plan_tree.setMinimumHeight(120)
+        self.measurement_plan_tree.itemSelectionChanged.connect(self._measurement_plan_selected)
+        layout.addWidget(self.measurement_plan_tree)
+
+        self.measurement_match_list = QListWidget()
+        self.measurement_match_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self.measurement_match_list.setMinimumHeight(90)
+        layout.addWidget(self.measurement_match_list)
+
+        self.measurement_complete_button = QPushButton('選択したN60実測を候補へ関連付け')
+        self.measurement_complete_button.setToolTip(
+            '候補適用時と完全一致するSceneRevision/content hashのmeasured evidenceだけを関連付けます'
+        )
+        self.measurement_complete_button.clicked.connect(self.complete_selected_measurement_plan)
+        layout.addWidget(self.measurement_complete_button)
+
+        comparison_label = QLabel('Pareto比較 · objectiveは独立指標のまま保持します')
+        comparison_label.setWordWrap(True)
+        layout.addWidget(comparison_label)
+
+        self.objective_list = QListWidget()
+        self.objective_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self.objective_list.setMinimumHeight(100)
+        layout.addWidget(self.objective_list)
+
+        self.pareto_refresh_button = QPushButton('Pareto集合を再計算・保存')
+        self.pareto_refresh_button.clicked.connect(self.refresh_pareto_comparison)
+        layout.addWidget(self.pareto_refresh_button)
+
+        self.pareto_summary_label = QLabel('objective evaluation未読込')
+        self.pareto_summary_label.setWordWrap(True)
+        layout.addWidget(self.pareto_summary_label)
+
+        self.pareto_tree = QTreeWidget()
+        self.pareto_tree.setHeaderLabels(['候補', 'Pareto', 'evidence', 'objective'])
+        self.pareto_tree.setMinimumHeight(180)
+        self.pareto_tree.itemSelectionChanged.connect(self._pareto_candidate_selected)
+        layout.addWidget(self.pareto_tree)
         layout.addStretch(1)
 
         dock = QDockWidget('最適化', self)
@@ -254,6 +320,256 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self._unify_right_context_docks(dock)
         dock.raise_()
+
+    def create_measurement_plan_for_selected_candidate(self) -> None:
+        if self.search_selected_spec_id is None or self.search_selected_candidate_id is None:
+            self.statusBar().showMessage('探索仕様と候補を選択してください')
+            return
+        latest = self.repository.latest(self.document_id)
+        if latest is None or self.working is None or self.working.is_dirty:
+            self.statusBar().showMessage('候補適用後のSceneを保存してから実測候補を記録してください')
+            return
+        try:
+            plan = build_measurement_plan(
+                self.repository, self.search_repository,
+                search_spec_id=self.search_selected_spec_id,
+                candidate_id=self.search_selected_candidate_id,
+                applied_scene_revision_id=latest.revision_id,
+            )
+            self.measurement_repository.save_measurement_plan(plan)
+        except Exception as exc:
+            self.statusBar().showMessage(f'実測候補を記録できません · {exc}')
+            return
+        if self.measurement_plan_label is not None:
+            self.measurement_plan_label.setText(
+                f'planned · {plan.candidate_id[:12]} · Scene {plan.applied_scene_revision_id[:8]}'
+            )
+        self.refresh_measurement_plans()
+        self.statusBar().showMessage('実測候補をimmutable保存しました · 実際の配置変更と測定は人が行います')
+
+    def refresh_measurement_plans(self) -> None:
+        tree = self.measurement_plan_tree
+        if tree is None:
+            return
+        tree.clear()
+        spec_id = self.search_selected_spec_id
+        if spec_id is None:
+            if self.measurement_match_list is not None:
+                self.measurement_match_list.clear()
+            return
+        plans = self.measurement_repository.latest_measurement_plans(spec_id)
+        for plan in plans:
+            item = QTreeWidgetItem([
+                plan.candidate_id[:12],
+                plan.status,
+                plan.applied_scene_revision_id[:8],
+                str(len(plan.measurement_ids)),
+            ])
+            item.setData(0, ROLE, plan.plan_id)
+            tree.addTopLevelItem(item)
+        if self.measurement_plan_label is not None:
+            planned = sum(plan.status == 'planned' for plan in plans)
+            measured = sum(plan.status == 'measured' for plan in plans)
+            self.measurement_plan_label.setText(
+                f'実測キュー {len(plans)} · planned {planned} · measured {measured}'
+            )
+
+    def _selected_measurement_plan(self):
+        tree = self.measurement_plan_tree
+        spec_id = self.search_selected_spec_id
+        if tree is None or spec_id is None:
+            return None
+        item = tree.currentItem()
+        if item is None:
+            return None
+        plan_id = item.data(0, ROLE)
+        if not isinstance(plan_id, str):
+            return None
+        return next(
+            (plan for plan in self.measurement_repository.latest_measurement_plans(spec_id)
+             if plan.plan_id == plan_id),
+            None,
+        )
+
+    def _measurement_plan_selected(self) -> None:
+        plan = self._selected_measurement_plan()
+        matches = self.measurement_match_list
+        if matches is None:
+            return
+        matches.clear()
+        if plan is None:
+            if self.measurement_complete_button is not None:
+                self.measurement_complete_button.setEnabled(False)
+            return
+        records = self.measurement_repository.list_measurements(plan.document_id)
+        for record in records:
+            if (
+                record.scene_revision_id != plan.applied_scene_revision_id
+                or record.scene_content_hash != plan.applied_scene_content_hash
+                or record.evidence_type != 'measured'
+            ):
+                continue
+            item = QListWidgetItem(
+                f'{record.measurement_id[:12]} · {record.channel_role} · {record.source_kind}'
+            )
+            item.setData(Qt.ItemDataRole.UserRole, record.measurement_id)
+            matches.addItem(item)
+            if record.measurement_id in plan.measurement_ids:
+                item.setSelected(True)
+        if self.measurement_complete_button is not None:
+            self.measurement_complete_button.setEnabled(plan.status == 'planned' and matches.count() > 0)
+
+    def complete_selected_measurement_plan(self) -> None:
+        plan = self._selected_measurement_plan()
+        matches = self.measurement_match_list
+        if plan is None or matches is None:
+            return
+        measurement_ids = tuple(
+            str(item.data(Qt.ItemDataRole.UserRole))
+            for item in matches.selectedItems()
+        )
+        if not measurement_ids:
+            self.statusBar().showMessage('関連付けるN60実測を選択してください')
+            return
+        try:
+            completed = complete_measurement_plan(
+                plan,
+                self.measurement_repository,
+                measurement_ids,
+            )
+            self.measurement_repository.save_measurement_plan(completed)
+        except Exception as exc:
+            self.statusBar().showMessage(f'実測を関連付けできません · {exc}')
+            return
+        self.refresh_measurement_plans()
+        self.statusBar().showMessage(
+            f'実測候補をcompletedにしました · measured evidence {len(completed.measurement_ids)}件'
+        )
+
+    def refresh_pareto_comparison(self) -> None:
+        spec_id = self.search_selected_spec_id
+        if spec_id is None or self.objective_list is None or self.pareto_tree is None:
+            return
+        spec = self.search_repository.get(spec_id)
+        if (
+            spec is None
+            or self.working is None
+            or not search_spec_current_working(
+                spec,
+                self.working,
+                self.constraint_set,
+                current_document_id=self.document_id,
+            )
+        ):
+            self.pareto_tree.clear()
+            if self.pareto_summary_label is not None:
+                self.pareto_summary_label.setText('staleなSearchSpecではPareto集合を更新できません')
+            self.statusBar().showMessage('Pareto比較を拒否しました · SearchSpec/Scene/constraint authorityがstaleです')
+            return
+
+        evaluations = self.objective_repository.latest_evaluations_by_candidate(spec_id)
+        if not evaluations:
+            self.objective_list.clear()
+            self.pareto_tree.clear()
+            if self.pareto_summary_label is not None:
+                self.pareto_summary_label.setText('この探索仕様にはobjective evaluationがありません')
+            return
+
+        available = tuple(metric.objective_id for metric in evaluations[0].vector.metrics)
+        expected_ids = set(available)
+        expected_units = {metric.objective_id: metric.unit for metric in evaluations[0].vector.metrics}
+        for evaluation in evaluations[1:]:
+            metric_map = {metric.objective_id: metric for metric in evaluation.vector.metrics}
+            if set(metric_map) != expected_ids:
+                self.pareto_tree.clear()
+                self.pareto_summary_label.setText('objective集合が候補間で一致しません · Pareto比較を中止')
+                self.statusBar().showMessage('Pareto比較を拒否しました · objective集合不一致')
+                return
+            if any(metric_map[objective_id].unit != expected_units[objective_id] for objective_id in available):
+                self.pareto_tree.clear()
+                self.pareto_summary_label.setText('objective単位が候補間で一致しません · Pareto比較を中止')
+                self.statusBar().showMessage('Pareto比較を拒否しました · objective単位不一致')
+                return
+
+        previous = {item.data(Qt.ItemDataRole.UserRole) for item in self.objective_list.selectedItems()}
+        self.objective_list.clear()
+        for objective_id in available:
+            item = QListWidgetItem(objective_id)
+            item.setData(Qt.ItemDataRole.UserRole, objective_id)
+            self.objective_list.addItem(item)
+            if not previous or objective_id in previous:
+                item.setSelected(True)
+        selected = tuple(
+            str(item.data(Qt.ItemDataRole.UserRole))
+            for item in self.objective_list.selectedItems()
+        )
+        if not selected:
+            selected = available
+
+        try:
+            built = build_pareto_set(evaluations, selected)
+            existing = self.objective_repository.find_pareto_set_by_sha(
+                spec_id, built.pareto_sha256
+            )
+            pareto_set = existing or built
+            if existing is None:
+                self.objective_repository.save_pareto_set(pareto_set)
+        except Exception as exc:
+            self.pareto_tree.clear()
+            if self.pareto_summary_label is not None:
+                self.pareto_summary_label.setText(f'Pareto比較を作成できません · {exc}')
+            self.statusBar().showMessage(f'Pareto比較を拒否しました · {exc}')
+            return
+
+        non_dominated = set(pareto_set.result.non_dominated_candidate_ids)
+        self.pareto_tree.clear()
+        for evaluation in evaluations:
+            metric_map = {metric.objective_id: metric for metric in evaluation.vector.metrics}
+            provenance = ', '.join(
+                f'{ref.evidence_class}:{ref.source_kind}:{ref.source_id[:12]}'
+                for ref in evaluation.input_refs
+            )
+            values = '; '.join(
+                f'{objective_id}={metric_map[objective_id].value:.4g} {metric_map[objective_id].unit}'
+                for objective_id in selected
+            )
+            item = QTreeWidgetItem([
+                evaluation.candidate_id[:12],
+                '非劣' if evaluation.candidate_id in non_dominated else '支配あり',
+                provenance,
+                values,
+            ])
+            item.setData(0, ROLE, evaluation.candidate_id)
+            self.pareto_tree.addTopLevelItem(item)
+        if self.pareto_summary_label is not None:
+            reused = ' · 既存snapshot' if existing is not None else ''
+            self.pareto_summary_label.setText(
+                f'{len(evaluations)}候補 · 非劣 {len(non_dominated)} · '
+                f'objective {len(selected)} · {pareto_set.pareto_set_id[:8]}{reused}'
+            )
+
+    def _pareto_candidate_selected(self) -> None:
+        if self.pareto_tree is None or self.search_candidate_tree is None:
+            return
+        item = self.pareto_tree.currentItem()
+        if item is None:
+            return
+        candidate_id = item.data(0, ROLE)
+        if not isinstance(candidate_id, str):
+            return
+        self.search_selected_candidate_id = candidate_id
+        found = False
+        for index in range(self.search_candidate_tree.topLevelItemCount()):
+            candidate_item = self.search_candidate_tree.topLevelItem(index)
+            payload = candidate_item.data(0, ROLE)
+            if isinstance(payload, dict) and payload.get('candidate_id') == candidate_id:
+                self.search_candidate_tree.setCurrentItem(candidate_item)
+                found = True
+                break
+        if not found:
+            self.statusBar().showMessage(
+                'Pareto候補は現在のcandidate page外です · candidate pageを移動してからpreview/applyしてください'
+            )
 
     @staticmethod
     def _search_distance_field(*, minimum: float = -1000.0, value: float = 0.0) -> QDoubleSpinBox:
@@ -470,6 +786,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_selected_spec_id = normalized
         self._refresh_search_binding_state()
         self._refresh_search_candidate_tree()
+        self.refresh_measurement_plans()
         self._render_search_overlay()
 
     def _selected_search_spec(self) -> CadSearchSpec | None:

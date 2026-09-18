@@ -1,18 +1,18 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N80a・O30/O40 core・O20 Room Simulator transaction+persistence実装・owned-Windows writable acceptance PASS / N80継続
+> 更新: 2026-09-18 / N80c・O50 owned-Windows acceptance PASS / O60継続
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 / N80a はmainへmerge済み。N80ではさらにO30/O40 objective/Pareto coreとO20 REW Room Simulator position transactionまでmainへmerge済みで、immutable batch result/persistence・native比較UI・measurement loopを継続する。**
+**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 / N80a はmainへmerge済み。O20 immutable batch/result persistence と owned-Windows writable gate、O30/O40 objective/Pareto core もmain反映済み。現在はPR #74でnative Pareto比較、O50 Measurement Loop、O60 Model Validation authorityを実装中。**
 
 N70はIssue #63 / PR #64で完了済み。N80aはIssue #65の部分sliceとしてPR #66からmerge commit `7473bb3efdbc511369c9a023b0b210eb5cde3553` でmainへ反映済み。Issue #65はN80b/cのためopenのまま維持する。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N80 O20 transactionまでmerge済み**。PR #70 merge `b4381f4b01683bba65b3857514ea583160f0eb7b` / PR #71 merge `cdbd0f45f8c66b01522fcc3006b8019e2cd1ba88` |
-| N80 tracking | Issue #65（open） / Issue #67（O20 open） / PR #66・#70・#71 merged |
+| main | **O20〜O40 coreまでmerge済み**。PR #70 `b4381f4b01683bba65b3857514ea583160f0eb7b` / PR #71 `cdbd0f45f8c66b01522fcc3006b8019e2cd1ba88` / PR #72 `df630d686f4e0c1687f05427585c0af1ae7bcf79` / PR #73 `43799ef871693ec214f792562176ad66724485e8` |
+| N80 tracking | Issue #65（open） / Issue #67（O20 closed） / PR #74（N80c/O50/O60 draft） |
 | N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
 | N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |
 | N80a product CI | #321 / run `35280237062` PASS |
@@ -141,7 +141,7 @@ N80全体は未完了。O30/O40 pure coreとnative persistence、O20 position-on
 
 - PR #70: objective-vector / Pareto algorithms + immutable native objective/Pareto persistenceをmerge済み。
 - PR #71: position-only REW Room Simulator transaction + native Scene/SearchSpec/Candidate adapterをmerge済み。CI #345 PASS。
-- 現在: exact batch spec / candidate attempt / resume-cancel persistenceをIssue #67で継続する。
+- O20 exact batch spec / candidate attempt / resume-cancel persistenceとowned-Windows writable gateはIssue #67で完了・close済み。
 - N50/N60/N70とO20〜O40の該当gateを前提にする。
 - SearchSpec編集とO10候補集合をnative Sceneへadapter接続する。
 - 候補preview/適用は1 commandでUndo可能にする。
@@ -151,3 +151,29 @@ N80全体は未完了。O30/O40 pure coreとnative persistence、O20 position-on
 - 実測loopへ接続する場合も、独立検証前に自動推薦へ昇格しない。
 
 N70で外部solverを暗黙採用しなかった方針を維持する。REW Room SimulatorはS01相当、polygon predictorはS03相当のWindows/座標/精度/性能/再現性証拠を通過した場合だけprediction authorityとして追加する。
+### PR #74 — N80c / O50 / O60 現在地
+
+- native Pareto比較はSearchSpec/Scene/constraintのstale状態をfail-closedし、候補間でobjective集合またはunitが不一致なら比較を保存しない。
+- 同一semantic Pareto snapshotはSHAで再利用し、ボタン再実行で同一内容を重複保存しない。
+- provenance列は `evidence_class:source_kind:source_id` を表示し、measured/predicted等を潰さない。
+- O50 Measurement PlanはSearchSpecからcandidateを再生成し、candidate-set SHAと、候補を適用したexact Scene content hash、直接parent revisionまで検証して保存する。
+- native最適化dockに実測キューを追加し、同じapplied SceneRevision/content hashのN60 `measured` evidenceのみを明示選択して `planned -> measured` のappend-only履歴へ関連付ける。
+- O60 validationはcalibration/holdoutを候補単位で分離し、exact SearchSpec/candidate-set/model version/prediction attempt/Measurement Planへcross-evidence bindingする。
+- holdout residualは `pass/fail/insufficient` として保存するが、これだけでrecommendationを有効化しない。trend/rank、sensitivity、repeatabilityの独立検証が未成立ならrecommendation gateはdisabledのまま。
+- O70 adaptive plannerはO60の実データgate未通過のため自動推薦としては未実装・無効化を維持する。
+
+
+## N80c / O50 acceptance
+
+PR #74 product head `2a891dbc1796d3cfdaebbe762d0d6e0d2636563f` はCI #397 / run `35294094501`をPASSし、gate head `44628a1e51c199c10b883ed8accba452578bb1eb`でowned-Windows受入もPASSした。
+
+- Pareto比較・evidence provenance・semantic snapshot de-dup: PASS
+- candidate apply/save → exact SceneRevision Measurement Plan: PASS
+- exact revisionのN60 measured evidence関連付け: PASS
+- planned→measured append-only history: PASS
+- stale SearchSpecでのPareto再計算拒否: PASS
+- gate後のローカルcheckout復元/clean status: PASS
+
+詳細は [N80c/O50 Windows acceptance](N80C_ACCEPTANCE_2026-09-18.md)。
+
+N80 workspaceのIssue #65完了条件はこの受入で満たす。残るO60 full validationはIssue #75で独立継続し、trend/rank・sensitivity・repeatabilityと実データgateが成立するまでO70 automatic recommendationはdisabledを維持する。

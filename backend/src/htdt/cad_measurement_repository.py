@@ -118,6 +118,20 @@ class CadMeasurementRepository:
                 );
                 CREATE INDEX IF NOT EXISTS idx_cad_measurement_comparisons_document_created
                     ON cad_measurement_comparisons(document_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS cad_measurement_plans (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    search_spec_id TEXT NOT NULL,
+                    candidate_id TEXT NOT NULL,
+                    applied_scene_revision_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    plan_sha256 TEXT NOT NULL UNIQUE,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(applied_scene_revision_id) REFERENCES scene_revisions(revision_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_cad_measurement_plans_search_seq
+                    ON cad_measurement_plans(search_spec_id, seq ASC);
                 '''
             )
 
@@ -410,3 +424,54 @@ class CadMeasurementRepository:
             'created_at': row['created_at'],
             **result,
         })
+
+
+    def save_measurement_plan(self, plan) -> None:
+        from .cad_measurement_loop import CadMeasurementPlan
+        if not isinstance(plan, CadMeasurementPlan):
+            raise TypeError('plan must be CadMeasurementPlan')
+        plan = CadMeasurementPlan.model_validate(plan.model_dump(mode='python'))
+        revision = self.scene_repository.get(plan.applied_scene_revision_id)
+        if revision is None or revision.document_id != plan.document_id or revision.content_hash != plan.applied_scene_content_hash:
+            raise ValueError('measurement plan applied revision binding mismatch')
+        if plan.status == 'measured':
+            for measurement_id in plan.measurement_ids:
+                record = self.get_measurement(measurement_id)
+                if record is None:
+                    raise ValueError(f'measurement plan references unknown measurement: {measurement_id}')
+                if (
+                    record.document_id != plan.document_id
+                    or record.scene_revision_id != plan.applied_scene_revision_id
+                    or record.scene_content_hash != plan.applied_scene_content_hash
+                ):
+                    raise ValueError('measurement plan evidence binding mismatch')
+                if record.evidence_type != 'measured':
+                    raise ValueError('measurement plan may only contain measured evidence')
+        with self._connect() as connection:
+            connection.execute(
+                '''INSERT INTO cad_measurement_plans(
+                    plan_id, document_id, search_spec_id, candidate_id,
+                    applied_scene_revision_id, status, plan_sha256, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (plan.plan_id, plan.document_id, plan.search_spec_id, plan.candidate_id,
+                 plan.applied_scene_revision_id, plan.status, plan.plan_sha256, plan.model_dump_json()),
+            )
+
+    def list_measurement_plans(self, search_spec_id: str):
+        from .cad_measurement_loop import CadMeasurementPlan
+        with self._connect() as connection:
+            rows = connection.execute(
+                'SELECT payload_json FROM cad_measurement_plans WHERE search_spec_id=? ORDER BY seq ASC',
+                (search_spec_id,),
+            ).fetchall()
+        return tuple(CadMeasurementPlan.model_validate_json(row['payload_json']) for row in rows)
+
+    def latest_measurement_plans(self, search_spec_id: str):
+        history = self.list_measurement_plans(search_spec_id)
+        order: list[str] = []
+        latest = {}
+        for plan in history:
+            if plan.plan_id not in latest:
+                order.append(plan.plan_id)
+            latest[plan.plan_id] = plan
+        return tuple(latest[plan_id] for plan_id in order)

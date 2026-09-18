@@ -257,3 +257,70 @@ Accepted evidence:
 This accepts the current O20 position-only writable path for the observed REW version/API fingerprint: native SceneRevision/SearchSpec/candidate authority -> immutable batch persistence -> live REW position transaction -> source-specific Room Simulator FR capture -> exact Room Simulator state restore -> immutable completed-attempt provenance.
 
 No broader write authority is implied: room size, absorptions, options, source configuration and arbitrary REW state remain outside the accepted O20 write surface.
+
+
+## 2026-09-18 — N80c native Pareto comparison started (PR #74)
+
+- O20 owned-Windows writable acceptance is complete and Issue #67 is closed.
+- Added the N80c authority/UI plan in `docs/N80C_PLAN.md`.
+- Native Optimization workspace now opens the existing immutable objective repository for the selected SearchSpec.
+- The comparison surface exposes objective IDs as independent multi-select dimensions; it does not create a scalar score or recommendation.
+- Pareto recomputation uses the existing `build_pareto_set()` / `pareto-front-1` authority and persists the verified immutable `CadParetoSet`.
+- Candidate rows show non-dominated/dominated status, evidence classes, and exact objective values/units.
+- Selecting a comparison row reuses the established candidate selection/preview/apply path when that candidate is on the current generated page.
+- Repository helper returns the latest immutable evaluation per candidate without mutating historical evaluations.
+
+No RDC is used for this slice yet. GitHub Actions is the first verification authority; owned-Windows interaction will be consolidated only after the remaining measurement-loop/native UI work is CI-green.
+
+
+## 2026-09-18 — O50 measurement-loop authority started
+
+Roadmap O50 is now implemented at the immutable authority boundary before adding more UI:
+
+- `CadMeasurementPlan` binds one SearchSpec/candidate/candidate-set hash to the exact SceneRevision created after the human applies that candidate.
+- completing a plan accepts only `measured` evidence whose document/revision/content hash exactly matches that applied revision;
+- predicted evidence is never reclassified as measured;
+- completed measurement IDs convert to explicit O30 `CadObjectiveInputRef(evidence_class='measured')`;
+- measurement plans are append-only rows in the native CAD database, so planned and completed history is not overwritten;
+- a focused invariant test covers candidate -> applied revision binding.
+
+This follows the roadmap safety boundary: HTDT does not autonomously move speakers, change AVR settings, or trigger REW playback. Existing N60 ingestion remains the measurement authority. O60 validation will consume these immutable links; O70 adaptive planning remains gated on O60 evidence.
+
+
+## 2026-09-18 — O50 native composition + O60 holdout gate
+
+- Native Optimization workspace can now create an immutable Measurement Plan from the selected candidate and the current saved applied SceneRevision. Dirty/unsaved working state is rejected.
+- The action explicitly records a plan only; physical movement and REW measurement remain human-controlled.
+- Added `CadModelValidationRecord` with explicit calibration/holdout split, prediction/measurement IDs, per-pair residual RMS, aggregate calibration/holdout RMS, model ID/version, band, algorithm version and immutable hash.
+- Recommendation eligibility cannot become enabled without holdout evidence and remains disabled when holdout RMS exceeds the explicit validation threshold.
+- Focused O60 tests verify that calibration fit cannot substitute for independent holdout evidence.
+
+O70 adaptive planning is intentionally not implemented as an automatic recommendation yet: the roadmap requires real O60 holdout evidence and stability evidence, not merely the existence of the validation code. Until such evidence exists, the product remains a Pareto comparison and measurement-planning tool.
+
+
+## 2026-09-18 — N80c/O50 authority tightened; O60 recommendation remains gated
+
+Current PR: #74 / branch `feat/n80-pareto-workspace`.
+
+- Measurement Plan now resolves the selected candidate by regenerating the exact SearchSpec candidate set. It stores the actual candidate-set SHA and rejects unknown candidate IDs.
+- A plan is accepted only when the saved applied SceneRevision directly descends from the SearchSpec source revision and its content hash exactly equals the selected candidate placement applied to that source scene.
+- Measurement-plan persistence independently rechecks every completed measurement ID, exact document/revision/content hash and `evidence_type=measured`.
+- Native Optimization workspace now contains an O50 measurement queue. It lists latest immutable state per plan and only offers N60 measured records bound to the exact applied revision/content hash. Completion appends a new `measured` plan state; the original `planned` row remains immutable.
+- Pareto refresh now fails closed for stale SearchSpec/Scene/constraint binding, mismatched objective sets, or mismatched units. Evidence provenance includes class/kind/source identity. Semantically identical Pareto snapshots are reused by SHA instead of duplicated.
+- O60 `CadModelValidationRecord` binds document, SearchSpec ID+SHA, candidate-set SHA, model ID/version and immutable prediction/measurement pairs. Calibration and holdout candidates cannot overlap.
+- O60 persistence cross-checks completed Room Simulator attempts against the exact batch/SearchSpec/model and requires every measured ID to be linked through a completed O50 Measurement Plan for the same candidate.
+- Residual validation is stored separately as `pass/fail/insufficient`. Automatic recommendation remains `disabled` even after a residual pass until independent trend/rank, sensitivity and repeatability evidence exists. Therefore O70 remains gated.
+- Added focused tests for exact candidate/revision rejection, planned→measured append-only history, Pareto semantic lookup, residual gating, and O60 cross-evidence persistence.
+- RDC use for PR #74 remains zero at this point. GitHub Actions remains the primary verification authority until the product branch is green.
+
+
+## 2026-09-18 — N80c/O50 owned-Windows acceptance PASS
+
+- Accepted product head: `2a891dbc1796d3cfdaebbe762d0d6e0d2636563f`.
+- Gate head: `44628a1e51c199c10b883ed8accba452578bb1eb`.
+- GitHub Actions CI #397 / run `35294094501`: PASS.
+- Owned-Windows 200% DPI gate: `N80C_HARDWARE_GATE_RESULT=PASS`.
+- Pareto rendering/provenance, semantic snapshot de-dup, candidate apply/save, exact-revision Measurement Plan creation, exact-revision N60 measured attachment, append-only planned→measured completion, and stale Pareto rejection all PASS.
+- Local checkout restored to `5ede848e8e0b0967a50c04c83ff679a649ca439b` with status count 0.
+- Detailed record: [N80c/O50 Windows acceptance](N80C_ACCEPTANCE_2026-09-18.md).
+- O60 trend/rank, sensitivity and repeatability continuation is tracked by Issue #75. O70 automatic recommendation remains disabled until independent real evidence passes that gate.
