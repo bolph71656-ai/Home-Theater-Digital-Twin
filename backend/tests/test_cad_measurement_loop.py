@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from hashlib import sha256
 
 from htdt.cad_constraint_models import CadConstraintSet
-from htdt.cad_measurement_loop import build_measurement_plan
+from htdt.cad_measurement_loop import build_measurement_plan, complete_measurement_plan
+from htdt.cad_measurement_models import CadFrequencyResponseDataset, CadMeasurementRecord
+from htdt.cad_measurement_repository import CadMeasurementRepository
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity, Size3
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates, apply_candidate_positions
@@ -19,7 +22,9 @@ def test_measurement_plan_binds_candidate_to_exact_applied_revision(tmp_path):
         room=RoomPrism(width_m=5, depth_m=4, height_m=2.4),
         entities=(SceneEntity(entity_id='fl', kind='speaker', name='FL',
             position=Position3(x_m=1,y_m=1,z_m=1), size_m=Size3(x_m=.2,y_m=.2,z_m=.4),
-            speaker_role='FL'),),
+            speaker_role='FL'),
+            SceneEntity(entity_id='mlp', kind='measurement_point', name='MLP',
+                position=Position3(x_m=2.5,y_m=3,z_m=1)),),
     )
     source = scene_repo.save(document, parent_revision_id=None).revision
     spec,_ = build_cad_search_spec(source, CadConstraintSet(document_id='o50-fixture', constraints=()),
@@ -41,6 +46,42 @@ def test_measurement_plan_binds_candidate_to_exact_applied_revision(tmp_path):
     assert plan.candidate_set_sha256 == page.candidate_set_sha256
     assert plan.status == 'planned'
 
+    measurement_repo = CadMeasurementRepository(scene_repo)
+    measurement_repo.save_measurement_plan(plan)
+    raw = b'o50-measured-fr'
+    record = CadMeasurementRecord(
+        measurement_id='measurement-a',
+        document_id=applied.document_id,
+        scene_revision_id=applied.revision_id,
+        scene_content_hash=applied.content_hash,
+        measurement_entity_id='mlp',
+        measurement_position=applied.document.entity('mlp').position,
+        evidence_type='measured',
+        channel_role='FL',
+        source_speaker_ids=('fl',),
+        radiation_scope='single',
+        routing_evidence='manual',
+        imported_at='2026-09-18T00:00:00+00:00',
+        source_kind='rew_text',
+    )
+    dataset = CadFrequencyResponseDataset(
+        dataset_id='dataset-a',
+        measurement_id=record.measurement_id,
+        frequency_hz=(20.0, 40.0, 80.0),
+        level_db=(80.0, 81.0, 79.0),
+        phase_deg=None,
+        phase_status='absent',
+        source_sha256=sha256(raw).hexdigest(),
+        importer_version='fixture-1',
+    )
+    measurement_repo.save(record, dataset, raw_filename='fixture.txt', raw_bytes=raw)
+    completed = complete_measurement_plan(plan, measurement_repo, (record.measurement_id,))
+    measurement_repo.save_measurement_plan(completed)
+
+    assert completed.status == 'measured'
+    assert completed.measurement_ids == ('measurement-a',)
+    assert measurement_repo.latest_measurement_plans(spec.search_spec_id) == (completed,)
+
 
 def test_measurement_plan_rejects_unknown_candidate_and_non_candidate_revision(tmp_path):
     scene_repo = SceneRepository(tmp_path / 'cad.sqlite3')
@@ -49,7 +90,9 @@ def test_measurement_plan_rejects_unknown_candidate_and_non_candidate_revision(t
         room=RoomPrism(width_m=5, depth_m=4, height_m=2.4),
         entities=(SceneEntity(entity_id='fl', kind='speaker', name='FL',
             position=Position3(x_m=1,y_m=1,z_m=1), size_m=Size3(x_m=.2,y_m=.2,z_m=.4),
-            speaker_role='FL'),),
+            speaker_role='FL'),
+            SceneEntity(entity_id='mlp', kind='measurement_point', name='MLP',
+                position=Position3(x_m=2.5,y_m=3,z_m=1)),),
     )
     source = scene_repo.save(document, parent_revision_id=None).revision
     constraints = CadConstraintSet(document_id='o50-reject', constraints=())
