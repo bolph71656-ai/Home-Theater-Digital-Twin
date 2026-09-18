@@ -365,7 +365,7 @@ Example:
 | 指標 | 案A | 案B |
 |---|---:|---:|
 | nominal FR偏差 | 2.1 dB | 2.6 dB |
-| 95% adverse FR偏差 | 5.4 dB | 3.1 dB |
+| adverse p95 FR偏差（明示distribution時） | 5.4 dB | 3.1 dB |
 | X位置感度 | 高 | 低 |
 | feasible fraction | 100% | 100% |
 
@@ -529,7 +529,7 @@ Suppose:
 
 - A nominal FR error = 2.1 dB;
 - B nominal FR error = 2.6 dB;
-- under explicit ±20 mm speaker-position tolerance:
+- under an explicit position-error distribution bounded to ±20 mm:
   - A adverse p95 = 5.4 dB;
   - B adverse p95 = 3.1 dB.
 
