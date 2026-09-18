@@ -2,7 +2,7 @@
 
 > Tracking: Issue #101
 > Depends on: R100A merged by PR #110 (`1714c078d4063f59da93f0d733171547f7eb486d`)
-> Current state: R100B authority, pyroomacoustics geometric reference, PFFDTD Windows reuse + rigid modes, and MFEM rigid-mode reference are merged. PR #116 revises pressure authority to R100A-2 and evaluates PFFDTD complex-pressure grid convergence; production solver selection remains pending.
+> Current state: R100B authority, pyroomacoustics geometric reference, PFFDTD Windows reuse + rigid modes, MFEM rigid-mode reference, R100A-2 complex-pressure convergence, and PR #151 explicit impedance native-boundary reflection gate are merged. PR #151 fixture passes, but spatial FDTD reflection validation and production solver selection remain pending.
 
 ## Purpose
 
@@ -180,15 +180,17 @@ PR #116 adds a specialized common evaluator for unsampled `field_pressure_pa` co
 
 For PFFDTD, the adapter does not label native `u` as Pa. Pinned upstream treats `u` as acoustic velocity potential. HTDT therefore uses the explicit R100A density and Fourier convention to evaluate `P/Q = -i*omega*rho*Phi/Q` against the physical pre-grid volume-velocity source. The probe runs the complete 2.0 s record at h=0.5/0.25/0.125 m and evaluates the exact 20–300 Hz / 1 Hz grid with no window or filter.
 
+PR #151 preserves the R100A-2 impedance fixture and maps only the exact frequency-independent purely resistive subset to PFFDTD `DEF=[0,2,0]`. The pinned upstream reflection function returns `R=1/3+0j` at 100/200/300 Hz and the central evaluator reports PASS. Reactive/frequency-varying fitting remains unsupported, and no scalar absorption coefficient is used. This gate is not evidence that a full spatial FDTD run recovers the same reflection coefficient.
+
 ## Next R100B implementation slices
 
 The numerical bakeoff proceeds in this order:
 
-1. complete R100A-2 replay and the PFFDTD rectangular complex-pressure convergence fixture;
-2. evaluate the explicit complex-impedance reflection fixture without deriving impedance from scalar absorption;
+1. R100A-2 replay and PFFDTD rectangular complex-pressure convergence: **implemented in PR #116**; workflow completes but the candidate convergence evidence remains FAIL under frozen tolerances.
+2. explicit complex-impedance reflection: **native PFFDTD DEF boundary/reflection-function gate PASS in PR #151**; this does not claim spatial FDTD incident/reflected propagation validation.
 3. extend the merged MFEM rigid reference toward concave/impedance fixtures where it provides independent authority;
 4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls;
-5. record exact compile/solve/postprocess/RAM/disk/output evidence under the R100A resource budgets;
+5. cover remaining concave/portal/obstacle and applicable external-measured/resource gates without inventing unsupported capabilities;
 6. publish the R100B ADR only after applicable hard gates have real evidence.
 
 If no shipping candidate clears the gates, R100B exits with a no-go ADR and a bounded next experiment. It must not force a winner.
