@@ -144,7 +144,7 @@ def _asset_rows(database_path: Path) -> tuple[tuple[str, str, int], ...]:
         ).fetchall()
     normalized: list[tuple[str, str, int]] = []
     for row in rows:
-        relative_path = str(row[1]).replace('\\\\', '/')
+        relative_path = str(row[1]).replace('\\', '/')
         _safe_archive_path(relative_path)
         normalized.append((str(row[0]), relative_path, int(row[2])))
     return tuple(normalized)
