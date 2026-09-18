@@ -106,8 +106,8 @@ footprint/clearance had been re-evaluated.
 
 Fix:
 
-- canonical O70/O80 documentation now calls the implemented parameter
-  **acoustic aim yaw**;
+- native Extended Search UI and canonical O70/O80 documentation now call the
+  implemented parameter **acoustic aim yaw**;
 - physical cabinet toe-in is explicitly a separate future extension requiring
   body-yaw change plus hard-constraint re-evaluation;
 - documentation also states that current O70 GP features are O10 XYZ axes and
