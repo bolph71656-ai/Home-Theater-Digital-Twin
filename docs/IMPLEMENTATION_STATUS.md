@@ -419,3 +419,5 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - 詳細: [UX150 software polish](ISSUE_118_UX150_SOFTWARE_POLISH.md)
 - UX160 owned-Windows visual/first-use acceptanceは別gateとして残す。
 - RDC未使用。
+
+- UX150追加監査: Optimize/REWの標準表示から内部ID/英語内部語を退避し、Qt UserRole/repository authorityは維持。
