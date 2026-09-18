@@ -212,6 +212,9 @@ class WorkspaceRouter(QStackedWidget):
 
 
 class WorkflowRail(QFrame):
+    EXPANDED_WIDTH = 184
+    COMPACT_WIDTH = 112
+
     def __init__(
         self,
         registrations: Iterable[WorkspaceRegistration],
@@ -223,20 +226,21 @@ class WorkflowRail(QFrame):
         self.setObjectName("workflowRail")
         set_surface_role(self, SurfaceRole.RAISED)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setFixedWidth(184)
+        self.setFixedWidth(self.EXPANDED_WIDTH)
+        self._compact = False
 
         self._buttons: dict[WorkspaceId, QPushButton] = {}
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 16, 12, 16)
-        layout.setSpacing(6)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(12, 16, 12, 16)
+        self._layout.setSpacing(6)
 
-        brand = QLabel("HTDT")
-        set_typography_role(brand, TypographyRole.WORKSPACE_TITLE)
-        layout.addWidget(brand)
-        layout.addSpacing(12)
+        self._brand = QLabel("HTDT")
+        set_typography_role(self._brand, TypographyRole.WORKSPACE_TITLE)
+        self._layout.addWidget(self._brand)
+        self._layout.addSpacing(12)
 
         for registration in registrations:
             button = QPushButton(registration.label)
@@ -248,20 +252,36 @@ class WorkflowRail(QFrame):
             )
             self._group.addButton(button)
             self._buttons[registration.workspace_id] = button
-            layout.addWidget(button)
+            self._layout.addWidget(button)
 
-        layout.addStretch(1)
+        self._layout.addStretch(1)
 
         self.settings_button = QPushButton("設定")
         self.settings_button.setObjectName("workflowSettingsButton")
         set_control_size(self.settings_button, ControlSize.STANDARD)
         if on_settings is not None:
             self.settings_button.clicked.connect(lambda checked=False: on_settings())
-        layout.addWidget(self.settings_button)
+        self._layout.addWidget(self.settings_button)
 
     @property
     def labels(self) -> tuple[str, ...]:
         return tuple(button.text() for button in self._buttons.values())
+
+    @property
+    def is_compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, compact: bool) -> None:
+        compact = bool(compact)
+        if self._compact == compact:
+            return
+        self._compact = compact
+        self.setFixedWidth(self.COMPACT_WIDTH if compact else self.EXPANDED_WIDTH)
+        self._brand.setVisible(not compact)
+        margin_x = 8 if compact else 12
+        margin_y = 10 if compact else 16
+        self._layout.setContentsMargins(margin_x, margin_y, margin_x, margin_y)
+        self._layout.setSpacing(4 if compact else 6)
 
     def set_active(self, workspace_id: WorkspaceId | str) -> None:
         self._buttons[normalize_workspace_id(workspace_id)].setChecked(True)
@@ -276,25 +296,45 @@ class TopContextBar(QFrame):
         self._context_buttons: dict[str, QPushButton] = {}
         self._context_group: QButtonGroup | None = None
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(22, 10, 18, 10)
-        layout.setSpacing(8)
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(22, 10, 18, 10)
+        self._layout.setSpacing(8)
+        self._compact = False
 
         self._title = QLabel()
         set_typography_role(self._title, TypographyRole.SECTION_TITLE)
-        layout.addWidget(self._title)
-        layout.addSpacing(12)
+        self._layout.addWidget(self._title)
+        self._layout.addSpacing(12)
 
         self._context_container = QWidget()
         self._context_layout = QHBoxLayout(self._context_container)
         self._context_layout.setContentsMargins(0, 0, 0, 0)
         self._context_layout.setSpacing(4)
-        layout.addWidget(self._context_container)
-        layout.addStretch(1)
+        self._layout.addWidget(self._context_container)
+        self._layout.addStretch(1)
 
     @property
     def context_labels(self) -> tuple[str, ...]:
         return tuple(button.text() for button in self._context_buttons.values())
+
+    @property
+    def is_compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, compact: bool) -> None:
+        compact = bool(compact)
+        if self._compact == compact:
+            return
+        self._compact = compact
+        self._title.setVisible(not compact)
+        self._layout.setContentsMargins(
+            10 if compact else 22,
+            7 if compact else 10,
+            10 if compact else 18,
+            7 if compact else 10,
+        )
+        self._layout.setSpacing(4 if compact else 8)
+        self._context_layout.setSpacing(2 if compact else 4)
 
     def set_workspace(self, registration: WorkspaceRegistration, selected_context_id: str | None) -> None:
         self._title.setText(registration.label)
@@ -393,8 +433,18 @@ class WorkflowShellWindow(QMainWindow):
         root_layout.addWidget(content, 1)
         self.setCentralWidget(root)
         self.resize(1440, 900)
+        self._update_responsive_layout()
         if not self.navigate(initial_workspace):
             raise RuntimeError("initial workflow workspace could not be activated")
+
+    def _update_responsive_layout(self) -> None:
+        compact = self.width() < 1120
+        self.rail.set_compact(compact)
+        self.context_bar.set_compact(compact)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_responsive_layout()
 
     @property
     def current_workspace_id(self) -> WorkspaceId:
