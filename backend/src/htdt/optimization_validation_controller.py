@@ -110,6 +110,41 @@ def _objective_label(value: str) -> str:
     return _OBJECTIVE_DISPLAY.get(value, value.rsplit(".", 1)[-1].replace("_", " "))
 
 
+def _reason_label(value: str) -> str:
+    exact = {
+        "completed prediction attempt is missing": "完了した予測結果がありません",
+        "multiple completed prediction attempts are ambiguous": "完了した予測結果が複数あり特定できません",
+        "owned-room measured evidence is missing": "実室の実測データがありません",
+        "completed Measurement Plan is missing": "完了した実測計画がありません",
+        "multiple completed Measurement Plans are ambiguous": "完了した実測計画が複数あり特定できません",
+        "predicted objective evaluation is missing": "予測の比較指標がありません",
+        "predicted objective evaluations are ambiguous": "予測の比較指標が複数あり特定できません",
+        "measured objective evaluation is missing": "実測の比較指標がありません",
+        "measured objective evaluations are ambiguous": "実測の比較指標が複数あり特定できません",
+        "measured evidence is missing": "実測データがありません",
+    }
+    if value in exact:
+        return exact[value]
+    if value.startswith("repeatability requires ") and value.endswith(" measurements"):
+        count = value.removeprefix("repeatability requires ").removesuffix(" measurements")
+        return f"再現性確認には実測が{count}回必要です"
+    if value.startswith("candidate separation references missing candidate "):
+        return "候補差の検証対象が見つかりません"
+    if ": evidence_type is not measured" in value:
+        return "実測として扱えない測定データがあります"
+    if ": captured_at is missing or not timezone-aware" in value:
+        return "測定時刻が不足している、またはタイムゾーンを確認できません"
+    if ": captured before campaign preregistration" in value:
+        return "検証条件の事前登録より前に取得された実測です"
+    if ": validation_scope is not owned_room" in value:
+        return "実室検証として登録されていない実測です"
+    if ": validation campaign binding mismatch" in value:
+        return "実測と検証条件の関連付けが一致しません"
+    if value.startswith("unknown measurement "):
+        return "測定データが見つかりません"
+    return value
+
+
 class ValidationControllerMixin:
     def assign_selected_candidate_to_campaign(self, split: str) -> None:
         candidate_id = self.search_selected_candidate_id
@@ -366,10 +401,10 @@ class ValidationControllerMixin:
                 f'実測 {len(candidate.measurement_ids)}件'
             )
             lines.extend(
-                f'  - 不足: {reason}'
+                f'  - 不足: {_reason_label(reason)}'
                 for reason in candidate.missing_reasons
             )
-        lines.extend(f'停止理由: {reason}' for reason in readiness.missing_reasons)
+        lines.extend(f'停止理由: {_reason_label(reason)}' for reason in readiness.missing_reasons)
         lines.append(
             '根拠データは準備完了です'
             if readiness.evidence_ready
