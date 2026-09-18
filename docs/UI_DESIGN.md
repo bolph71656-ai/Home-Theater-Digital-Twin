@@ -322,26 +322,215 @@ Advanced view:
 
 rare/dangerous actionsはMore (…)またはcontext menuへ置く。確認dialogはirreversibleまたはevidence semanticsが変わる場合に限定する。
 
-## 11. Visual system / design tokens
+## 11. Visual & interaction language
 
-screenごとのad-hoc stylesheetをやめ、共通tokenを持つ。
+HTDTは**dark-first**で仕上げる。単に背景を黒くするのではなく、視覚階層・直接操作・feedback・motion・3D renderingを一体のsystemとして設計する。初期releaseのappearanceはdarkをauthoritativeにし、light themeはdark版がUX160を通過した後の別scopeとする。
 
-最低限:
+参考原則:
+- HTM: dark/light対応、real-time 3D scene、stackable overlays、Viewing/Editing mode、feature search、phase-based workflow。
+- Apple HIG: dark appearanceでは背景/elevated surfaceの差で階層を作る、toolbarを過密にしない、sidebarはflatなnavigationへ限定する、重要情報に十分なspaceを与える、feedbackは状態と結果を明確にする。
+- Windows native applicationとして実装するため、Apple固有asset/font/controlを模倣しない。platform-native keyboard/focus/window semanticsとWindows向けfont renderingを優先する。
 
-- spacing scale
-- control heights
-- typography hierarchy
-- surface levels
-- border/separator strength
-- card/panel radius
-- icon sizes
-- focus/hover/selection
-- semantic badge: measured / predicted / stale / warning / error / unsupported
-- compact / comfortable density
+### 11.1 Content first / chrome second
 
-まず一つのthemeを完全に仕上げる。dark/light両方を同時に中途半端に作らない。
+最も重要な情報または編集対象が最も高い視覚優先度を持つ。
 
-HTMはdark UIでも情報階層が明瞭だが、HTDTはHTMの色やassetをコピーする必要はない。重要なのはspacingとhierarchyの一貫性である。
+優先順位:
+1. room / object / plot / candidate / warningなど、ユーザーが判断するcontent;
+2. current selection / current task / primary action;
+3. navigation / inspector;
+4. secondary metadata;
+5. provenance / diagnostic / internal identifiers.
+
+navigationやpanelがcontentより明るい・彩度が高い状態を禁止する。常設chromeは静かにし、hover / selected / warningの時だけ必要なcontrastを上げる。
+
+### 11.2 Dark surface hierarchy
+
+pure black一色で領域分割しない。semantic surface tokenで階層を作る。
+
+- `surface.canvas`: 3D viewport / graph background。最も深いneutral dark。
+- `surface.base`: main page background。
+- `surface.raised`: sidebar / inspector / cards。
+- `surface.overlay`: popover / command palette / temporary tool HUD。
+- `surface.modal`: modal/sheet。backdropと明確に分離。
+
+相対的な明度差を使い、強いborderで全componentを箱囲みしない。separatorは必要なgroup境界だけに使う。
+
+透明・blurは**contextを残すためのtemporary overlay**に限定する。Measurementsの表、plot、長文、数値入力panelをdecorative glassにしない。読解contentは原則opaque surfaceでcontrastを安定させる。
+
+### 11.3 Accent discipline
+
+accent colorは「押せるもの全部」に使わない。
+
+accent用途:
+- primary action;
+- current selection;
+- active navigation/context;
+- focus ring;
+- one-off interactive affordance.
+
+semantic data/state colorはaccentと分離する。
+
+- measured;
+- predicted;
+- selected/current;
+- warning;
+- error;
+- unsupported;
+- stale;
+- acoustic heatmap/scientific colormap.
+
+同じ色を別の意味に再利用しない。色だけで状態を伝えず、icon / line style / badge textを併用する。
+
+### 11.4 Typography and numeric presentation
+
+Windowsではplatform UI fontを基本にし、`Segoe UI Variable` が利用可能なら第一候補とする。AppleのSF系fontをbundle/模倣しない。
+
+階層は少数に固定する。
+
+- workspace title;
+- section title;
+- body/control label;
+- secondary/metadata;
+- numeric/readout.
+
+page titleを大きくしすぎず、desktop appとして情報密度を保つ。重要数値は周囲の説明文より読み取りやすくする。寸法、周波数、dB等で桁が揺れる場合はtabular numeral相当を評価する。
+
+boldを状態表現に乱用しない。secondary textのcontrastを落としすぎてdark background上で読めなくしない。
+
+### 11.5 Spacing, shape and control rhythm
+
+ad-hoc marginを禁止し、token化する。
+
+初期token候補（UX150で実機調整してfreeze）:
+- spacing: 4 / 8 / 12 / 16 / 24 / 32 logical px;
+- compact control: 約28–30 px;
+- standard control: 約32–36 px;
+- primary/prominent control: 約38–42 px;
+- small / standard / large radiusの3段階以内.
+
+全controlをpill/rounded cardにしない。shapeはhierarchyの補助であり装飾ではない。隣接panel・button・popoverのcorner geometryに一貫性を持たせる。
+
+### 11.6 Direct manipulation and continuity
+
+「設定してApply」より、可能な範囲で**対象を直接操作し、即座にpreviewし、確定・取消できる**ことを優先する。
+
+- drag中はghost / delta / snap targetを即時表示;
+- inspector数値変更も同じCommand lifecycleへ接続;
+- hover / pressed / selected / disabled / focusを見た目で即座に区別;
+- selection変更でInspectorの場所を飛ばさず、同じ領域でcontentだけ更新;
+- workspace移動後に元のselection/contextへ戻れる;
+- Undo可能な操作を不用意なconfirmation dialogで止めない;
+- destructive/evidence-changing actionだけ明確なconfirmationを使う.
+
+### 11.7 Motion
+
+motionは装飾ではなく**因果関係とcontinuityの説明**に限定する。
+
+使う:
+- sidebar / inspectorのopen-close;
+- selectionによるcontext panel更新;
+- page/sub-context transition;
+- popover / command palette;
+- applied candidateのpreview -> commit;
+- warning / completion feedback.
+
+使わない:
+-常時 pulsing/glowing;
+- bounce/springを標準feedbackにする;
+- large plot/3D objectを意味なくanimateする;
+- compute待ちで画面全体をblockする.
+
+初期duration目安:
+- micro state: 100–160 ms;
+- panel/context transition: 160–220 ms;
+- page transition: 180–240 ms.
+
+値はUX150で体感評価してfreezeする。animationはinterruptibleにし、Reduce Motion相当の設定または簡略modeを用意できる構造にする。
+
+### 11.8 Responsiveness and perceived latency
+
+操作感はframe rateだけでなく**入力に対する即時feedback**で評価する。
+
+- click/selectionは100 ms以内のfeedback targetを維持;
+- drag/orbitは既存p95 frame time <=33 ms targetを維持;
+- long compute開始時は即座にqueued/running stateを出す;
+- blocking spinnerでapplication全体を止めない;
+- compute中もnavigation/viewport inspection/cancelを可能な範囲で維持;
+- slow operationはprogressとcancelを同じ場所に置く;
+- stale resultを遅れてcurrentとして表示しない.
+
+### 11.9 Empty, loading, blocked states
+
+空panelを置かない。
+
+empty stateは:
+-何が無いか;
+- なぜ必要か（必要な場合のみ）;
+- primary next action 1個;
+- optional secondary action.
+
+blocked stateはdisabled controlだけで終わらせず、近接位置に短い理由と解消actionを出す。
+
+### 11.10 Dark 3D viewport
+
+Room 3DはHTM同様、UI shellと連続したdark appearanceを持つ。ただしsceneの可読性を最優先する。
+
+基本:
+- neutral graphite/charcoal系background。pure black voidを避ける;
+- floor/gridは低contrast。gridがroom geometryより目立たない;
+- room surfaceは低彩度neutral material;
+- wall/floor/ceilingの面向きが分かる程度のsoft lighting;
+- soft key + fill + ambientを基本にし、harsh specularや過度なphotorealismを避ける;
+- contact/ground cueを用いてobjectが浮いて見えないようにする;
+- selected objectはsurface色変更だけでなくoutline/handleで示す;
+- gizmo axisは識別可能だがsceneの主役にならない;
+- labelは必要時だけ表示し、常時大量labelで埋めない;
+- screen/projector cone / speaker coverage / reflection / mode / field等のoverlayはbase geometryとは別のvisual layerとして管理.
+
+Editing / Viewing / Analysisでoverlay密度を変える。全overlayを同時表示できても、defaultは必要最小限とする。focus modeでProjection only / Acoustics only / Cabling only等へ切り替え可能なarchitectureを維持する。
+
+### 11.11 Scientific visualization in dark mode
+
+FR、waterfall、heatmap、mode map等は「綺麗なneon」にしない。
+
+- backgroundとgridのcontrastを抑える;
+- primary traceを明確にし、secondary traceはline weight/opacityで後退;
+- predicted / measuredを色だけでなくline style/badgeでも区別;
+- perceptually ordered colormapを使い、selection accentとscientific scaleを混用しない;
+- warning colorをheatmapの通常値へ流用しない;
+- cursor/selected frequency/seat等はcrosshair + labelで明確にする.
+
+### 11.12 Inspector and floating controls
+
+Inspectorはselection-dependentで、同じ位置に留まりcontentだけ更新する。大量fieldを最初から見せず、Basic / Acoustic / Advanced等のdisclosureを使う。
+
+3D上のfloating controlは小さく保つ。viewportを覆う大型HUDを作らない。頻繁にtypingするfieldはfloating HUDではなくInspector側へ置く。
+
+### 11.13 Interaction density
+
+一画面にprimary actionを複数競合させない。
+
+- 1 context = 1 dominant next action;
+- toolbarは頻繁な操作のみ;
+- rare actionはMore / context menu;
+- sidebarはnavigation;
+- inspectorはselection property;
+- command paletteは場所を知らない時のescape hatch.
+
+同じactionをtoolbar、dock、card、context menuへ無秩序に重複させない。重複させる場合はkeyboard shortcutとcontext menuのように役割が明確な場合に限定する。
+
+### 11.14 Reference guidance
+
+設計判断の参考:
+- Apple HIG Dark Mode: https://developer.apple.com/design/human-interface-guidelines/dark-mode
+- Apple HIG Layout: https://developer.apple.com/design/human-interface-guidelines/layout
+- Apple HIG Sidebars: https://developer.apple.com/design/human-interface-guidelines/sidebars
+- Apple HIG Toolbars: https://developer.apple.com/design/human-interface-guidelines/toolbars
+- Apple HIG Feedback: https://developer.apple.com/design/human-interface-guidelines/feedback
+- Apple HIG Searching: https://developer.apple.com/design/human-interface-guidelines/searching
+
+これらはWindows上でApple UIを再現する仕様ではなく、content priority、hierarchy、feedback、navigation densityの判断材料として使う。
 
 ## 12. Layout stability
 
@@ -388,13 +577,16 @@ UI簡略化のためにdomain authorityを弱めない。
 - workspace router
 - context bar
 - command palette
-- theme/design token foundation
+- dark-first theme/design token foundation
+- semantic surface / accent / typography / focus state
 
 ### UX120 — Room
-- viewport-centric Room workspace
+- viewport-centric dark 3D workspace
 - contextual tools
 - selection Inspector
 - object palette
+- neutral scene lighting / low-contrast grid / selection outline
+- overlay layer/focus mode
 - permanent toolbar/dock削減
 
 ### UX130 — Measurements
@@ -405,11 +597,16 @@ UI簡略化のためにdomain authorityを弱めない。
 - Setup / Candidates / Compare / Measure-Validate
 - current monolithic right scroll panelを廃止
 
-### UX150 — visual polish / DPI
-- spacing/alignment/typography/token統一
+### UX150 — visual / motion / perceived-quality polish
+- dark-first appearanceをauthoritativeにfreeze
+- spacing/alignment/typography/surface/accent token統一
+- 3D lighting/grid/material/overlay visual tuning
+- hover/pressed/focus/disabled/selected feedback
+- motion duration/easing/interruptibility
 - 1280×800 / 1440×900
 - 100 / 150 / 200% DPI
-- focus/keyboard/hit targets
+- keyboard/focus/hit targets
+- scientific plot dark-mode readability
 
 ### UX160 — first-use / visual acceptance
 - first-use walkthrough
