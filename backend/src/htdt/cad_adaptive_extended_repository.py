@@ -54,8 +54,7 @@ class CadAdaptiveExtendedRepository:
                     objective_id TEXT NOT NULL,
                     observation_sha256 TEXT NOT NULL UNIQUE,
                     payload_json TEXT NOT NULL,
-                    created_at_utc TEXT NOT NULL,
-                    UNIQUE(extended_search_id, candidate_id, objective_id)
+                    created_at_utc TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_adaptive_extended_observation_search_seq
                     ON cad_adaptive_extended_observations(
@@ -139,6 +138,23 @@ class CadAdaptiveExtendedRepository:
                 'adaptive extended observation scope does not match capability'
             )
 
+        existing = [
+            item
+            for item in self.list_observations(observation.extended_search_id)
+            if item.candidate_id == observation.candidate_id
+            and item.objective_id == observation.objective_id
+        ]
+        latest = existing[-1] if existing else None
+        if latest is None:
+            if observation.supersedes_observation_sha256 is not None:
+                raise ValueError(
+                    'first adaptive extended observation must not supersede another record'
+                )
+        elif observation.supersedes_observation_sha256 != latest.observation_sha256:
+            raise ValueError(
+                'adaptive extended observation must supersede the current record SHA'
+            )
+
         candidates, candidate_set_sha256 = self._all_candidates(spec, base)
         if candidate_set_sha256 != observation.candidate_set_sha256:
             raise ValueError(
@@ -188,6 +204,35 @@ class CadAdaptiveExtendedRepository:
             else CadAdaptiveExtendedObservation.model_validate_json(
                 row['payload_json']
             )
+        )
+
+    def current_observations(
+        self,
+        extended_search_id: str,
+    ) -> tuple[CadAdaptiveExtendedObservation, ...]:
+        current: dict[
+            tuple[str, str],
+            CadAdaptiveExtendedObservation,
+        ] = {}
+        for observation in self.list_observations(extended_search_id):
+            key = (observation.candidate_id, observation.objective_id)
+            previous = current.get(key)
+            if previous is None:
+                if observation.supersedes_observation_sha256 is not None:
+                    raise ValueError(
+                        'adaptive extended observation chain has invalid root'
+                    )
+            elif (
+                observation.supersedes_observation_sha256
+                != previous.observation_sha256
+            ):
+                raise ValueError(
+                    'adaptive extended observation chain is broken'
+                )
+            current[key] = observation
+        return tuple(
+            current[key]
+            for key in sorted(current)
         )
 
     def list_observations(
