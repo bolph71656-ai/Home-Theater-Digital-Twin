@@ -169,3 +169,8 @@ Focused contracts:
 
 Repository CI remains the regression authority for O10–O80 behavior and packaged
 native application behavior. No RDC is required or used for UX140 implementation.
+
+
+## Integration update — 2026-09-19
+
+The UX120–UX140 integration composition now mounts this workspace for `WorkspaceId.OPTIMIZATION`. Canonical contexts are defined once in `workflow_navigation.py`; legacy `objectives` and `measurement-plan` links are normalized at the shell boundary. `optimization.compare_candidates` now deep-links to `comparison`. This remains a transitional controller/state adapter; final removal of the inherited legacy QMainWindow structure is a later cleanup.
