@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -11,10 +12,18 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend' / 'src'))
 
-from htdt.native_editor import default_data_dir
 from htdt.rew_api import RewApiClient, RewApiError
 
 from audit_o60_owned_room import DATABASE_NAME, _build_repositories, _readonly_snapshot
+
+
+def default_inventory_data_dir() -> Path:
+    base = os.environ.get('LOCALAPPDATA')
+    return (
+        Path(base) / 'HomeTheaterDigitalTwin'
+        if base
+        else Path.home() / '.home-theater-digital-twin'
+    )
 
 
 def inventory(data_dir: Path) -> dict[str, object]:
@@ -129,7 +138,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Read-only inventory for the O60 owned-room validation workflow.'
     )
-    parser.add_argument('--data-dir', type=Path, default=default_data_dir())
+    parser.add_argument('--data-dir', type=Path, default=default_inventory_data_dir())
     parser.add_argument(
         '--skip-rew',
         action='store_true',
