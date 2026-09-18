@@ -258,6 +258,22 @@ class OptimizationWorkflowController(
         self._set_dirty_status()
         return created
 
+    def undo(self) -> bool:
+        changed = self.scene.undo()
+        if changed:
+            self._selected_id = self.scene.view_state.selected_id
+            self._rebuild()
+            self._set_dirty_status()
+        return changed
+
+    def redo(self) -> bool:
+        changed = self.scene.redo()
+        if changed:
+            self._selected_id = self.scene.view_state.selected_id
+            self._rebuild()
+            self._set_dirty_status()
+        return changed
+
     def _sync_recovery(self) -> None:
         self.scene._sync_recovery()
 
