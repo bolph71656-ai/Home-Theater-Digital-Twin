@@ -329,10 +329,10 @@ class OptimizationWorkflowController(
         ):
             self.pareto_tree.clear()
             self.pareto_summary_label.setText(
-                "staleなSearchSpecではPareto集合を更新できません"
+                "部屋または制約が変更されたため、この探索設定ではPareto比較を更新できません"
             )
             self.statusChanged.emit(
-                "Pareto比較を拒否しました · SearchSpec/Scene/constraint authorityがstaleです"
+                "Pareto比較を更新できません · 部屋または制約が変更されています"
             )
             return
 
@@ -340,7 +340,7 @@ class OptimizationWorkflowController(
         if not evaluations:
             self.objective_list.clear()
             self.pareto_tree.clear()
-            self.pareto_summary_label.setText("この探索仕様にはobjective evaluationがありません")
+            self.pareto_summary_label.setText("この探索設定には比較できる指標データがありません")
             return
 
         available = tuple(metric.objective_id for metric in evaluations[0].vector.metrics)
@@ -353,7 +353,7 @@ class OptimizationWorkflowController(
             if set(metric_map) != expected_ids:
                 self.pareto_tree.clear()
                 self.pareto_summary_label.setText(
-                    "objective集合が候補間で一致しません · Pareto比較を中止"
+                    "候補間で比較指標が一致しないため、Pareto比較を中止しました"
                 )
                 return
             if any(
@@ -362,7 +362,7 @@ class OptimizationWorkflowController(
             ):
                 self.pareto_tree.clear()
                 self.pareto_summary_label.setText(
-                    "objective単位が候補間で一致しません · Pareto比較を中止"
+                    "候補間で指標の単位が一致しないため、Pareto比較を中止しました"
                 )
                 return
 
@@ -441,7 +441,7 @@ class OptimizationWorkflowController(
                 self.search_candidate_tree.setCurrentItem(candidate_item)
                 return
         self.statusChanged.emit(
-            "Pareto候補は現在のcandidate page外です · pageを移動してからpreview/applyしてください"
+            "対象候補は現在の候補ページ外です · ページを移動してからプレビューまたは適用してください"
         )
 
     def refresh_rew_list_async(self) -> None:
@@ -469,7 +469,7 @@ class OptimizationWorkflowController(
             raise ValueError("Measurement Planを選択してください")
         revision = self.repository.get(plan.applied_scene_revision_id)
         if revision is None:
-            raise ValueError("Measurement PlanのSceneRevisionが見つかりません")
+            raise ValueError("測定計画に対応する保存済みの部屋状態が見つかりません")
         provisional = measurement_record_for_revision(
             revision,
             entity_id,
@@ -622,7 +622,7 @@ class OptimizationWorkflowController(
                     self.campaign_measurement_point_combo.setCurrentIndex(index)
 
     def _create_controls(self) -> None:
-        self.search_binding_label = QLabel("保存済みSceneRevisionから探索仕様を作成します")
+        self.search_binding_label = QLabel("保存済みの部屋状態から探索設定を作成します")
         self.search_binding_label.setWordWrap(True)
         self.search_name_field = QLineEdit()
         self.search_name_field.setPlaceholderText("例: FL 前後 sweep")
@@ -640,7 +640,7 @@ class OptimizationWorkflowController(
         self.search_limit_field.setValue(10_000)
         self.search_axis_tree = QTreeWidget()
         self.search_axis_tree.setHeaderLabels(["物体", "軸", "最小", "最大", "刻み"])
-        self.search_save_button = QPushButton("探索仕様を保存")
+        self.search_save_button = QPushButton("探索設定を保存")
         self.search_save_button.clicked.connect(self.save_search_spec)
         self.search_spec_tree = QTreeWidget()
         self.search_spec_tree.setHeaderLabels(["探索仕様", "入力版", "状態"])
@@ -657,9 +657,9 @@ class OptimizationWorkflowController(
         self.search_prev_button.clicked.connect(self.previous_search_page)
         self.search_next_button = QPushButton("次の候補")
         self.search_next_button.clicked.connect(self.next_search_page)
-        self.search_preview_button = QPushButton("候補をpreview")
+        self.search_preview_button = QPushButton("候補をプレビュー")
         self.search_preview_button.clicked.connect(self.preview_selected_candidate)
-        self.search_clear_preview_button = QPushButton("preview解除")
+        self.search_clear_preview_button = QPushButton("プレビュー解除")
         self.search_clear_preview_button.clicked.connect(self.clear_candidate_preview)
         self.search_apply_button = QPushButton("候補を適用")
         self.search_apply_button.clicked.connect(self.apply_selected_candidate)
@@ -692,9 +692,9 @@ class OptimizationWorkflowController(
         self.objective_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         self.pareto_refresh_button = QPushButton("Pareto集合を更新")
         self.pareto_refresh_button.clicked.connect(self.refresh_pareto_comparison)
-        self.pareto_summary_label = QLabel("objective evaluation未読込")
+        self.pareto_summary_label = QLabel("比較指標が未読込です")
         self.pareto_tree = QTreeWidget()
-        self.pareto_tree.setHeaderLabels(["候補", "Pareto", "evidence", "objective"])
+        self.pareto_tree.setHeaderLabels(["候補", "Pareto", "根拠", "指標"])
         self.pareto_tree.itemSelectionChanged.connect(self._pareto_candidate_selected)
 
         self.campaign_assignment_tree = QTreeWidget()
@@ -716,9 +716,9 @@ class OptimizationWorkflowController(
         ):
             field.setSpecialValueText("要設定")
         self.campaign_tree = QTreeWidget()
-        self.campaign_tree.setHeaderLabels(["campaign", "model", "候補", "readiness"])
+        self.campaign_tree.setHeaderLabels(["検証条件", "モデル", "候補", "準備状況"])
         self.campaign_tree.itemSelectionChanged.connect(self._campaign_selected)
-        self.campaign_detail_label = QLabel("Campaign未選択")
+        self.campaign_detail_label = QLabel("検証条件が未選択です")
         self.campaign_applicability_state: dict[str, QComboBox] = {}
         self.campaign_applicability_detail: dict[str, QLineEdit] = {}
         for code in ("geometry", "band", "routing"):
@@ -735,14 +735,14 @@ class OptimizationWorkflowController(
         self.validation_refresh_button.clicked.connect(self.refresh_model_validations)
         self.validation_tree = QTreeWidget()
         self.validation_tree.setHeaderLabels(
-            ["validation", "scope", "residual", "trend", "sensitivity", "repeatability", "gate"]
+            ["検証", "範囲", "残差", "傾向", "感度", "再現性", "推薦可否"]
         )
         self.validation_tree.itemSelectionChanged.connect(self._validation_selected)
-        self.validation_detail_label = QLabel("ValidationRecord未選択")
+        self.validation_detail_label = QLabel("検証結果が未選択です")
 
         self.adaptive_scope_combo = QComboBox()
-        self.adaptive_scope_combo.addItem("Synthetic development", "development_synthetic")
-        self.adaptive_scope_combo.addItem("Owned-room production", "production_owned_room")
+        self.adaptive_scope_combo.addItem("合成データで開発検証", "development_synthetic")
+        self.adaptive_scope_combo.addItem("実室データで本番検証", "production_owned_room")
         self.adaptive_length_scale_field = self._number_field(0.01, 20.0, 0.5, 3)
         self.adaptive_length_scale_field.setSuffix(" m")
         self.adaptive_proposal_limit_field = QSpinBox()
@@ -751,13 +751,13 @@ class OptimizationWorkflowController(
         self.adaptive_build_button = QPushButton("次の測定候補を計算・保存")
         self.adaptive_build_button.clicked.connect(self.build_selected_adaptive_plan)
         self.adaptive_tree = QTreeWidget()
-        self.adaptive_tree.setHeaderLabels(["plan / candidate", "scope", "acquisition", "補正objective"])
+        self.adaptive_tree.setHeaderLabels(["計画 / 候補", "範囲", "取得値", "補正指標"])
         self.adaptive_tree.itemSelectionChanged.connect(self._adaptive_selected)
-        self.adaptive_detail_label = QLabel("Adaptive Plan未選択")
+        self.adaptive_detail_label = QLabel("次候補の計画が未選択です")
 
         self.extended_capability_combo = QComboBox()
         self.extended_parameter_combo = QComboBox()
-        self.extended_parameter_combo.addItem("Acoustic aim yaw", "aim_yaw_deg")
+        self.extended_parameter_combo.addItem("音響の向き（yaw）", "aim_yaw_deg")
         self.extended_parameter_combo.addItem(
             "Physical cabinet toe-in", "body_yaw_deg"
         )
@@ -780,18 +780,18 @@ class OptimizationWorkflowController(
         )
         self.extended_spec_tree = QTreeWidget()
         self.extended_spec_tree.setHeaderLabels(
-            ["extended", "model", "parameter", "状態"]
+            ["拡張探索", "モデル", "パラメータ", "状態"]
         )
         self.extended_spec_tree.itemSelectionChanged.connect(
             self._extended_spec_selected
         )
-        self.extended_generate_button = QPushButton("extended候補を生成")
+        self.extended_generate_button = QPushButton("拡張候補を生成")
         self.extended_generate_button.clicked.connect(
             self.generate_extended_candidates_async
         )
         self.extended_cancel_button = QPushButton("生成をキャンセル")
         self.extended_cancel_button.clicked.connect(self.cancel_extended_generation)
-        self.extended_summary_label = QLabel("Extended候補未生成")
+        self.extended_summary_label = QLabel("拡張候補は未生成です")
         self.extended_candidate_tree = QTreeWidget()
         self.extended_candidate_tree.setHeaderLabels(
             ["候補", "base", "位置", "aim yaw", "body yaw"]
@@ -799,17 +799,17 @@ class OptimizationWorkflowController(
         self.extended_candidate_tree.itemSelectionChanged.connect(
             self._extended_candidate_selected
         )
-        self.extended_prev_button = QPushButton("前のextended候補")
+        self.extended_prev_button = QPushButton("前の拡張候補")
         self.extended_prev_button.clicked.connect(self.previous_extended_page)
-        self.extended_next_button = QPushButton("次のextended候補")
+        self.extended_next_button = QPushButton("次の拡張候補")
         self.extended_next_button.clicked.connect(self.next_extended_page)
-        self.extended_preview_button = QPushButton("extended候補をpreview")
+        self.extended_preview_button = QPushButton("extended候補をプレビュー")
         self.extended_preview_button.clicked.connect(
             self.preview_selected_extended_candidate
         )
-        self.extended_clear_preview_button = QPushButton("preview解除")
+        self.extended_clear_preview_button = QPushButton("プレビュー解除")
         self.extended_clear_preview_button.clicked.connect(self.clear_extended_preview)
-        self.extended_apply_button = QPushButton("extended候補を適用")
+        self.extended_apply_button = QPushButton("拡張候補を適用")
         self.extended_apply_button.clicked.connect(
             self.apply_selected_extended_candidate
         )
@@ -821,20 +821,20 @@ class OptimizationWorkflowController(
         self.adaptive_extended_proposal_limit_field.setRange(1, 100)
         self.adaptive_extended_proposal_limit_field.setValue(20)
         self.adaptive_extended_build_button = QPushButton(
-            "Adaptive Extended候補を計算・保存"
+            "拡張した次候補を計算・保存"
         )
         self.adaptive_extended_build_button.clicked.connect(
             self.build_selected_adaptive_extended_plan
         )
         self.adaptive_extended_tree = QTreeWidget()
         self.adaptive_extended_tree.setHeaderLabels(
-            ["plan / candidate", "scope", "acquisition", "feature / objective"]
+            ["計画 / 候補", "範囲", "取得値", "特徴 / 指標"]
         )
         self.adaptive_extended_tree.itemSelectionChanged.connect(
             self._adaptive_extended_selected
         )
         self.adaptive_extended_detail_label = QLabel(
-            "Adaptive Extended Plan未選択"
+            "拡張した次候補の計画が未選択です"
         )
 
         self.rew_combo = QComboBox()
