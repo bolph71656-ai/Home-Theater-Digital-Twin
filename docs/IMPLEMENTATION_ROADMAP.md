@@ -103,7 +103,7 @@ R100BはUI非依存なのでUX-seriesと並行可能。ただし **R110以降の
 
 UX-seriesでdomain/service/SceneRevision/evidence semanticsを簡略化しない。GUI compositionだけを置き換え、既存service/modelを再利用する。
 
-### Post-0.1 / O90 — robust / tolerance-aware optimization
+### Post-0.1 / O90 — robust / tolerance-aware optimization ([Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140))
 
 O90は完成済みO10〜O80のnominal探索authorityを置き換えず、**現実的な設置誤差・入力不確かさに対する性能の安定性**を追加評価する。詳細は[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
 
