@@ -27,6 +27,7 @@ from htdt.cad_system_variant_repository import CadSystemVariantRepository
 from htdt.cad_topology_search import (
     LinkedPlacementRule,
     PlacementAngleAxis,
+    ProposedExclusionRegion,
     ProposedPlacementSpec,
     build_topology_placement_search_spec,
     generate_topology_placement_candidates,
@@ -34,6 +35,7 @@ from htdt.cad_topology_search import (
     topology_candidate_to_system_variant,
 )
 from htdt.cad_topology_search_repository import CadTopologySearchRepository
+from htdt.cad_topology_space import build_topology_search_spec
 
 
 DOCUMENT_ID = 'o100b-virtual-placement-fixture'
@@ -148,6 +150,28 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
     )
     variant_repository = CadSystemVariantRepository(scene_repository)
     variant_repository.save_variant(template)
+    topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(template,),
+        optional_role_ids=('SL', 'SR'),
+        include_baseline=True,
+        created_at_utc=NOW,
+    )
+    rebuilt_topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(template,),
+        optional_role_ids=('SR', 'SL'),
+        include_baseline=True,
+        created_at_utc='2026-09-19T00:00:30+00:00',
+    )
+    assert topology.topology_search_id == rebuilt_topology.topology_search_id
+    assert topology.topology_search_sha256 == rebuilt_topology.topology_search_sha256
+    assert topology.include_baseline
+    assert [(item.kind, item.role_id, item.optional_role) for item in topology.options[0].operations] == [
+        ('add', 'SL', True),
+        ('add', 'SR', True),
+    ]
+    option_id = topology.options[0].option_id
 
     placements = (
         ProposedPlacementSpec(
@@ -155,6 +179,12 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
             role_id='SL',
             zone_id='left-side-wall',
             allowed_region=_region(0.5, 1.4, 2.4, 3.4),
+            exclusion_regions=(
+                ProposedExclusionRegion(
+                    region_id='blocked-mounting-strip',
+                    vertices=_region(0.95, 1.2, 2.5, 3.3),
+                ),
+            ),
             min_z_m=1.2,
             max_z_m=1.4,
             xyz_axes=(
@@ -237,9 +267,18 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
         document_id=DOCUMENT_ID,
         constraints=(),
     )
+    topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(template,),
+        created_at_utc=NOW,
+    )
     spec = build_topology_placement_search_spec(
         baseline=baseline,
         template_variant=template,
+        topology_spec=topology,
+        topology_option_id=topology.options[0].option_id,
+        topology_spec=topology,
+        topology_option_id=option_id,
         placement_specs=placements,
         constraint_set=constraints,
         linked_rules=links,
@@ -249,6 +288,8 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
     rebuilt_spec = build_topology_placement_search_spec(
         baseline=baseline,
         template_variant=template,
+        topology_spec=topology,
+        topology_option_id=option_id,
         placement_specs=tuple(reversed(placements)),
         constraint_set=constraints,
         linked_rules=tuple(reversed(links)),
@@ -272,8 +313,8 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
     )
 
     assert first.raw_candidate_count == 64
-    assert first.feasible_candidate_count == 64
-    assert first.rejected_candidate_count == 0
+    assert first.feasible_candidate_count == 32
+    assert first.rejected_candidate_count == 32
     assert first.duplicate_candidate_count == 0
     assert first.candidate_set_sha256 == second.candidate_set_sha256
     assert [item.candidate_id for item in first.candidates] == [
@@ -337,15 +378,19 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
     assert lifecycle['sr'].measurement_ids == ()
 
     topology_repository = CadTopologySearchRepository(variant_repository)
+    topology_repository.save_topology_spec(topology)
     topology_repository.save_spec(spec)
     topology_repository.save_candidate_page(first)
     topology_repository.save_candidate_variant(candidate.candidate_id, child)
+    assert topology_repository.get_topology_spec(topology.topology_search_id) == topology
     assert topology_repository.get_spec(spec.search_id) == spec
     assert topology_repository.get_candidate(candidate.candidate_id) == candidate
     assert topology_repository.variant_for_candidate(candidate.candidate_id) == child
     comparison = topology_repository.comparison_ref(candidate.candidate_id)
     assert comparison.variant_id == child.variant_id
     assert comparison.variant_sha256 == child.variant_sha256
+    assert comparison.topology_search_id == topology.topology_search_id
+    assert comparison.topology_option_id == option_id
     assert comparison.applied_revision_id is None
 
     # Search/persistence stays proposal-only: no temporary SceneRevision is created.
@@ -465,3 +510,51 @@ def test_body_yaw_reuses_o80_oriented_allowed_region_rejection(
     assert sum(page.rejection_counts.values()) == 1
     assert page.candidates[0].body_yaw_deg == {'sl': 0.0}
     assert scene_repository.latest(document_id).revision_id == baseline.revision_id
+
+
+def test_topology_search_spec_reuses_o100a_add_remove_replace_diff(
+    tmp_path: Path,
+) -> None:
+    _scene_repository, baseline = _baseline(tmp_path)
+    replacement_fr = ProposedEntitySpec(
+        spec_id='proposal-fr-replacement',
+        entity=_speaker('fr', 'FR', 4.5, 1.0, 1.1),
+        role_binding_id='FR',
+    )
+    surround = _proposal('sl', 'SL', 0.8)
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Explicit topology operations',
+        role_bindings=(
+            ChannelRoleBinding(role_id='FL', display_name='FL'),
+            ChannelRoleBinding(role_id='FR', display_name='FR'),
+            ChannelRoleBinding(role_id='TFL', display_name='TFL'),
+            ChannelRoleBinding(role_id='TFR', display_name='TFR'),
+            ChannelRoleBinding(role_id='SL', display_name='SL'),
+        ),
+        proposed_entities=(replacement_fr, surround),
+        remove_entity_ids=('c',),
+        created_at_utc=NOW,
+    )
+
+    topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(variant,),
+        optional_role_ids=('SL',),
+        include_baseline=True,
+        created_at_utc=NOW,
+    )
+
+    assert [
+        (
+            operation.kind,
+            operation.entity_id,
+            operation.role_id,
+            operation.optional_role,
+        )
+        for operation in topology.options[0].operations
+    ] == [
+        ('remove', 'c', 'C', False),
+        ('replace', 'fr', 'FR', False),
+        ('add', 'sl', 'SL', True),
+    ]
