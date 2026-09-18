@@ -83,9 +83,12 @@ Issue #118は既存A01〜A15のdomain/editor correctnessを置き換えない。
 | UX-A03 / UX120 | F2をRoomで作図→speaker/seat配置→選択/寸法/aim編集 | viewportが主領域。Geometry/Objects/Speakers context以外の不要controlを常設しない。selection Inspectorが一致 |
 | UX-A04 / UX130 | REW fixtureをimport→speaker/seatへassignment→quality確認→prediction比較 | import/assignment/quality/compareの順が画面上で理解でき、巨大right dockや複数nested scrollを必要としない |
 | UX-A05 / UX140 | SearchSpec作成→candidate生成→objective/Pareto比較→MeasurementPlan→validation | Setup/Candidates/Compare/Measure-Validateの現在地が明確。internal IDsを知らずに完遂できる |
-| UX-A06 / UX150 | 1280×800と1440×900、100/150/200% DPIでOverview/Room/Measurements/Optimizeを巡回 | primary controlのclipping/overlapなし。accidental horizontal scrollなし。label baseline/control height/spacingがtokenに従う |
+| UX-A06 / UX150 | dark appearanceで1280×800と1440×900、100/150/200% DPIのOverview/Room/Measurements/Optimizeを巡回 | primary controlのclipping/overlapなし。accidental horizontal scrollなし。surface hierarchy、label baseline、control height、spacing、accent usageがtokenに従う |
 | UX-A07 / UX160 | Room→Measurements→Optimize→Overviewを往復し、entity/resultをdeep-link | SceneRevision、selection、stale、measured/predicted capabilityが矛盾しない。戻る/移動で古いresultをcurrentへ誤適用しない |
 | UX-A08 / UX160 | 初見task: L字室→3.0.2→REW import→比較→candidate確認 | primary actionの場所についてmanualを要求しない。迷った箇所・誤操作・説明が必要だった箇所を記録し、未解消ならgate未達 |
+| UX-A09 / UX150 | dark RoomでF2/F4をViewing/Edit/Acoustics focus modeに切替え、orbit/select/drag/overlay比較 | room edge・surface orientation・speaker/seat・selection/gizmoが背景から識別可能。grid/labels/chromeがgeometryより目立たず、overlayを重ねても主対象を見失わない |
+| UX-A10 / UX150 | hover→press→drag→commit/cancel、Inspector selection変更、workspace/context移動を連続実行 | feedbackが一貫し、layout jumpやfocus lossがない。motionは因果関係を示すだけで、操作を待たせない。interrupt可能 |
+| UX-A11 / UX150 | FR/heatmap/waterfallをdark appearanceでmeasured/predicted/stale/warning付き表示 | trace/grid/textが読め、scientific colormapとselection/warning colorが競合しない。色だけに依存せず状態を識別できる |
 
 ### UX visual evidence
 
@@ -111,3 +114,8 @@ headless screenshotは補助資料にできるが、Windows実機mouse/focus/DPI
 - Measurements/Optimizeが一枚の巨大scroll formのまま
 - selection/contextと右panel内容が一致しない
 - Overviewが単なる数値dashboardで、actionable deep-linkを持たない
+- pure black背景＋高彩度neonでしか階層を作れていない
+- 3D grid/chrome/labelsがroom geometryやselectionより目立つ
+- hover/pressed/focus/disabled/selectedの区別が曖昧
+- decorative blur/glassがplot/table/textの可読性を下げる
+- animationが操作完了を待たせる、または常時動いて注意を奪う
