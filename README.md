@@ -134,7 +134,7 @@ HTDTの中心は、数値フォームを先に埋める方式ではなく、同�
 - N80: SearchSpec / candidate preview+apply / O20 batch prediction / objective / Pareto / Measurement Plan
 - O60: calibration/holdout分離 / trend / sensitivity / repeatability / applicability / recommendation gate
 - O70: objective別residual GP / uncertainty / adaptive measurement proposal / synthetic・owned-room scope分離
-- O80: capability-gated Extended Search / acoustic aim yaw (`aim_yaw_deg`) / preview+apply+Undo
+- O80: capability-gated Extended Search / acoustic aim yaw (`aim_yaw_deg`) / physical cabinet toe-in (`body_yaw_deg`) / orientation-aware hard constraints / preview+apply+Undo
 - N90: reproducible package / per-user installer / backup+restore / update+uninstall data retention
 
 ## 対象環境
