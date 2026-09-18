@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import sqrt
 from pathlib import Path
+import json
 import sqlite3
 
 from .cad_measurement_repository import CadMeasurementRepository
@@ -293,6 +294,36 @@ class CadModelValidationRepository:
             if rebuilt != check:
                 raise ValueError('candidate separation check does not match measurement evidence')
 
+    def _validate_evidence_scope(self, record: CadModelValidationRecord) -> None:
+        if record.evidence_scope != 'owned_room':
+            return
+        measurement_ids = {pair.measurement_id for pair in record.pairs}
+        for check in record.repeatability_checks:
+            measurement_ids.update(check.measurement_ids)
+        for check in record.separation_checks:
+            measurement_ids.update((check.measurement_a_id, check.measurement_b_id))
+        if self.objective_repository is not None:
+            for sample in record.objective_samples:
+                evaluation = self.objective_repository.get_evaluation(sample.measured_evaluation_id)
+                if evaluation is not None:
+                    measurement_ids.update(
+                        ref.source_id
+                        for ref in evaluation.input_refs
+                        if ref.evidence_class == 'measured' and ref.source_kind == 'cad_measurement'
+                    )
+        for measurement_id in sorted(measurement_ids):
+            measurement = self.measurement_repository.get_measurement(measurement_id)
+            if measurement is None:
+                raise ValueError(f'owned-room validation references unknown measurement: {measurement_id}')
+            try:
+                provenance = json.loads(measurement.provenance_json)
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise ValueError('owned-room measurement provenance is not valid JSON') from exc
+            if not isinstance(provenance, dict) or provenance.get('validation_scope') != 'owned_room':
+                raise ValueError(
+                    'owned-room validation requires measurement provenance validation_scope=owned_room'
+                )
+
     def save(self, record: CadModelValidationRecord) -> None:
         if not isinstance(record, CadModelValidationRecord):
             raise TypeError('record must be CadModelValidationRecord')
@@ -338,6 +369,7 @@ class CadModelValidationRepository:
         self._validate_objective_samples(record)
         self._validate_sensitivity(record, spec)
         self._validate_repeatability_and_separation(record, plans)
+        self._validate_evidence_scope(record)
 
         with self._connect() as connection:
             connection.execute(
