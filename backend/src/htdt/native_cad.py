@@ -20,6 +20,7 @@ from .optimization_workspace import OptimizationWorkspaceWindow
 from .prediction_workspace import PredictionWorkspaceWindow
 from .runtime_instance import SingleInstanceGuard
 from .theater_workflow import TheaterWorkflowWindow
+from .ui_theme import apply_dark_theme
 
 # Preserve the public theater-editor alias while the concrete product composition
 # advances through N80. N40-N70 behavior remains inherited unchanged.
@@ -104,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         app = QApplication([sys.argv[0]])
+        apply_dark_theme(app)
         repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
         window = OptimizationWorkspaceWindow(repository, args.document_id)
         window.show()
