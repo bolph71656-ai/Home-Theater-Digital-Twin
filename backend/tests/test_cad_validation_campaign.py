@@ -66,12 +66,19 @@ def _fixture(tmp_path):
     )
 
 
-def _campaign(spec, page, candidate_ids):
+def _campaign(
+    spec,
+    page,
+    candidate_ids,
+    *,
+    search_spec_sha256: str | None = None,
+    candidate_set_sha256: str | None = None,
+):
     return build_validation_campaign(
         document_id=spec.document_id,
         search_spec_id=spec.search_spec_id,
-        search_spec_sha256=spec.search_spec_sha256,
-        candidate_set_sha256=page.candidate_set_sha256,
+        search_spec_sha256=search_spec_sha256 or spec.search_spec_sha256,
+        candidate_set_sha256=candidate_set_sha256 or page.candidate_set_sha256,
         model_id='rew-roomsim',
         model_version='5.40',
         requested_band_hz=(20.0, 160.0),
@@ -136,6 +143,49 @@ def test_campaign_round_trip_preregisters_split_and_thresholds(tmp_path):
         'holdout',
         'calibration',
     ]
+
+
+
+def test_campaign_rejects_search_spec_hash_mismatch(tmp_path):
+    (
+        _scene,
+        _search,
+        _measurement,
+        repository,
+        spec,
+        page,
+        candidate_ids,
+    ) = _fixture(tmp_path)
+    campaign = _campaign(
+        spec,
+        page,
+        candidate_ids,
+        search_spec_sha256='f' * 64,
+    )
+
+    with pytest.raises(ValueError, match='SearchSpec hash mismatch'):
+        repository.save(campaign)
+
+
+def test_campaign_rejects_candidate_set_hash_mismatch(tmp_path):
+    (
+        _scene,
+        _search,
+        _measurement,
+        repository,
+        spec,
+        page,
+        candidate_ids,
+    ) = _fixture(tmp_path)
+    campaign = _campaign(
+        spec,
+        page,
+        candidate_ids,
+        candidate_set_sha256='e' * 64,
+    )
+
+    with pytest.raises(ValueError, match='candidate-set hash mismatch'):
+        repository.save(campaign)
 
 
 def test_campaign_rejects_candidate_outside_exact_search_set(tmp_path):
