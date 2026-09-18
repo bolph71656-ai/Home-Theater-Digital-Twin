@@ -192,3 +192,41 @@ def test_restore_release_checks_hidden_mounted_workspaces() -> None:
 
     window.deleteLater()
     app.processEvents()
+
+
+
+def test_workflow_shell_compacts_navigation_without_context_overlap() -> None:
+    app = _app()
+
+    def factory(workspace_id: WorkspaceId):
+        return lambda: WorkspaceMount.from_widget(QLabel(workspace_id.value))
+
+    window = WorkflowShellWindow(_registrations(factory))
+    window.show()
+    app.processEvents()
+
+    assert not window.rail.is_compact
+    assert not window.context_bar.is_compact
+    assert window.rail.width() == window.rail.EXPANDED_WIDTH
+
+    window.resize(900, 600)
+    app.processEvents()
+    assert window.rail.is_compact
+    assert window.context_bar.is_compact
+    assert window.rail.width() == window.rail.COMPACT_WIDTH
+
+    assert window.navigate(WorkspaceId.OPTIMIZATION)
+    window.resize(640, 400)
+    app.processEvents()
+
+    buttons = tuple(window.context_bar._context_buttons.values())
+    assert len(buttons) == 4
+    assert all(button.isVisible() for button in buttons)
+    for index, left in enumerate(buttons):
+        for right in buttons[index + 1:]:
+            assert not left.geometry().intersects(right.geometry())
+    assert max(button.geometry().right() for button in buttons) < window.context_bar._context_container.width()
+
+    window.close()
+    window.deleteLater()
+    app.processEvents()
