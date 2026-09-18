@@ -42,7 +42,7 @@ HTDTの配置探索は、部屋・スピーカー・MLPの可動範囲から候�
 | MLP前後/左右位置 | 対象 | 対象 |
 | 左右対称制約 | 対象 | 任意解除 |
 | acoustic aim yaw (`aim_yaw_deg`) | 記録・synthetic capability | 指向性モデルが成立した場合に探索 |
-| physical cabinet toe-in (body yaw) | 未実装 | orientation-aware hard constraint再評価とdirectional model成立後 |
+| physical cabinet toe-in (body yaw) | **software実装済み** | `body_yaw_deg`でorientation+aimを同一delta回転し、回転後footprintでhard constraint再評価。production acoustic recommendationはdirectional modelのowned-room O60成立後 |
 | 高さ | 固定から開始 | モデルが高さを扱える場合に探索 |
 | C/Surround | 固定から開始 | 個別の要件とモデル検証後 |
 | サブウーファー | v1.0必須外 | 将来の独立トラック |
@@ -85,7 +85,7 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 | O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | **ソフトウェア実装・owned-Windows受入済み**。candidate→exact applied SceneRevision→Measurement Plan→N60 measured evidenceをappend-only追跡 |
 | O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。実室ではmeasurement前のValidation Campaign preregistrationを必須とし、calibration/holdout、共通target response、objective条件、sensitivity、repeatability、candidate separation、applicabilityを固定する。post-hoc splitやcampaign以前のmeasurementでは推薦gateを開かない |
 | O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **software実装済み / synthetic acceptance PASS**。O60 calibration残差のobjective別GP補正と不確実性から次測定候補を決定し、SearchSpec/candidate-set/ValidationRecordへimmutable保存する。`development_synthetic`は完全PASS synthetic fixtureを許可するがproduction gateを開かない。`production_owned_room`はcurrent campaign-backed eligible ValidationRecordを必須とする |
-| O80 | Extended Search | 多席、多チャンネル、acoustic aim、高さ等 | **software実装済み / synthetic acoustic-aim acceptance PASS**。既存O10が扱う複数entity XYZ/高さは再実装せず、feasible base candidateへmodel-dependent parameterを追加する。最初は`aim_yaw_deg`で、これは`aim_xyz`だけを回すacoustic direction parameterであり、筐体body yawを回すphysical toe-inではない。明示capabilityが必須で、REW Room Simulatorへaim capabilityを付与することは拒否する。synthetic directional fixtureでUI/保存/apply/Undoまで受入し、owned-room有効化は方向性modelの独立O60 gate後だけ |
+| O80 | Extended Search / Adaptive Extended | 多席、多チャンネル、acoustic aim、physical toe-in、高さ等 | **software実装済み**。`aim_yaw_deg`と`body_yaw_deg`を明示capability付きで扱い、physical toe-inはorientation-aware hard constraintを再評価する。Adaptive Extended Planはbase XYZ + extended parameterをaxis span正規化してobjective別residual GP/uncertainty acquisitionへ入力し、exact O80 authorityへimmutable bindingする。synthetic laneはproduction gateを開かず、owned-room有効化はdirectional modelの独立O60 gate後だけ |
 
 O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。
 
@@ -166,7 +166,7 @@ synthetic laneの目的はUI、保存、stale guard、adaptive algorithm、exten
 
 2026-09-18、PR #92/#93/#94でこのsoftware-completion laneを完了した。final authorityはPR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8`、CI #548 / run `35313405578` PASS、Windows Release Artifact #93 / run `35313405629` PASS。以後の未完了事項はIssue #83の実室owned-room evidence gateであり、software実装不足ではない。
 
-現行O70のGP feature vectorはbase O10 SearchSpecのXYZ axisだけであり、O80のextended parameterをadaptive acquisitionへ含めない。O70とO80の個別software pathはcompleteだが、両者を結合したAdaptive Extended SearchはIssue #99で追跡する。
+O70 base Adaptive Planは互換性を保ってO10 XYZ feature vectorのまま維持する。O80Aでは別のimmutable Adaptive Extended Planを追加し、base O10 axisとO80 extended axisをaxis spanで0–1相当に正規化したfeature vectorへ統合する。metreとdegreeをraw値のまま同一kernelへ入れない。exact Extended SearchSpec/capability/candidate-set SHAへbindingし、current observationに実測があるextended candidateはproposalから除外する。synthetic/production gateは従来どおり分離する。
 
 O80Pでは`body_yaw_deg`をphysical cabinet toe-inとして追加する。body yawは`orientation`を回転し、同じyaw deltaを`aim_xyz`へ適用してbody/aim関係を維持する。新規O10 SearchSpecはsource orientationの実筐体XY footprintをconstraint snapshotへ固定し、O80P候補では回転後footprintでroom/allowed/exclusion/wall/envelope pair constraintを再評価する。
 

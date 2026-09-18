@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
 from .analysis_markers import render_analysis_marker_cloud
 from .cad_adaptive_repository import CadAdaptivePlanRepository
 from .cad_adaptive_service import CadAdaptivePlannerService
+from .cad_adaptive_extended_repository import CadAdaptiveExtendedRepository
+from .cad_adaptive_extended_service import CadAdaptiveExtendedPlannerService
 from .cad_extended_search import (
     CadExtendedCandidate,
     CadExtendedCandidateSetPage,
@@ -75,6 +77,7 @@ from .native_editor import ROLE
 from .prediction_workspace import PredictionWorkspaceWindow
 
 from .optimization_adaptive_controller import AdaptiveControllerMixin
+from .optimization_adaptive_extended_controller import AdaptiveExtendedControllerMixin
 from .optimization_extended_controller import ExtendedSearchControllerMixin
 from .optimization_measurement_controller import MeasurementPlanControllerMixin
 from .optimization_search_controller import SearchControllerMixin, candidate_cloud_points
@@ -84,6 +87,7 @@ class OptimizationWorkspaceWindow(
     ValidationControllerMixin,
     MeasurementPlanControllerMixin,
     AdaptiveControllerMixin,
+    AdaptiveExtendedControllerMixin,
     ExtendedSearchControllerMixin,
     SearchControllerMixin,
     PredictionWorkspaceWindow,
@@ -122,6 +126,15 @@ class OptimizationWorkspaceWindow(
         self.extended_repository = CadExtendedSearchRepository(
             self.search_repository,
             self.validation_repository,
+        )
+        self.adaptive_extended_repository = CadAdaptiveExtendedRepository(
+            self.extended_repository,
+            self.validation_repository,
+        )
+        self.adaptive_extended_service = CadAdaptiveExtendedPlannerService(
+            self.extended_repository,
+            self.validation_repository,
+            self.adaptive_extended_repository,
         )
         self.campaign_repository = CadValidationCampaignRepository(
             self.search_repository,
@@ -176,6 +189,11 @@ class OptimizationWorkspaceWindow(
         self.adaptive_build_button: QPushButton | None = None
         self.adaptive_tree: QTreeWidget | None = None
         self.adaptive_detail_label: QLabel | None = None
+        self.adaptive_extended_length_scale_field: QDoubleSpinBox | None = None
+        self.adaptive_extended_proposal_limit_field: QSpinBox | None = None
+        self.adaptive_extended_build_button: QPushButton | None = None
+        self.adaptive_extended_tree: QTreeWidget | None = None
+        self.adaptive_extended_detail_label: QLabel | None = None
         self.extended_capability_combo: QComboBox | None = None
         self.extended_entity_combo: QComboBox | None = None
         self.extended_parameter_combo: QComboBox | None = None
@@ -228,6 +246,7 @@ class OptimizationWorkspaceWindow(
         self._refresh_extended_entities()
         self._refresh_extended_capabilities()
         self._refresh_extended_specs()
+        self.refresh_adaptive_extended_plans()
 
     def _create_search_dock(self) -> None:
         panel = QWidget()
@@ -769,6 +788,60 @@ class OptimizationWorkspaceWindow(
         )
         extended_candidate_actions.addWidget(self.extended_apply_button)
         layout.addLayout(extended_candidate_actions)
+
+        adaptive_extended_label = QLabel(
+            'Adaptive Extended · base XYZ + O80 parameterをscale正規化して'
+            '次のextended測定候補を選びます'
+        )
+        adaptive_extended_label.setWordWrap(True)
+        layout.addWidget(adaptive_extended_label)
+
+        adaptive_extended_form = QFormLayout()
+        self.adaptive_extended_length_scale_field = QDoubleSpinBox()
+        self.adaptive_extended_length_scale_field.setRange(0.01, 20.0)
+        self.adaptive_extended_length_scale_field.setDecimals(3)
+        self.adaptive_extended_length_scale_field.setSingleStep(0.05)
+        self.adaptive_extended_length_scale_field.setValue(0.5)
+        adaptive_extended_form.addRow(
+            'normalized GP length scale',
+            self.adaptive_extended_length_scale_field,
+        )
+        self.adaptive_extended_proposal_limit_field = QSpinBox()
+        self.adaptive_extended_proposal_limit_field.setRange(1, 100)
+        self.adaptive_extended_proposal_limit_field.setValue(20)
+        adaptive_extended_form.addRow(
+            'extended proposal上限',
+            self.adaptive_extended_proposal_limit_field,
+        )
+        layout.addLayout(adaptive_extended_form)
+
+        self.adaptive_extended_build_button = QPushButton(
+            'Adaptive Extended候補を計算・immutable保存'
+        )
+        self.adaptive_extended_build_button.setToolTip(
+            '選択Extended SearchSpecにpersist済みobjective observationが必要です。'
+            'productionはcurrent owned-room O60 + owned-room capabilityを要求します'
+        )
+        self.adaptive_extended_build_button.clicked.connect(
+            self.build_selected_adaptive_extended_plan
+        )
+        layout.addWidget(self.adaptive_extended_build_button)
+
+        self.adaptive_extended_tree = QTreeWidget()
+        self.adaptive_extended_tree.setHeaderLabels([
+            'plan / candidate', 'scope', 'acquisition', 'feature / objective'
+        ])
+        self.adaptive_extended_tree.setMinimumHeight(180)
+        self.adaptive_extended_tree.itemSelectionChanged.connect(
+            self._adaptive_extended_selected
+        )
+        layout.addWidget(self.adaptive_extended_tree)
+
+        self.adaptive_extended_detail_label = QLabel(
+            'Adaptive Extended Plan未選択'
+        )
+        self.adaptive_extended_detail_label.setWordWrap(True)
+        layout.addWidget(self.adaptive_extended_detail_label)
 
         layout.addStretch(1)
 

@@ -1,0 +1,417 @@
+from __future__ import annotations
+
+from contextlib import closing
+from pathlib import Path
+import sqlite3
+
+from .cad_adaptive_extended import (
+    CadAdaptiveExtendedObservation,
+    CadAdaptiveExtendedPlan,
+)
+from .cad_adaptive_planner import (
+    development_validation_ready,
+    production_validation_ready,
+)
+from .cad_extended_search import generate_extended_candidates
+from .cad_extended_search_repository import CadExtendedSearchRepository
+from .cad_model_validation_repository import CadModelValidationRepository
+
+
+class CadAdaptiveExtendedRepository:
+    """Immutable O80A evidence/plan storage bound to exact O80/O60 authority."""
+
+    def __init__(
+        self,
+        extended_repository: CadExtendedSearchRepository,
+        validation_repository: CadModelValidationRepository,
+    ) -> None:
+        self.extended_repository = extended_repository
+        self.validation_repository = validation_repository
+        self.search_repository = extended_repository.search_repository
+        self.path = Path(self.search_repository.path)
+        if Path(validation_repository.path) != self.path:
+            raise ValueError(
+                'adaptive extended repositories must share one native CAD database'
+            )
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA foreign_keys=ON')
+        return connection
+
+    def _initialize(self) -> None:
+        # Kept idempotent so opening an already-migrated database is harmless.
+        with closing(self._connect()) as connection, connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS cad_adaptive_extended_observations (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    observation_id TEXT NOT NULL UNIQUE,
+                    extended_search_id TEXT NOT NULL,
+                    candidate_id TEXT NOT NULL,
+                    objective_id TEXT NOT NULL,
+                    observation_sha256 TEXT NOT NULL UNIQUE,
+                    payload_json TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_adaptive_extended_observation_search_seq
+                    ON cad_adaptive_extended_observations(
+                        extended_search_id, seq ASC
+                    );
+
+                CREATE TABLE IF NOT EXISTS cad_adaptive_extended_plans (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_id TEXT NOT NULL UNIQUE,
+                    document_id TEXT NOT NULL,
+                    extended_search_id TEXT NOT NULL,
+                    validation_id TEXT NOT NULL,
+                    execution_scope TEXT NOT NULL,
+                    selected_candidate_id TEXT NOT NULL,
+                    adaptive_extended_sha256 TEXT NOT NULL UNIQUE,
+                    payload_json TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_adaptive_extended_plan_search_seq
+                    ON cad_adaptive_extended_plans(
+                        extended_search_id, seq ASC
+                    );
+                """
+            )
+
+    def _authority(self, extended_search_id: str):
+        spec = self.extended_repository.get_spec(extended_search_id)
+        if spec is None:
+            raise ValueError('adaptive extended SearchSpec does not exist')
+        base = self.search_repository.get(spec.base_search_spec_id)
+        if base is None:
+            raise ValueError('adaptive extended base SearchSpec does not exist')
+        capability = self.extended_repository.get_capability(spec.capability_id)
+        if capability is None:
+            raise ValueError('adaptive extended capability does not exist')
+        if capability.capability_sha256 != spec.capability_sha256:
+            raise ValueError('adaptive extended capability hash mismatch')
+        return spec, base, capability
+
+    def _all_candidates(self, spec, base):
+        candidates = []
+        offset = 0
+        seen_hash: str | None = None
+        while True:
+            page = generate_extended_candidates(
+                self.search_repository.scene_repository,
+                base,
+                spec,
+                offset=offset,
+                limit=500,
+            )
+            if seen_hash is None:
+                seen_hash = page.candidate_set_sha256
+            elif page.candidate_set_sha256 != seen_hash:
+                raise ValueError(
+                    'adaptive extended candidate-set identity changed between pages'
+                )
+            candidates.extend(page.candidates)
+            offset += len(page.candidates)
+            if not page.candidates or offset >= page.feasible_candidate_count:
+                break
+        if seen_hash is None or not candidates:
+            raise ValueError('adaptive extended SearchSpec has no feasible candidates')
+        return tuple(candidates), seen_hash
+
+    def save_observation(
+        self,
+        observation: CadAdaptiveExtendedObservation,
+    ) -> None:
+        observation = CadAdaptiveExtendedObservation.model_validate(
+            observation.model_dump(mode='python')
+        )
+        spec, base, capability = self._authority(
+            observation.extended_search_id
+        )
+        if spec.extended_search_sha256 != observation.extended_search_sha256:
+            raise ValueError('adaptive extended observation SearchSpec hash mismatch')
+        expected_scope = capability.evidence_scope
+        if observation.evidence_scope != expected_scope:
+            raise ValueError(
+                'adaptive extended observation scope does not match capability'
+            )
+
+        existing = [
+            item
+            for item in self.list_observations(observation.extended_search_id)
+            if item.candidate_id == observation.candidate_id
+            and item.objective_id == observation.objective_id
+        ]
+        latest = existing[-1] if existing else None
+        if latest is None:
+            if observation.supersedes_observation_sha256 is not None:
+                raise ValueError(
+                    'first adaptive extended observation must not supersede another record'
+                )
+        elif observation.supersedes_observation_sha256 != latest.observation_sha256:
+            raise ValueError(
+                'adaptive extended observation must supersede the current record SHA'
+            )
+
+        candidates, candidate_set_sha256 = self._all_candidates(spec, base)
+        if candidate_set_sha256 != observation.candidate_set_sha256:
+            raise ValueError(
+                'adaptive extended observation candidate-set hash mismatch'
+            )
+        if observation.candidate_id not in {
+            candidate.candidate_id for candidate in candidates
+        }:
+            raise ValueError(
+                'adaptive extended observation candidate is outside Extended SearchSpec'
+            )
+
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO cad_adaptive_extended_observations(
+                    observation_id, extended_search_id, candidate_id,
+                    objective_id, observation_sha256, payload_json,
+                    created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    observation.observation_id,
+                    observation.extended_search_id,
+                    observation.candidate_id,
+                    observation.objective_id,
+                    observation.observation_sha256,
+                    observation.model_dump_json(),
+                    observation.created_at_utc,
+                ),
+            )
+
+    def get_observation(
+        self,
+        observation_id: str,
+    ) -> CadAdaptiveExtendedObservation | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT payload_json '
+                'FROM cad_adaptive_extended_observations '
+                'WHERE observation_id=?',
+                (observation_id,),
+            ).fetchone()
+        return (
+            None
+            if row is None
+            else CadAdaptiveExtendedObservation.model_validate_json(
+                row['payload_json']
+            )
+        )
+
+    def current_observations(
+        self,
+        extended_search_id: str,
+    ) -> tuple[CadAdaptiveExtendedObservation, ...]:
+        current: dict[
+            tuple[str, str],
+            CadAdaptiveExtendedObservation,
+        ] = {}
+        for observation in self.list_observations(extended_search_id):
+            key = (observation.candidate_id, observation.objective_id)
+            previous = current.get(key)
+            if previous is None:
+                if observation.supersedes_observation_sha256 is not None:
+                    raise ValueError(
+                        'adaptive extended observation chain has invalid root'
+                    )
+            elif (
+                observation.supersedes_observation_sha256
+                != previous.observation_sha256
+            ):
+                raise ValueError(
+                    'adaptive extended observation chain is broken'
+                )
+            current[key] = observation
+        return tuple(
+            current[key]
+            for key in sorted(current)
+        )
+
+    def list_observations(
+        self,
+        extended_search_id: str,
+    ) -> tuple[CadAdaptiveExtendedObservation, ...]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                'SELECT payload_json '
+                'FROM cad_adaptive_extended_observations '
+                'WHERE extended_search_id=? ORDER BY seq ASC',
+                (extended_search_id,),
+            ).fetchall()
+        return tuple(
+            CadAdaptiveExtendedObservation.model_validate_json(
+                row['payload_json']
+            )
+            for row in rows
+        )
+
+    def save_plan(self, plan: CadAdaptiveExtendedPlan) -> None:
+        plan = CadAdaptiveExtendedPlan.model_validate(
+            plan.model_dump(mode='python')
+        )
+        spec, base, capability = self._authority(plan.extended_search_id)
+        if (
+            plan.document_id != base.document_id
+            or plan.base_search_spec_id != base.search_spec_id
+            or plan.base_search_spec_sha256 != base.search_spec_sha256
+            or plan.base_candidate_set_sha256
+            != spec.base_candidate_set_sha256
+        ):
+            raise ValueError('adaptive extended base SearchSpec authority mismatch')
+        if (
+            plan.extended_search_sha256 != spec.extended_search_sha256
+            or plan.capability_id != capability.capability_id
+            or plan.capability_sha256 != capability.capability_sha256
+            or plan.extended_model_id != capability.model_id
+            or plan.extended_model_version != capability.model_version
+        ):
+            raise ValueError('adaptive extended O80 authority mismatch')
+
+        validation = self.validation_repository.get(plan.validation_id)
+        if validation is None:
+            raise ValueError('adaptive extended O60 ValidationRecord does not exist')
+        if validation.validation_sha256 != plan.validation_sha256:
+            raise ValueError('adaptive extended O60 ValidationRecord hash mismatch')
+        if (
+            validation.search_spec_id != plan.base_search_spec_id
+            or validation.search_spec_sha256 != plan.base_search_spec_sha256
+            or validation.candidate_set_sha256
+            != plan.base_candidate_set_sha256
+            or validation.model_id != plan.base_model_id
+            or validation.model_version != plan.base_model_version
+        ):
+            raise ValueError('adaptive extended O60/base authority mismatch')
+
+        if plan.execution_scope == 'development_synthetic':
+            if not development_validation_ready(validation):
+                raise ValueError(
+                    'adaptive extended synthetic development gate is not satisfied'
+                )
+            if capability.evidence_scope != 'synthetic_fixture':
+                raise ValueError(
+                    'adaptive extended synthetic plan requires synthetic capability'
+                )
+        else:
+            if not production_validation_ready(validation):
+                raise ValueError(
+                    'adaptive extended production O60 gate is not satisfied'
+                )
+            current = self.validation_repository.latest_eligible_for_search_spec(
+                plan.base_search_spec_id
+            )
+            if current is None or current.validation_id != validation.validation_id:
+                raise ValueError(
+                    'adaptive extended production plan must use current O70-entry validation'
+                )
+            if capability.evidence_scope != 'owned_room':
+                raise ValueError(
+                    'adaptive extended production plan requires owned-room capability'
+                )
+            if capability.validation_id != validation.validation_id:
+                raise ValueError(
+                    'adaptive extended production capability must use exact validation'
+                )
+
+        candidates, candidate_set_sha256 = self._all_candidates(spec, base)
+        if candidate_set_sha256 != plan.extended_candidate_set_sha256:
+            raise ValueError(
+                'adaptive extended candidate-set hash no longer matches O80 authority'
+            )
+        candidate_ids = {candidate.candidate_id for candidate in candidates}
+        referenced = (
+            {proposal.candidate_id for proposal in plan.proposals}
+            | set(plan.training_candidate_ids)
+            | set(plan.excluded_measured_candidate_ids)
+        )
+        missing = referenced - candidate_ids
+        if missing:
+            raise ValueError(
+                'adaptive extended plan references candidates outside O80 set: '
+                + ', '.join(sorted(missing))
+            )
+
+        observations = self.list_observations(plan.extended_search_id)
+        available_hashes = {
+            observation.observation_sha256 for observation in observations
+        }
+        missing_hashes = set(plan.observation_sha256s) - available_hashes
+        if missing_hashes:
+            raise ValueError(
+                'adaptive extended plan observation authority is incomplete'
+            )
+
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO cad_adaptive_extended_plans(
+                    plan_id, document_id, extended_search_id, validation_id,
+                    execution_scope, selected_candidate_id,
+                    adaptive_extended_sha256, payload_json, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plan.plan_id,
+                    plan.document_id,
+                    plan.extended_search_id,
+                    plan.validation_id,
+                    plan.execution_scope,
+                    plan.selected_candidate_id,
+                    plan.adaptive_extended_sha256,
+                    plan.model_dump_json(),
+                    plan.created_at_utc,
+                ),
+            )
+
+    def get_plan(self, plan_id: str) -> CadAdaptiveExtendedPlan | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_adaptive_extended_plans '
+                'WHERE plan_id=?',
+                (plan_id,),
+            ).fetchone()
+        return (
+            None
+            if row is None
+            else CadAdaptiveExtendedPlan.model_validate_json(row['payload_json'])
+        )
+
+    def find_plan_by_sha(
+        self,
+        extended_search_id: str,
+        adaptive_extended_sha256: str,
+    ) -> CadAdaptiveExtendedPlan | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_adaptive_extended_plans '
+                'WHERE extended_search_id=? AND adaptive_extended_sha256=? '
+                'ORDER BY seq DESC LIMIT 1',
+                (extended_search_id, adaptive_extended_sha256),
+            ).fetchone()
+        return (
+            None
+            if row is None
+            else CadAdaptiveExtendedPlan.model_validate_json(row['payload_json'])
+        )
+
+    def list_plans(
+        self,
+        extended_search_id: str,
+    ) -> tuple[CadAdaptiveExtendedPlan, ...]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                'SELECT payload_json FROM cad_adaptive_extended_plans '
+                'WHERE extended_search_id=? ORDER BY seq ASC',
+                (extended_search_id,),
+            ).fetchall()
+        return tuple(
+            CadAdaptiveExtendedPlan.model_validate_json(row['payload_json'])
+            for row in rows
+        )

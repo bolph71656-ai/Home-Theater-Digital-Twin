@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 
-NATIVE_SCHEMA_VERSION = 1
+NATIVE_SCHEMA_VERSION = 2
 
 _METADATA_TABLE = 'native_schema_metadata'
 _MIGRATION_TABLE = 'native_schema_migrations'
@@ -144,8 +144,50 @@ def _migrate_0_to_1(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_1_to_2(connection: sqlite3.Connection) -> None:
+    statements = (
+        """
+        CREATE TABLE IF NOT EXISTS cad_adaptive_extended_observations (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            observation_id TEXT NOT NULL UNIQUE,
+            extended_search_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            objective_id TEXT NOT NULL,
+            observation_sha256 TEXT NOT NULL UNIQUE,
+            payload_json TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_adaptive_extended_observation_search_seq
+            ON cad_adaptive_extended_observations(extended_search_id, seq ASC)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS cad_adaptive_extended_plans (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id TEXT NOT NULL UNIQUE,
+            document_id TEXT NOT NULL,
+            extended_search_id TEXT NOT NULL,
+            validation_id TEXT NOT NULL,
+            execution_scope TEXT NOT NULL,
+            selected_candidate_id TEXT NOT NULL,
+            adaptive_extended_sha256 TEXT NOT NULL UNIQUE,
+            payload_json TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_adaptive_extended_plan_search_seq
+            ON cad_adaptive_extended_plans(extended_search_id, seq ASC)
+        """,
+    )
+    for statement in statements:
+        connection.execute(statement)
+
+
 _MIGRATIONS = {
     1: _migrate_0_to_1,
+    2: _migrate_1_to_2,
 }
 
 
