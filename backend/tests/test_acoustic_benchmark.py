@@ -118,6 +118,7 @@ def test_counter_fixture_has_explicit_acoustic_obstacle_and_peer_delta_contract(
     observable = counter.observables[0]
     assert observable.acceptance_relation == 'must_differ_from_peer'
     assert observable.peer_fixture_id == 'geometric-direct-first-reflection-v1'
+    assert observable.tolerance.minimum_difference == pytest.approx(0.001)
 
 
 def test_unknown_peer_fixture_is_rejected_fail_closed() -> None:
@@ -129,4 +130,15 @@ def test_unknown_peer_fixture_is_rejected_fail_closed() -> None:
     counter['observables'][0]['peer_fixture_id'] = 'missing-reference-fixture'
 
     with pytest.raises(ValueError, match='unknown peer fixtures'):
+        AcousticBenchmarkManifest.model_validate(payload)
+
+
+def test_missing_required_hard_gate_is_rejected_fail_closed() -> None:
+    manifest = _manifest()
+    payload = manifest.model_dump(mode='python')
+    payload['hard_gates'] = [
+        item for item in payload['hard_gates'] if item['category'] != 'cpu_baseline'
+    ]
+
+    with pytest.raises(ValueError, match='missing required hard gate categories'):
         AcousticBenchmarkManifest.model_validate(payload)
