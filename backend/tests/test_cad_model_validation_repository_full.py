@@ -48,6 +48,7 @@ class _RoomSimEvidence:
         self.path = path
         self.spec = spec
         self.candidate_set_sha256 = candidate_set_sha256
+        self.campaign_id = campaign_id
         self.candidates = {candidate.candidate_id: candidate for candidate in candidates}
 
     def get_attempt(self, attempt_id):
@@ -85,7 +86,7 @@ class _PreMeasurementEvidence:
 
 
 class _MeasurementEvidence:
-    def __init__(self, path, document_id, candidate_set_sha256, candidate_ids):
+    def __init__(self, path, document_id, candidate_set_sha256, candidate_ids, campaign_id):
         self.path = path
         self.document_id = document_id
         self.candidate_set_sha256 = candidate_set_sha256
@@ -116,7 +117,10 @@ class _MeasurementEvidence:
             evidence_type='measured',
             document_id=self.document_id,
             scene_revision_id=revision_id,
-            provenance_json='{"validation_scope":"' + validation_scope + '"}',
+            provenance_json=json.dumps({
+                'validation_scope': validation_scope,
+                'validation_campaign_id': self.campaign_id,
+            }, separators=(',', ':')),
             captured_at='2030-01-01T00:00:00+00:00',
         )
         response = _fr(offset)
@@ -275,6 +279,7 @@ def _fixture(tmp_path):
         document.document_id,
         page.candidate_set_sha256,
         candidate_ids,
+        campaign.campaign_id,
     )
     roomsim_repo = _RoomSimEvidence(
         scene_repo.path,
