@@ -234,3 +234,39 @@ def test_proposed_lifecycle_cannot_claim_measurement_evidence() -> None:
         measurement_ids=('real-measurement-id',),
     )
     assert measured.state == 'measured'
+
+def test_persisted_variant_rejects_apply_after_baseline_becomes_stale(tmp_path: Path) -> None:
+    scene_repository, baseline = _baseline(tmp_path)
+    repository = CadSystemVariantRepository(scene_repository)
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Proposed 5.0.2',
+        role_bindings=_roles('FL', 'C', 'FR', 'TFL', 'TFR', 'SL', 'SR'),
+        proposed_entities=(
+            _proposal('sl', 'SL', 0.6),
+            _proposal('sr', 'SR', 5.4),
+        ),
+        created_at_utc=NOW,
+    )
+    repository.save_variant(variant)
+
+    working = WorkingDocument(
+        baseline.document,
+        source_revision_id=baseline.revision_id,
+        saved_content_hash=baseline.content_hash,
+    )
+    assert working.move_entity('fl', Position3(x_m=1.3, y_m=0.8, z_m=1.0))
+    newer = scene_repository.save(
+        working.committed_document,
+        parent_revision_id=baseline.revision_id,
+    ).revision
+
+    with pytest.raises(ValueError, match='stale baseline SceneRevision'):
+        repository.apply_variant(
+            variant.variant_id,
+            selected_by='stale-test',
+        )
+
+    assert scene_repository.latest(DOCUMENT_ID).revision_id == newer.revision_id
+    assert repository.application_for_variant(variant.variant_id) is None
+
