@@ -81,6 +81,9 @@ class _Objectives:
     def get_evaluation(self, evaluation_id):
         return self.evaluations.get(evaluation_id)
 
+    def save_evaluation(self, evaluation):
+        self.evaluations[evaluation.evaluation_id] = evaluation
+
 
 def _fixture(tmp_path):
     scene_repo = SceneRepository(tmp_path / 'cad.sqlite3')
@@ -310,3 +313,21 @@ def test_campaign_readiness_rejects_measurement_captured_before_preregistration(
     )
     assert not readiness.evidence_ready
     assert any('captured before campaign' in reason for reason in candidate.missing_reasons)
+
+
+def test_campaign_materializes_objectives_from_prediction_and_primary_measurement(tmp_path):
+    campaign, service, _measurements, _candidate_ids = _fixture(tmp_path)
+    service.objective_repository.evaluations.clear()
+
+    saved_ids = service.materialize_objective_evidence(campaign.campaign_id)
+    readiness = service.readiness(campaign.campaign_id)
+
+    assert len(saved_ids) == len(campaign.candidates) * 2
+    assert readiness.evidence_ready
+    for candidate in readiness.candidates:
+        assert candidate.predicted_evaluation_id is not None
+        assert candidate.measured_evaluation_id is not None
+
+    repeated = service.materialize_objective_evidence(campaign.campaign_id)
+    assert repeated == saved_ids
+    assert len(service.objective_repository.evaluations) == len(saved_ids)
