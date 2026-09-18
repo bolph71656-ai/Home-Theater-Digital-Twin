@@ -69,6 +69,30 @@ class RawObservableObservation(BaseModel):
         return self
 
 
+class RawConvergenceLevel(BaseModel):
+    """One solver-produced representation in a coarse-to-fine convergence sequence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    level_id: str = Field(min_length=1)
+    refinement_parameter: str = Field(min_length=1)
+    refinement_value: float = Field(gt=0.0)
+    samples: tuple[RawObservationSample, ...] = Field(min_length=1)
+    diagnostics: tuple[str, ...] = ()
+
+    @model_validator(mode='after')
+    def complex_common_grid_samples(self) -> 'RawConvergenceLevel':
+        keys = [item.sample_key for item in self.samples]
+        if len(keys) != len(set(keys)):
+            raise ValueError('convergence sample keys must be unique')
+        for item in self.samples:
+            if item.real_value is None or item.imag_value is None:
+                raise ValueError('convergence field samples must provide complex values')
+            if item.frequency_hz is None:
+                raise ValueError('convergence field samples must bind frequency_hz')
+        return self
+
+
 class RawFixtureObservation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -241,6 +265,142 @@ def evaluate_sampled_observable(expected, raw: RawObservableObservation) -> Bake
         absolute_error=provisional.absolute_error,
         relative_error=provisional.relative_error,
         phase_error_deg=provisional.phase_error_deg,
+    )
+
+
+def evaluate_monotonic_convergence_observable(
+    expected,
+    levels: tuple[RawConvergenceLevel, ...],
+) -> BakeoffObservableEvidence:
+    """Evaluate an unsampled R100A complex-field convergence observable.
+
+    Every level is compared on the exact same keyed frequency grid against the
+    finest representation. Complex RMS error carries magnitude and phase
+    differences together; no solver-specific PASS/FAIL input is accepted.
+    """
+
+    if expected.acceptance_relation != 'monotonic_convergence':
+        raise ValueError(
+            f'observable {expected.observable_id} is not a monotonic convergence authority'
+        )
+    if expected.samples:
+        raise ValueError(
+            f'observable {expected.observable_id} has explicit expected samples; '
+            'use the sampled evaluator instead'
+        )
+    if expected.kind != 'field_pressure_pa' or expected.unit != 'Pa':
+        raise ValueError(
+            f'convergence evaluator requires field_pressure_pa / Pa authority, got '
+            f'{expected.kind} / {expected.unit}'
+        )
+    if len(levels) < 3:
+        raise ValueError('convergence evaluation requires at least three refinement levels')
+
+    parameter = levels[0].refinement_parameter
+    if any(level.refinement_parameter != parameter for level in levels):
+        raise ValueError('all convergence levels must use the same refinement parameter')
+    values = [level.refinement_value for level in levels]
+    if any(not (values[index] > values[index + 1]) for index in range(len(values) - 1)):
+        raise ValueError(
+            'convergence levels must be ordered coarse-to-fine with strictly decreasing '
+            'refinement_value'
+        )
+
+    finest = levels[-1]
+    finest_by_key = {item.sample_key: item for item in finest.samples}
+    finest_keys = set(finest_by_key)
+    if len(finest_keys) < 2:
+        raise ValueError('convergence evaluation requires at least two common field samples')
+
+    errors: list[tuple[str, float, float]] = []
+    for level in levels[:-1]:
+        level_by_key = {item.sample_key: item for item in level.samples}
+        if set(level_by_key) != finest_keys:
+            raise ValueError(
+                f'convergence level {level.level_id} sample keys do not match finest authority'
+            )
+
+        squared_error = 0.0
+        squared_reference = 0.0
+        for sample_key in sorted(finest_keys):
+            actual = level_by_key[sample_key]
+            reference = finest_by_key[sample_key]
+            frequency_tolerance = max(1e-9, abs(float(reference.frequency_hz)) * 1e-12)
+            if abs(float(actual.frequency_hz) - float(reference.frequency_hz)) > frequency_tolerance:
+                raise ValueError(
+                    f'convergence sample {sample_key} frequency mismatch: '
+                    f'{actual.frequency_hz} != {reference.frequency_hz}'
+                )
+            diff_real = float(actual.real_value) - float(reference.real_value)
+            diff_imag = float(actual.imag_value) - float(reference.imag_value)
+            squared_error += diff_real * diff_real + diff_imag * diff_imag
+            squared_reference += (
+                float(reference.real_value) * float(reference.real_value)
+                + float(reference.imag_value) * float(reference.imag_value)
+            )
+
+        sample_count = float(len(finest_keys))
+        absolute_rms = sqrt(squared_error / sample_count)
+        reference_rms = sqrt(squared_reference / sample_count)
+        relative_rms = (
+            absolute_rms / reference_rms
+            if reference_rms > 0.0
+            else (0.0 if absolute_rms == 0.0 else float('inf'))
+        )
+        errors.append((level.level_id, absolute_rms, relative_rms))
+
+    absolute_sequence = [item[1] for item in errors]
+    relative_sequence = [item[2] for item in errors]
+    monotonic_absolute = all(
+        absolute_sequence[index] > absolute_sequence[index + 1]
+        for index in range(len(absolute_sequence) - 1)
+    )
+    monotonic_relative = all(
+        relative_sequence[index] > relative_sequence[index + 1]
+        for index in range(len(relative_sequence) - 1)
+    )
+
+    final_absolute = absolute_sequence[-1]
+    final_relative = relative_sequence[-1]
+    violations: list[str] = []
+    if not monotonic_absolute:
+        violations.append(
+            f'{expected.observable_id} absolute complex RMS error is not strictly decreasing'
+        )
+    if not monotonic_relative:
+        violations.append(
+            f'{expected.observable_id} relative complex RMS error is not strictly decreasing'
+        )
+    if expected.tolerance.absolute is not None and final_absolute > expected.tolerance.absolute:
+        violations.append(
+            f'{expected.observable_id} final absolute complex RMS error '
+            f'{final_absolute} > {expected.tolerance.absolute}'
+        )
+    if expected.tolerance.relative is not None and final_relative > expected.tolerance.relative:
+        violations.append(
+            f'{expected.observable_id} final relative complex RMS error '
+            f'{final_relative} > {expected.tolerance.relative}'
+        )
+
+    diagnostics = ', '.join(
+        f'{level_id}: abs_rms={absolute_error:.9g}, rel_rms={relative_error:.9g}'
+        for level_id, absolute_error, relative_error in errors
+    )
+    status: Literal['pass', 'fail'] = 'fail' if violations else 'pass'
+    summary = (
+        '; '.join(violations)
+        if violations
+        else (
+            'complex field RMS error against the finest representation decreases '
+            f'monotonically ({diagnostics})'
+        )
+    )
+    return BakeoffObservableEvidence(
+        observable_id=expected.observable_id,
+        status=status,
+        summary=summary,
+        absolute_error=final_absolute,
+        relative_error=final_relative,
     )
 
 
