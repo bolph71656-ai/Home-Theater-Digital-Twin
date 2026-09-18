@@ -8,9 +8,9 @@
 
 HTDTは、部屋とホームシアター配置を3D CADのように直接構築・編集し、その配置に実測・予測・比較・最適化候補を結び付けるデジタルツインとする。
 
-操作の中心は大きなviewport。mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、move/rotate、snap、寸法入力で精密化する。設定表を読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
+Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、move/rotate、snap、寸法入力で精密化する。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
 
-成功は「見た目が3D」だけではなく、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
+成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。Overviewは次に行う作業とblockerを示し、Room / Measurements / Optimizeの少数workspaceへdeep-linkする。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
 
 ## 2. 利用条件
 
@@ -27,7 +27,9 @@ HTDTは、部屋とホームシアター配置を3D CADのように直接構築�
 
 ## 3. 中心workflow
 
-1. Projectを作り、room footprintと高さをmouseで構築する。
+global navigationはOverview / Room / Measurements / Optimizeを基本とし、内部N/O/R milestoneやrepository/job構造をnavigationへ露出しない。feature search / command paletteから主要taskへ到達できるようにする。
+
+1. Overviewから次の作業を選び、Roomでroom footprintと高さをmouseで構築する。
 2. speaker、seat、screen、furniture、measurement pointを配置する。
 3. snap/寸法で調整し、SceneRevisionを保存する。
 4. 測定点と音源・AVR・マイク条件を選び、AcquisitionContextを固定する。
@@ -91,4 +93,4 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 
 native GUIをWindowsのDPI/mouse/keyboardで確認する。headless CIを操作品質の証拠にしない。仕様上の目標、過去のPoC報告、今回の再検証を分ける。
 
-変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済みで、次の未着手software trackは[ロードマップ](IMPLEMENTATION_ROADMAP.md)のIssue #101 R100Aから始まる。採用gateは各R-series fixture/ADRと[受入仕様](CAD_EDITOR_ACCEPTANCE.md)、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
+変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済み。現在はIssue #101のR100B solver bakeoffと、Issue #118のUX100〜UX160 UI/UX overhaulを独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
