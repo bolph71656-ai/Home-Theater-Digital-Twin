@@ -2,7 +2,7 @@
 
 > 改訂: 2026-09-18
 > 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とする。
-> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityはIssue #75 / PR #76で実装済みだが、owned-roomの独立calibration/holdout/repeatability evidenceによるmodel gateは未通過。O70/O80はその実データgateを満たすまで自動推薦・拡張探索として有効化しない。
+> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。
 > 以下の既存座標/G00/G10契約を新Sceneへ接続する際は[編集契約](CAD_EDITOR_SPEC.md)のadapterを用いる。
 
 ## 1. 目的
@@ -82,8 +82,8 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 | O30 | Objective Vector | 帯域別偏差、ピーク/谷、左右差、席間差、移動量などの独立指標 | **ソフトウェア実装済み**。独立指標・算法版・評価条件・evidence provenanceをimmutable保存 |
 | O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | **ソフトウェア実装済み**。objective vectorを保持したPareto集合、semantic snapshot de-dup、native比較UIを実装 |
 | O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | **ソフトウェア実装・owned-Windows受入済み**。candidate→exact applied SceneRevision→Measurement Plan→N60 measured evidenceをappend-only追跡 |
-| O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。calibration/holdout分離、objective trend、sensitivity、repeatability、candidate separation、applicabilityをimmutable検証し、不成立時は推薦disabled。特定modelの実室妥当性はowned-room evidenceで別途判定 |
-| O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **gate待ち・未有効化**。永続化済みowned-room O60 eligible ValidationRecordだけを入口とし、提案根拠と不確実性を保存できること |
+| O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。実室ではmeasurement前のValidation Campaign preregistrationを必須とし、calibration/holdout、共通target response、objective条件、sensitivity、repeatability、candidate separation、applicabilityを固定する。post-hoc splitやcampaign以前のmeasurementでは推薦gateを開かない |
+| O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **gate待ち・未有効化**。永続化済みowned-room O60 eligible ValidationRecordに加え、そのrecordがmeasurement前に保存されたValidation Campaign ID/SHAへ一致することを入口とする |
 | O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | **gate待ち**。各追加変数を扱うモデルと独立検証が成立したものだけ有効化する |
 
 O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。
@@ -146,6 +146,14 @@ O50以降では、予測候補から実測対象を選んだ時点でMeasurement
 実測時は候補から新しいContext revisionを作り、元候補の予測入力を変更しない。REW測定取込後に、予測曲線と実測曲線の差、目的ベクトルの差、同条件再測定のばらつきを同じ検証記録へ保存する。
 
 予測誤差を後からモデルへ反映する場合も、過去のPredictionRunは不変にする。新しい補正モデル、surrogate model、探索結果は新しい版として追加する。
+
+### 8.1 Owned-room Validation Campaign
+
+実室O60では、実測値を見てからcalibration/holdoutや評価条件を選ばない。対象candidateの測定完了前にValidation Campaignを保存する。
+
+CampaignはSearchSpec/candidate-set SHA、model版、candidate split、target response、帯域、objective、trend threshold、sensitivity pair/threshold、repeatability候補/回数、candidate separation倍率、required applicability codeを固定する。campaign作成以前にcapturedされたmeasurement、またはcampaign保存時点ですでにmeasured planとなっていたcandidateは、そのcampaignのvalidation evidenceへ昇格させない。
+
+prediction/measured objectiveはcampaignに保存した同一target response・evaluation specからO30 vectorを導出する。readinessはmissing/ambiguous evidenceを明示し、条件不足を自動補完しない。O70が読むeligible ValidationRecordはpersisted campaignへ再照合できるものに限定する。
 
 ## 9. 適応探索の導入条件
 
