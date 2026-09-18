@@ -21,10 +21,11 @@ Scene保存、Undo/Redo、測定、予測、Pareto計算などのdomain authorit
 
 ## 実装
 
+- `backend/src/htdt/workflow_navigation.py`
+  - shell / command / Overview共有の `WorkspaceId` / `WorkspaceDeepLink`
 - `backend/src/htdt/command_registry.py`
   - Qt非依存のcentral registry
   - command metadata / search / availability / execution
-  - `WorkspaceDeepLink`
   - text input focus時のshortcut policy
 - `backend/src/htdt/command_palette.py`
   - `Ctrl+K` palette
@@ -51,33 +52,28 @@ Scene保存、Undo/Redo、測定、予測、Pareto計算などのdomain authorit
 | `prediction.run` | 予測実行 | — | room | `room/acoustics` |
 | `optimization.compare_candidates` | 候補比較 | — | optimization | `optimization/candidates` |
 
-## Agent A / shell integration
+## Shell integration
 
-Agent AのPR #122が定義したcanonical shell IDに合わせる。
+canonical shell ID/contextは `workflow_navigation.py` を唯一の正本とする。
 
 - workspace: `overview / room / measurement / optimization`
 - Room context: `geometry / objects / placement / acoustics`
 - Measurement context: `import / assignment / quality / comparison`
 - Optimization context: `setup / candidates / objectives / measurement-plan / validation`
 
-このPRはAgent Aと同じ `native_cad.py` を編集しない。paletteはshellを親にして1回だけ生成し、
-workspace routerの `navigate()` / `select_context()` をdeep-link handlerへ接続する。
+`native_cad.py` のcomposition rootでpaletteをshellのchildとして1回だけ生成し、
+`WorkflowShellWindow.handle_deep_link()` をregistryへ接続する。
 
 ~~~python
-def open_deep_link(link: WorkspaceDeepLink) -> None:
-    shell.navigate(link.workspace.value)
-    if link.section is not None:
-        shell.select_context(link.section)
-
-registry = CommandRegistry(deep_link_handler=open_deep_link)
+registry = CommandRegistry()
 register_default_commands(registry)
+registry.set_deep_link_handler(shell.handle_deep_link)
 
 controller = CommandPaletteController(
     shell,
     registry,
     context_provider=lambda: CommandContext(shell.current_workspace_id.value),
 )
-shell.command_palette_controller = controller
 ~~~
 
 `register_default_commands()` はexecutor未接続でも全metadataを先に登録できる。
@@ -168,7 +164,7 @@ command availabilityはUIの入口を説明するためのread-only判定であ�
 
 ## 現在の残件
 
-- Agent AのPR #122へpalette controller / deep-link handler / workspace bindingを接続する統合作業が必要。APIとcanonical ID/contextはこのPRで整合済み。
+- PR #127でpalette controller / deep-link handler / lazy workspace bindingをshellへ統合済み。旧PR #122はsuperseded。
 - entity search、設定、ヘルプはIssue #118の後続scope。registry APIを拡張せず追加可能。
 - legacy toolbar/actionのshortcutを一括削除・置換する作業はこのPRでは行わない。新shell側はregistry shortcut metadataを使用する。
 - visual token適用はAgent Bのtheme foundationへ委譲する。paletteはQt palette roleだけを使用し、独自色を持たない。
