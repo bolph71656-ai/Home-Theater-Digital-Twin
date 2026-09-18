@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime
 from math import sqrt
 from pathlib import Path
@@ -50,7 +51,7 @@ class CadModelValidationRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_model_validations (
@@ -578,7 +579,7 @@ class CadModelValidationRepository:
         self._validate_evidence_scope(record)
         self._validate_campaign_binding(record, plans)
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''INSERT INTO cad_model_validations(
                     validation_id, document_id, search_spec_id, model_id, model_version,
@@ -598,7 +599,7 @@ class CadModelValidationRepository:
             )
 
     def get(self, validation_id: str) -> CadModelValidationRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_model_validations WHERE validation_id=?',
                 (validation_id,),
@@ -609,7 +610,7 @@ class CadModelValidationRepository:
         self,
         search_spec_id: str,
     ) -> CadModelValidationRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT payload_json FROM cad_model_validations "
                 "WHERE search_spec_id=? AND recommendation_gate='eligible' "
@@ -626,7 +627,7 @@ class CadModelValidationRepository:
         return record
 
     def list_for_search_spec(self, search_spec_id: str) -> tuple[CadModelValidationRecord, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_model_validations WHERE search_spec_id=? ORDER BY seq ASC',
                 (search_spec_id,),
