@@ -10,11 +10,7 @@ from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
 from .command_palette import CommandShortcutBinder
-from .command_registry import (
-    AvailabilityProvider,
-    CommandAvailability,
-    CommandRegistry,
-)
+from .command_registry import AvailabilityProvider, CommandRegistry
 
 
 class CadAxis(StrEnum):
@@ -254,7 +250,7 @@ class CadInputController(QObject):
         viewport.installEventFilter(self)
 
     def refresh_shortcuts(self) -> None:
-        """Refresh focus gating after programmatic focus changes."""
+        """Refresh focus + live availability after selection/edit state changes."""
 
         self.shortcuts.refresh()
 
