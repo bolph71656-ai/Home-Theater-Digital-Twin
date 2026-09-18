@@ -317,3 +317,261 @@ def test_o90a_persistence_round_trips_exact_provenance(tmp_path) -> None:
         scene_revision_id=spec.scene_revision_id,
         candidate_id=spec.candidate_id,
     ) == (spec,)
+
+
+def test_o90b_multidimensional_sampling_is_reproducible_and_linked(tmp_path) -> None:
+    from htdt.optimization_robustness import LinkedPerturbationGroup
+    from htdt.optimization_robustness_multidimensional import (
+        build_multidimensional_sampling_plan,
+        derive_multidimensional_robustness_spec,
+    )
+
+    _revision, _constraints, _search_spec, _nominal, base_spec = _fixture(tmp_path)
+    linked = LinkedPerturbationGroup(
+        group_id='front-listener-x',
+        axis_multipliers={
+            'speaker-x': 1.0,
+            'listener-x': -0.5,
+        },
+    )
+
+    spec_a = derive_multidimensional_robustness_spec(
+        base_spec,
+        sample_count=8,
+        seed=1701,
+        linked_groups=(linked,),
+        created_at_utc='2026-09-19T00:02:00+00:00',
+    )
+    spec_b = derive_multidimensional_robustness_spec(
+        base_spec,
+        sample_count=8,
+        seed=1701,
+        linked_groups=(linked,),
+        created_at_utc='2026-09-19T00:02:00+00:00',
+    )
+    assert spec_a == spec_b
+    assert spec_a.parent_robustness_spec_id == base_spec.robustness_spec_id
+    assert (
+        spec_a.parent_robustness_spec_sha256
+        == base_spec.robustness_spec_sha256
+    )
+
+    plans_a = build_multidimensional_sampling_plan(spec_a)
+    plans_b = build_multidimensional_sampling_plan(spec_b)
+    assert plans_a == plans_b
+    assert len(plans_a) == 8
+    assert plans_a[0].step == 'nominal'
+    assert all(
+        item.step == 'multidimensional'
+        for item in plans_a[1:]
+    )
+    assert all(
+        set(item.parameter_deltas) == {axis.axis_id for axis in spec_a.axes}
+        for item in plans_a[1:]
+    )
+
+    linked_plan = plans_a[3]
+    speaker_norm = linked_plan.parameter_deltas['speaker-x'] / 0.02
+    listener_norm = linked_plan.parameter_deltas['listener-x'] / 0.05
+    assert listener_norm == pytest.approx(-0.5 * speaker_norm)
+
+
+def test_o90b_keeps_infeasible_samples_builds_envelope_and_round_trips(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from htdt.cad_robustness_repository import CadRobustnessRepository
+    from htdt.cad_search_models import CadCandidate
+    from htdt.optimization_objectives import ObjectiveMetric, ObjectiveVector
+    from htdt.optimization_robustness import (
+        PerturbationObjectiveResult,
+        build_robustness_spec,
+    )
+    import htdt.optimization_robustness_multidimensional as o90b
+
+    revision, constraints, search_spec, nominal, original = _fixture(tmp_path)
+    axes = tuple(
+        axis.model_copy(update={'allowed_min': 0.99})
+        if axis.axis_id == 'speaker-x'
+        else axis
+        for axis in original.axes
+        if axis.axis_id in {'speaker-x', 'listener-x'}
+    )
+    base_spec = build_robustness_spec(
+        source_revision=revision,
+        search_spec=search_spec,
+        candidate=CadCandidate.model_validate_json(original.candidate_payload_json),
+        candidate_set_sha256=original.candidate_set_sha256,
+        nominal_objective=nominal,
+        nominal_prediction_result_ref=original.nominal_prediction_result_ref,
+        model_id=original.model_id,
+        model_version=original.model_version,
+        prediction_provider_id=original.prediction_provider_id,
+        fidelity=original.fidelity,
+        axes=axes,
+        software_version='test',
+        created_at_utc='2026-09-19T00:00:00+00:00',
+    )
+    spec = o90b.derive_multidimensional_robustness_spec(
+        base_spec,
+        sample_count=7,
+        seed=9,
+        created_at_utc='2026-09-19T00:02:00+00:00',
+    )
+
+    calls = {'g10': 0, 'o80': 0}
+    real_g10 = o90b.evaluate_cad_constraints
+    real_o80 = o90b.orientation_constraint_rejections
+
+    def counted_g10(*args, **kwargs):
+        calls['g10'] += 1
+        return real_g10(*args, **kwargs)
+
+    def counted_o80(*args, **kwargs):
+        calls['o80'] += 1
+        return real_o80(*args, **kwargs)
+
+    monkeypatch.setattr(o90b, 'evaluate_cad_constraints', counted_g10)
+    monkeypatch.setattr(o90b, 'orientation_constraint_rejections', counted_o80)
+
+    def evaluator(document, sample_id: str) -> PerturbationObjectiveResult:
+        speaker = document.entity('speaker-fl')
+        listener = document.entity('listener-main')
+        value = (
+            2.0
+            + abs(speaker.position.x_m - 1.0) * 10.0
+            + abs(listener.position.x_m - 3.0) * 2.0
+        )
+        return PerturbationObjectiveResult(
+            prediction_result_ref=f'prediction:{sample_id}',
+            objective_vector=ObjectiveVector(
+                candidate_id=sample_id,
+                metrics=(
+                    ObjectiveMetric(
+                        objective_id='response.shape_rms_db',
+                        value=value,
+                        unit='dB',
+                    ),
+                ),
+            ),
+        )
+
+    samples, evaluations = o90b.evaluate_multidimensional_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=evaluator,
+        created_at_utc='2026-09-19T00:03:00+00:00',
+    )
+
+    assert calls == {'g10': len(samples), 'o80': len(samples)}
+    assert len(samples) == spec.sample_count
+    assert samples[1].step == 'multidimensional'
+    assert not samples[1].feasible
+    assert '__uncertainty_bound__:speaker-x:min' in samples[1].domain_rejection_ids
+    assert samples[1].objective_vector is None
+
+    evaluation = evaluations[0]
+    assert evaluation.sampled_worst_semantics == 'sampled_worst'
+    assert samples[1].sample_id in evaluation.infeasible_sample_ids
+    assert evaluation.feasible_fraction == pytest.approx(
+        sum(1 for item in samples if item.feasible) / len(samples)
+    )
+    assert evaluation.sampled_envelope is not None
+    assert evaluation.sampled_envelope.percentile_values is None
+    assert evaluation.percentile_semantics == 'not_available_bounded_interval'
+    assert evaluation.sampling_provenance_sha256 is not None
+
+    repository = CadRobustnessRepository(tmp_path / 'o90b.sqlite3')
+    repository.save_spec(spec)
+    repository.save_samples(samples)
+    repository.save_evaluations(evaluations)
+    assert repository.get_spec(spec.robustness_spec_id) == spec
+    assert repository.list_samples(spec.robustness_spec_id) == samples
+    assert repository.list_evaluations(spec.robustness_spec_id) == evaluations
+
+
+def test_o90b_uses_o40_for_separate_nominal_and_sampled_worst_pareto() -> None:
+    from htdt.optimization_objectives import ObjectiveMetric, ObjectiveVector
+    from htdt.optimization_robustness import (
+        RobustnessEvaluation,
+        SampledObjectiveEnvelope,
+        canonical_robustness_sha256,
+    )
+    from htdt.optimization_robustness_multidimensional import (
+        RobustParetoSelection,
+        robust_pareto_front,
+    )
+
+    objective_id = 'response.shape_rms_db'
+
+    def evaluation(candidate_id: str, nominal: float, sampled_worst: float):
+        envelope = SampledObjectiveEnvelope(
+            sampled_min_sample_id=f'{candidate_id}-s0',
+            sampled_min_value=min(nominal, sampled_worst),
+            sampled_max_sample_id=f'{candidate_id}-s0',
+            sampled_max_value=max(nominal, sampled_worst),
+            percentile_values=None,
+        )
+        identity = {
+            'schema_version': 1,
+            'robustness_spec_id': f'rob-{candidate_id}',
+            'robustness_spec_sha256': '1' * 64,
+            'candidate_id': candidate_id,
+            'objective_id': objective_id,
+            'objective_unit': 'dB',
+            'direction': 'minimize',
+            'nominal_sample_id': f'{candidate_id}-s0',
+            'nominal_value': nominal,
+            'local_sensitivities': [],
+            'sampled_worst_semantics': 'sampled_worst',
+            'sampled_worst_sample_id': f'{candidate_id}-s0',
+            'sampled_worst_value': sampled_worst,
+            'sample_ids': [f'{candidate_id}-s0'],
+            'infeasible_sample_ids': [],
+            'failed_sample_ids': [],
+            'sampled_envelope': envelope.model_dump(mode='json'),
+            'feasible_fraction': 1.0,
+            'sampling_provenance_sha256': '2' * 64,
+            'percentile_semantics': 'not_available_bounded_interval',
+        }
+        digest = canonical_robustness_sha256(identity)
+        return RobustnessEvaluation(
+            **identity,
+            evaluation_id=f're-{digest[:24]}',
+            evaluation_sha256=digest,
+            created_at_utc='2026-09-19T00:04:00+00:00',
+        )
+
+    nominal_a = ObjectiveVector(
+        candidate_id='a',
+        metrics=(
+            ObjectiveMetric(objective_id=objective_id, value=1.0, unit='dB'),
+        ),
+    )
+    nominal_b = ObjectiveVector(
+        candidate_id='b',
+        metrics=(
+            ObjectiveMetric(objective_id=objective_id, value=2.0, unit='dB'),
+        ),
+    )
+    selection = RobustParetoSelection(
+        nominal_objective_ids=(objective_id,),
+        robustness_objective_ids=(objective_id,),
+    )
+    result = robust_pareto_front(
+        (
+            (nominal_a, (evaluation('a', 1.0, 4.0),)),
+            (nominal_b, (evaluation('b', 2.0, 2.0),)),
+        ),
+        selection,
+    )
+
+    assert result.objective_ids == (
+        f'nominal::{objective_id}',
+        f'robust.sampled_worst::{objective_id}',
+    )
+    assert result.non_dominated_candidate_ids == ('a', 'b')
+    assert result.dominated_by == {'a': (), 'b': ()}
