@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -241,7 +242,7 @@ def _fixture(tmp_path):
                 spec,
                 candidate.candidate_id,
                 vector,
-                evaluation_spec={'fixture': True},
+                evaluation_spec=json.loads(campaign.objective_evaluation_spec_json),
                 input_refs=(
                     CadObjectiveInputRef(
                         evidence_class=evidence_class,
