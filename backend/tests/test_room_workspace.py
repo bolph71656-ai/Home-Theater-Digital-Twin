@@ -184,6 +184,9 @@ def test_room_workspace_is_component_composition_and_contextual(tmp_path) -> Non
         F1_DOCUMENT_ID,
         viewport_factory=lambda parent: FakeRoomViewport(parent),
     )
+    workspace.resize(1100, 700)
+    workspace.show()
+    app.processEvents()
     viewport = workspace.viewport
 
     assert workspace.findChildren(QDockWidget) == []
@@ -499,6 +502,46 @@ def test_geometry_context_panel_mounts_and_adds_opening_through_wall_authority(t
     assert topology.openings[0].kind == "window"
 
     geometry.dispose()
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+
+def test_room_workspace_compact_layout_prioritizes_viewport_and_toggles_palette(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: FakeRoomViewport(parent),
+    )
+    workspace.resize(1100, 700)
+    workspace.show()
+    workspace.set_context("objects")
+    app.processEvents()
+
+    assert not workspace.object_palette.isHidden()
+    assert workspace.right_stack.width() == 300
+
+    workspace.resize(820, 600)
+    app.processEvents()
+    assert workspace._responsive_compact
+    assert workspace.object_palette.isHidden()
+    assert workspace.right_stack.width() == 280
+
+    workspace.tools.toolRequested.emit("show-palette")
+    app.processEvents()
+    assert not workspace.object_palette.isHidden()
+
+    workspace.resize(680, 520)
+    app.processEvents()
+    assert workspace.right_stack.width() == 260
+
+    workspace.set_context("geometry")
+    app.processEvents()
+    assert workspace.object_palette.isHidden()
+
     workspace.close()
     workspace.deleteLater()
     app.processEvents()
