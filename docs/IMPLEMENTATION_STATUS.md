@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **O60R software audit gateはPR #85でmain反映済み。実室でpreregistered O60E campaignを作成し、human-operated配置変更/REW測定でowned-room evidenceを収集する。O70/O80はeligible campaign-backed ValidationRecord + O60R audit PASSまでdisabled** |
+| 次工程 | **Issue #90でO70/O80をsynthetic development laneまで実装してソフトウェアを完成させる。production recommendationはeligible campaign-backed ValidationRecord + O60R audit PASSまでdisabledを維持** |
 
 ## N90 — stable Windows release / A15 PASS
 
@@ -255,3 +255,14 @@ Issue #83 / PR #85で、実室campaign完了後に使うread-only監査harness�
 - `inventory_o60_owned_room.py`でcampaign/readiness/REW read-only状態を1コマンド確認できる。
 - owned-Windows inventory preflightで検出したtemp SQLite `WinError 32`に対し、Search/RoomSim/Objective/ModelValidation repositoryの接続を明示closeへ統一し、DB存在時のinventory cleanup回帰testを追加した。
 - 残る作業は人手のspeaker/setup移動とREW実測を伴うowned-room campaign実行のみ。これを満たすまでO70/O80はdisabled。
+## O70 — synthetic-first Adaptive Planner 実装中
+
+Issue #90で、実測待ちをソフトウェア完成のblockerにしないdevelopment laneを開始した。
+
+- `development_synthetic`: O60のresidual/trend/sensitivity/repeatability/separation/applicabilityが全PASSし、唯一のstop reasonがowned-room evidence不足であるsynthetic ValidationRecordを許可する。
+- `production_owned_room`: current campaign-backed `eligible` ValidationRecordだけを許可する。
+- calibration objectiveの measured−predicted 残差をobjective別RBF Gaussian Processで補正し、候補ごとのcorrected meanとresidual uncertaintyを算出する。
+- 次測定候補はnormalized residual uncertainty acquisitionで決め、単一の「音質総合点」は作らない。
+- SearchSpec SHA、candidate-set SHA、ValidationRecord SHA、algorithm/version、length scale、training/measured candidate、全proposalをimmutable保存する。
+- synthetic planはproduction recommendationを開かず、実室妥当性の主張に使わない。
+

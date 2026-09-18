@@ -83,6 +83,15 @@ try {
         throw "Expected product head is not an ancestor of $remoteRef"
     }
 
+    if ($PreflightOnly) {
+        if (-not (Test-Path $AuditScript)) {
+            throw "Missing O60R audit script: $AuditScript"
+        }
+        Write-Output "O60R_PREFLIGHT_AUTHORITY=$ExpectedProductHead"
+        Write-Output "O60R_PREFLIGHT_RESULT=PASS"
+        return
+    }
+
     $allowedAfterProduct = @(
         ".github/workflows/ci.yml",
         "backend/tests/test_o60r_audit.py",
@@ -96,15 +105,7 @@ try {
     $unexpected = @($changed | Where-Object { $_ -and $_ -notin $allowedAfterProduct })
     if ($unexpected.Count -gt 0) {
         $unexpected | ForEach-Object { Write-Output "O60R_UNEXPECTED_AFTER_PRODUCT=$_" }
-        throw "Product code changed after expected O60E product head"
-    }
-
-    if ($PreflightOnly) {
-        if (-not (Test-Path $AuditScript)) {
-            throw "Missing O60R audit script: $AuditScript"
-        }
-        Write-Output "O60R_PREFLIGHT_RESULT=PASS"
-        return
+        throw "Product code changed after expected audited product head"
     }
 
     if (-not (Test-Path $Python)) {
