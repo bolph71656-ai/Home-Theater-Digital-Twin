@@ -171,7 +171,7 @@ def test_backup_normalizes_existing_windows_asset_relative_paths(tmp_path: Path)
             (
                 digest,
                 'fixture.txt',
-                f'measurement-assets\\\\{digest}',
+                f'measurement-assets\\{digest}',
                 len(raw),
             ),
         )
