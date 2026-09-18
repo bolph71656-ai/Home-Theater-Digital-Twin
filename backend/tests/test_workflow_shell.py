@@ -195,37 +195,51 @@ def test_restore_release_checks_hidden_mounted_workspaces() -> None:
 
 
 
-def test_workflow_shell_compacts_navigation_without_context_overlap() -> None:
+def test_workflow_shell_layout_profiles_do_not_clip_context_navigation() -> None:
     app = _app()
 
     def factory(workspace_id: WorkspaceId):
         return lambda: WorkspaceMount.from_widget(QLabel(workspace_id.value))
 
     window = WorkflowShellWindow(_registrations(factory))
+    assert window.navigate(WorkspaceId.OPTIMIZATION)
     window.show()
     app.processEvents()
 
-    assert not window.rail.is_compact
-    assert not window.context_bar.is_compact
-    assert window.rail.width() == window.rail.EXPANDED_WIDTH
+    # Windows scaling reduces the logical client area available at a fixed
+    # physical display resolution. Exercise the UX150 acceptance matrix without
+    # depending on a particular CI host DPI.
+    profiles = (
+        (1280, 800, 1.00),
+        (1440, 900, 1.00),
+        (1280, 800, 1.50),
+        (1440, 900, 1.50),
+        (1280, 800, 2.00),
+        (1440, 900, 2.00),
+    )
+    for physical_width, physical_height, scale in profiles:
+        logical_width = round(physical_width / scale)
+        logical_height = round(physical_height / scale)
+        window.resize(logical_width, logical_height)
+        app.processEvents()
 
-    window.resize(900, 600)
-    app.processEvents()
-    assert window.rail.is_compact
-    assert window.context_bar.is_compact
-    assert window.rail.width() == window.rail.COMPACT_WIDTH
+        compact = logical_width < 1120
+        assert window.rail.is_compact is compact
+        assert window.context_bar.is_compact is compact
+        assert window.rail.width() == (
+            window.rail.COMPACT_WIDTH if compact else window.rail.EXPANDED_WIDTH
+        )
 
-    assert window.navigate(WorkspaceId.OPTIMIZATION)
-    window.resize(640, 400)
-    app.processEvents()
-
-    buttons = tuple(window.context_bar._context_buttons.values())
-    assert len(buttons) == 4
-    assert all(button.isVisible() for button in buttons)
-    for index, left in enumerate(buttons):
-        for right in buttons[index + 1:]:
-            assert not left.geometry().intersects(right.geometry())
-    assert max(button.geometry().right() for button in buttons) < window.context_bar._context_container.width()
+        buttons = tuple(window.context_bar._context_buttons.values())
+        assert len(buttons) == 4
+        assert all(button.isVisible() for button in buttons)
+        for index, left in enumerate(buttons):
+            for right in buttons[index + 1:]:
+                assert not left.geometry().intersects(right.geometry())
+        assert (
+            max(button.geometry().right() for button in buttons)
+            < window.context_bar._context_container.width()
+        )
 
     window.close()
     window.deleteLater()
