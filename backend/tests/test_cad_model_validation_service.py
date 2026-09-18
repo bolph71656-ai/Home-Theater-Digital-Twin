@@ -151,6 +151,8 @@ def test_validation_service_builds_full_record_from_repository_evidence(tmp_path
     build_spec = CadModelValidationBuildSpec(
         search_spec_id=spec.search_spec_id,
         candidate_set_sha256=page.candidate_set_sha256,
+        campaign_id='campaign-fixture',
+        campaign_sha256='4' * 64,
         model_id='rew-roomsim',
         model_version='fixture-1',
         evidence_scope='owned_room',
