@@ -180,7 +180,7 @@ class CommandPalette(QDialog):
             CommandContext.GLOBAL: '共通',
             CommandContext.OVERVIEW: '概要',
             CommandContext.ROOM: '部屋',
-            CommandContext.MEASUREMENTS: '測定',
+            CommandContext.MEASUREMENT: '測定',
             CommandContext.OPTIMIZATION: '最適化',
         }
         contexts = ' / '.join(context_labels[context] for context in definition.contexts)
