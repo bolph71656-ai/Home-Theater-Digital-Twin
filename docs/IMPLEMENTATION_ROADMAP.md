@@ -121,6 +121,8 @@ N05のために一般plugin frameworkや全entity型を実装しない。N10で�
 | N80のPareto比較 | O30/O40 | 目的vector・制約を維持。音質総合点にしない |
 | N80の実測loop / 推薦 | O50/O60、必要ならO70 | 独立した実測検証前に自動推薦へ昇格しない |
 
+開発・受入ではsynthetic fixtureによるO70/O80 end-to-endを許可する。ただし、synthetic結果は`development_synthetic`として明示し、owned-room evidenceとして保存・表示・production推薦へ昇格しない。これにより物理測定を待たずソフトウェア実装を完成できる一方、実室妥当性gateは独立して維持する。
+
 GUI上で非矩形室を編集できても、REW Room Simulatorが非矩形を正確に予測できることにはならない。解析layerは実測/予測/仮説と入力revisionを表示し、編集で古くなった結果をstaleにする。
 
 ## 4. 実装資産・切替
