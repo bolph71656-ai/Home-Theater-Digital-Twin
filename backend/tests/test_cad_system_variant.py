@@ -1,0 +1,236 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from htdt.cad_document import WorkingDocument
+from htdt.cad_repository import SceneRepository
+from htdt.cad_scene import (
+    Direction3,
+    Position3,
+    RoomPrism,
+    SceneDocument,
+    SceneEntity,
+    Size3,
+)
+from htdt.cad_system_variant import (
+    ChannelRoleBinding,
+    EntityLifecycleBinding,
+    ProposalEvidenceRef,
+    ProposedEntitySpec,
+    VariantProvenanceItem,
+    apply_system_variant_to_working_document,
+    build_system_variant,
+    materialize_system_variant,
+)
+from htdt.cad_system_variant_repository import CadSystemVariantRepository
+
+
+DOCUMENT_ID = 'o100a-fixture'
+NOW = '2026-09-19T00:00:00+00:00'
+
+
+def _speaker(entity_id: str, role: str, x_m: float, y_m: float, z_m: float) -> SceneEntity:
+    return SceneEntity(
+        entity_id=entity_id,
+        kind='speaker',
+        name=role,
+        speaker_role=role,
+        position=Position3(x_m=x_m, y_m=y_m, z_m=z_m),
+        size_m=Size3(x_m=0.24, y_m=0.28, z_m=0.42),
+        aim_xyz=Direction3(x=0.0, y=1.0, z=0.0),
+    )
+
+
+def _scene_302() -> SceneDocument:
+    return SceneDocument(
+        document_id=DOCUMENT_ID,
+        room=RoomPrism(width_m=6.0, depth_m=4.5, height_m=2.4),
+        entities=(
+            _speaker('fl', 'FL', 1.2, 0.8, 1.0),
+            _speaker('c', 'C', 3.0, 0.6, 0.9),
+            _speaker('fr', 'FR', 4.8, 0.8, 1.0),
+            _speaker('tfl', 'TFL', 1.8, 2.0, 2.2),
+            _speaker('tfr', 'TFR', 4.2, 2.0, 2.2),
+            SceneEntity(
+                entity_id='mlp',
+                kind='measurement_point',
+                name='MLP',
+                position=Position3(x_m=3.0, y_m=3.2, z_m=1.1),
+            ),
+        ),
+    )
+
+
+def _roles(*role_ids: str) -> tuple[ChannelRoleBinding, ...]:
+    return tuple(
+        ChannelRoleBinding(role_id=role, display_name=role)
+        for role in role_ids
+    )
+
+
+def _proposal(entity_id: str, role: str, x_m: float) -> ProposedEntitySpec:
+    return ProposedEntitySpec(
+        spec_id=f'proposal-{entity_id}',
+        entity=_speaker(entity_id, role, x_m, 3.0, 1.3),
+        role_binding_id=role,
+        provenance=(
+            VariantProvenanceItem(key='author', value='o100a-test'),
+        ),
+    )
+
+
+def _baseline(tmp_path: Path):
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    revision = scene_repository.save(_scene_302(), parent_revision_id=None).revision
+    return scene_repository, revision
+
+
+def test_302_to_proposed_502_is_exact_and_does_not_mutate_baseline(tmp_path: Path) -> None:
+    scene_repository, baseline = _baseline(tmp_path)
+    before = baseline.document
+    sl = _proposal('sl', 'SL', 0.6)
+    sr = _proposal('sr', 'SR', 5.4)
+
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Proposed 5.0.2',
+        role_bindings=_roles('FL', 'C', 'FR', 'TFL', 'TFR', 'SL', 'SR'),
+        proposed_entities=(sl, sr),
+        proposal_evidence=(
+            ProposalEvidenceRef(
+                evidence_kind='user_decision',
+                evidence_id='decision-add-surrounds',
+            ),
+        ),
+        provenance=(VariantProvenanceItem(key='issue', value='#142'),),
+        created_at_utc=NOW,
+    )
+    proposed = materialize_system_variant(baseline, variant)
+
+    assert baseline.document == before
+    assert scene_repository.get(baseline.revision_id).document == before
+    assert [item.kind for item in variant.diff] == ['add', 'add']
+    assert [item.entity_id for item in variant.diff] == ['sl', 'sr']
+    assert [entity.speaker_role for entity in proposed.entities if entity.kind == 'speaker'] == [
+        'FL', 'C', 'FR', 'TFL', 'TFR', 'SL', 'SR'
+    ]
+    lifecycle = {item.entity_id: item.state for item in variant.entity_lifecycle}
+    assert lifecycle['fl'] == 'current'
+    assert lifecycle['sl'] == 'proposed'
+    assert lifecycle['sr'] == 'proposed'
+
+
+def test_add_remove_replace_variant_is_one_working_document_undo_step(tmp_path: Path) -> None:
+    _scene_repository, baseline = _baseline(tmp_path)
+    replacement_fr = ProposedEntitySpec(
+        spec_id='proposal-fr-replacement',
+        entity=_speaker('fr', 'FR', 4.5, 1.0, 1.1),
+        role_binding_id='FR',
+    )
+    sl = _proposal('sl', 'SL', 0.6)
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Replace FR, remove C, add SL',
+        role_bindings=_roles('FL', 'FR', 'TFL', 'TFR', 'SL'),
+        proposed_entities=(replacement_fr, sl),
+        remove_entity_ids=('c',),
+        created_at_utc=NOW,
+    )
+
+    assert [(item.kind, item.entity_id) for item in variant.diff] == [
+        ('remove', 'c'),
+        ('replace', 'fr'),
+        ('add', 'sl'),
+    ]
+
+    working = WorkingDocument(
+        baseline.document,
+        source_revision_id=baseline.revision_id,
+        saved_content_hash=baseline.content_hash,
+    )
+    assert apply_system_variant_to_working_document(
+        working,
+        baseline=baseline,
+        variant=variant,
+    )
+    assert working.history_length == 1
+    assert working.committed_document.entity('fr').position.x_m == pytest.approx(4.5)
+    assert working.committed_document.entity('sl').speaker_role == 'SL'
+    with pytest.raises(KeyError):
+        working.committed_document.entity('c')
+
+    assert working.undo()
+    assert working.committed_document == baseline.document
+
+
+def test_variant_persistence_explicit_apply_and_proposal_lineage(tmp_path: Path) -> None:
+    scene_repository, baseline = _baseline(tmp_path)
+    repository = CadSystemVariantRepository(scene_repository)
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Proposed 5.0.2',
+        role_bindings=_roles('FL', 'C', 'FR', 'TFL', 'TFR', 'SL', 'SR'),
+        proposed_entities=(
+            _proposal('sl', 'SL', 0.6),
+            _proposal('sr', 'SR', 5.4),
+        ),
+        proposal_evidence=(
+            ProposalEvidenceRef(
+                evidence_kind='objective',
+                evidence_id='objective-evaluation-123',
+                detail='reference only; O30 remains objective authority',
+            ),
+        ),
+        created_at_utc=NOW,
+    )
+    repository.save_variant(variant)
+
+    assert scene_repository.latest(DOCUMENT_ID).revision_id == baseline.revision_id
+    comparison_before = repository.comparison_ref(variant.variant_id)
+    assert comparison_before.applied_revision_id is None
+    assert repository.get_variant(variant.variant_id) == variant
+
+    application = repository.apply_variant(
+        variant.variant_id,
+        selected_by='explicit-test-selection',
+        selected_at_utc='2026-09-19T00:01:00+00:00',
+    )
+    applied = scene_repository.get(application.applied_revision_id)
+    assert applied is not None
+    assert applied.parent_revision_id == baseline.revision_id
+    assert applied.revision_id != baseline.revision_id
+    assert scene_repository.get(baseline.revision_id).document == baseline.document
+    assert [entity.speaker_role for entity in applied.document.entities if entity.kind == 'speaker'][-2:] == ['SL', 'SR']
+
+    lineage = repository.proposal_lineage_for_revision(applied.revision_id)
+    assert lineage == (application, variant)
+    assert lineage[1].proposal_evidence[0].evidence_id == 'objective-evaluation-123'
+    comparison_after = repository.comparison_ref(variant.variant_id)
+    assert comparison_after.applied_revision_id == applied.revision_id
+    assert comparison_after.applied_content_hash == applied.content_hash
+
+    repeated = repository.apply_variant(
+        variant.variant_id,
+        selected_by='ignored-repeat',
+    )
+    assert repeated == application
+    assert scene_repository.latest(DOCUMENT_ID).revision_id == applied.revision_id
+
+
+def test_proposed_lifecycle_cannot_claim_measurement_evidence() -> None:
+    with pytest.raises(ValidationError, match='measurement evidence is valid only for measured'):
+        EntityLifecycleBinding(
+            entity_id='sl',
+            state='proposed',
+            measurement_ids=('fake-measurement',),
+        )
+
+    measured = EntityLifecycleBinding(
+        entity_id='fl',
+        state='measured',
+        measurement_ids=('real-measurement-id',),
+    )
+    assert measured.state == 'measured'
