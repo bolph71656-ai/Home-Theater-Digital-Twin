@@ -369,8 +369,8 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(
             _advanced_block(
                 "詳細: 向き・toe-inを探索",
-                "O80 capabilityが明示された場合だけacoustic aim / physical body yawを追加探索します。"
-                " Syntheticとowned-roomのscopeは既存authorityのまま分離されます。",
+                "向き探索が利用可能な場合だけ、音響の向きや筐体の向きを追加探索します。"
+                " 合成データと実室データの区分は既存の検証ルールを維持します。",
                 extended_content,
             )
         )
