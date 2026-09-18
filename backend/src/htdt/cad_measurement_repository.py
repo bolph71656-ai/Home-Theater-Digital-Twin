@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from array import array
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -58,7 +59,7 @@ class CadMeasurementRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_measurement_assets (
@@ -188,7 +189,7 @@ class CadMeasurementRepository:
             created_asset_file = True
 
         try:
-            with self._connect() as connection:
+            with closing(self._connect()) as connection, connection:
                 connection.execute('BEGIN IMMEDIATE')
                 if connection.execute(
                     'SELECT 1 FROM cad_measurements WHERE measurement_id=?',
@@ -264,7 +265,7 @@ class CadMeasurementRepository:
             raise
 
     def get_measurement(self, measurement_id: str) -> CadMeasurementRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM cad_measurements WHERE measurement_id=?',
                 (measurement_id,),
@@ -272,7 +273,7 @@ class CadMeasurementRepository:
         return None if row is None else self._row_to_measurement(row)
 
     def get_dataset(self, dataset_id: str) -> CadFrequencyResponseDataset | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM cad_frequency_responses WHERE dataset_id=?',
                 (dataset_id,),
@@ -280,7 +281,7 @@ class CadMeasurementRepository:
         return None if row is None else self._row_to_dataset(row)
 
     def dataset_for_measurement(self, measurement_id: str) -> CadFrequencyResponseDataset | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM cad_frequency_responses WHERE measurement_id=?',
                 (measurement_id,),
@@ -288,7 +289,7 @@ class CadMeasurementRepository:
         return None if row is None else self._row_to_dataset(row)
 
     def list_measurements(self, document_id: str) -> tuple[CadMeasurementRecord, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT * FROM cad_measurements WHERE document_id=? ORDER BY imported_at DESC, measurement_id',
                 (document_id,),
@@ -309,7 +310,7 @@ class CadMeasurementRepository:
     ) -> CadMeasurementComparison:
         if dataset_a_id == dataset_b_id:
             raise ValueError('comparison requires two different datasets')
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = []
             for dataset_id in (dataset_a_id, dataset_b_id):
                 row = connection.execute(
@@ -354,7 +355,7 @@ class CadMeasurementRepository:
         return comparison
 
     def get_comparison(self, comparison_id: str) -> CadMeasurementComparison | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM cad_measurement_comparisons WHERE comparison_id=?',
                 (comparison_id,),
@@ -362,7 +363,7 @@ class CadMeasurementRepository:
         return None if row is None else self._row_to_comparison(row)
 
     def list_comparisons(self, document_id: str) -> tuple[CadMeasurementComparison, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT * FROM cad_measurement_comparisons WHERE document_id=? ORDER BY created_at DESC, comparison_id',
                 (document_id,),
@@ -447,7 +448,7 @@ class CadMeasurementRepository:
                     raise ValueError('measurement plan evidence binding mismatch')
                 if record.evidence_type != 'measured':
                     raise ValueError('measurement plan may only contain measured evidence')
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''INSERT INTO cad_measurement_plans(
                     plan_id, document_id, search_spec_id, candidate_id,
@@ -459,7 +460,7 @@ class CadMeasurementRepository:
 
     def list_measurement_plans(self, search_spec_id: str):
         from .cad_measurement_loop import CadMeasurementPlan
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_measurement_plans WHERE search_spec_id=? ORDER BY seq ASC',
                 (search_spec_id,),
