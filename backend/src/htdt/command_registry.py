@@ -6,12 +6,8 @@ from enum import StrEnum
 import unicodedata
 
 
-class WorkspaceId(StrEnum):
-    OVERVIEW = 'overview'
-    ROOM = 'room'
-    MEASUREMENT = 'measurement'
-    OPTIMIZATION = 'optimization'
 
+from .workflow_navigation import WorkspaceDeepLink, WorkspaceId
 
 class CommandContext(StrEnum):
     GLOBAL = 'global'
@@ -24,17 +20,6 @@ class CommandContext(StrEnum):
 class ShortcutBehavior(StrEnum):
     GLOBAL = 'global'
     FOCUS_SAFE = 'focus_safe'
-
-
-@dataclass(frozen=True, slots=True)
-class WorkspaceDeepLink:
-    workspace: WorkspaceId
-    section: str | None = None
-
-    def as_uri(self) -> str:
-        if self.section is None:
-            return f'htdt://workspace/{self.workspace.value}'
-        return f'htdt://workspace/{self.workspace.value}/{self.section}'
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +73,7 @@ class CommandSearchResult:
 
 AvailabilityProvider = Callable[[], CommandAvailability]
 CommandExecutor = Callable[[], None]
-DeepLinkHandler = Callable[[WorkspaceDeepLink], None]
+DeepLinkHandler = Callable[[WorkspaceDeepLink], bool | None]
 
 
 @dataclass(slots=True)
@@ -185,7 +170,9 @@ class CommandRegistry:
         deep_link = command.definition.deep_link
         navigated = False
         if deep_link is not None and self._deep_link_handler is not None:
-            self._deep_link_handler(deep_link)
+            navigation_result = self._deep_link_handler(deep_link)
+            if navigation_result is False:
+                return False
             navigated = True
             command = self._commands[command_id]
             if not self.availability(command_id).enabled:
