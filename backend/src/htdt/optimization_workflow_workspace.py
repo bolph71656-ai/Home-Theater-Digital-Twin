@@ -745,14 +745,10 @@ def build_optimization_workspace_mount(
 
     workspace = OptimizationWorkflowWorkspace(repository, document_id)
 
-    def activate() -> None:
-        refresh_legacy_editor_revision(workspace)
-        workspace.refresh_from_authorities()
-
     return WorkspaceMount.from_widget(
         workspace,
-        on_activate=activate,
-        before_deactivate=lambda: legacy_editor_deactivation_guard(workspace),
+        on_activate=workspace.activate,
+        before_deactivate=workspace.before_deactivate,
         on_context_changed=workspace.select_section,
     )
 
