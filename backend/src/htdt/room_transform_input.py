@@ -215,7 +215,8 @@ class RoomEntityTransformController(QObject):
         self.workspace.controller.working.preview_rotate(orientation)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if watched is not self.viewport.interactor or self.mode is None:
+        viewport = getattr(self, "viewport", None)
+        if viewport is None or watched is not viewport.interactor or self.mode is None:
             return False
         event_type = event.type()
         if event_type == QEvent.Type.MouseButtonPress:
