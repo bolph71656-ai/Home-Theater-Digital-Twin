@@ -21,7 +21,7 @@ A campaign freezes:
 - model id/version;
 - requested validation band and holdout residual threshold;
 - candidate ids and calibration/holdout split;
-- canonical objective-evaluation spec/SHA and objective ids;
+- canonical target response, reference/excluded bands, objective-evaluation spec/SHA and objective ids;
 - trend tolerances/minimum comparable pairs/minimum agreement ratio;
 - sensitivity candidate pairs and thresholds;
 - candidates requiring repeated measurements and minimum repeat count;
@@ -46,10 +46,38 @@ reclassifies evidence. For each campaign candidate it reports:
 - one completed Measurement Plan and its measured N60 evidence;
 - predicted/measured objective evaluations whose evaluation-spec SHA exactly
   equals the preregistered campaign spec;
-- repeatability count for candidates that require repeated measurements.
+- repeatability count for candidates that require repeated measurements;
+- measurement capture time must be after campaign preregistration;
+- measured provenance must contain `validation_scope=owned_room` and the exact campaign id.
 
 Missing or ambiguous evidence is listed explicitly. No default ranking or
 automatic physical action is performed.
+
+## Native owned-room measurement ingestion
+
+Normal N60 import remains generic measurement ingestion and does not become
+owned-room validation evidence automatically.
+
+The optimization workspace exposes an explicit
+`選択REW→Campaign実測` action. It is available only when:
+
+- a persisted campaign is selected;
+- a planned Measurement Plan for one of that campaign's candidates is selected;
+- the current clean SceneRevision exactly equals the plan's applied revision;
+- the REW measurement is read through the API path.
+
+That action freezes `evidence_type=measured`, `validation_scope=owned_room`
+and the exact campaign id into measurement provenance. REW text import is not
+promoted to O60E evidence because it does not provide a trustworthy capture
+timestamp.
+
+REW 5.40 may expose a local wall-clock date without an offset, for example
+`2026-Sep-16 12:11:10`. Because the supported REW API is localhost on the
+owned Windows machine, the adapter interprets that legacy form with the host's
+local timezone rules for the measurement date, stores an offset-aware ISO
+timestamp, and preserves both the raw date and interpretation source in
+provenance. An already offset-aware source timestamp is preserved.
+
 
 ## Validation build
 
@@ -66,10 +94,17 @@ Evidence selection is deterministic and fail-closed:
   measured evaluation for each objective and campaign evaluation-spec SHA;
 - repeatability uses all measured evidence in the campaign candidate plan;
 - required applicability codes must be supplied exactly once when the record is
-  built.
+  built;
+- applicability checks are never auto-passed. The native UI exposes
+  `未確認/PASS/FAIL` for geometry, band and routing, and requires a written
+  confirmation detail for every PASS.
 
-A resulting owned-room ValidationRecord stores the campaign id and the
-validation repository verifies that campaign binding before persistence.
+A resulting owned-room ValidationRecord stores the campaign id and SHA. The
+validation repository independently rechecks the campaign, candidate split,
+objective-evaluation spec, thresholds, sensitivity/repeatability/separation
+requirements, applicability codes, capture time and measurement campaign
+provenance before persistence. The same binding is rechecked when O70 asks for
+the latest eligible record.
 
 ## O70 boundary
 
