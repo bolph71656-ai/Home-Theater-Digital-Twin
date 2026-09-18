@@ -11,10 +11,18 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .cad_adaptive_planner import production_validation_ready
+from .cad_constraint_models import CadConstraintSet
 from .cad_document import EditStateError, WorkingDocument
 from .cad_model_validation import CadModelValidationRecord
+from .cad_orientation_constraints import orientation_constraint_rejections
 from .cad_repository import SceneRepository, SceneRevision
-from .cad_scene import Direction3, Position3, SceneDocument
+from .cad_scene import (
+    Direction3,
+    Position3,
+    SceneDocument,
+    quaternion_to_euler_deg,
+    rotate_orientation_world,
+)
 from .cad_search import (
     candidate_preview_document,
     generate_cad_candidates,
@@ -26,7 +34,7 @@ from .cad_search_models import CadCandidate, CadSearchSpec
 EXTENDED_SEARCH_SCHEMA_VERSION = 1
 EXTENDED_SEARCH_ALGORITHM_VERSION = 'extended-grid-1'
 EXTENDED_SEARCH_SYSTEM_MAX_CANDIDATES = 50_000
-ExtendedParameter = Literal['aim_yaw_deg']
+ExtendedParameter = Literal['aim_yaw_deg', 'body_yaw_deg']
 ExtendedEvidenceScope = Literal['synthetic_fixture', 'owned_room']
 
 
@@ -96,12 +104,12 @@ class CadExtendedModelCapability(BaseModel):
         if self.evidence_scope == 'synthetic_fixture' and self.validation_id is not None:
             raise ValueError('synthetic extended capability must not claim owned-room validation')
         if (
-            'aim_yaw_deg' in self.supported_parameters
+            {'aim_yaw_deg', 'body_yaw_deg'}.intersection(self.supported_parameters)
             and self.model_id in {'rew-room-simulator', 'rew-roomsim'}
         ):
             raise ValueError(
-                'REW Room Simulator does not model speaker acoustic aim; '
-                'aim_yaw_deg capability is forbidden'
+                'REW Room Simulator does not model speaker acoustic direction; '
+                'aim/body yaw capability is forbidden'
             )
         if self.capability_sha256 != _digest(self.identity_payload()):
             raise ValueError('extended capability identity hash mismatch')
@@ -122,7 +130,7 @@ class CadExtendedSearchAxis(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     entity_id: str = Field(min_length=1)
-    parameter: Literal['aim_yaw_deg'] = 'aim_yaw_deg'
+    parameter: ExtendedParameter = 'aim_yaw_deg'
     min_value: float
     max_value: float
     step: float = Field(gt=0.0)
@@ -135,7 +143,7 @@ class CadExtendedSearchAxis(BaseModel):
         if self.max_value < self.min_value:
             raise ValueError('extended-search axis max must be >= min')
         if self.min_value < -180.0 or self.max_value > 180.0:
-            raise ValueError('aim_yaw_deg must remain within -180..180 degrees')
+            raise ValueError('extended yaw parameters must remain within -180..180 degrees')
         return self
 
 
@@ -188,7 +196,8 @@ class CadExtendedCandidate(BaseModel):
     raw_index: int = Field(ge=0)
     feasible_index: int = Field(ge=0)
     positions: dict[str, dict[str, float]]
-    aim_yaw_deg: dict[str, float]
+    aim_yaw_deg: dict[str, float] = Field(default_factory=dict)
+    body_yaw_deg: dict[str, float] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def valid_payload(self) -> 'CadExtendedCandidate':
@@ -197,11 +206,19 @@ class CadExtendedCandidate(BaseModel):
                 raise ValueError('extended candidate position payload is invalid')
             if not all(isfinite(float(value)) for value in position.values()):
                 raise ValueError('extended candidate positions must be finite')
-        if not self.aim_yaw_deg:
-            raise ValueError('extended candidate requires at least one aim override')
-        for entity_id, value in self.aim_yaw_deg.items():
-            if not entity_id or not isfinite(float(value)) or not -180 <= float(value) <= 180:
-                raise ValueError('extended candidate aim yaw is invalid')
+        if not self.aim_yaw_deg and not self.body_yaw_deg:
+            raise ValueError('extended candidate requires at least one yaw override')
+        for mapping, label in (
+            (self.aim_yaw_deg, 'aim yaw'),
+            (self.body_yaw_deg, 'body yaw'),
+        ):
+            for entity_id, value in mapping.items():
+                if (
+                    not entity_id
+                    or not isfinite(float(value))
+                    or not -180 <= float(value) <= 180
+                ):
+                    raise ValueError(f'extended candidate {label} is invalid')
         return self
 
 
@@ -212,7 +229,9 @@ class CadExtendedCandidateSetPage(BaseModel):
     extended_search_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     candidate_set_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     raw_candidate_count: int = Field(ge=1)
-    feasible_candidate_count: int = Field(ge=1)
+    feasible_candidate_count: int = Field(ge=0)
+    rejected_candidate_count: int = Field(default=0, ge=0)
+    rejection_counts: dict[str, int] = Field(default_factory=dict)
     offset: int = Field(ge=0)
     limit: int = Field(ge=1)
     candidates: tuple[CadExtendedCandidate, ...]
@@ -383,12 +402,14 @@ def _candidate_id(
     base_candidate_id: str,
     positions: dict[str, dict[str, float]],
     aim_yaw_deg: dict[str, float],
+    body_yaw_deg: dict[str, float],
 ) -> str:
     return 'ec-' + _digest({
         'extended_search_sha256': spec.extended_search_sha256,
         'base_candidate_id': base_candidate_id,
         'positions': positions,
         'aim_yaw_deg': aim_yaw_deg,
+        'body_yaw_deg': body_yaw_deg,
     })[:20]
 
 
@@ -428,41 +449,78 @@ def generate_extended_candidates(
     if raw_count > spec.candidate_limit:
         raise ValueError('extended search raw count exceeds immutable candidate limit')
 
+    source = scene_repository.get(base_spec.scene_revision_id)
+    if source is None:
+        raise ValueError('extended search source SceneRevision no longer exists')
+    constraint_set = CadConstraintSet.model_validate(
+        json.loads(base_spec.constraint_snapshot_json)
+    )
+
     ids: list[str] = []
     page_candidates: list[CadExtendedCandidate] = []
+    rejection_counts: dict[str, int] = {}
     feasible_index = 0
+    raw_index = 0
     for base_candidate in base_candidates:
         for combination in product(*value_lists):
             if cancelled is not None and cancelled():
                 raise RuntimeError('extended search generation cancelled')
-            aim_map = {
-                axis.entity_id: round(float(value), 12)
-                for axis, value in zip(spec.axes, combination, strict=True)
-            }
+            aim_map: dict[str, float] = {}
+            body_map: dict[str, float] = {}
+            for axis, value in zip(spec.axes, combination, strict=True):
+                target = (
+                    aim_map if axis.parameter == 'aim_yaw_deg' else body_map
+                )
+                target[axis.entity_id] = round(float(value), 12)
+
             candidate_id = _candidate_id(
                 spec,
                 base_candidate.candidate_id,
                 base_candidate.positions,
                 aim_map,
+                body_map,
             )
+            candidate = CadExtendedCandidate(
+                candidate_id=candidate_id,
+                base_candidate_id=base_candidate.candidate_id,
+                raw_index=raw_index,
+                feasible_index=feasible_index,
+                positions=base_candidate.positions,
+                aim_yaw_deg=aim_map,
+                body_yaw_deg=body_map,
+            )
+            if body_map:
+                preview = extended_candidate_preview_document(
+                    source.document,
+                    candidate,
+                )
+                rejections = orientation_constraint_rejections(
+                    preview,
+                    constraint_set,
+                    changed_entity_ids=body_map,
+                )
+                if rejections:
+                    for constraint_id in rejections:
+                        rejection_counts[constraint_id] = (
+                            rejection_counts.get(constraint_id, 0) + 1
+                        )
+                    raw_index += 1
+                    continue
+
             ids.append(candidate_id)
             if offset <= feasible_index < offset + limit:
-                page_candidates.append(CadExtendedCandidate(
-                    candidate_id=candidate_id,
-                    base_candidate_id=base_candidate.candidate_id,
-                    raw_index=feasible_index,
-                    feasible_index=feasible_index,
-                    positions=base_candidate.positions,
-                    aim_yaw_deg=aim_map,
-                ))
+                page_candidates.append(candidate)
             feasible_index += 1
+            raw_index += 1
 
     return CadExtendedCandidateSetPage(
         extended_search_id=spec.extended_search_id,
         extended_search_sha256=spec.extended_search_sha256,
         candidate_set_sha256=_digest(ids),
         raw_candidate_count=raw_count,
-        feasible_candidate_count=raw_count,
+        feasible_candidate_count=feasible_index,
+        rejected_candidate_count=raw_count - feasible_index,
+        rejection_counts=dict(sorted(rejection_counts.items())),
         offset=offset,
         limit=limit,
         candidates=tuple(page_candidates),
@@ -491,6 +549,32 @@ def direction_with_horizontal_yaw(
     )
 
 
+def body_horizontal_yaw_deg(entity) -> float:
+    return float(quaternion_to_euler_deg(entity.orientation)[0])
+
+
+def _wrapped_delta_deg(target_deg: float, current_deg: float) -> float:
+    return (float(target_deg) - float(current_deg) + 180.0) % 360.0 - 180.0
+
+
+def _apply_body_yaw(entity, target_yaw_deg: float):
+    if entity.kind != 'speaker' or entity.aim_xyz is None:
+        raise ValueError('physical toe-in requires an explicit-aim speaker')
+    delta = _wrapped_delta_deg(target_yaw_deg, body_horizontal_yaw_deg(entity))
+    current_aim_yaw = aim_horizontal_yaw_deg(entity.aim_xyz)
+    return entity.model_copy(update={
+        'orientation': rotate_orientation_world(
+            entity.orientation,
+            'z',
+            delta,
+        ),
+        'aim_xyz': direction_with_horizontal_yaw(
+            entity.aim_xyz,
+            current_aim_yaw + delta,
+        ),
+    })
+
+
 def extended_candidate_preview_document(
     document: SceneDocument,
     candidate: CadExtendedCandidate,
@@ -503,8 +587,13 @@ def extended_candidate_preview_document(
     )
     preview = candidate_preview_document(document, base)
     replacements = {}
+
+    for entity_id, yaw_deg in candidate.body_yaw_deg.items():
+        entity = replacements.get(entity_id, preview.entity(entity_id))
+        replacements[entity_id] = _apply_body_yaw(entity, yaw_deg)
+
     for entity_id, yaw_deg in candidate.aim_yaw_deg.items():
-        entity = preview.entity(entity_id)
+        entity = replacements.get(entity_id, preview.entity(entity_id))
         if entity.kind != 'speaker' or entity.aim_xyz is None:
             raise ValueError(
                 f'extended candidate aim target lacks explicit speaker aim: {entity_id}'
@@ -547,22 +636,38 @@ def apply_extended_candidate(
         candidate.base_candidate_id,
         candidate.positions,
         candidate.aim_yaw_deg,
+        candidate.body_yaw_deg,
     )
     if expected_id != candidate.candidate_id:
         raise ValueError('extended candidate identity mismatch')
 
-    touched = sorted(set(candidate.positions) | set(candidate.aim_yaw_deg))
-    before = tuple(working.committed_document.entity(entity_id) for entity_id in touched)
-    after = []
-    for entity in before:
-        update = {}
-        position = candidate.positions.get(entity.entity_id)
-        if position is not None:
-            update['position'] = Position3.model_validate(position)
-        yaw = candidate.aim_yaw_deg.get(entity.entity_id)
-        if yaw is not None:
-            if entity.kind != 'speaker' or entity.aim_xyz is None:
-                raise ValueError('extended candidate requires explicit speaker aim')
-            update['aim_xyz'] = direction_with_horizontal_yaw(entity.aim_xyz, yaw)
-        after.append(entity.model_copy(update=update))
-    return working.transform_entities(before, tuple(after))
+    candidate_document = extended_candidate_preview_document(
+        working.committed_document,
+        candidate,
+    )
+    if candidate.body_yaw_deg:
+        rejections = orientation_constraint_rejections(
+            candidate_document,
+            current_constraint_set,
+            changed_entity_ids=candidate.body_yaw_deg,
+        )
+        if rejections:
+            raise ValueError(
+                'physical toe-in violates hard constraints: '
+                + ', '.join(rejections)
+            )
+
+    touched = sorted(
+        set(candidate.positions)
+        | set(candidate.aim_yaw_deg)
+        | set(candidate.body_yaw_deg)
+    )
+    before = tuple(
+        working.committed_document.entity(entity_id)
+        for entity_id in touched
+    )
+    after = tuple(
+        candidate_document.entity(entity_id)
+        for entity_id in touched
+    )
+    return working.transform_entities(before, after)
