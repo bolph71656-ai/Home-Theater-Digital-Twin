@@ -463,10 +463,10 @@ class SelectionInspector(QFrame):
             self.size_fields[axis] = field
             self.form.addRow(f"寸法 {axis}", field)
 
-        self.name_field.editingFinished.connect(self.editCommitted)
-        self.role_field.editingFinished.connect(self.editCommitted)
+        self.name_field.editingFinished.connect(self.editCommitted.emit)
+        self.role_field.editingFinished.connect(self.editCommitted.emit)
         for field in (*self.position_fields.values(), *self.size_fields.values()):
-            field.editingFinished.connect(self.editCommitted)
+            field.editingFinished.connect(self.editCommitted.emit)
 
         layout.addWidget(form_host)
         layout.addStretch(1)
@@ -596,7 +596,7 @@ class OverlayControls(QFrame):
         self.focus = QCheckBox("選択に集中")
         self.grid.setChecked(True)
         for toggle in (self.grid, self.labels, self.acoustics, self.focus):
-            toggle.toggled.connect(self.changed)
+            toggle.toggled.connect(lambda checked=False: self.changed.emit())
             layout.addWidget(toggle)
         layout.addStretch(1)
 
@@ -625,8 +625,8 @@ class RecoveryBanner(QFrame):
         recover = QPushButton("復旧")
         discard = QPushButton("破棄")
         set_primary_action(recover)
-        recover.clicked.connect(self.recoverRequested)
-        discard.clicked.connect(self.discardRequested)
+        recover.clicked.connect(lambda checked=False: self.recoverRequested.emit())
+        discard.clicked.connect(lambda checked=False: self.discardRequested.emit())
         layout.addWidget(recover)
         layout.addWidget(discard)
 
