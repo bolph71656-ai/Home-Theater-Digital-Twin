@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -316,3 +317,84 @@ def test_extended_search_requires_explicit_source_aim(tmp_path):
             candidate_limit=10,
             created_at_utc=_now(),
         )
+
+class _ValidationRepository:
+    def __init__(self, path, record):
+        self.path = path
+        self.record = record
+
+    def get(self, validation_id):
+        return (
+            self.record
+            if validation_id == self.record.validation_id
+            else None
+        )
+
+
+def test_owned_room_extended_spec_requires_exact_o60_search_authority(tmp_path):
+    (
+        scene_repository,
+        revision,
+        _constraints,
+        base_spec,
+        base_page,
+        _capability,
+        _repository,
+        _spec,
+    ) = _fixture(tmp_path)
+    validation = SimpleNamespace(
+        validation_id='owned-directional-validation',
+        evidence_scope='owned_room',
+        recommendation_gate='eligible',
+        gate_reasons=(),
+        campaign_id='owned-directional-campaign',
+        campaign_sha256='a' * 64,
+        model_id='owned-directional-model',
+        model_version='1',
+        document_id=DOCUMENT_ID,
+        search_spec_id='different-search-spec',
+        search_spec_sha256='b' * 64,
+        candidate_set_sha256='c' * 64,
+    )
+    validation_repository = _ValidationRepository(
+        scene_repository.path,
+        validation,
+    )
+    repository = CadExtendedSearchRepository(
+        CadSearchRepository(scene_repository),
+        validation_repository,
+    )
+    capability = build_extended_model_capability(
+        model_id=validation.model_id,
+        model_version=validation.model_version,
+        evidence_scope='owned_room',
+        supported_parameters=('aim_yaw_deg',),
+        detail='owned-room directional fixture',
+        validation=validation,
+        created_at_utc=_now(),
+    )
+    repository.save_capability(capability)
+    spec = build_extended_search_spec(
+        source_revision=revision,
+        base_spec=base_spec,
+        base_candidate_set_sha256=base_page.candidate_set_sha256,
+        base_candidate_count=base_page.feasible_candidate_count,
+        capability=capability,
+        axes=(
+            CadExtendedSearchAxis(
+                entity_id='fl',
+                min_value=-10.0,
+                max_value=10.0,
+                step=10.0,
+            ),
+        ),
+        candidate_limit=20,
+        created_at_utc=_now(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match='does not match exact base SearchSpec/candidate-set',
+    ):
+        repository.save_spec(spec)
+
