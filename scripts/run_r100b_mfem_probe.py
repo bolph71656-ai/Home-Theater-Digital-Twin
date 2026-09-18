@@ -98,6 +98,16 @@ def _platform(thread_budget: int) -> BakeoffPlatform:
     )
 
 
+def _directory_size_mb(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    return sum(
+        item.stat().st_size
+        for item in path.rglob('*')
+        if item.is_file()
+    ) / (1024.0 * 1024.0)
+
+
 def _box_dimensions(fixture) -> tuple[float, float, float]:
     if len(fixture.regions) != 1 or fixture.portals or fixture.terminations or fixture.obstacles:
         raise ValueError('MFEM rigid-mode probe expects one closed obstacle-free region')
@@ -294,6 +304,7 @@ def _execute(
         solve_s=float(finest['eigensolve_s']),
         postprocess_s=0.0,
         peak_ram_mb=peak_ram_mb,
+        disk_mb=_directory_size_mb(work_dir),
         output_mb=raw_path.stat().st_size / (1024.0 * 1024.0),
         observations=_match_modes(fixture, frequencies),
         diagnostics=(
