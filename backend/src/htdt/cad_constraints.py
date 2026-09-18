@@ -13,6 +13,7 @@ from .cad_constraint_models import (
     CadPlacementConstraint,
     CadWallClearanceConstraint,
 )
+from .cad_orientation_constraints import entity_horizontal_footprint
 from .cad_scene import Position3, SceneDocument, room_vertices
 from .placement_constraints import (
     ConstraintSetCreate,
@@ -183,10 +184,20 @@ def _entity_profile(document: SceneDocument, entity_id: str) -> dict[str, Any] |
     if entity.size_m is None:
         return None
     radius = hypot(float(entity.size_m.x_m) * 0.5, float(entity.size_m.y_m) * 0.5)
+    footprint = entity_horizontal_footprint(entity)
+    vertices = [
+        {
+            'x_m': float(x) - float(entity.position.x_m),
+            'y_m': float(y) - float(entity.position.y_m),
+        }
+        for x, y in list(footprint.exterior.coords)[:-1]
+    ]
     return {
         'entity_id': entity.entity_id,
+        # Keep the legacy radius for backwards-compatible diagnostics/fallback.
         'footprint_radius_m': radius,
         'safety_margin_m': 0.0,
+        'footprint_vertices_xy_m': vertices,
     }
 
 

@@ -75,7 +75,7 @@ def make_constraints() -> CadConstraintSet:
     )
 
 
-def test_scene_adapter_uses_domain_coordinates_and_conservative_physical_profiles() -> None:
+def test_scene_adapter_uses_domain_coordinates_and_exact_source_orientation_profiles() -> None:
     scene = make_scene()
     context = scene_to_g10_context(scene)
 
@@ -87,9 +87,11 @@ def test_scene_adapter_uses_domain_coordinates_and_conservative_physical_profile
 
     evaluation = evaluate_cad_constraints(scene, make_constraints())
     wall = next(item for item in evaluation.results if item.constraint_id == 'front-clearance')
-    # radius = hypot(0.10, 0.10); center-to-wall is 0.25 m.
+    # Source body yaw is 0 degrees, so the exact 0.20 m cabinet depth
+    # occupies y +/-0.10 m. The front-wall clearance is therefore 0.15 m.
+    assert wall.raw_actual['footprint_mode'] == 'oriented_polygon'
     assert wall.raw_actual['effective_radius_m'] == pytest.approx(2**0.5 * 0.10)
-    assert wall.actual_m == pytest.approx(0.25 - 2**0.5 * 0.10)
+    assert wall.actual_m == pytest.approx(0.15)
 
 
 def test_wall_mapping_keeps_stable_wall_ids_outside_legacy_edge_contract() -> None:

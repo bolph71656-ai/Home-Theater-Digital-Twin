@@ -4,7 +4,9 @@ from math import isfinite, sqrt
 from typing import Any, Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
+from shapely.affinity import translate
 from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
 from .geometry import polygon_from_vertices, room_geometry_payload
@@ -53,6 +55,16 @@ class EntityProfile(BaseModel):
     entity_id: str = Field(min_length=1, max_length=100)
     footprint_radius_m: float = Field(default=0.0, ge=0)
     safety_margin_m: float = Field(default=0.0, ge=0)
+    footprint_vertices_xy_m: list[ConstraintPoint2D] | None = None
+
+    @model_validator(mode='after')
+    def valid_footprint(self) -> 'EntityProfile':
+        vertices = self.footprint_vertices_xy_m
+        if vertices is not None:
+            if len(vertices) < 3:
+                raise ValueError('entity footprint requires at least three vertices')
+            polygon_from_vertices([(item.x_m, item.y_m) for item in vertices])
+        return self
 
     @property
     def effective_radius_m(self) -> float:
@@ -290,8 +302,43 @@ def _region_geometry(region: ConstraintRegion):
     return polygons[0] if len(polygons) == 1 else unary_union(polygons)
 
 
-def _envelope(point: Point, radius_m: float):
+def _entity_envelope(
+    point: Point,
+    profile: EntityProfile | None,
+) -> BaseGeometry:
+    if profile is None:
+        return point
+    vertices = profile.footprint_vertices_xy_m
+    if vertices is not None:
+        local = polygon_from_vertices(
+            [(float(item.x_m), float(item.y_m)) for item in vertices]
+        )
+        envelope: BaseGeometry = translate(
+            local,
+            xoff=float(point.x),
+            yoff=float(point.y),
+        )
+        if profile.safety_margin_m > _EPS:
+            envelope = envelope.buffer(float(profile.safety_margin_m))
+        return envelope
+    radius_m = profile.effective_radius_m
     return point if radius_m <= _EPS else point.buffer(radius_m)
+
+
+def _profile_observation(profile: EntityProfile | None) -> dict[str, Any]:
+    if profile is None:
+        return {
+            'footprint_mode': 'point',
+            'effective_radius_m': 0.0,
+        }
+    return {
+        'footprint_mode': (
+            'oriented_polygon'
+            if profile.footprint_vertices_xy_m is not None
+            else 'legacy_radius'
+        ),
+        'effective_radius_m': profile.effective_radius_m,
+    }
 
 
 def _rejection(constraint_id: str, kind: str, entity_ids: list[str], message: str, **details: Any) -> dict[str, Any]:
@@ -347,16 +394,16 @@ def evaluate_constraint_set(
         if position is None:
             continue
         x_m, y_m, z_m = _position_tuple(position)
-        radius = profiles.get(entity_id).effective_radius_m if entity_id in profiles else 0.0
+        profile = profiles.get(entity_id)
         point = Point(x_m, y_m)
-        envelope = _envelope(point, radius)
+        envelope = _entity_envelope(point, profile)
         xy_inside = bool(room_polygon.covers(envelope))
         z_inside = -_EPS <= z_m <= room_height + _EPS
         observations.append({
             'constraint_id': f'__room_boundary__:{entity_id}',
             'kind': 'room_boundary',
             'entity_ids': [entity_id],
-            'actual': {'xy_inside': xy_inside, 'z_m': z_m, 'effective_radius_m': radius},
+            'actual': {'xy_inside': xy_inside, 'z_m': z_m, **_profile_observation(profile)},
             'required': {'xy_inside': True, 'z_range_m': [0.0, room_height]},
             'passed': xy_inside and z_inside,
         })
@@ -364,7 +411,8 @@ def evaluate_constraint_set(
             rejections.append(_rejection(
                 f'__room_boundary__:{entity_id}', 'room_boundary', [entity_id],
                 'Entity envelope is outside the exact room prism',
-                xy_inside=xy_inside, z_m=z_m, z_range_m=[0.0, room_height], effective_radius_m=radius,
+                xy_inside=xy_inside, z_m=z_m, z_range_m=[0.0, room_height],
+                **_profile_observation(profile),
             ))
 
     def require_position(constraint_id: str, kind: str, entity_id: str) -> tuple[float, float, float] | None:
@@ -384,18 +432,19 @@ def evaluate_constraint_set(
                 position = require_position(constraint.constraint_id, constraint.kind, entity_id)
                 if position is None:
                     continue
-                radius = profiles.get(entity_id).effective_radius_m if entity_id in profiles else 0.0
-                envelope = _envelope(Point(position[0], position[1]), radius)
+                profile = profiles.get(entity_id)
+                envelope = _entity_envelope(Point(position[0], position[1]), profile)
                 passed = bool(region.covers(envelope))
                 observations.append({
                     'constraint_id': constraint.constraint_id, 'kind': constraint.kind, 'entity_ids': [entity_id],
-                    'actual': {'inside_allowed_region': passed, 'effective_radius_m': radius},
+                    'actual': {'inside_allowed_region': passed, **_profile_observation(profile)},
                     'required': {'inside_allowed_region': True}, 'passed': passed,
                 })
                 if not passed:
                     rejections.append(_rejection(
                         constraint.constraint_id, constraint.kind, [entity_id],
-                        'Entity envelope is not fully covered by the allowed region', effective_radius_m=radius,
+                        'Entity envelope is not fully covered by the allowed region',
+                        **_profile_observation(profile),
                     ))
 
         elif isinstance(constraint, ExclusionRegionConstraint):
@@ -404,18 +453,19 @@ def evaluate_constraint_set(
                 position = require_position(constraint.constraint_id, constraint.kind, entity_id)
                 if position is None:
                     continue
-                radius = profiles.get(entity_id).effective_radius_m if entity_id in profiles else 0.0
-                envelope = _envelope(Point(position[0], position[1]), radius)
+                profile = profiles.get(entity_id)
+                envelope = _entity_envelope(Point(position[0], position[1]), profile)
                 intersects = bool(region.intersects(envelope))
                 observations.append({
                     'constraint_id': constraint.constraint_id, 'kind': constraint.kind, 'entity_ids': [entity_id],
-                    'actual': {'intersects_exclusion_region': intersects, 'effective_radius_m': radius},
+                    'actual': {'intersects_exclusion_region': intersects, **_profile_observation(profile)},
                     'required': {'intersects_exclusion_region': False}, 'passed': not intersects,
                 })
                 if intersects:
                     rejections.append(_rejection(
                         constraint.constraint_id, constraint.kind, [entity_id],
-                        'Entity envelope intersects an exclusion region', effective_radius_m=radius,
+                        'Entity envelope intersects an exclusion region',
+                        **_profile_observation(profile),
                     ))
 
         elif isinstance(constraint, WallClearanceConstraint):
@@ -424,14 +474,16 @@ def evaluate_constraint_set(
                 position = require_position(constraint.constraint_id, constraint.kind, entity_id)
                 if position is None:
                     continue
-                radius = profiles.get(entity_id).effective_radius_m if entity_id in profiles else 0.0
-                center_distance = float(Point(position[0], position[1]).distance(edge))
-                clearance = max(0.0, center_distance - radius)
+                profile = profiles.get(entity_id)
+                point = Point(position[0], position[1])
+                envelope = _entity_envelope(point, profile)
+                center_distance = float(point.distance(edge))
+                clearance = float(envelope.distance(edge))
                 passed = ((constraint.min_m is None or clearance + _EPS >= constraint.min_m)
                           and (constraint.max_m is None or clearance <= constraint.max_m + _EPS))
                 observations.append({
                     'constraint_id': constraint.constraint_id, 'kind': constraint.kind, 'entity_ids': [entity_id],
-                    'actual': {'clearance_m': clearance, 'center_distance_m': center_distance, 'effective_radius_m': radius},
+                    'actual': {'clearance_m': clearance, 'center_distance_m': center_distance, **_profile_observation(profile)},
                     'required': {'edge_id': constraint.edge_id, 'min_m': constraint.min_m, 'max_m': constraint.max_m},
                     'passed': passed,
                 })
@@ -439,7 +491,8 @@ def evaluate_constraint_set(
                     rejections.append(_rejection(
                         constraint.constraint_id, constraint.kind, [entity_id],
                         'Wall clearance is outside the required range', edge_id=constraint.edge_id,
-                        clearance_m=clearance, center_distance_m=center_distance, effective_radius_m=radius,
+                        clearance_m=clearance, center_distance_m=center_distance,
+                        **_profile_observation(profile),
                         min_m=constraint.min_m, max_m=constraint.max_m,
                     ))
 
@@ -493,16 +546,23 @@ def evaluate_constraint_set(
             if a is None or b is None:
                 continue
             center_distance = _distance(a, b, constraint.distance_mode)
-            radius_a = profiles.get(constraint.entity_a).effective_radius_m if constraint.entity_a in profiles else 0.0
-            radius_b = profiles.get(constraint.entity_b).effective_radius_m if constraint.entity_b in profiles else 0.0
-            distance = max(0.0, center_distance - radius_a - radius_b) if constraint.distance_reference == 'envelope_clearance' else center_distance
+            profile_a = profiles.get(constraint.entity_a)
+            profile_b = profiles.get(constraint.entity_b)
+            if constraint.distance_reference == 'envelope_clearance':
+                envelope_a = _entity_envelope(Point(a[0], a[1]), profile_a)
+                envelope_b = _entity_envelope(Point(b[0], b[1]), profile_b)
+                distance = float(envelope_a.distance(envelope_b))
+            else:
+                distance = center_distance
             passed = ((constraint.min_m is None or distance + _EPS >= constraint.min_m)
                       and (constraint.max_m is None or distance <= constraint.max_m + _EPS))
             observations.append({
                 'constraint_id': constraint.constraint_id, 'kind': constraint.kind,
                 'entity_ids': [constraint.entity_a, constraint.entity_b],
                 'actual': {'distance_m': distance, 'center_distance_m': center_distance, 'distance_mode': constraint.distance_mode,
-                           'distance_reference': constraint.distance_reference, 'effective_radius_a_m': radius_a, 'effective_radius_b_m': radius_b},
+                           'distance_reference': constraint.distance_reference,
+                           'profile_a': _profile_observation(profile_a),
+                           'profile_b': _profile_observation(profile_b)},
                 'required': {'min_m': constraint.min_m, 'max_m': constraint.max_m}, 'passed': passed,
             })
             if not passed:
@@ -510,7 +570,9 @@ def evaluate_constraint_set(
                     constraint.constraint_id, constraint.kind, [constraint.entity_a, constraint.entity_b],
                     'Pair distance is outside the required range', distance_m=distance, center_distance_m=center_distance,
                     distance_mode=constraint.distance_mode, distance_reference=constraint.distance_reference,
-                    effective_radius_a_m=radius_a, effective_radius_b_m=radius_b, min_m=constraint.min_m, max_m=constraint.max_m,
+                    profile_a=_profile_observation(profile_a),
+                    profile_b=_profile_observation(profile_b),
+                    min_m=constraint.min_m, max_m=constraint.max_m,
                 ))
 
         elif isinstance(constraint, LinkedPlacementConstraint):

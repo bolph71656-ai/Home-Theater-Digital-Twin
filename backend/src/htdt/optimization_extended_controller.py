@@ -35,6 +35,7 @@ from .cad_extended_search import (
     CadExtendedCandidateSetPage,
     CadExtendedSearchAxis,
     aim_horizontal_yaw_deg,
+    body_horizontal_yaw_deg,
     apply_extended_candidate,
     build_extended_model_capability,
     build_extended_search_spec,
@@ -102,19 +103,25 @@ class ExtendedSearchControllerMixin:
     def _seed_extended_aim_range(self) -> None:
         if (
             self.extended_entity_combo is None
+            or self.extended_parameter_combo is None
             or self.extended_min_field is None
             or self.extended_max_field is None
             or self.working is None
         ):
             return
         entity_id = self.extended_entity_combo.currentData()
-        if not isinstance(entity_id, str):
+        parameter = self.extended_parameter_combo.currentData()
+        if not isinstance(entity_id, str) or not isinstance(parameter, str):
             return
         try:
             entity = self.working.committed_document.entity(entity_id)
             if entity.aim_xyz is None:
                 return
-            yaw = aim_horizontal_yaw_deg(entity.aim_xyz)
+            yaw = (
+                body_horizontal_yaw_deg(entity)
+                if parameter == 'body_yaw_deg'
+                else aim_horizontal_yaw_deg(entity.aim_xyz)
+            )
         except (KeyError, ValueError):
             return
         self.extended_min_field.setValue(max(-180.0, yaw - 15.0))
@@ -152,8 +159,8 @@ class ExtendedSearchControllerMixin:
                 model_id='synthetic-directional-fixture',
                 model_version='1',
                 evidence_scope='synthetic_fixture',
-                supported_parameters=('aim_yaw_deg',),
-                detail='software acceptance only; not owned-room evidence',
+                supported_parameters=('aim_yaw_deg', 'body_yaw_deg'),
+                detail='software acceptance for acoustic aim and physical body yaw; not owned-room evidence',
                 created_at_utc=datetime.now(timezone.utc).isoformat(),
             )
             existing = next(
@@ -176,7 +183,7 @@ class ExtendedSearchControllerMixin:
             select_capability_id=capability.capability_id
         )
         self.statusBar().showMessage(
-            'Synthetic acoustic-aim capabilityを保存しました · 開発受入専用です'
+            'Synthetic acoustic-aim/body-yaw capabilityを保存しました · 開発受入専用です'
         )
 
     def create_owned_room_extended_capability(self) -> None:
@@ -191,8 +198,8 @@ class ExtendedSearchControllerMixin:
                 model_id=record.model_id,
                 model_version=record.model_version,
                 evidence_scope='owned_room',
-                supported_parameters=('aim_yaw_deg',),
-                detail='owned-room validated directional aim capability',
+                supported_parameters=('aim_yaw_deg', 'body_yaw_deg'),
+                detail='owned-room validated directional aim/body-yaw capability',
                 validation=record,
                 created_at_utc=datetime.now(timezone.utc).isoformat(),
             )
@@ -224,31 +231,35 @@ class ExtendedSearchControllerMixin:
     def add_or_update_extended_axis(self) -> None:
         if (
             self.extended_entity_combo is None
+            or self.extended_parameter_combo is None
             or self.extended_min_field is None
             or self.extended_max_field is None
             or self.extended_step_field is None
         ):
             return
         entity_id = self.extended_entity_combo.currentData()
-        if not isinstance(entity_id, str):
+        parameter = self.extended_parameter_combo.currentData()
+        if not isinstance(entity_id, str) or not isinstance(parameter, str):
             self.statusBar().showMessage(
-                'aim yaw軸へ追加するexplicit-aim speakerを選択してください'
+                'extended軸へ追加するexplicit-aim speaker/parameterを選択してください'
             )
             return
         try:
             axis = CadExtendedSearchAxis(
                 entity_id=entity_id,
+                parameter=parameter,
                 min_value=float(self.extended_min_field.value()),
                 max_value=float(self.extended_max_field.value()),
                 step=float(self.extended_step_field.value()),
             )
         except Exception as exc:
-            self.statusBar().showMessage(f'aim yaw軸が不正です · {exc}')
+            self.statusBar().showMessage(f'extended軸が不正です · {exc}')
             return
-        self.extended_axes[entity_id] = axis
+        key = (entity_id, parameter)
+        self.extended_axes[key] = axis
         self._refresh_extended_axis_tree()
         self.statusBar().showMessage(
-            f'aim yaw軸を追加/更新しました · {entity_id}'
+            f'extended軸を追加/更新しました · {entity_id} · {parameter}'
         )
 
     def remove_selected_extended_axis(self) -> None:
@@ -256,13 +267,17 @@ class ExtendedSearchControllerMixin:
         if tree is None:
             return
         item = tree.currentItem()
-        entity_id = None if item is None else item.data(0, ROLE)
-        if not isinstance(entity_id, str):
+        raw_key = None if item is None else item.data(0, ROLE)
+        if (
+            not isinstance(raw_key, (tuple, list))
+            or len(raw_key) != 2
+        ):
             return
-        self.extended_axes.pop(entity_id, None)
+        key = (str(raw_key[0]), str(raw_key[1]))
+        self.extended_axes.pop(key, None)
         self._refresh_extended_axis_tree()
         self.statusBar().showMessage(
-            f'aim yaw軸を削除しました · {entity_id}'
+            f'extended軸を削除しました · {key[0]} · {key[1]}'
         )
 
     def _refresh_extended_axis_tree(self) -> None:
@@ -270,8 +285,9 @@ class ExtendedSearchControllerMixin:
         if tree is None:
             return
         tree.clear()
-        for entity_id in sorted(self.extended_axes):
-            axis = self.extended_axes[entity_id]
+        for key in sorted(self.extended_axes):
+            axis = self.extended_axes[key]
+            entity_id = axis.entity_id
             name = entity_id
             if self.working is not None:
                 try:
@@ -285,7 +301,7 @@ class ExtendedSearchControllerMixin:
                 f'{axis.max_value:.1f}°',
                 f'{axis.step:.1f}°',
             ])
-            item.setData(0, ROLE, entity_id)
+            item.setData(0, ROLE, key)
             tree.addTopLevelItem(item)
 
     def _selected_extended_capability(self):
@@ -334,7 +350,7 @@ class ExtendedSearchControllerMixin:
             return
         if not self.extended_axes:
             self.statusBar().showMessage(
-                '1つ以上のaim yaw軸を追加してからExtended SearchSpecを保存してください'
+                '1つ以上のextended軸を追加してからExtended SearchSpecを保存してください'
             )
             return
         try:
@@ -353,8 +369,8 @@ class ExtendedSearchControllerMixin:
                 base_candidate_count=page.feasible_candidate_count,
                 capability=capability,
                 axes=tuple(
-                    self.extended_axes[entity_id]
-                    for entity_id in sorted(self.extended_axes)
+                    self.extended_axes[key]
+                    for key in sorted(self.extended_axes)
                 ),
                 candidate_limit=candidate_limit,
                 created_at_utc=datetime.now(timezone.utc).isoformat(),
@@ -712,11 +728,17 @@ class ExtendedSearchControllerMixin:
                     for entity_id, yaw
                     in sorted(candidate.aim_yaw_deg.items())
                 )
+                body_text = ' · '.join(
+                    f'{entity_id}:{yaw:.1f}°'
+                    for entity_id, yaw
+                    in sorted(candidate.body_yaw_deg.items())
+                )
                 item = QTreeWidgetItem([
                     candidate.candidate_id[:14],
                     candidate.base_candidate_id[:12],
                     position_text,
                     aim_text,
+                    body_text,
                 ])
                 item.setData(0, ROLE, candidate.candidate_id)
                 tree.addTopLevelItem(item)
@@ -761,7 +783,7 @@ class ExtendedSearchControllerMixin:
         self._refresh_extended_binding_state()
         self._render_extended_overlay()
         self.statusBar().showMessage(
-            'acoustic aim候補preview · Scene/Undo履歴は変更していません'
+            'extended候補preview · Scene/Undo履歴は変更していません'
         )
 
     def clear_extended_preview(self) -> None:
@@ -770,7 +792,7 @@ class ExtendedSearchControllerMixin:
         self.extended_preview_candidate_id = None
         self._refresh_extended_binding_state()
         self._render_extended_overlay()
-        self.statusBar().showMessage('acoustic aim previewを解除しました')
+        self.statusBar().showMessage('extended previewを解除しました')
 
     def apply_selected_extended_candidate(self) -> None:
         base = self._selected_search_spec()
@@ -794,18 +816,22 @@ class ExtendedSearchControllerMixin:
             )
         except Exception as exc:
             self.statusBar().showMessage(
-                f'acoustic aim候補を適用できません · {exc}'
+                f'extended候補を適用できません · {exc}'
             )
             self._refresh_extended_binding_state()
             return
         if not changed:
             self.statusBar().showMessage(
-                'acoustic aim候補は現在の配置/aimと同一です'
+                'extended候補は現在の配置/body/aimと同一です'
             )
             return
 
         entity_ids = tuple(
-            sorted(set(candidate.positions) | set(candidate.aim_yaw_deg))
+            sorted(
+                set(candidate.positions)
+                | set(candidate.aim_yaw_deg)
+                | set(candidate.body_yaw_deg)
+            )
         )
         self.view_state.set_selection(
             entity_ids,
@@ -820,8 +846,8 @@ class ExtendedSearchControllerMixin:
         self._refresh_search_specs()
         self._refresh_extended_specs()
         self.statusBar().showMessage(
-            '位置+acoustic aimを1 commandで適用しました · '
-            'Undoで両方を復元できます'
+            '位置+body orientation+acoustic aimを1 commandで適用しました · '
+            'Undoでまとめて復元できます'
         )
 
     def _remove_extended_overlays(self) -> None:

@@ -178,12 +178,13 @@ class OptimizationWorkspaceWindow(
         self.adaptive_detail_label: QLabel | None = None
         self.extended_capability_combo: QComboBox | None = None
         self.extended_entity_combo: QComboBox | None = None
+        self.extended_parameter_combo: QComboBox | None = None
         self.extended_min_field: QDoubleSpinBox | None = None
         self.extended_max_field: QDoubleSpinBox | None = None
         self.extended_step_field: QDoubleSpinBox | None = None
         self.extended_limit_field: QSpinBox | None = None
         self.extended_axis_tree: QTreeWidget | None = None
-        self.extended_axes: dict[str, CadExtendedSearchAxis] = {}
+        self.extended_axes: dict[tuple[str, str], CadExtendedSearchAxis] = {}
         self.extended_spec_tree: QTreeWidget | None = None
         self.extended_candidate_tree: QTreeWidget | None = None
         self.extended_summary_label: QLabel | None = None
@@ -604,7 +605,7 @@ class OptimizationWorkspaceWindow(
         layout.addWidget(self.adaptive_detail_label)
 
         extended_label = QLabel(
-            'Extended Search · acoustic aim yawは明示model capabilityがある場合だけ探索します'
+            'Extended Search · acoustic aim / physical cabinet toe-inは明示model capabilityがある場合だけ探索します'
         )
         extended_label.setWordWrap(True)
         layout.addWidget(extended_label)
@@ -624,8 +625,8 @@ class OptimizationWorkspaceWindow(
         capability_actions.addWidget(synthetic_capability)
         owned_capability = QPushButton('選択O60→本番capability')
         owned_capability.setToolTip(
-            'owned-room eligible ValidationRecordがspeaker aimを扱うmodelの場合だけ保存できます。'
-            'REW Room Simulatorはspeaker aim非対応なので拒否されます'
+            'owned-room eligible ValidationRecordがspeaker directionを扱うmodelの場合だけ保存できます。'
+            'REW Room Simulatorはdirectional aim/body yaw非対応なので拒否されます'
         )
         owned_capability.clicked.connect(
             self.create_owned_room_extended_capability
@@ -634,11 +635,25 @@ class OptimizationWorkspaceWindow(
         layout.addLayout(capability_actions)
 
         extended_form = QFormLayout()
+        self.extended_parameter_combo = QComboBox()
+        self.extended_parameter_combo.addItem(
+            'Acoustic aim yaw',
+            'aim_yaw_deg',
+        )
+        self.extended_parameter_combo.addItem(
+            'Physical cabinet toe-in (body yaw)',
+            'body_yaw_deg',
+        )
+        self.extended_parameter_combo.currentIndexChanged.connect(
+            self._seed_extended_aim_range
+        )
+        extended_form.addRow('parameter', self.extended_parameter_combo)
+
         self.extended_entity_combo = QComboBox()
         self.extended_entity_combo.currentIndexChanged.connect(
             self._seed_extended_aim_range
         )
-        extended_form.addRow('aim yaw speaker', self.extended_entity_combo)
+        extended_form.addRow('speaker', self.extended_entity_combo)
 
         self.extended_min_field = QDoubleSpinBox()
         self.extended_min_field.setRange(-180.0, 180.0)
@@ -669,10 +684,10 @@ class OptimizationWorkspaceWindow(
         layout.addLayout(extended_form)
 
         extended_axis_actions = QHBoxLayout()
-        add_extended_axis = QPushButton('aim yaw軸を追加 / 更新')
+        add_extended_axis = QPushButton('extended軸を追加 / 更新')
         add_extended_axis.clicked.connect(self.add_or_update_extended_axis)
         extended_axis_actions.addWidget(add_extended_axis)
-        remove_extended_axis = QPushButton('選択aim yaw軸を削除')
+        remove_extended_axis = QPushButton('選択extended軸を削除')
         remove_extended_axis.clicked.connect(self.remove_selected_extended_axis)
         extended_axis_actions.addWidget(remove_extended_axis)
         layout.addLayout(extended_axis_actions)
@@ -699,7 +714,7 @@ class OptimizationWorkspaceWindow(
         layout.addWidget(self.extended_spec_tree)
 
         extended_generation = QHBoxLayout()
-        self.extended_generate_button = QPushButton('aim yaw候補を生成')
+        self.extended_generate_button = QPushButton('extended候補を生成')
         self.extended_generate_button.clicked.connect(
             self.generate_extended_candidates_async
         )
@@ -726,7 +741,7 @@ class OptimizationWorkspaceWindow(
 
         self.extended_candidate_tree = QTreeWidget()
         self.extended_candidate_tree.setHeaderLabels([
-            '候補', 'base', '位置', 'aim yaw'
+            '候補', 'base', '位置', 'aim yaw', 'body yaw'
         ])
         self.extended_candidate_tree.setMinimumHeight(170)
         self.extended_candidate_tree.itemSelectionChanged.connect(
@@ -735,7 +750,7 @@ class OptimizationWorkspaceWindow(
         layout.addWidget(self.extended_candidate_tree)
 
         extended_candidate_actions = QHBoxLayout()
-        self.extended_preview_button = QPushButton('aim yaw候補をpreview')
+        self.extended_preview_button = QPushButton('extended候補をpreview')
         self.extended_preview_button.clicked.connect(
             self.preview_selected_extended_candidate
         )
@@ -745,9 +760,9 @@ class OptimizationWorkspaceWindow(
             self.clear_extended_preview
         )
         extended_candidate_actions.addWidget(self.extended_clear_preview_button)
-        self.extended_apply_button = QPushButton('aim yaw候補を適用')
+        self.extended_apply_button = QPushButton('extended候補を適用')
         self.extended_apply_button.setToolTip(
-            '位置とaimを1 commandで適用し、1回のUndoで両方を復元します'
+            '位置・body orientation・aimを1 commandで適用し、1回のUndoで復元します'
         )
         self.extended_apply_button.clicked.connect(
             self.apply_selected_extended_candidate

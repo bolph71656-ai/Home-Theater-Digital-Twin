@@ -46,12 +46,19 @@ The existing O10 SearchSpec already supports multiple entities and X/Y/Z axes,
 including speaker/listener height. O80 therefore does not duplicate that engine.
 
 O80 layers additional model-dependent parameters on the already feasible O10
-candidate set. The first implemented parameter is speaker horizontal **acoustic
-aim** (`aim_yaw_deg`). This rotates `aim_xyz`; it does not rotate the speaker
-cabinet/body quaternion or re-evaluate an orientation-dependent cabinet
-footprint. The UI and documentation must therefore not present it as full
-physical cabinet toe-in. Physical toe-in is a separate future extension that
-must update body orientation and re-run hard constraints.
+candidate set. Two yaw parameters are implemented:
+
+- speaker horizontal **acoustic aim** (`aim_yaw_deg`), which rotates only
+  `aim_xyz`;
+- **physical cabinet toe-in** (`body_yaw_deg`), which rotates the body
+  quaternion and rotates `aim_xyz` by the same yaw delta so the body/aim
+  relationship is preserved.
+
+New O10 SearchSpecs persist the exact source-orientation cabinet XY footprint
+instead of reducing the cabinet to a circular envelope. O80P body-yaw candidates
+then recompute the oriented cabinet footprint and re-run affected room,
+allowed/exclusion, wall-clearance, and envelope pair-distance hard constraints.
+Existing stored radius-only ConstraintSets/SearchSpecs remain replayable.
 
 An extended candidate contains:
 
@@ -59,11 +66,12 @@ An extended candidate contains:
 - immutable base candidate-set SHA;
 - exact base candidate ID and XYZ payload;
 - explicit extended model-capability ID/SHA;
-- exact toe-in values;
+- exact acoustic-aim and/or body-yaw values;
 - deterministic extended candidate ID and set SHA.
 
-Preview does not alter Scene/Undo history. Explicit apply updates position and
-aim in one command, so one Undo restores both.
+Preview does not alter Scene/Undo history. Explicit apply updates position,
+body orientation, and aim in one command, so one Undo restores the complete
+candidate pose.
 
 ### Model capability gate
 
@@ -72,7 +80,7 @@ declares support.
 
 REW Room Simulator is rectangular position-based and does not model speaker
 direction/toe-in. HTDT therefore rejects any attempt to declare
-`aim_yaw_deg` support for REW Room Simulator.
+`aim_yaw_deg` or `body_yaw_deg` support for REW Room Simulator.
 
 The synthetic software lane uses
 `synthetic-directional-fixture/1`. It exists only to exercise the full software
