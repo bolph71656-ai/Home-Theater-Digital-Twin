@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TypeVar
 
 from PySide6.QtCore import Qt
@@ -168,6 +169,8 @@ class OptimizationWorkflowWorkspace(QWidget):
         self,
         repository: SceneRepository,
         document_id: str = F1_DOCUMENT_ID,
+        *,
+        viewport_factory: Callable[[QWidget | None], QWidget] | None = None,
     ) -> None:
         super().__init__()
         self.setObjectName("optimizationWorkflowWorkspace")
@@ -177,8 +180,13 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         self._optimization_stack = QStackedWidget()
         self._optimization_pages: dict[str, QWidget] = {}
-        self.viewport_widget = RoomViewport3D(self)
-        self.viewport_adapter = _OptimizationViewportAdapter(self.viewport_widget)
+        viewport_widget = (
+            RoomViewport3D(self)
+            if viewport_factory is None
+            else viewport_factory(self)
+        )
+        self.viewport_widget = viewport_widget
+        self.viewport_adapter = _OptimizationViewportAdapter(viewport_widget)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(20, 16, 20, 16)
