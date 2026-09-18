@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-16 / ソースレビュー後の改訂
+> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -149,12 +149,12 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 - domain/adapterの追加時に対応する仕様とstatusを同じPRで更新する。
 - 作業正本はGitHub。所有PCの `C:\Users\ka092\Desktop\HTDT\` は必要な実機検証に使い、不要な一時物は残さない。
 
-## 7. 正本化後の追跡先
+## 7. 現在の追跡先
 
-2026-09-16、旧仕様のIssue #36 / #38とDraft PR #37を**新仕様で置換済みとしてclose**した。実装完了やマージを意味しない。
+2026-09-18時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
-現在の後継は[Issue #41 — N05](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41)。実装は一時停止中であり、今回の整理ではアプリコードを変更していない。再開時の最初の作業はN05の縦断試作とA01/A02受入とする。新しい実装PRは更新されたmainから作成し、milestoneとこの正本、Issue #41を参照する。
+Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
-[旧PR #37](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/37)のbranch `feat/native-3d-cad-ui` と[固定snapshot 0353768](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/tree/035376816c755f2917119a730c415c31f9ea0d6e)を保存する。QMainWindow/viewport/tree選択同期、読取Inspector、view切替、起動script、直接依存pinは再利用候補。snapshot-copy型ContextDraftと旧保存経路は新Scene契約へ適合させてから使用する。
+現在の未完了gateは [Issue #83 — O60R owned-room campaign execution / hardware evidence](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/83) のみ。これはsoftware実装ではなく、実際のspeaker/setup移動とREW測定を伴う実室model validationである。eligible campaign-backed owned-room ValidationRecordとO60R audit PASSが成立するまで、O70 `production_owned_room` recommendationとO80 owned-room directional capabilityはfail-closedを維持する。
 
-旧PR/IssueのContext中心保存、旧N10一括受入、既存契約の無変更維持は今後の作業指示として使わない。O20先行拡張も保留し、作業順は本書のN05〜N90へ一本化する。閉じた作業と理由は[レビュー記録](PLAN_REVIEW.md)に残す。
+旧Issue #41等の初期milestoneは履歴としてclose済みであり、今後の再開点として扱わない。追加機能を実装する場合は、この完成済みmainを起点に新しいIssue/PRを作り、既存authority契約を弱めない。
