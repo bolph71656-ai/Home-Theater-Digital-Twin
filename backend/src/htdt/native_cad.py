@@ -8,46 +8,20 @@ from PySide6.QtWidgets import QApplication
 
 from . import __version__
 from .cad_composition import CadEditorWindow
-from .cad_measurement_repository import CadMeasurementRepository
-from .cad_model_validation_repository import CadModelValidationRepository
-from .cad_objective_repository import CadObjectiveRepository
-from .cad_prediction_repository import CadPredictionRepository
 from .cad_repository import SceneRepository
-from .cad_roomsim_repository import CadRoomSimRepository
 from .cad_scene import F1_DOCUMENT_ID
-from .cad_search_repository import CadSearchRepository
 from .cad_synthetic_demo import seed_synthetic_optimization_demo
-from .command_palette import CommandPaletteController
-from .command_registry import CommandContext, CommandRegistry, register_default_commands
 from .constraint_editor import ConstraintEditorWindow
 from .measurement_editor import MeasurementEditorWindow
 from .measurement_workspace import MeasurementWorkspaceWindow
 from .native_backup import create_backup, restore_backup
-from .native_command_adapter import (
-    bind_active_editor_commands,
-    bind_native_workspace_commands,
-    unbind_active_editor_commands,
-)
 from .native_editor import default_data_dir
 from .optimization_workspace import OptimizationWorkspaceWindow
-from .overview_readiness import OverviewReadinessService
-from .overview_workspace import OverviewWorkspace
-from .prediction_workspace import PredictionWorkspaceWindow
 from .runtime_instance import SingleInstanceGuard
 from .theater_workflow import TheaterWorkflowWindow
 from .ui_theme import apply_dark_theme
-from .workflow_legacy_bridge import (
-    legacy_editor_deactivation_guard,
-    raise_legacy_context,
-    refresh_legacy_editor_revision,
-    select_legacy_entity,
-)
-from .workflow_navigation import WorkspaceDeepLink, WorkspaceId
-from .workflow_shell import (
-    WorkflowShellWindow,
-    WorkspaceMount,
-    build_canonical_workspace_registrations,
-)
+from .workflow_application import build_workflow_application
+from .workflow_shell import WorkflowShellWindow
 
 # Preserve the public theater-editor alias while the concrete product composition
 # advances through N80. N40-N70 behavior remains inherited unchanged.
@@ -68,113 +42,11 @@ __all__ = [
 ]
 
 
-def _build_overview_service(repository: SceneRepository) -> OverviewReadinessService:
-    """Compose existing read authorities once; Overview itself remains read-only."""
-
-    measurement_repository = CadMeasurementRepository(repository)
-    prediction_repository = CadPredictionRepository(repository)
-    search_repository = CadSearchRepository(repository)
-    roomsim_repository = CadRoomSimRepository(repository, search_repository)
-    objective_repository = CadObjectiveRepository(repository, search_repository)
-    validation_repository = CadModelValidationRepository(
-        search_repository,
-        roomsim_repository,
-        measurement_repository,
-        objective_repository,
-    )
-    return OverviewReadinessService(
-        repository,
-        measurement_repository,
-        prediction_repository,
-        search_repository,
-        validation_repository,
-    )
-
 
 def build_workflow_shell(repository: SceneRepository, document_id: str) -> WorkflowShellWindow:
-    """Compose the UX110 shell without moving domain authority into the shell.
+    """Build the integrated workflow application while preserving the public API."""
 
-    Existing QMainWindow workspaces are a temporary bridge. Navigation refuses to
-    leave a workspace with a live draft/preview/background worker, and a clean
-    workspace reloads the latest SceneRevision when it becomes active. UX120-UX140
-    can later replace each bridge with a shared-document workspace view.
-    """
-
-    registry = CommandRegistry()
-    register_default_commands(registry)
-    overview_service = _build_overview_service(repository)
-    shell_holder: dict[str, WorkflowShellWindow] = {}
-
-    def navigate_target(target: WorkspaceDeepLink) -> bool:
-        shell = shell_holder.get("shell")
-        return False if shell is None else shell.handle_deep_link(target)
-
-    def make_overview() -> WorkspaceMount:
-        page = OverviewWorkspace(
-            overview_service,
-            document_id,
-            navigate=navigate_target,
-        )
-
-        def activate() -> None:
-            unbind_active_editor_commands(registry)
-            page.refresh()
-
-        return WorkspaceMount.from_widget(page, on_activate=activate)
-
-    def make_legacy(
-        workspace_id: WorkspaceId,
-        factory,
-    ) -> WorkspaceMount:
-        window = factory()
-        bind_native_workspace_commands(registry, window, workspace_id)
-
-        def activate() -> None:
-            refresh_legacy_editor_revision(window)
-            bind_active_editor_commands(registry, window)
-
-        return WorkspaceMount.from_widget(
-            window,
-            on_activate=activate,
-            before_deactivate=lambda: legacy_editor_deactivation_guard(window),
-            on_context_changed=lambda context_id: raise_legacy_context(
-                window,
-                workspace_id,
-                context_id,
-            ),
-            on_entity_requested=lambda entity_id: select_legacy_entity(window, entity_id),
-        )
-
-    factories = {
-        WorkspaceId.OVERVIEW: make_overview,
-        # PredictionWorkspaceWindow retains the complete N20-N70 Room/placement/
-        # prediction authority needed by the current Room bridge.
-        WorkspaceId.ROOM: lambda: make_legacy(
-            WorkspaceId.ROOM,
-            lambda: PredictionWorkspaceWindow(repository, document_id),
-        ),
-        WorkspaceId.MEASUREMENT: lambda: make_legacy(
-            WorkspaceId.MEASUREMENT,
-            lambda: MeasurementWorkspaceWindow(repository, document_id),
-        ),
-        WorkspaceId.OPTIMIZATION: lambda: make_legacy(
-            WorkspaceId.OPTIMIZATION,
-            lambda: OptimizationWorkspaceWindow(repository, document_id),
-        ),
-    }
-
-    shell = WorkflowShellWindow(build_canonical_workspace_registrations(factories))
-    shell_holder["shell"] = shell
-    registry.set_deep_link_handler(shell.handle_deep_link)
-
-    controller = CommandPaletteController(
-        shell,
-        registry,
-        context_provider=lambda: CommandContext(shell.current_workspace_id.value),
-    )
-    shell.command_registry = registry  # type: ignore[attr-defined]
-    shell.command_palette_controller = controller  # type: ignore[attr-defined]
-    return shell
+    return build_workflow_application(repository, document_id)
 
 
 def main(argv: list[str] | None = None) -> int:
