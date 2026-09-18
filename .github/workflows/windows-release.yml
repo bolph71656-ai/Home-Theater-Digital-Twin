@@ -85,6 +85,19 @@ jobs:
             throw "Packaged restore did not recover the baseline database"
           }
 
+          $demoRoot = Join-Path $env:RUNNER_TEMP "htdt-synthetic-demo-data"
+          $demoProcess = Start-Process -FilePath $exe -ArgumentList @(
+            "--data-dir", $demoRoot,
+            "--seed-synthetic-demo"
+          ) -Wait -PassThru
+          if ($demoProcess.ExitCode -ne 0) {
+            throw "Packaged synthetic demo seed failed with exit code $($demoProcess.ExitCode)"
+          }
+          $demoDatabase = Join-Path $demoRoot "cad-scenes.sqlite3"
+          if (-not (Test-Path $demoDatabase)) {
+            throw "Packaged synthetic demo did not create its database"
+          }
+
       - name: Install pinned Inno Setup
         shell: pwsh
         run: |
