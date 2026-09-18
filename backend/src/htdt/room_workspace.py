@@ -165,6 +165,9 @@ class RoomWorkspaceController:
     def attach_geometry_input(self, controller) -> None:
         self.geometry_input = controller
 
+    def attach_transform_input(self, controller) -> None:
+        self.transform_input = controller
+
     def refresh(self, *, reset_camera: bool = False) -> None:
         self._refresh(reset_camera=reset_camera)
 
@@ -215,6 +218,8 @@ class RoomWorkspaceController:
         self.viewport.fit_scene()
 
     def cancel_active_operation(self) -> bool:
+        if self.transform_input is not None and self.transform_input.is_active:
+            return bool(self.transform_input.cancel())
         if self.geometry_input is not None and self.geometry_input.is_active:
             return bool(self.geometry_input.cancel())
         if self.controller.working.has_preview:
@@ -224,6 +229,8 @@ class RoomWorkspaceController:
         return False
 
     def commit_active_operation(self) -> bool:
+        if self.transform_input is not None and self.transform_input.is_active:
+            return bool(self.transform_input.commit())
         if self.geometry_input is not None and self.geometry_input.is_active:
             return bool(self.geometry_input.commit())
         if self.controller.working.has_preview:
@@ -235,6 +242,9 @@ class RoomWorkspaceController:
         return False
 
     def constrain_axis(self, axis) -> None:
+        if self.transform_input is not None and self.transform_input.is_active:
+            self.transform_input.set_axis(axis)
+            return
         value = getattr(axis, "value", str(axis))
         self.active_axis_constraint = value
         self._set_status(f"{str(value).upper()}軸に拘束")
@@ -740,6 +750,7 @@ class RoomWorkspace(QWidget):
         self.current_context = "geometry"
         self.active_axis_constraint: str | None = None
         self.geometry_input = None
+        self.transform_input = None
         self._viewport_factory = viewport_factory or (lambda owner: RoomViewport3D(owner))
 
         root = QVBoxLayout(self)
@@ -805,6 +816,8 @@ class RoomWorkspace(QWidget):
     def before_deactivate(self) -> tuple[bool, str | None]:
         if self.geometry_input is not None and self.geometry_input.is_active:
             return False, "部屋形状の編集中です。確定またはキャンセルしてから画面を切り替えてください"
+        if self.transform_input is not None and self.transform_input.is_active:
+            return False, "項目の移動または回転を確定・キャンセルしてから画面を切り替えてください"
         return self.controller.before_deactivate()
 
     def set_context(self, context_id: str) -> None:
@@ -950,6 +963,8 @@ class RoomWorkspace(QWidget):
         set_semantic_state(self.status, SemanticState.ERROR if error else None)
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self.transform_input is not None:
+            self.transform_input.dispose()
         if self.geometry_input is not None:
             self.geometry_input.dispose()
         self.controller.close()
