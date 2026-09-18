@@ -430,6 +430,7 @@ class CadMeasurementRepository:
         from .cad_measurement_loop import CadMeasurementPlan
         if not isinstance(plan, CadMeasurementPlan):
             raise TypeError('plan must be CadMeasurementPlan')
+        plan = CadMeasurementPlan.model_validate(plan.model_dump(mode='python'))
         revision = self.scene_repository.get(plan.applied_scene_revision_id)
         if revision is None or revision.document_id != plan.document_id or revision.content_hash != plan.applied_scene_content_hash:
             raise ValueError('measurement plan applied revision binding mismatch')
