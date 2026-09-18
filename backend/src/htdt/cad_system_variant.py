@@ -451,7 +451,7 @@ def build_system_variant(
         'proposal_evidence': [item.model_dump(mode='json') for item in evidence],
         'provenance': [item.model_dump(mode='json') for item in provenance_items],
     }
-    return SystemVariant(
+    variant = SystemVariant(
         variant_id=str(uuid4()),
         name=name,
         document_id=baseline.document_id,
@@ -467,6 +467,9 @@ def build_system_variant(
         created_at_utc=created_at_utc,
         variant_sha256=_digest(identity),
     )
+    # A builder result must already be fully derivable, even before persistence.
+    materialize_system_variant(baseline, variant)
+    return variant
 
 
 def apply_system_variant_to_working_document(
