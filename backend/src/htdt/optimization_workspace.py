@@ -579,6 +579,24 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 'SearchSpecを選択して候補集合を生成してからCampaignを保存してください'
             )
             return
+        if (
+            self.working is None
+            or not search_spec_current_working(
+                spec,
+                self.working,
+                self.constraint_set,
+                current_document_id=self.document_id,
+            )
+        ):
+            self.statusBar().showMessage(
+                'staleなSearchSpec/constraintからValidation Campaignを保存できません'
+            )
+            return
+        if page.search_spec_id != spec.search_spec_id:
+            self.statusBar().showMessage(
+                '候補pageと選択SearchSpecが一致しません · 候補を再生成してください'
+            )
+            return
 
         assignments = tuple(self.campaign_assignments.items())
         calibration = [candidate_id for candidate_id, split in assignments if split == 'calibration']
