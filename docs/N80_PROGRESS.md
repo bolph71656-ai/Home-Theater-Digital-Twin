@@ -169,3 +169,25 @@ Current branch `feat/n80-o20-result-persistence` / draft PR #72 continues Issue 
 - completed attempt FR can be converted to the existing O30 `FrequencyResponse` input without changing its evidence class.
 
 Focused tests cover cancel→resume, failed-attempt retry, authority binding, exact request freezing and exact Room Simulator state restoration. No RDC is used in this slice before CI is green; the writable owned-Windows gate remains consolidated with the later native integration.
+
+
+## 2026-09-18 — O20 owned-Windows writable acceptance prepared
+
+PR #72 merged to main as `df630d686f4e0c1687f05427585c0af1ae7bcf79` after final CI #350 / run `35290639089` passed completely.
+
+Branch `feat/n80-o20-hardware-acceptance` is gate-only: no product code changes are allowed after that accepted product head.
+
+The consolidated live gate now:
+
+- fingerprints the installed REW version and current `/roomsim` OpenAPI subset;
+- reads the exact live Room Simulator state and source-specific baseline FR;
+- projects one active REW source + Main head into a temporary native SceneRevision/SearchSpec;
+- generates exactly one candidate that moves Main/head X by 1 cm inside room bounds;
+- executes the production `CadRoomSimBatchSpec -> CadRoomSimRepository -> run_cad_roomsim_batch()` path;
+- requires a completed immutable attempt with exact live REW version and pre/restored state hash;
+- requires the candidate state hash and candidate FR hash to differ from baseline;
+- re-reads live Room Simulator state and FR after restore and requires both hashes to match the pre-transaction baseline exactly;
+- uses only a temporary SQLite database and leaves no local acceptance data;
+- the PowerShell runner refuses a dirty checkout, checks that no product code changed after `df630d68`, then restores the original checkout and verifies a clean status.
+
+CI compiles the new Windows harness, validates all PowerShell syntax, and preflights the O20 runner before any RDC call. The actual live gate remains pending until this gate-only branch is green.
