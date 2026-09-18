@@ -18,9 +18,10 @@ from htdt.workflow_navigation import WorkspaceDeepLink, WorkspaceId
 def test_navigation_contract_is_shared_across_command_and_shell_layers() -> None:
     assert RegistryWorkspaceId is WorkspaceId
     assert RegistryDeepLink is WorkspaceDeepLink
-    target = WorkspaceDeepLink("room", "placement", entity_id="speaker-1")
+    target = WorkspaceDeepLink("room", section="placement", entity_id="speaker-1")
     assert target.workspace is WorkspaceId.ROOM
     assert target.section == "placement"
+    assert target.subsection == "placement"
     assert target.as_uri().startswith("htdt://workspace/room/placement")
 
 
