@@ -87,6 +87,11 @@ class RoomWorkspaceController:
 
     @property
     def document(self) -> SceneDocument:
+        """Current presentation snapshot, including an active transform preview."""
+        return self.working.document
+
+    @property
+    def committed_document(self) -> SceneDocument:
         return self.working.committed_document
 
     @property
@@ -255,7 +260,7 @@ class RoomWorkspaceController:
         if self.working.has_preview:
             raise EditStateError("操作中のプレビューを確定またはキャンセルしてから保存してください")
         result = self.repository.save(
-            self.document,
+            self.committed_document,
             parent_revision_id=self.working.source_revision_id,
         )
         self.working.mark_saved(
