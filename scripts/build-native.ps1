@@ -17,7 +17,15 @@ try {
     New-Item -ItemType Directory -Force -Path $WorkRoot | Out-Null
     py -3.12 -m venv $BuildVenv
     $Python = Join-Path $BuildVenv "Scripts\python.exe"
-    & $Python -m pip install --disable-pip-version-check -e "$RepoRoot\backend[package]"
+    $LockFile = Join-Path $RepoRoot "backend\requirements-n05-windows.lock"
+    & $Python -m pip install --disable-pip-version-check -r $LockFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Locked dependency install failed with exit code $LASTEXITCODE"
+    }
+    & $Python -m pip install --disable-pip-version-check --no-deps "$RepoRoot\backend"
+    if ($LASTEXITCODE -ne 0) {
+        throw "HTDT package install failed with exit code $LASTEXITCODE"
+    }
     & $Python -m PyInstaller `
         --noconfirm `
         --clean `
