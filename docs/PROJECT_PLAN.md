@@ -8,7 +8,7 @@
 
 HTDTは、部屋とホームシアター配置を3D CADのように直接構築・編集し、その配置に実測・予測・比較・最適化候補を結び付けるデジタルツインとする。
 
-Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、move/rotate、snap、寸法入力で精密化する。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
+Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、移動/回転、snap、寸法入力で精密化する。3D navigationはMMB pan、Shift+MMB orbit、wheel zoomを既定とする一般CAD型の操作契約を持つ。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
 
 成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。Overviewは次に行う作業とblockerを示し、Room / Measurements / Optimizeの少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
 
@@ -22,12 +22,13 @@ Room/Placementでは大きなviewportを中心に、mouseで壁を描き、ス�
 | 測定機器 | RX-A4A、REW、UMIK-1の現状は[実装状況](IMPLEMENTATION_STATUS.md)を正本とする |
 | 実際の室形状・機器寸法 | 不明を0や一般値で確定しない。sampleと実測寸法を区別する |
 | 旧互換 | 不要。必要なdomain知識・計算・原本だけ再利用 |
-| 言語 | 制約なし。第一候補はPython/Qt/VTK、未達なら根拠付きで再選定 |
+| 実装言語 | 制約なし。第一候補はPython/Qt/VTK、未達なら根拠付きで再選定 |
+| GUI言語 | 日本語を基本とする。REW/FR/SPL/RT60/CPU/GPU/CAD/3D/dB/Hz等、翻訳が不自然・冗長または標準記号である語だけ英語/略語を維持 |
 | ローカル作業 | `C:\Users\ka092\Desktop\HTDT\` は必要な実機確認に使用。成果・計画・進捗の正本はGitHub |
 
 ## 3. 中心workflow
 
-global navigationはOverview / Room / Measurements / Optimizeを基本とし、内部N/O/R milestoneやrepository/job構造をnavigationへ露出しない。feature search / command paletteから主要taskへ到達できるようにする。
+global navigationの表示は「概要 / 部屋 / 測定 / 最適化」を基本とし、内部N/O/R milestoneやrepository/job構造をnavigationへ露出しない。機能検索から主要taskへ到達できるようにする。
 
 1. Overviewから次の作業を選び、Roomでroom footprintと高さをmouseで構築する。
 2. speaker、seat、screen、furniture、measurement pointを配置する。
