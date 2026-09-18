@@ -254,7 +254,7 @@ def test_extended_apply_rejects_position_tampering_even_with_base_candidate_id(t
 
 
 def test_rew_roomsim_cannot_claim_toe_in_capability():
-    with pytest.raises(ValueError, match='does not model speaker aim'):
+    with pytest.raises(ValueError, match='does not model speaker acoustic aim'):
         build_extended_model_capability(
             model_id='rew-room-simulator',
             model_version='5.40',
