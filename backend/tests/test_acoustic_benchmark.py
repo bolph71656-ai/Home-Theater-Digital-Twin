@@ -143,3 +143,16 @@ def test_missing_required_hard_gate_is_rejected_fail_closed() -> None:
 
     with pytest.raises(ValueError, match='missing required hard gate categories'):
         AcousticBenchmarkManifest.model_validate(payload)
+
+
+def test_pressure_convergence_authority_has_density_and_complex_error_contract() -> None:
+    manifest = _manifest()
+    fixture = _fixture(manifest, 'wave-rectangular-convergence-v1')
+    observable = fixture.observables[0]
+
+    assert fixture.environment.density_kg_m3 == pytest.approx(1.2)
+    assert observable.kind == 'field_pressure_pa'
+    assert observable.acceptance_relation == 'monotonic_convergence'
+    assert observable.tolerance.absolute == pytest.approx(0.02)
+    assert observable.tolerance.relative == pytest.approx(0.02)
+    assert observable.tolerance.phase_deg is None
