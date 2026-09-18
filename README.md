@@ -22,7 +22,7 @@ stable personal Windows releaseは **0.1.0** です。
 - O60 holdout trend / sensitivity / repeatability / applicability validation authority
 - stable Windows package / installer / update / backup / restore / uninstall data retention
 
-N05〜N90のnative release pathとO10〜O80のsoftware pathは実装済みです。O90 robust/tolerance-aware optimizationとO100 system expansion / virtual channel topology optimizationは正式計画化済みですが未実装です。  
+N05〜N90のnative release pathとO10〜O80のsoftware pathは実装済みです。O90 robust/tolerance-aware optimizationは正式計画化済みですが未実装です。O100 system expansion / virtual channel topology optimizationはO100A proposed system variant authorityまで実装済みで、O100B以降は未実装です。  
 O70 Adaptive Plannerは `development_synthetic` で、O80 Extended SearchとAdaptive Extended acquisitionはsynthetic directional capabilityでsoftware pathを最後まで確認できます。一方、`production_owned_room` recommendationとowned-room directional capabilityは、**独立した実室O60 validation evidenceが成立するまでfail-closed**です。
 
 実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)、今後の実装順とgateは [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) を正本とします。Issue #101の任意形状音響solverはR100〜R180として計画化し、技術判断は [`docs/ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md`](docs/ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) に記録しています。
@@ -135,6 +135,7 @@ HTDTの中心は、数値フォームを先に埋める方式ではなく、同�
 - O60: calibration/holdout分離 / trend / sensitivity / repeatability / applicability / recommendation gate
 - O70: objective別residual GP / uncertainty / adaptive measurement proposal / synthetic・owned-room scope分離
 - O80: capability-gated Extended Search / acoustic aim yaw (`aim_yaw_deg`) / physical cabinet toe-in (`body_yaw_deg`) / orientation-aware hard constraints / preview+apply+Undo / Adaptive Extended acquisition over normalized O10+O80 features
+- O100A: immutable SystemVariant / ProposedEntitySpec / ChannelRoleBinding / exact add-remove-replace diff / proposed lifecycle / explicit apply→new SceneRevision / proposal lineage
 - N90: reproducible package / per-user installer / backup+restore / update+uninstall data retention
 
 ## 対象環境

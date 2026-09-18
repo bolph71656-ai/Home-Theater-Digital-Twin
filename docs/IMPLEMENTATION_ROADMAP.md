@@ -272,7 +272,7 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationとO100 system expansion / virtual channel topology optimizationは正式計画化済みだが未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationは正式計画化済みだが未実装。O100 system expansion / virtual channel topology optimizationはO100A proposed system variant authorityまでPR #144で実装し、O100B以降は未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 

@@ -173,6 +173,32 @@ class DeleteEntityCommand:
         return _insert(document, self.index, self.entity)
 
 
+@dataclass(frozen=True)
+class ReplaceDocumentCommand:
+    """Exact whole-scene replacement used when one semantic operation changes topology."""
+
+    before: SceneDocument
+    after: SceneDocument
+
+    def __post_init__(self) -> None:
+        if self.before.document_id != self.after.document_id:
+            raise EditStateError('document replacement must preserve document_id')
+
+    @property
+    def is_noop(self) -> bool:
+        return self.before == self.after
+
+    def apply(self, document: SceneDocument) -> SceneDocument:
+        if document != self.before:
+            raise EditStateError('document replacement before state does not match')
+        return self.after
+
+    def revert(self, document: SceneDocument) -> SceneDocument:
+        if document != self.after:
+            raise EditStateError('document replacement after state does not match')
+        return self.before
+
+
 @dataclass
 class EditorViewState:
     """Non-physical editor state. Selection order is stable; selected_id is the primary item."""
@@ -541,6 +567,21 @@ class WorkingDocument:
         entity = self._document.entities[index]
         before_hash = scene_content_hash(self._document)
         self._document = self._history.push(DeleteEntityCommand(entity=entity, index=index), self._document)
+        return scene_content_hash(self._document) != before_hash
+
+    def replace_document(self, document: SceneDocument) -> bool:
+        """Apply an exact same-document topology/state replacement as one Undo step."""
+
+        if self.has_preview:
+            raise EditStateError('cannot replace document while a preview is active')
+        validated = SceneDocument.model_validate(document.model_dump(mode='python'))
+        if validated.document_id != self._document.document_id:
+            raise EditStateError('document replacement must preserve document_id')
+        before_hash = scene_content_hash(self._document)
+        self._document = self._history.push(
+            ReplaceDocumentCommand(before=self._document, after=validated),
+            self._document,
+        )
         return scene_content_hash(self._document) != before_hash
 
     def undo(self) -> bool:

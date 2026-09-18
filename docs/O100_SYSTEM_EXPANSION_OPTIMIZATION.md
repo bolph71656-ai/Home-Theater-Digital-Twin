@@ -1,6 +1,6 @@
 # O100 — System Expansion / Virtual Channel Topology Optimization
 
-> Status: **planned / not implemented** — tracking: [Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142)
+> Status: **O100A implemented / O100B–O100G planned** — tracking: [Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142) / implementation: [PR #144](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/144)
 >
 > O100 extends the existing N40 / G10 / O10–O90 / R-series authority. It does not replace them.
 >
@@ -660,15 +660,20 @@ Unavailable objective is shown as unavailable, not zero or a poor score.
 
 ## 22. Implementation slices
 
-### O100A — SystemVariant / proposed lifecycle authority
+### O100A — SystemVariant / proposed lifecycle authority — implemented
 
-- SystemVariant;
-- ProposedEntitySpec;
-- lifecycle state;
-- ChannelRoleBinding;
-- exact variant diff;
-- baseline remains immutable;
-- apply variant as new SceneRevision.
+Implemented in PR #144. The authority is intentionally limited to proposal topology/lifecycle and exact SceneRevision derivation; O100B placement search, O100C equipment/source capability, GUI, and new O90 semantics are not part of this slice.
+
+- immutable SystemVariant;
+- immutable ProposedEntitySpec;
+- explicit current / proposed / as_built / measured lifecycle binding;
+- versionable ChannelRoleBinding without a fixed role enum;
+- exact add/remove/replace variant diff;
+- baseline SceneRevision remains immutable;
+- explicit selected-variant apply creates one new SceneRevision;
+- proposal evidence survives apply through append-only variant/application lineage;
+- WorkingDocument whole-scene replacement provides a one-Undo integration point;
+- stable comparison reference exposes baseline/proposed/applied revision identity without implementing a new comparison score.
 
 ### O100B — topology + virtual placement search
 
