@@ -90,7 +90,7 @@ Overview は O60 validation を再実装しない。`CadModelValidationRecord` �
 - candidate separation
 - model applicability
 
-`constraint_workspace_hash` を caller が渡した場合は exact constraint identity まで一致する SearchSpec だけを validation 対象にする。未指定時は latest SceneRevision/content に binding された最新 SearchSpec の validation を表示する。Overview は constraint hash を自前で計算しない。
+`constraint_workspace_hash` を caller が渡した場合は exact constraint identity まで一致する SearchSpec だけを validation 対象にする。未指定時は latest SceneRevision/content に binding された最新 SearchSpec の validation を表示する。Overview は constraint hash を自前で計算しない。caller は既存 authority `cad_search_models.constraint_workspace_snapshot(current_constraint_set)` が返す hash を利用し、hash algorithm を重複実装しない。
 
 ## Next-action precedence
 
