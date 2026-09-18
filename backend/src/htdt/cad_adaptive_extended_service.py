@@ -93,7 +93,7 @@ class CadAdaptiveExtendedPlannerService:
             extended_spec,
             base_spec,
         )
-        observations = self.adaptive_extended_repository.list_observations(
+        observations = self.adaptive_extended_repository.current_observations(
             extended_search_id
         )
         if not observations:
