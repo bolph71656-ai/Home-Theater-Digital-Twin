@@ -608,6 +608,24 @@ class OptimizationWorkflowWorkspace(QWidget):
         )
         campaign.addWidget(_required(self.campaign_tree, "campaign_tree"))
 
+        rew_form = QFormLayout()
+        rew_row = QHBoxLayout()
+        rew_row.addWidget(_required(self.rew_combo, "rew_combo"), 1)
+        rew_row.addWidget(_required(self.rew_refresh_button, "rew_refresh_button"))
+        rew_form.addRow("REW測定", rew_row)
+        rew_form.addRow(
+            "測定点",
+            _required(
+                self.campaign_measurement_point_combo,
+                "campaign_measurement_point_combo",
+            ),
+        )
+        rew_form.addRow(
+            "channel role",
+            _required(self.rew_channel_role_field, "rew_channel_role_field"),
+        )
+        campaign.addLayout(rew_form)
+
         campaign_actions = QHBoxLayout()
         campaign_actions.addWidget(_button("readiness更新", self.refresh_validation_campaigns))
         campaign_actions.addWidget(
