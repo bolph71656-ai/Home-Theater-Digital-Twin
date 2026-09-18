@@ -11,6 +11,7 @@ from htdt.command_registry import (
     WorkspaceId,
     command_shortcut_allowed,
     default_command_definitions,
+    register_default_commands,
 )
 
 
@@ -32,17 +33,7 @@ REQUIRED_COMMAND_IDS = {
 
 def _registry_with_defaults() -> CommandRegistry:
     registry = CommandRegistry()
-    navigation_ids = {
-        'navigation.overview',
-        'navigation.room',
-        'navigation.measurements',
-        'navigation.optimization',
-    }
-    for definition in default_command_definitions():
-        if definition.command_id in navigation_ids:
-            registry.register(definition)
-        else:
-            registry.register(definition, execute=lambda: None)
+    register_default_commands(registry)
     return registry
 
 
@@ -57,6 +48,12 @@ def test_default_registry_covers_issue_118_minimum_commands() -> None:
     assert definitions['project.save'].shortcut == 'Ctrl+S'
     assert definitions['edit.undo'].shortcut == 'Ctrl+Z'
     assert definitions['edit.redo'].shortcut_aliases == ('Ctrl+Shift+Z',)
+    assert definitions['navigation.measurements'].deep_link == WorkspaceDeepLink(
+        WorkspaceId.MEASUREMENT
+    )
+    assert definitions['room.add_speaker'].deep_link == WorkspaceDeepLink(
+        WorkspaceId.ROOM, 'placement'
+    )
 
 
 def test_navigation_and_scene_commands_share_one_search_entry() -> None:
@@ -101,6 +98,43 @@ def test_deep_link_command_enables_when_shell_router_is_attached() -> None:
 
     assert registry.execute(definition.command_id) is True
     assert visited == [WorkspaceDeepLink(WorkspaceId.ROOM, 'geometry')]
+
+
+def test_lazy_shell_binding_can_attach_executor_during_navigation() -> None:
+    events: list[str] = []
+    registry = CommandRegistry()
+    definition = CommandDefinition(
+        command_id='room.lazy',
+        display_name='遅延接続',
+        deep_link=WorkspaceDeepLink(WorkspaceId.ROOM, 'geometry'),
+    )
+    registry.register(definition)
+
+    def navigate(_deep_link: WorkspaceDeepLink) -> None:
+        events.append('navigate')
+        registry.bind(
+            definition.command_id,
+            execute=lambda: events.append('execute'),
+        )
+
+    registry.set_deep_link_handler(navigate)
+
+    assert registry.execute(definition.command_id) is True
+    assert events == ['navigate', 'execute']
+
+
+def test_unbound_global_command_has_disabled_reason_until_bound() -> None:
+    registry = CommandRegistry()
+    definition = CommandDefinition(command_id='project.lazy', display_name='遅延保存')
+    registry.register(definition)
+
+    availability = registry.availability(definition.command_id)
+    assert availability.enabled is False
+    assert availability.disabled_reason == 'この操作は現在の画面では利用できません'
+
+    registry.bind(definition.command_id, execute=lambda: None)
+
+    assert registry.availability(definition.command_id).enabled is True
 
 
 def test_duplicate_command_id_is_rejected() -> None:
