@@ -147,16 +147,51 @@ def test_campaign_rejects_candidate_outside_exact_search_set(tmp_path):
         page,
         candidate_ids,
     ) = _fixture(tmp_path)
-    campaign = _campaign(spec, page, candidate_ids)
-    tampered = campaign.model_copy(update={
-        'candidates': (
-            *campaign.candidates[:-1],
-            campaign.candidates[-1].model_copy(update={'candidate_id': 'not-a-candidate'}),
+    campaign = build_validation_campaign(
+        document_id=spec.document_id,
+        search_spec_id=spec.search_spec_id,
+        search_spec_sha256=spec.search_spec_sha256,
+        candidate_set_sha256=page.candidate_set_sha256,
+        model_id='rew-roomsim',
+        model_version='5.40',
+        requested_band_hz=(20.0, 160.0),
+        max_holdout_rms_db=4.0,
+        candidates=(
+            CadValidationCampaignCandidate(candidate_id=candidate_ids[0], split='holdout'),
+            CadValidationCampaignCandidate(candidate_id=candidate_ids[1], split='holdout'),
+            CadValidationCampaignCandidate(candidate_id='not-a-candidate', split='calibration'),
         ),
-    })
+        objective_ids=('response.shape_rms_db',),
+        objective_evaluation_spec={
+            'algorithm_version': 'objective-vector-1',
+            'objectives': ['response.shape_rms_db'],
+            'response_band_hz': [20.0, 160.0],
+        },
+        sensitivity=(
+            CadValidationCampaignSensitivity(
+                objective_id='response.shape_rms_db',
+                candidate_a_id=candidate_ids[0],
+                candidate_b_id=candidate_ids[1],
+                max_observed_sensitivity_per_m=20.0,
+                max_model_error_per_m=10.0,
+            ),
+        ),
+        repeatability=(
+            CadValidationCampaignRepeatability(candidate_id=candidate_ids[0]),
+        ),
+        separation=(
+            CadValidationCampaignSeparation(
+                candidate_a_id=candidate_ids[0],
+                candidate_b_id=candidate_ids[1],
+                repeatability_candidate_id=candidate_ids[0],
+                min_repeatability_multiple=2.0,
+            ),
+        ),
+        required_applicability_codes=('geometry',),
+    )
 
     with pytest.raises(ValueError, match='outside SearchSpec'):
-        repository.save(tampered)
+        repository.save(campaign)
 
 
 def test_campaign_cannot_be_registered_after_candidate_plan_is_measured(tmp_path, monkeypatch):
