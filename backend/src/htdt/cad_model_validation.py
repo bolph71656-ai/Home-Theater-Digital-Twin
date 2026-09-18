@@ -189,6 +189,33 @@ class CadModelValidationRecord(BaseModel):
         if len(objective_identities) != len(self.objective_samples):
             raise ValueError('objective validation samples must be unique')
 
+        trend_ids = [check.objective_id for check in self.trend_checks]
+        if len(trend_ids) != len(set(trend_ids)):
+            raise ValueError('trend checks must be unique by objective')
+        sensitivity_keys = [
+            (
+                check.objective_id,
+                tuple(sorted((check.candidate_a_id, check.candidate_b_id))),
+            )
+            for check in self.sensitivity_checks
+        ]
+        if len(sensitivity_keys) != len(set(sensitivity_keys)):
+            raise ValueError('sensitivity checks must be unique by objective/candidate pair')
+        repeatability_keys = [
+            tuple(sorted(check.measurement_ids))
+            for check in self.repeatability_checks
+        ]
+        if len(repeatability_keys) != len(set(repeatability_keys)):
+            raise ValueError('repeatability groups must be unique by measurement set')
+        separation_keys = [
+            (
+                tuple(sorted((check.candidate_a_id, check.candidate_b_id))),
+                tuple(sorted((check.measurement_a_id, check.measurement_b_id))),
+            )
+            for check in self.separation_checks
+        ]
+        if len(separation_keys) != len(set(separation_keys)):
+            raise ValueError('candidate separation checks must be unique')
         applicability_codes = [check.code for check in self.applicability_checks]
         if len(applicability_codes) != len(set(applicability_codes)):
             raise ValueError('model applicability check codes must be unique')
