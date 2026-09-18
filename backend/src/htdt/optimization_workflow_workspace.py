@@ -312,7 +312,7 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         specs_card, specs = _card(
             "保存済み探索設定",
-            "SceneRevisionまたは制約が変わった設定はstaleとして扱われ、候補生成には使われません。",
+            "部屋または制約が変更された探索設定は、再設定が必要な状態として候補生成には使われません。",
         )
         specs.addWidget(_required(self.search_spec_tree, "search_spec_tree"))
         layout.addWidget(search_card)
@@ -326,10 +326,10 @@ class OptimizationWorkflowWorkspace(QWidget):
         capability_row = QHBoxLayout()
         capability_row.addWidget(_required(self.extended_capability_combo, "extended_capability_combo"), 1)
         capability_row.addWidget(
-            _button("Synthetic capability（開発）", self.create_synthetic_extended_capability)
+            _button("開発用の向き探索を有効化", self.create_synthetic_extended_capability)
         )
         capability_row.addWidget(
-            _button("選択O60から本番capability", self.create_owned_room_extended_capability)
+            _button("選択した検証結果から本番向け能力を作成", self.create_owned_room_extended_capability)
         )
         extended_layout.addLayout(capability_row)
 
@@ -362,7 +362,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         extended_layout.addLayout(extended_axis_actions)
         extended_layout.addWidget(_required(self.extended_axis_tree, "extended_axis_tree"))
         extended_layout.addWidget(
-            _button("Extended SearchSpecを保存", self.save_extended_search_spec, primary=True)
+            _button("拡張探索設定を保存", self.save_extended_search_spec, primary=True)
         )
         extended_layout.addWidget(_required(self.extended_spec_tree, "extended_spec_tree"))
 
@@ -386,7 +386,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(
             _heading(
                 "候補",
-                "候補を生成して3Dで確認します。previewはSceneを変更せず、明示的な適用だけが編集履歴に入ります。",
+                "候補を生成して3Dで確認します。プレビューでは保存データを変更せず、明示的に適用した操作だけが編集履歴に入ります。",
             )
         )
 
@@ -406,7 +406,7 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         base_card, base = _card(
             "位置候補",
-            "現在選択中のSearchSpecからO10候補を生成します。",
+            "現在選択中の探索設定から候補を生成します。",
         )
         generation = QHBoxLayout()
         generation.addWidget(_required(self.search_generate_button, "search_generate_button"))
@@ -469,8 +469,8 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         side.addWidget(
             _advanced_block(
-                "詳細: Extended候補",
-                "O80 SearchSpecがある場合に位置と向きの候補を同じauthorityで確認します。",
+                "詳細: 拡張候補",
+                "拡張探索設定がある場合に、位置と向きの候補を同じルールで確認します。",
                 extended_content,
             )
         )
@@ -496,13 +496,13 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(
             _heading(
                 "比較",
-                "候補ごとのobjectiveを独立した指標として比較します。総合点や新しい推薦順位は作りません。",
+                "候補ごとの指標を独立して比較します。総合点や新しい推薦順位は作りません。",
             )
         )
 
         metrics_card, metrics = _card(
             "比較する指標",
-            "同じobjective集合・単位のevidenceだけを既存O30/Pareto authorityで比較します。",
+            "同じ指標集合・単位で比較できる根拠データだけをPareto比較に使います。",
         )
         metrics.addWidget(_required(self.objective_list, "objective_list"))
         refresh = _required(self.pareto_refresh_button, "pareto_refresh_button")
@@ -531,14 +531,14 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(
             _heading(
                 "測定・検証",
-                "候補を実測へ結び付け、事前登録したValidation Campaignで検証します。"
+                "候補を実測へ結び付け、事前登録した検証条件で検証します。"
                 " ProductionとSyntheticのevidence境界は既存O60〜O80 authorityに従います。",
             )
         )
 
         measure_card, measure = _card(
             "測定計画",
-            "適用・保存した候補と、その正確なSceneRevisionに一致するmeasured evidenceだけを関連付けます。",
+            "適用・保存した候補と、その保存時点に正確に一致する実測データだけを関連付けます。",
         )
         measure_button = _required(self.measurement_plan_button, "measurement_plan_button")
         measure.addWidget(measure_button)
@@ -553,19 +553,19 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(measure_card)
 
         campaign_card, campaign = _card(
-            "Validation Campaign",
+            "検証条件",
             "測定結果を見る前にcalibration / holdout、帯域、閾値を固定します。",
         )
         assignment = QHBoxLayout()
         assignment.addWidget(
             _button(
-                "選択候補 → calibration",
+                "選択候補 → 調整用",
                 lambda: self.assign_selected_candidate_to_campaign("calibration"),
             )
         )
         assignment.addWidget(
             _button(
-                "選択候補 → holdout",
+                "選択候補 → 検証用",
                 lambda: self.assign_selected_candidate_to_campaign("holdout"),
             )
         )
@@ -611,7 +611,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         campaign.addLayout(campaign_form)
         campaign.addWidget(
             _button(
-                "Campaignを測定前に保存",
+                "検証条件を測定前に保存",
                 self.save_validation_campaign,
                 primary=True,
             )
@@ -637,12 +637,12 @@ class OptimizationWorkflowWorkspace(QWidget):
         campaign.addLayout(rew_form)
 
         campaign_actions = QHBoxLayout()
-        campaign_actions.addWidget(_button("readiness更新", self.refresh_validation_campaigns))
+        campaign_actions.addWidget(_button("準備状況を更新", self.refresh_validation_campaigns))
         campaign_actions.addWidget(
-            _button("O30 objective evidence生成", self.materialize_selected_campaign_objectives)
+            _button("比較指標の根拠データを生成", self.materialize_selected_campaign_objectives)
         )
         campaign_actions.addWidget(
-            _button("選択REW → Campaign実測", self.read_selected_rew_for_campaign_async)
+            _button("選択REWを検証実測へ登録", self.read_selected_rew_for_campaign_async)
         )
         campaign.addLayout(campaign_actions)
         detail = _required(self.campaign_detail_label, "campaign_detail_label")
@@ -650,7 +650,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         campaign.addWidget(detail)
 
         applicability = QFormLayout()
-        for code, label in (("geometry", "geometry"), ("band", "band"), ("routing", "routing")):
+        for code, label in (("geometry", "形状"), ("band", "帯域"), ("routing", "経路")):
             state: QComboBox = self.campaign_applicability_state[code]
             evidence = self.campaign_applicability_detail[code]
             applicability.addRow(f"{label} 判定", state)
@@ -658,7 +658,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         campaign.addLayout(applicability)
         campaign.addWidget(
             _button(
-                "ValidationRecordを構築・保存",
+                "検証結果を構築・保存",
                 self.build_and_save_selected_campaign_validation,
                 primary=True,
             )
@@ -667,7 +667,7 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         validation_card, validation = _card(
             "保存済み検証",
-            "residual / trend / sensitivity / repeatability / applicabilityと既存recommendation gateをそのまま表示します。",
+            "残差 / 傾向 / 感度 / 再現性 / 適用条件と既存の推薦可否をそのまま表示します。",
         )
         validation.addWidget(
             _required(self.validation_refresh_button, "validation_refresh_button")
@@ -688,7 +688,7 @@ class OptimizationWorkflowWorkspace(QWidget):
             _required(self.adaptive_scope_combo, "adaptive_scope_combo"),
         )
         adaptive_form.addRow(
-            "GP length scale",
+            "GP長さ尺度",
             _required(self.adaptive_length_scale_field, "adaptive_length_scale_field"),
         )
         adaptive_form.addRow(
@@ -706,14 +706,14 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         adaptive_extended_form = QFormLayout()
         adaptive_extended_form.addRow(
-            "正規化GP length scale",
+            "正規化GP長さ尺度",
             _required(
                 self.adaptive_extended_length_scale_field,
                 "adaptive_extended_length_scale_field",
             ),
         )
         adaptive_extended_form.addRow(
-            "Extended 提案数上限",
+            "拡張提案数上限",
             _required(
                 self.adaptive_extended_proposal_limit_field,
                 "adaptive_extended_proposal_limit_field",
