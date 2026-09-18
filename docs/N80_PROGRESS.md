@@ -257,3 +257,17 @@ Accepted evidence:
 This accepts the current O20 position-only writable path for the observed REW version/API fingerprint: native SceneRevision/SearchSpec/candidate authority -> immutable batch persistence -> live REW position transaction -> source-specific Room Simulator FR capture -> exact Room Simulator state restore -> immutable completed-attempt provenance.
 
 No broader write authority is implied: room size, absorptions, options, source configuration and arbitrary REW state remain outside the accepted O20 write surface.
+
+
+## 2026-09-18 — N80c native Pareto comparison started (PR #74)
+
+- O20 owned-Windows writable acceptance is complete and Issue #67 is closed.
+- Added the N80c authority/UI plan in `docs/N80C_PLAN.md`.
+- Native Optimization workspace now opens the existing immutable objective repository for the selected SearchSpec.
+- The comparison surface exposes objective IDs as independent multi-select dimensions; it does not create a scalar score or recommendation.
+- Pareto recomputation uses the existing `build_pareto_set()` / `pareto-front-1` authority and persists the verified immutable `CadParetoSet`.
+- Candidate rows show non-dominated/dominated status, evidence classes, and exact objective values/units.
+- Selecting a comparison row reuses the established candidate selection/preview/apply path when that candidate is on the current generated page.
+- Repository helper returns the latest immutable evaluation per candidate without mutating historical evaluations.
+
+No RDC is used for this slice yet. GitHub Actions is the first verification authority; owned-Windows interaction will be consolidated only after the remaining measurement-loop/native UI work is CI-green.
