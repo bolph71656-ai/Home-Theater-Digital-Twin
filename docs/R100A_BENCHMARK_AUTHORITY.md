@@ -1,0 +1,110 @@
+# R100A Acoustic Benchmark Authority
+
+> Issue #101 / R-series first implementation slice  
+> Schema: `r100a-1`  
+> Canonical machine-readable manifest: `benchmarks/acoustics/r100a_manifest.json`
+
+## Purpose
+
+R100A freezes the **solver-neutral comparison authority** before any FDTD, FEM, BEM or geometric-acoustics candidate becomes a product dependency.
+
+The manifest is not a solver implementation and does not claim owned-room validation. It defines the physical and numerical problem that R100B adapters must consume without silently changing geometry, openings, materials, source normalization, receiver timing, environment, comparison rules or resource budgets.
+
+The implementation is intentionally backend-independent:
+
+- `AcousticRegion` owns modeled air volumes.
+- `AcousticPortal` explicitly connects two modeled regions with pressure/velocity continuity semantics.
+- `BoundaryTermination` explicitly terminates an opening when the adjacent volume is not modeled.
+- `AcousticObstacle` represents participating solid/thin objects separately from editor visibility.
+- wave material capability and geometric material capability are independent.
+- phase-bearing wave impedance is explicit complex authority; it is never synthesized from scalar absorption.
+- source excitation/normalization, receiver calibration/timing and environment are part of each fixture.
+- coordinate system, Fourier sign, time zero, precision, interpolation, frequency/time sampling, window and filter are fixed in the numerical comparison contract.
+- expected observables carry quantity-specific tolerances.
+- correctness hard gates are separate from compile/solve/postprocess/resource budgets.
+
+## Canonical fixtures
+
+The first manifest revision contains ten common fixtures.
+
+| Fixture | Role | Gate |
+|---|---|---|
+| `wave-rigid-rectangular-modes-v1` | wave | analytical rigid rectangular eigenmodes |
+| `wave-rectangular-convergence-v1` | wave | grid/mesh refinement and transfer convergence |
+| `wave-normal-incidence-impedance-v1` | wave | closed-form complex reflection from explicit impedance |
+| `wave-concave-l-room-v1` | wave | exact concave polygon-prism comparison; no rectangularization |
+| `wave-portal-split-room-v1` | wave | region split / Portal continuity invariance |
+| `wave-explicit-radiation-termination-v1` | wave | explicit opening termination; no invented adjacent space |
+| `geometric-direct-first-reflection-v1` | geometric | direct delay and first specular reflection geometry |
+| `geometric-reflecting-counter-v1` | geometric | participating reflecting obstacle changes path authority |
+| `geometric-seed-repeatability-v1` | geometric | stochastic seed/repeatability contract |
+| `hybrid-overlap-continuity-v1` | hybrid | compatible overlap continuity without invented phase/data |
+
+R150 will still need ray-count, receiver-estimator/radius, time-bin and termination convergence beyond same-seed repeatability. Likewise, FR acceptance does not make frequency-domain IR synthesis or decay metrics accepted automatically.
+
+## Hard gates
+
+R100B candidates are evaluated only after the applicable hard gates are satisfied:
+
+1. physics correctness against the fixture's declared reference/tolerance;
+2. CPU correctness baseline without GPU dependency;
+3. reproducible Windows 11 x64 packaging/embedding;
+4. license/redistribution compatibility;
+5. required physics/output capability;
+6. reproducible authority including backend/version/precision/grid/seed/approximation controls.
+
+Speed and memory are comparison criteria **after** hard correctness/capability gates. A fast solver that fails a physics or authority gate is not promoted.
+
+## Resource contract
+
+Each fixture records an initial bounded R100B workload:
+
+- CPU thread budget;
+- RAM and disk budget;
+- candidate count;
+- maximum compile time;
+- maximum solve time;
+- maximum postprocess time;
+- maximum produced output size.
+
+These values are benchmark decision limits, not numerical accuracy tolerances. R100B records measured values and may propose a versioned manifest revision if evidence shows a budget itself is inappropriate; adapters must not silently weaken the current manifest.
+
+## Identity
+
+`AcousticBenchmarkManifest.canonical_json()` uses sorted, non-NaN canonical JSON. `semantic_hash()` is SHA-256 over that exact canonical representation.
+
+R100B evidence must bind to the manifest semantic hash plus candidate/reference backend identity. Editing geometry, material data, source/receiver/environment, tolerance, seed or resource budget therefore changes authority identity.
+
+## Fail-closed behavior
+
+The Pydantic authority models reject, among other cases:
+
+- dangling region/face/material/boundary/source/receiver references;
+- a Portal connecting a region to itself;
+- impedance termination without an impedance boundary;
+- `wave_impedance` fixture capability without explicit phase-bearing impedance data;
+- geometric scattering capability without explicit non-zero scattering bands;
+- stochastic ray capability without a fixed seed;
+- analytical/closed-form observable without expected samples;
+- peer-comparison observable referencing an unknown fixture;
+- malformed frequency/time/tolerance authority.
+
+Unsupported physics stays unsupported. No default material, anechoic exterior, rectangular room, coherent phase or zero response is invented to make a candidate pass.
+
+## Next implementation gate
+
+R100B consumes this manifest through candidate/reference adapters and records:
+
+- backend/package/version and license evidence;
+- required compiled representation;
+- Windows packaging result;
+- CPU numerical evidence per applicable fixture;
+- compile/solve/postprocess time and peak/resource evidence;
+- supported and unsupported result capabilities;
+- adoption decision or no-go/next-limited-experiment ADR.
+
+FDTD-first remains evaluation order, not a preselected production solver. Existing OSS reuse/adapter/port is preferred over a new kernel unless benchmark evidence establishes a concrete gap.
+
+## Verification boundary
+
+R100A verification is repository/CI based and requires no Remote Desktop Commander. It validates the authority schema, canonical manifest, cross-references and fail-closed semantics. Numerical solver accuracy starts in R100B/R130; owned-room evidence remains gated by R180/O60 and is not created by these fixtures.
