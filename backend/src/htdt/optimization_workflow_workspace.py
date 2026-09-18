@@ -554,7 +554,7 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         campaign_card, campaign = _card(
             "検証条件",
-            "測定結果を見る前にcalibration / holdout、帯域、閾値を固定します。",
+            "測定結果を見る前に調整用 / 検証用の候補、帯域、閾値を固定します。",
         )
         assignment = QHBoxLayout()
         assignment.addWidget(
@@ -590,7 +590,7 @@ class OptimizationWorkflowWorkspace(QWidget):
             _required(self.campaign_high_field, "campaign_high_field"),
         )
         campaign_form.addRow(
-            "holdout RMS上限 dB",
+            "検証用 RMS上限 dB",
             _required(self.campaign_residual_field, "campaign_residual_field"),
         )
         campaign_form.addRow(
