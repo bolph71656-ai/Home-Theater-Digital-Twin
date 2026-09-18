@@ -582,11 +582,11 @@ class OptimizationWorkflowWorkspace(QWidget):
             _required(self.campaign_model_version_field, "campaign_model_version_field"),
         )
         campaign_form.addRow(
-            "検証帯域 low Hz",
+            "検証帯域 下限",
             _required(self.campaign_low_field, "campaign_low_field"),
         )
         campaign_form.addRow(
-            "検証帯域 high Hz",
+            "検証帯域 上限",
             _required(self.campaign_high_field, "campaign_high_field"),
         )
         campaign_form.addRow(
@@ -605,7 +605,7 @@ class OptimizationWorkflowWorkspace(QWidget):
             ),
         )
         campaign_form.addRow(
-            "候補差 / repeatability",
+            "候補差 / 再現性",
             _required(self.campaign_separation_field, "campaign_separation_field"),
         )
         campaign.addLayout(campaign_form)
@@ -631,7 +631,7 @@ class OptimizationWorkflowWorkspace(QWidget):
             ),
         )
         rew_form.addRow(
-            "channel role",
+            "入力役割",
             _required(self.rew_channel_role_field, "rew_channel_role_field"),
         )
         campaign.addLayout(rew_form)
@@ -684,7 +684,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         adaptive.setSpacing(10)
         adaptive_form = QFormLayout()
         adaptive_form.addRow(
-            "実行scope",
+            "実行範囲",
             _required(self.adaptive_scope_combo, "adaptive_scope_combo"),
         )
         adaptive_form.addRow(
@@ -692,7 +692,7 @@ class OptimizationWorkflowWorkspace(QWidget):
             _required(self.adaptive_length_scale_field, "adaptive_length_scale_field"),
         )
         adaptive_form.addRow(
-            "proposal上限",
+            "提案数上限",
             _required(self.adaptive_proposal_limit_field, "adaptive_proposal_limit_field"),
         )
         adaptive.addLayout(adaptive_form)
@@ -706,14 +706,14 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         adaptive_extended_form = QFormLayout()
         adaptive_extended_form.addRow(
-            "normalized GP length scale",
+            "正規化GP length scale",
             _required(
                 self.adaptive_extended_length_scale_field,
                 "adaptive_extended_length_scale_field",
             ),
         )
         adaptive_extended_form.addRow(
-            "Extended proposal上限",
+            "Extended 提案数上限",
             _required(
                 self.adaptive_extended_proposal_limit_field,
                 "adaptive_extended_proposal_limit_field",
