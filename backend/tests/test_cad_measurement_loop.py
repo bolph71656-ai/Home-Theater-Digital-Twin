@@ -47,6 +47,9 @@ def test_measurement_plan_binds_candidate_to_exact_applied_revision(tmp_path):
     assert plan.status == 'planned'
 
     measurement_repo = CadMeasurementRepository(scene_repo)
+    tampered_plan = plan.model_copy(update={'plan_sha256': '0' * 64})
+    with pytest.raises(ValueError, match='identity hash mismatch'):
+        measurement_repo.save_measurement_plan(tampered_plan)
     measurement_repo.save_measurement_plan(plan)
     raw = b'o50-measured-fr'
     record = CadMeasurementRecord(
