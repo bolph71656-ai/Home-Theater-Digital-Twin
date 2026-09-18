@@ -532,9 +532,7 @@ class OptimizationWorkflowController(
                 external_id, ppo=None, unit="SPL", smoothing=None
             ),
         )
-        self.statusChanged.emit(
-            f"REW読込中 · revision {token.scene_revision_id[:8]}"
-        )
+        self.statusChanged.emit("REWを読み込んでいます…")
 
     def _start_rew_task(self, key: str, operation: Callable[[], object]) -> None:
         thread = QThread(self)
@@ -562,13 +560,16 @@ class OptimizationWorkflowController(
             summaries = result if isinstance(result, list) else []
             with QSignalBlocker(self.rew_combo):
                 self.rew_combo.clear()
+                visible_index = 0
                 for summary in summaries:
                     if not isinstance(summary, dict) or not isinstance(summary.get("uuid"), str):
                         continue
+                    visible_index += 1
+                    title = summary.get("title")
                     label = (
-                        summary.get("title")
-                        if isinstance(summary.get("title"), str)
-                        else summary["uuid"]
+                        title.strip()
+                        if isinstance(title, str) and title.strip()
+                        else f"REW測定 {visible_index}"
                     )
                     self.rew_combo.addItem(label, summary["uuid"])
             self.statusChanged.emit(f"REW測定 {len(summaries)} 件を確認しました")
@@ -584,12 +585,12 @@ class OptimizationWorkflowController(
         context = self._current_job_apply_context()
         if context is None or not self.rew_job_guard.can_apply(token, context):
             self.statusChanged.emit(
-                "REW遅延結果は現在の配置へ適用しません · revision/documentが変更されています"
+                "REWの遅延結果は現在の配置へ適用しません · 部屋の保存状態が変更されています"
             )
             return
         revision = self.repository.get(token.scene_revision_id)
         if revision is None:
-            self.statusChanged.emit("REW結果のsource revisionが見つかりません")
+            self.statusChanged.emit("REW結果に対応する保存状態が見つかりません")
             return
         evidence, channel_role, validation_scope, validation_campaign_id = (
             self._rew_semantics.get(task_key, ("unknown", "unknown", None, None))
@@ -615,9 +616,7 @@ class OptimizationWorkflowController(
             return
         self.refresh_measurement_plans()
         self.refresh_validation_campaigns()
-        self.statusChanged.emit(
-            f"REW測定を保存しました · revision {record.scene_revision_id[:8]}"
-        )
+        self.statusChanged.emit("REW測定を保存しました")
 
     def _current_job_apply_context(self) -> MeasurementJobApplyContext | None:
         if self.working.source_revision_id is None:
