@@ -677,6 +677,7 @@ class RoomWorkspace(QWidget):
         self.active_axis_constraint: str | None = None
         self.geometry_input = None
         self.transform_input = None
+        self.geometry_panel: QWidget | None = None
         self.acoustics_panel: QWidget | None = None
         self.prediction_results: tuple = ()
         self._viewport_factory = viewport_factory or (lambda owner: RoomViewport3D(owner))
@@ -756,6 +757,16 @@ class RoomWorkspace(QWidget):
 
     def attach_transform_input(self, controller) -> None:
         self.transform_input = controller
+
+    def attach_geometry_panel(self, panel: QWidget) -> None:
+        if self.geometry_panel is not None:
+            self.right_stack.removeWidget(self.geometry_panel)
+            self.geometry_panel.setParent(None)
+        self.geometry_panel = panel
+        panel.setParent(self.right_stack)
+        self.right_stack.addWidget(panel)
+        if self.current_context == "geometry":
+            self.right_stack.setCurrentWidget(panel)
 
     def attach_acoustics_panel(self, panel: QWidget) -> None:
         if self.acoustics_panel is not None:
@@ -858,13 +869,20 @@ class RoomWorkspace(QWidget):
         self.current_context = context_id
         self.tools.set_context(context_id)
         self.object_palette.setVisible(context_id in {"objects", "placement"})
-        if context_id == "acoustics":
+        if context_id == "geometry" and self.geometry_panel is not None:
+            self.right_stack.setCurrentWidget(self.geometry_panel)
+            refresh = getattr(self.geometry_panel, "refresh", None)
+            if callable(refresh):
+                refresh()
+        elif context_id == "acoustics":
             self.overlay_controls.acoustics.setChecked(True)
             if self.acoustics_panel is not None:
                 self.right_stack.setCurrentWidget(self.acoustics_panel)
                 refresh = getattr(self.acoustics_panel, "refresh", None)
                 if callable(refresh):
                     refresh()
+            else:
+                self.right_stack.setCurrentWidget(self.inspector)
         else:
             self.right_stack.setCurrentWidget(self.inspector)
         self._render()
@@ -972,6 +990,14 @@ class RoomWorkspace(QWidget):
     def _refresh(self, *, reset_camera: bool = False) -> None:
         self.recovery_banner.setVisible(self.controller.recovery_candidate is not None)
         self._refresh_inspector()
+        if self.geometry_panel is not None:
+            refresh_geometry = getattr(self.geometry_panel, "refresh", None)
+            if callable(refresh_geometry):
+                refresh_geometry()
+        if self.acoustics_panel is not None and self.current_context == "acoustics":
+            refresh_acoustics = getattr(self.acoustics_panel, "refresh", None)
+            if callable(refresh_acoustics):
+                refresh_acoustics()
         self._render(reset_camera=reset_camera)
         if not self.status.text():
             self._set_status(
