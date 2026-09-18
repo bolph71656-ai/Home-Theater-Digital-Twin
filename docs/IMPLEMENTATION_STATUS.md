@@ -1,6 +1,6 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path main反映済み / synthetic acceptance PASS / 実室model gate未通過
+> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path実装済み / O80P physical toe-in + O80A Adaptive Extended追加 / synthetic acceptance対象 / 実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
@@ -277,12 +277,20 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - REW Room Simulatorはspeaker指向性/toe-inを扱わないため、`aim_yaw_deg` capability宣言をhard rejectする。
 - synthetic directional fixtureはsoftware acceptance専用で、owned-room model evidenceへ昇格しない。
 - native最適化dockへcapability作成/選択、toe-in axis、非同期candidate生成、3D aim preview、1-command apply/1 Undoを統合した。
-- `--seed-synthetic-demo` は通常repositoryを通してScene→O10→O20-style prediction→O50/N60 synthetic measurement→O30→O60→O70→O80を永続化する。measurement provenanceは `synthetic_fixture` / `physical_measurement=false` のまま。
+- `--seed-synthetic-demo` は通常repositoryを通してScene→O10→O20-style prediction→O50/N60 synthetic measurement→O30→O60→O70→O80→O80A Adaptive Extendedを永続化する。measurement provenanceは `synthetic_fixture` / `physical_measurement=false` のまま。
 - production O70/O80は引き続きowned-room eligible ValidationRecordを必須とする。
 
 詳細: [O70/O80 Synthetic Software Completion](O70_O80_SYNTHETIC_COMPLETION.md)
 
 
+
+## O80P / O80A software extension
+
+- O80P: `body_yaw_deg`をphysical cabinet toe-inとして実装。body orientationとexplicit aimを同一yaw deltaで回転し、新規SearchSpecではsource-orientation cabinet footprintを保存、回転後のroom/allowed/exclusion/wall/envelope-pair hard constraintを再評価する。
+- O80A: base O10 XYZ + O80 parameterをaxis span正規化したfeature vectorでobjective別residual GP/uncertainty acquisitionを行う別schemaのAdaptive Extended Planを追加。既存O70 plan schema/hashは変更しない。
+- extended objective observationはimmutableで、予測→実測は直前observation SHAを明示したsupersession chainとして追加する。plannerはcurrent headだけを使用し、実測済みextended candidateをproposalから除外する。
+- Adaptive Extended Planはexact base SearchSpec SHA/base candidate-set SHA/Extended SearchSpec SHA/extended candidate-set SHA/capability SHA/O60 ValidationRecord SHAへbindingする。
+- `development_synthetic`はsynthetic directional fixtureでend-to-end確認できるが、`production_owned_room`はcurrent campaign-backed eligible O60とowned-room directional capabilityを要求する。
 
 ## O70/O80 final software acceptance
 
