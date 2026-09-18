@@ -17,7 +17,7 @@ class CommandContext(StrEnum):
     GLOBAL = 'global'
     OVERVIEW = 'overview'
     ROOM = 'room'
-    MEASUREMENTS = 'measurements'
+    MEASUREMENT = 'measurement'
     OPTIMIZATION = 'optimization'
 
 
