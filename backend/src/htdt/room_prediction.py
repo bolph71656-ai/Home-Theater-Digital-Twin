@@ -125,8 +125,12 @@ class RoomPredictionController(QObject):
         self._selected_run_id: str | None = None
 
     @property
+    def active_worker_count(self) -> int:
+        return sum(1 for thread, _worker in self._tasks.values() if thread.isRunning())
+
+    @property
     def is_busy(self) -> bool:
-        return self._current_job_id is not None
+        return self._current_job_id is not None or self.active_worker_count > 0
 
     @property
     def selected_run_id(self) -> str | None:
@@ -261,7 +265,10 @@ class RoomPredictionController(QObject):
             task[1].cancel()
         self._current_job_id = None
         self.stateChanged.emit(
-            RoomPredictionRunState(False, "予測をキャンセルしました。遅延結果は適用しません")
+            RoomPredictionRunState(
+                True,
+                "キャンセル処理中です。遅延結果は保存・適用しません",
+            )
         )
         return True
 
@@ -490,6 +497,7 @@ class RoomPredictionPanel(QWidget):
 
         controller.stateChanged.connect(self._state_changed)
         controller.resultsChanged.connect(self.refresh)
+        controller.runSelected.connect(self.show_selected_results)
         self.refresh()
 
     def refresh(self) -> None:
