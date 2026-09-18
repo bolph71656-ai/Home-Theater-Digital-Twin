@@ -97,7 +97,7 @@ class CadModelValidationBuildSpec(BaseModel):
     repeatability: tuple[CadValidationRepeatabilitySpec, ...] = ()
     separation: tuple[CadValidationSeparationSpec, ...] = ()
     applicability: tuple[CadApplicabilityCheck, ...] = ()
-    trend_tolerance_by_objective: dict[str, float] = {}
+    trend_tolerance_by_objective: dict[str, float] = Field(default_factory=dict)
     trend_min_comparable_pairs: int = Field(default=1, ge=1)
     trend_min_agreement_ratio: float = Field(default=0.75, ge=0, le=1)
 
