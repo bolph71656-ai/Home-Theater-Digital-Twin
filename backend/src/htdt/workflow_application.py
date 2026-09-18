@@ -236,20 +236,22 @@ class WorkflowApplicationComposition:
                 ),
                 "room.edit.duplicate": lambda: _available(
                     workspace.controller.selected_id is not None
-                    and workspace.controller.can_edit,
+                    and workspace.controller.can_edit
+                    and not geometry_input.is_active
+                    and not transform_input.is_active,
                     "複製できる項目を選択してください",
                 ),
                 "room.transform.axis_x": lambda: _available(
-                    workspace.controller.selected_id is not None,
-                    "軸拘束する項目を選択してください",
+                    transform_input.is_active,
+                    "移動または回転を開始してから軸を指定してください",
                 ),
                 "room.transform.axis_y": lambda: _available(
-                    workspace.controller.selected_id is not None,
-                    "軸拘束する項目を選択してください",
+                    transform_input.is_active,
+                    "移動または回転を開始してから軸を指定してください",
                 ),
                 "room.transform.axis_z": lambda: _available(
-                    workspace.controller.selected_id is not None,
-                    "軸拘束する項目を選択してください",
+                    transform_input.is_active,
+                    "移動または回転を開始してから軸を指定してください",
                 ),
             },
         )
@@ -288,7 +290,8 @@ class WorkflowApplicationComposition:
                 execute=geometry_input.start_sketch,
                 availability=lambda: _available(
                     workspace.controller.recovery_candidate is None
-                    and not workspace.controller.working.has_preview,
+                    and not workspace.controller.working.has_preview
+                    and not transform_input.is_active,
                     "復旧または編集中の操作を完了してから部屋を描いてください",
                 ),
             )
@@ -296,8 +299,10 @@ class WorkflowApplicationComposition:
                 "room.add_speaker",
                 execute=lambda: workspace.add_object("speaker"),
                 availability=lambda: _available(
-                    workspace.controller.can_edit,
-                    "部屋を作成してからスピーカーを追加してください",
+                    workspace.controller.can_edit
+                    and not geometry_input.is_active
+                    and not transform_input.is_active,
+                    "部屋を作成し、編集中の操作を完了してからスピーカーを追加してください",
                 ),
             )
             # N70 prediction execution is still owned by the legacy prediction window.
