@@ -669,6 +669,8 @@ class RoomWorkspace(QWidget):
         self.active_axis_constraint: str | None = None
         self.geometry_input = None
         self.transform_input = None
+        self.acoustics_panel: QWidget | None = None
+        self.prediction_results: tuple = ()
         self._viewport_factory = viewport_factory or (lambda owner: RoomViewport3D(owner))
 
         root = QVBoxLayout(self)
@@ -711,7 +713,10 @@ class RoomWorkspace(QWidget):
 
         self.inspector = SelectionInspector()
         self.inspector.editCommitted.connect(self._commit_inspector)
-        content.addWidget(self.inspector)
+        self.right_stack = QStackedWidget()
+        self.right_stack.addWidget(self.inspector)
+        self.right_stack.setCurrentWidget(self.inspector)
+        content.addWidget(self.right_stack)
         root.addLayout(content, 1)
 
         self.status = QLabel()
@@ -743,6 +748,20 @@ class RoomWorkspace(QWidget):
 
     def attach_transform_input(self, controller) -> None:
         self.transform_input = controller
+
+    def attach_acoustics_panel(self, panel: QWidget) -> None:
+        if self.acoustics_panel is not None:
+            self.right_stack.removeWidget(self.acoustics_panel)
+            self.acoustics_panel.setParent(None)
+        self.acoustics_panel = panel
+        panel.setParent(self.right_stack)
+        self.right_stack.addWidget(panel)
+        if self.current_context == "acoustics":
+            self.right_stack.setCurrentWidget(panel)
+
+    def set_prediction_results(self, results: object) -> None:
+        self.prediction_results = results if isinstance(results, tuple) else ()
+        self._render()
 
     def refresh(self, *, reset_camera: bool = False) -> None:
         self._refresh(reset_camera=reset_camera)
@@ -833,6 +852,13 @@ class RoomWorkspace(QWidget):
         self.object_palette.setVisible(context_id in {"objects", "placement"})
         if context_id == "acoustics":
             self.overlay_controls.acoustics.setChecked(True)
+            if self.acoustics_panel is not None:
+                self.right_stack.setCurrentWidget(self.acoustics_panel)
+                refresh = getattr(self.acoustics_panel, "refresh", None)
+                if callable(refresh):
+                    refresh()
+        else:
+            self.right_stack.setCurrentWidget(self.inspector)
         self._render()
 
     def select_entity(self, entity_id: object) -> None:
@@ -842,6 +868,10 @@ class RoomWorkspace(QWidget):
         except KeyError:
             return
         self._refresh_inspector()
+        if self.acoustics_panel is not None and self.current_context == "acoustics":
+            refresh = getattr(self.acoustics_panel, "refresh", None)
+            if callable(refresh):
+                refresh()
         self._render()
 
     def save(self) -> bool:
@@ -956,12 +986,17 @@ class RoomWorkspace(QWidget):
         self.inspector.set_entity(entity, editable=editable)
 
     def _render(self, *, reset_camera: bool = False) -> None:
+        overlays = self.overlay_controls.state()
         self.viewport.render_document(
             self.controller.document,
             selected_id=self.controller.selected_id,
-            overlays=self.overlay_controls.state(),
+            overlays=overlays,
             reset_camera=reset_camera,
         )
+        if overlays.acoustics and self.prediction_results:
+            render_prediction = getattr(self.viewport, "render_prediction_results", None)
+            if callable(render_prediction):
+                render_prediction(self.prediction_results)
 
     def _set_status(self, text: str, *, error: bool = False) -> None:
         self.status.setText(text)
