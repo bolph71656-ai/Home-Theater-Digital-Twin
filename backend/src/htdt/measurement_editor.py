@@ -83,7 +83,7 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
         self.rew_job_guard = MeasurementJobGuard()
         self._rew_tasks: dict[str, tuple[QThread, _RewTask]] = {}
         self._rew_tokens: dict[str, MeasurementJobToken] = {}
-        self._rew_semantics: dict[str, tuple[str, str]] = {}
+        self._rew_semantics: dict[str, tuple[str, str, str | None, str | None]] = {}
         self._latest_rew_list_key: str | None = None
         self._rew_list_sequence = 0
         self._current_rew_token_id: str | None = None
@@ -472,12 +472,31 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
         self.statusBar().showMessage('REW測定一覧を読み込み中…')
 
     def read_selected_rew_async(self) -> None:
+        self._start_selected_rew_read(
+            validation_scope=None,
+            validation_campaign_id=None,
+            evidence_type_override=None,
+        )
+
+    def _start_selected_rew_read(
+        self,
+        *,
+        validation_scope: str | None,
+        validation_campaign_id: str | None,
+        evidence_type_override: str | None = None,
+    ) -> None:
         if self.rew_combo is None:
             return
         external_id = self.rew_combo.currentData()
         if not external_id:
             self.statusBar().showMessage('先にREW一覧を更新して測定を選択してください')
             return
+        if validation_scope is None and validation_campaign_id is not None:
+            raise ValueError('validation campaign requires a validation scope')
+        if validation_scope is not None and validation_scope != 'owned_room':
+            raise ValueError('unsupported validation scope')
+        if validation_scope == 'owned_room' and not validation_campaign_id:
+            raise ValueError('owned-room REW read requires a campaign id')
         try:
             revision, entity_id = self._saved_measurement_target()
             provisional = measurement_record_for_revision(
@@ -495,7 +514,17 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
             query={'unit': 'SPL', 'ppo': None, 'smoothing': None},
         )
         self._rew_tokens[token.job_id] = token
-        self._rew_semantics[token.job_id] = (self._evidence_type(), self._channel_role())
+        evidence_type = (
+            self._evidence_type()
+            if evidence_type_override is None
+            else evidence_type_override
+        )
+        self._rew_semantics[token.job_id] = (
+            evidence_type,
+            self._channel_role(),
+            validation_scope,
+            validation_campaign_id,
+        )
         self._current_rew_token_id = token.job_id
         self._start_rew_task(
             token.job_id,
@@ -503,7 +532,14 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
                 str(external_id), ppo=None, unit='SPL', smoothing=None
             ),
         )
-        self.statusBar().showMessage(f'REW読込中 · revision {token.scene_revision_id[:8]}')
+        scope_message = (
+            ''
+            if validation_campaign_id is None
+            else f' · campaign {validation_campaign_id[:8]}'
+        )
+        self.statusBar().showMessage(
+            f'REW読込中 · revision {token.scene_revision_id[:8]}{scope_message}'
+        )
 
     def cancel_rew_read(self) -> None:
         token_id = self._current_rew_token_id
@@ -563,7 +599,10 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
         if revision is None:
             self.statusBar().showMessage('REW結果のsource revisionが見つかりません')
             return
-        evidence, channel_role = self._rew_semantics.get(token.job_id, ('unknown', 'unknown'))
+        evidence, channel_role, validation_scope, validation_campaign_id = self._rew_semantics.get(
+            token.job_id,
+            ('unknown', 'unknown', None, None),
+        )
         try:
             record, dataset, filename, raw = normalize_rew_api_snapshot(
                 revision,
@@ -571,6 +610,8 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
                 result,
                 evidence_type=evidence,
                 channel_role=channel_role,
+                validation_scope=validation_scope,
+                validation_campaign_id=validation_campaign_id,
             )
             self.measurement_repository.save(record, dataset, raw_filename=filename, raw_bytes=raw)
         except Exception as exc:

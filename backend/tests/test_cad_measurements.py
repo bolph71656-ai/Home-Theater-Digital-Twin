@@ -1,3 +1,4 @@
+from datetime import timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -5,7 +6,7 @@ import pytest
 from htdt.cad_document import WorkingDocument
 from htdt.cad_measurement_jobs import MeasurementJobApplyContext, MeasurementJobGuard
 from htdt.cad_measurement_repository import CadMeasurementRepository
-from htdt.cad_measurements import measurement_record_for_revision, normalize_rew_api_snapshot, normalize_rew_text
+from htdt.cad_measurements import measurement_record_for_revision, normalize_rew_api_snapshot, normalize_rew_capture_timestamp, normalize_rew_text
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, make_f1_scene
 from htdt.comparison import FrequencyResponse, compare_frequency_responses
@@ -126,6 +127,94 @@ def test_rew_api_normalization_keeps_external_uuid_as_provenance_not_primary_key
     assert filename == 'rew-api-rew-external-uuid.json'
     assert raw
 
+
+
+def test_rew_legacy_local_capture_time_becomes_offset_aware() -> None:
+    normalized, source = normalize_rew_capture_timestamp(
+        '2026-Sep-18 12:11:10',
+        host_timezone=timezone(timedelta(hours=9)),
+    )
+
+    assert normalized == '2026-09-18T12:11:10+09:00'
+    assert source == 'host_local_timezone'
+
+
+def test_rew_campaign_import_records_exact_campaign_provenance(tmp_path: Path) -> None:
+    _, revision = _saved_f1(tmp_path)
+    decoded = RewFrequencyResponse(
+        measurement_id='rew-campaign-uuid',
+        unit='SPL',
+        smoothing=None,
+        start_frequency_hz=20.0,
+        points_per_octave=None,
+        frequency_step_hz=20.0,
+        frequency_hz=(20.0, 40.0, 60.0),
+        magnitude=(70.0, 71.0, 69.5),
+        phase_deg=None,
+        requested_unit='SPL',
+        requested_ppo=None,
+        requested_smoothing=None,
+    )
+    snapshot = RewFrequencyResponseSnapshot(
+        measurement_summary={
+            'uuid': 'rew-campaign-uuid',
+            'date': '2026-Sep-18 12:11:10',
+            'rewVersion': 'V5.40 beta 135',
+        },
+        query={'unit': 'SPL'},
+        raw_frequency_response={'unit': 'SPL', 'startFreq': 20.0, 'freqStep': 20.0},
+        decoded=decoded,
+    )
+
+    record, _dataset, _filename, _raw = normalize_rew_api_snapshot(
+        revision,
+        'point-mlp',
+        snapshot,
+        evidence_type='measured',
+        validation_scope='owned_room',
+        validation_campaign_id='campaign-1',
+        captured_timezone=timezone(timedelta(hours=9)),
+    )
+
+    provenance = __import__('json').loads(record.provenance_json)
+    assert record.captured_at == '2026-09-18T12:11:10+09:00'
+    assert provenance['captured_at_raw'] == '2026-Sep-18 12:11:10'
+    assert provenance['captured_at_source'] == 'host_local_timezone'
+    assert provenance['validation_scope'] == 'owned_room'
+    assert provenance['validation_campaign_id'] == 'campaign-1'
+
+
+def test_rew_owned_room_import_requires_campaign_id(tmp_path: Path) -> None:
+    _, revision = _saved_f1(tmp_path)
+    decoded = RewFrequencyResponse(
+        measurement_id='rew-campaign-uuid',
+        unit='SPL',
+        smoothing=None,
+        start_frequency_hz=20.0,
+        points_per_octave=None,
+        frequency_step_hz=20.0,
+        frequency_hz=(20.0, 40.0, 60.0),
+        magnitude=(70.0, 71.0, 69.5),
+        phase_deg=None,
+        requested_unit='SPL',
+        requested_ppo=None,
+        requested_smoothing=None,
+    )
+    snapshot = RewFrequencyResponseSnapshot(
+        measurement_summary={'uuid': 'rew-campaign-uuid', 'date': '2026-09-18T12:11:10+09:00'},
+        query={'unit': 'SPL'},
+        raw_frequency_response={'unit': 'SPL', 'startFreq': 20.0, 'freqStep': 20.0},
+        decoded=decoded,
+    )
+
+    with pytest.raises(ValueError, match='validation_campaign_id'):
+        normalize_rew_api_snapshot(
+            revision,
+            'point-mlp',
+            snapshot,
+            evidence_type='measured',
+            validation_scope='owned_room',
+        )
 
 def test_saved_comparison_keeps_exact_dataset_and_scene_revision_ids(tmp_path: Path) -> None:
     scene_repository, revision_a = _saved_f1(tmp_path)

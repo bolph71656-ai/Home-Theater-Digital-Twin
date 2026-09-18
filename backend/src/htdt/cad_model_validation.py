@@ -131,6 +131,8 @@ class CadModelValidationRecord(BaseModel):
     search_spec_id: str = Field(min_length=1)
     search_spec_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     candidate_set_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    campaign_id: str | None = Field(default=None, min_length=1)
+    campaign_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
     model_id: str = Field(min_length=1)
     model_version: str = Field(min_length=1)
     evidence_scope: EvidenceScope = 'synthetic_fixture'
@@ -159,6 +161,12 @@ class CadModelValidationRecord(BaseModel):
         low_hz, high_hz = self.requested_band_hz
         if low_hz <= 0 or high_hz <= low_hz:
             raise ValueError('model validation frequency band is invalid')
+
+        if self.evidence_scope == 'owned_room':
+            if self.campaign_id is None or self.campaign_sha256 is None:
+                raise ValueError('owned-room validation requires a preregistered campaign')
+        elif self.campaign_id is not None or self.campaign_sha256 is not None:
+            raise ValueError('synthetic validation must not claim an owned-room campaign')
 
         split_by_candidate: dict[str, str] = {}
         for pair in self.pairs:
@@ -268,6 +276,8 @@ class CadModelValidationRecord(BaseModel):
             'search_spec_id': self.search_spec_id,
             'search_spec_sha256': self.search_spec_sha256,
             'candidate_set_sha256': self.candidate_set_sha256,
+            'campaign_id': self.campaign_id,
+            'campaign_sha256': self.campaign_sha256,
             'model_id': self.model_id,
             'model_version': self.model_version,
             'evidence_scope': self.evidence_scope,
@@ -305,6 +315,8 @@ def _residual_payload(
     search_spec_id: str,
     search_spec_sha256: str,
     candidate_set_sha256: str,
+    campaign_id: str | None,
+    campaign_sha256: str | None,
     model_id: str,
     model_version: str,
     evidence_scope: EvidenceScope,
@@ -360,6 +372,8 @@ def _residual_payload(
         'search_spec_id': search_spec_id,
         'search_spec_sha256': search_spec_sha256,
         'candidate_set_sha256': candidate_set_sha256,
+        'campaign_id': campaign_id,
+        'campaign_sha256': campaign_sha256,
         'model_id': model_id,
         'model_version': model_version,
         'evidence_scope': evidence_scope,
@@ -425,6 +439,8 @@ def build_model_validation(
     high_hz: float,
     max_holdout_rms_db: float,
     evidence_scope: EvidenceScope = 'synthetic_fixture',
+    campaign_id: str | None = None,
+    campaign_sha256: str | None = None,
 ) -> CadModelValidationRecord:
     """Build the residual-only O60 baseline.
 
@@ -437,6 +453,8 @@ def build_model_validation(
         search_spec_id=search_spec_id,
         search_spec_sha256=search_spec_sha256,
         candidate_set_sha256=candidate_set_sha256,
+        campaign_id=campaign_id,
+        campaign_sha256=campaign_sha256,
         model_id=model_id,
         model_version=model_version,
         evidence_scope=evidence_scope,
@@ -475,6 +493,8 @@ def build_full_model_validation(
     high_hz: float,
     max_holdout_rms_db: float,
     evidence_scope: EvidenceScope,
+    campaign_id: str | None = None,
+    campaign_sha256: str | None = None,
     trend_tolerance_by_objective: Mapping[str, float] | None = None,
     trend_min_comparable_pairs: int = 1,
     trend_min_agreement_ratio: float = 0.75,
@@ -484,6 +504,8 @@ def build_full_model_validation(
         search_spec_id=search_spec_id,
         search_spec_sha256=search_spec_sha256,
         candidate_set_sha256=candidate_set_sha256,
+        campaign_id=campaign_id,
+        campaign_sha256=campaign_sha256,
         model_id=model_id,
         model_version=model_version,
         evidence_scope=evidence_scope,

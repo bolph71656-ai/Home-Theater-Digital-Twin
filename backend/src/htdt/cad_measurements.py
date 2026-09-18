@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from hashlib import sha256
 import json
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from .cad_measurement_models import CadFrequencyResponseDataset, CadMeasurementRecord
@@ -28,6 +28,49 @@ def utc_now() -> str:
 def canonical_json(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
 
+
+def normalize_rew_capture_timestamp(
+    raw_date: str | None,
+    *,
+    host_timezone: tzinfo | None = None,
+) -> tuple[str | None, str]:
+    """Normalize a REW measurement date to offset-aware ISO 8601."""
+
+    if raw_date is None or not raw_date.strip():
+        return None, 'missing'
+    raw = raw_date.strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError:
+        try:
+            date_part, time_part = raw.split(' ', 1)
+            year_text, month_text, day_text = date_part.split('-', 2)
+            hour_text, minute_text, second_text = time_part.split(':', 2)
+            month = {
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
+                'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+                'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+            }[month_text.lower()]
+            parsed = datetime(
+                int(year_text),
+                month,
+                int(day_text),
+                int(hour_text),
+                int(minute_text),
+                int(second_text),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None, 'unparsed'
+
+    if parsed.tzinfo is not None:
+        return parsed.isoformat(), 'source_timezone'
+
+    if host_timezone is None:
+        try:
+            return parsed.astimezone().isoformat(), 'host_local_timezone'
+        except (OSError, ValueError):
+            return None, 'host_timezone_unavailable'
+    return parsed.replace(tzinfo=host_timezone).isoformat(), 'host_local_timezone'
 
 def measurement_record_for_revision(
     revision: SceneRevision,
@@ -102,6 +145,9 @@ def normalize_rew_api_snapshot(
     radiation_scope: str = 'unknown',
     routing_evidence: str = 'unknown',
     imported_at: str | None = None,
+    validation_scope: Literal['owned_room'] | None = None,
+    validation_campaign_id: str | None = None,
+    captured_timezone: tzinfo | None = None,
 ) -> tuple[CadMeasurementRecord, CadFrequencyResponseDataset, str, bytes]:
     decoded = snapshot.decoded
     wrapper = {
@@ -114,7 +160,23 @@ def normalize_rew_api_snapshot(
     raw = canonical_json(wrapper).encode('utf-8')
     digest = sha256(raw).hexdigest()
     summary = snapshot.measurement_summary
-    captured_at = summary.get('date') if isinstance(summary.get('date'), str) and summary.get('date') else None
+    raw_captured_at = (
+        summary.get('date')
+        if isinstance(summary.get('date'), str) and summary.get('date')
+        else None
+    )
+    captured_at, captured_at_source = normalize_rew_capture_timestamp(
+        raw_captured_at,
+        host_timezone=captured_timezone,
+    )
+    if validation_scope == 'owned_room' and not validation_campaign_id:
+        raise CadMeasurementError(
+            'owned-room REW import requires validation_campaign_id'
+        )
+    if validation_scope is None and validation_campaign_id is not None:
+        raise CadMeasurementError(
+            'validation_campaign_id requires validation_scope=owned_room'
+        )
     phase_status = 'unknown' if decoded.phase_deg is not None else 'absent'
     warnings = []
     if decoded.phase_deg is not None and all(value == 0 for value in decoded.phase_deg):
@@ -135,6 +197,10 @@ def normalize_rew_api_snapshot(
         provenance={
             'adapter_version': CAD_REW_API_ADAPTER_VERSION,
             'rew_version': summary.get('rewVersion') if isinstance(summary.get('rewVersion'), str) else None,
+            'captured_at_raw': raw_captured_at,
+            'captured_at_source': captured_at_source,
+            'validation_scope': validation_scope,
+            'validation_campaign_id': validation_campaign_id,
             'requested': {
                 'unit': decoded.requested_unit,
                 'ppo': decoded.requested_ppo,

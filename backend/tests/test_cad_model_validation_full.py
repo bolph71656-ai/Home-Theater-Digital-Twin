@@ -110,6 +110,8 @@ def _record(*, evidence_scope: str, reverse_measured: bool = False):
         high_hz=160.0,
         max_holdout_rms_db=1.0,
         evidence_scope=evidence_scope,
+        campaign_id='campaign-fixture' if evidence_scope == 'owned_room' else None,
+        campaign_sha256='3' * 64 if evidence_scope == 'owned_room' else None,
         trend_min_agreement_ratio=0.75,
     )
 
