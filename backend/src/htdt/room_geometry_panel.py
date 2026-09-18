@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .cad_scene import room_vertices
 from .cad_wall_models import WallOpening
 from .cad_walls import (
     WallTopologyError,
@@ -230,7 +231,7 @@ class RoomGeometryPanel(QFrame):
 
         min_x, min_y, max_x, max_y = room.bounds_m
         self.summary.setText(
-            f"{len(tuple(room.footprint_vertices or ()) or (0,)) if room.footprint_vertices else 4}頂点 · "
+            f"{len(room_vertices(room))}頂点 · "
             f"X {min_x:.2f}–{max_x:.2f} m · Y {min_y:.2f}–{max_y:.2f} m"
         )
         with QSignalBlocker(self.height):
@@ -250,7 +251,7 @@ class RoomGeometryPanel(QFrame):
             self.vertex_y.setEnabled(editable)
             self.delete_vertex_button.setEnabled(editable)
         elif edge_index is not None:
-            vertices = tuple(__import__("htdt.cad_scene", fromlist=["room_vertices"]).room_vertices(room))
+            vertices = tuple(room_vertices(room))
             start = vertices[edge_index % len(vertices)]
             end = vertices[(edge_index + 1) % len(vertices)]
             self.selection_title.setText("選択: 辺 / 壁")
@@ -457,7 +458,6 @@ class RoomGeometryPanel(QFrame):
             candidate = add_opening(room, topology, opening)
             changed = self.controller.replace_room_topology(room, candidate)
             if changed:
-                self.opening_selector.setProperty("selectOpeningAfterRefresh", opening.opening_id)
             return changed
 
         self._run(operation, "開口を追加しました")
