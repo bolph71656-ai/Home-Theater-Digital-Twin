@@ -172,8 +172,6 @@ def _fixture(tmp_path):
         search_spec_id=spec.search_spec_id,
         search_spec_sha256=spec.search_spec_sha256,
         candidate_set_sha256=page.candidate_set_sha256,
-        campaign_id=campaign.campaign_id,
-        campaign_sha256=campaign.campaign_sha256,
         model_id='rew-roomsim',
         model_version='fixture-1',
         requested_band_hz=(20.0, 160.0),
@@ -324,6 +322,8 @@ def _fixture(tmp_path):
         search_spec_id=spec.search_spec_id,
         search_spec_sha256=spec.search_spec_sha256,
         candidate_set_sha256=page.candidate_set_sha256,
+        campaign_id=campaign.campaign_id,
+        campaign_sha256=campaign.campaign_sha256,
         model_id='rew-roomsim',
         model_version='fixture-1',
         response_samples=tuple(
