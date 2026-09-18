@@ -2,7 +2,7 @@
 
 > Tracking: Issue #101
 > Depends on: R100A merged by PR #110 (`1714c078d4063f59da93f0d733171547f7eb486d`)
-> Current state: bakeoff infrastructure / candidate-source authority implemented; numerical candidate runs are still pending.
+> Current state: bakeoff authority is merged via PR #111. Raw-observation evaluation and the first pyroomacoustics Windows reference probe are being implemented; production solver selection remains pending.
 
 ## Purpose
 
@@ -91,14 +91,29 @@ python -m htdt.acoustic_bakeoff validate-run `
 
 The preflight is authority validation only. It is not a numerical benchmark result.
 
+## Raw observation boundary
+
+Third-party adapters do not emit PASS/FAIL. They emit typed raw samples through `RawFixtureObservation` / `RawObservableObservation`; HTDT then compares those values against the R100A expected samples and quantity-specific tolerances.
+
+The sampled evaluator:
+
+- requires exact fixture/observable/sample identity;
+- requires observable kind and unit to match R100A;
+- compares scalar, complex and 3D vector samples without backend-specific tolerance logic;
+- computes absolute/relative/phase error centrally;
+- refuses observables without explicit expected samples and requires a specialized evaluator for convergence, cross-fixture and independent-reference cases;
+- preserves compile/solve/postprocess/RAM/output evidence for the existing R100B budget gate.
+
+The first external probe is `pyroomacoustics v0.10.1` against `geometric-direct-first-reflection-v1`. GitHub Actions resolves the official CPython 3.12 Windows wheel, records its SHA-256, maps the exact R100A box/material/source/receiver into a first-order image-source room, and stores raw image-derived path observations plus R100B evidence as an artifact. Missing Windows wheel/installability is recorded as a blocked candidate probe rather than silently switching version/backend.
+
 ## Next R100B implementation slices
 
 The numerical bakeoff proceeds in this order:
 
-1. implement the common adapter/result protocol and a deterministic analytical reference reader for R100A observables;
+1. finish the common raw-observation evaluator and pyroomacoustics direct/first-reflection Windows probe;
 2. probe PFFDTD reuse/port feasibility on GitHub-hosted Windows without RDC; if native Windows integration is not practical, record that gate failure instead of reimplementing it silently;
 3. implement the minimal MFEM acoustic reference prototype for rigid rectangular/concave fixtures and then the explicit impedance fixture;
-4. probe pyroomacoustics v0.10.1 for direct/first-reflection and stochastic-seed fixtures;
+4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls only after the first probe is accepted;
 5. record exact compile/solve/postprocess/RAM/output evidence under the R100A resource budgets;
 6. publish the R100B ADR only after applicable hard gates have real evidence.
 
