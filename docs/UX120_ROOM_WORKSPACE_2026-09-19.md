@@ -146,3 +146,17 @@ backend/tests/test_room_workspace.py covers:
 ## Integration update — 2026-09-19
 
 Integration branch `integration/ux120-140-workspaces` connected PR #129's `CadInputController` to this workspace, added WorkingDocument-backed polygon geometry input and M/R entity transform previews, and switched the workflow-shell Room factory to this component. The remaining Room gaps are N70 prediction execution/result presentation, advanced midpoint/numeric/wall/opening editing parity, and UX150/UX160 visual acceptance.
+
+
+## N70 prediction follow-up — 2026-09-19
+
+New Roomの `acoustics` contextへ既存N70矩形幾何予測を接続した。
+`RoomPredictionController` はexisting request identity / PredictionJobGuard /
+CadPredictionRepository / constraint snapshot hashを再利用し、独自prediction semanticsを作らない。
+
+central `prediction.run`、background cancel、current/stale run表示、current runだけの
+direct/first-reflection overlayまで接続した。
+
+詳細: [UX120 Room prediction integration](UX120_ROOM_PREDICTION_2026-09-19.md)
+
+Room側の残件は高度geometry editingとUX150/UX160 visual acceptance。
