@@ -458,9 +458,7 @@ class RoomGeometryPanel(QFrame):
 
         def operation() -> bool:
             candidate = add_opening(room, topology, opening)
-            changed = self.controller.replace_room_topology(room, candidate)
-            if changed:
-            return changed
+            return self.controller.replace_room_topology(room, candidate)
 
         self._run(operation, "開口を追加しました")
         index = self.opening_selector.findData(opening.opening_id)
