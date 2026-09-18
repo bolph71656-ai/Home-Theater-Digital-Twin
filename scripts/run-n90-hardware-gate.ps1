@@ -51,7 +51,12 @@ if ($StatusBefore.Count -ne 0) {
 
 $OriginalSha = (& git -C $RepoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not read original HEAD" }
-$OriginalBranch = (& git -C $RepoRoot symbolic-ref --short -q HEAD).Trim()
+$OriginalBranchOutput = @(& git -C $RepoRoot symbolic-ref --short -q HEAD)
+$OriginalBranch = if ($OriginalBranchOutput.Count -gt 0) {
+    ([string]$OriginalBranchOutput[0]).Trim()
+} else {
+    ""
+}
 $WorkRoot = Join-Path $env:TEMP ("htdt-n90-a15-" + [guid]::NewGuid().ToString("N"))
 
 Write-Host "N90_ORIGINAL_SHA=$OriginalSha"
