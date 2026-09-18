@@ -96,7 +96,7 @@ speakerの表示yaw/pitchは[測定データ契約](DATA_AND_ANALYSIS.md)の式�
 
 R110/R120は上記v0.1の単室prism仕様を拡張する後続工程である。exact SceneRevisionに結び付く不変acoustic configurationへ、object/surface material、source/receiver/environment、隣接AcousticRegionとPortal/BoundaryTerminationを保存し、Inspector等から入力できるようにする。既存Sceneの読込時に未知材質や隣接空間を推測確定しない。stable surface/Scene IDを保持し、設定変更はUndo/Redo・保存/再open・prediction stale判定へ接続する。
 
-初期対応範囲は凹polygon prism、対応object surface/volume、接続したprism regionまたは明示termination。傾斜/曲面等の一般3D入力は個別の編集・compiler・数値gate通過までunsupportedとする。solverがmeshを受け付けることとCADからその物理形状を正しく入力できることを区別する。
+R120Aの初期対応範囲は凹polygon prism、対応object surface/volume、接続したprism regionまたは明示termination。R120Bでは向き付きpolyhedral surface/air volumeへ拡張し、段差/傾斜天井と許容誤差を保存した曲面の面分割を対象にする。native編集または明示importからSceneRevisionへ保存し、material/surface ID、再open、volume/topology、表示診断を検証する。compilerと対応R130/R150数値gateを通過するまでunsupportedとし、汎用B-rep CADや全import形式は要求しない。prism対応だけでIssue #101の一般3D要件を完了にしない。
 
 ViewStateのhide/lockは音響的な撤去としない。acoustic participation/omissionを別属性として保存する。speaker/receiver markerを自動的に固体とせず、物理cabinetを含める場合はsourceとの結合とdirectivityの二重計上を検証する。詳細と工程は[研究文書 §5](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md#5-acoustic-data-model)と[正本ロードマップ](IMPLEMENTATION_ROADMAP.md)に従う。
 

@@ -5,7 +5,7 @@
 > 追加対象: mainの10dabf995453e1351fce32e2041790c925d2e31bにある計画6文書
 > 範囲: 計画書の検証・詳細化。アプリ実装、Windows実機検証、実測データ検証は実施していない。
 
-**最新のIssue #101ゼロベースレビューは§11、追加レビューは§10、前回は§9。CAD-firstレビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
+**最新のIssue #101精査は§12、ゼロベースレビューは§11、追加レビューは§10、前回は§9。CAD-firstレビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
 
 §1–5は初回レビューの記録を残す。追加レビューの指摘と反映先は[§6](#6-追加レビュー)を参照。現在の仕様は各設計文書を正本とする。
 
@@ -272,3 +272,38 @@ Issue #101の目的・9要件・17 Acceptanceを起点に、main `e8db17f` と�
 計画レビューと文書修正のみ。次工程は引き続きR100Aであり、数値gate、OSS Windows package、workload別時間/メモリ、実室calibration/holdoutは未実行。Issue #101のAcceptance対応表を実装ロードマップへ置き、低域先行と最終要求の縮小を混同しない。
 
 全作業はGitHub APIによる取得・更新と一次資料参照で実施。ローカルclone・ファイル編集・コマンド実行・RDC・solver実装なし。
+
+## 12. Issue #101 マージ後の整合性・要求網羅レビュー（2026-09-18）
+
+### 対象と判定
+
+PR #108がmergeされたmain `ee6eda595c2d206c19500c88cee6faeead12e480` とIssue #101を再取得して精査した。前回の低域先行・OSS優先・typed O60 adapter・独立holdout方針は維持する。残っていたbackend/output契約の矛盾と、一般3D/確率的GAの受入不足だけを修正する。
+
+| ID | 優先度 | 現在の記述から生じる問題 | 修正 |
+|---|---|---|---|
+| ACR25 | 高 | FEMをproduction候補に残しながらR120はwave-grid必須・FEM mesh任意。採用方式を変えてもFDTD依存が残る | compilerをbackend capabilityに従属させ、FEMならvolume mesh等を必須化。R120A、研究§5.2/§12、実装表 |
+| ACR26 | 高 | coherent FRとIRのcapabilityが曖昧。frequency-domain採用時に疎/非等間隔FRの単純IFFTでIR/decayを認め得る | 周波数grid/範囲・時間span・正規化/対称性・再構成法と遅延/減衰referenceを独立gate化。band-limited出力を明示。研究§8、最適化fixture |
+| ACR27 | 高 | 任意3D目標に対しprism以外は「後続」のまま担当工程がない。一般形状を読み込めても既存XY制約だけでは天井超過candidateを通す | R120A prism→R120B general-3D input/compilerへ分割。段差/傾斜/曲面の面分割・誤差・保存を定義し、R170Bで3D volume/envelope feasibilityを接続。初期sliceでumbrellaを完了にしない |
+| ACR28 | 中 | R150のseed repeatabilityだけではsampling bias/varianceやreceiver/time-binの未収束を検出できない | ray数・receiver estimator・time bin・打切りのrefinementと独立seed比較、到達数不足/候補差の不確実性を受入条件に追加 |
+
+### 要求別の完了監査（計画文書として）
+
+| Issue #101の要求 | 正本上の担当と確認結果 |
+|---|---|
+| §1 geometry / opening / simplification | R110、R120A/B。内部portal、termination、一般3D入力、compiled hash、診断と近似誤差を明記 |
+| §2 / §2a surface/object material | 研究§5/§6、CAD仕様。preset/custom、出典/版、thin/volume、用途別capability、材料変更失効を保持 |
+| §3 source / receiver / environment | 研究§7、R110、R170B。body/aim、励振/directivity、routing、mic/timing、environmentを保持 |
+| §4 low wave / §5 geometric | R100A/B、R130A/B/C、R150。方式選定・独立reference・収束・CPU baseline、GA sampling受入を確認 |
+| §6 hybrid / output | R160、研究§8。typed結果、overlap不足、double-counting防止に加えFR→IR再構成gateを確認 |
+| §7 immutable prediction authority | R110/研究§5.1/§9/§10。semantic/compiled/material/source/receiver/environment/backend/数値条件を保存 |
+| §8 optimization | R170A/B、最適化§4/§8。typed provider、multi-fidelity、reuse、候補失効、3D feasibilityと独立objectiveを確認 |
+| §9 calibration / real validation | R180A/B、研究§11、最適化§8.1a。model freeze、非一意性、holdout、observable限定eligibilityを保持 |
+| hardware / performance / Acceptance 1–17 | 実装ロードマップの対応表とR100A/R140/R170/R180。resource予算、oversubscription、fallback、cancel/stale、cache/resume、GPU対象外と未検証の区別を保持 |
+
+これは計画の担当・依存・受入項目の監査であり、上記機能の実装完了や数値精度を証明するものではない。R120Bのgeometry/compiler gateを通してからR130/R150の数値gateへ進むため、相互依存の循環を作らない。低域の開始経路は引き続きR100A→R100B採用→R110/R120A→必要なR130→R170A→R180A。
+
+### 検証と根拠
+
+[COMSOL FFT solver](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_solver.36.132.html) のFFT/非等間隔変換の区別と、[pyroomacoustics Room API](https://pyroomacoustics.readthedocs.io/en/stable/pyroomacoustics.room.html) のray/receiver/histogram制御を参照。採否条件・一般3Dの工程分割はHTDT要求から導いた設計判断であり、library採用を保証しない。
+
+GitHub上の文書・Issue・PRを対象に差分、相対参照、依存関係、要求の担当を確認する。ローカルclone・編集・コマンド実行・RDC・solver実装・実機検証は実施しない。
