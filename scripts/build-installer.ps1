@@ -26,12 +26,13 @@ if (-not (Test-Path (Join-Path $PackageDir "HTDT.exe"))) {
     throw "Native package not found: $(Join-Path $PackageDir 'HTDT.exe')"
 }
 if (-not $IsccPath) {
-    $Candidates = @(
+    $Candidates = @(@(
         (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
         (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
         (Join-Path $env:ProgramFiles "Inno Setup 7\ISCC.exe"),
-        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7\ISCC.exe")
-    ) | Where-Object { $_ -and (Test-Path $_) }
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7\ISCC.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 7\ISCC.exe")
+    ) | Where-Object { $_ -and (Test-Path $_) })
     if ($Candidates.Count -eq 0) {
         $Command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
         if ($Command) {
