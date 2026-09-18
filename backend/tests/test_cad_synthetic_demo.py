@@ -14,6 +14,7 @@ from htdt.cad_objective_repository import CadObjectiveRepository
 from htdt.cad_repository import SceneRepository
 from htdt.cad_roomsim_repository import CadRoomSimRepository
 from htdt.cad_search_repository import CadSearchRepository
+from htdt.measurement_editor import measurement_evidence_label, measurement_is_synthetic
 from htdt.cad_synthetic_demo import (
     SYNTHETIC_DEMO_DOCUMENT_ID,
     seed_synthetic_optimization_demo,
@@ -88,6 +89,8 @@ def test_synthetic_demo_persists_o10_through_o80_without_owned_room_promotion(tm
         provenance = json.loads(measurement.provenance_json)
         assert provenance['validation_scope'] == 'synthetic_fixture'
         assert provenance['physical_measurement'] is False
+        assert measurement_is_synthetic(measurement)
+        assert measurement_evidence_label(measurement) == 'Synthetic'
 
     evaluations = objectives.list_evaluations(result.search_spec_id)
     predicted_candidates = {
