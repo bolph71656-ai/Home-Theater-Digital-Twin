@@ -11,7 +11,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **O60 software validationまでmerge済み**。PR #78 merge `b0b56497255425b5b343c6f5f52763d11dbf5ee6`。N90はPR #79でA15受入済み・merge待ち |
+| main | **N90 stable Windows 0.1.0までmerge済み**。PR #79 merge `d1f0f7cf1bf24e4590954071d78c9ac281fc15b9`。O60 software validationはPR #78 merge `b0b56497255425b5b343c6f5f52763d11dbf5ee6` |
 | N80 tracking | Issue #65（closed） / Issue #67（O20 closed） / PR #74 merged |
 | O60 tracking | Issue #75 / PR #76（implementation history） / PR #78 merged。final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3`、CI #427 PASS |
 | O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **PR #79を文書確定してmerge。O70/O80はowned-room O60 evidenceが成立するまで有効化しない** |
+| 次工程 | **O70/O80はowned-room O60 evidenceが成立するまで有効化しない。現時点でroadmap上の自動推薦実装を先行させない** |
 
 ## N90 — stable Windows release / A15 PASS
 
