@@ -306,21 +306,21 @@ def _required_gate_categories(
     }
 
 
-def _validate_observable_tolerance(expected, evidence: BakeoffObservableEvidence) -> None:
-    if evidence.status != 'pass':
-        return
+def observable_tolerance_violations(expected, evidence: BakeoffObservableEvidence) -> tuple[str, ...]:
+    """Return R100A tolerance violations for one evaluated observable."""
 
     tolerance = expected.tolerance
+    violations: list[str] = []
 
     def require_and_bound(name: str, value: float | None, limit: float | None) -> None:
         if limit is None:
             return
         if value is None:
-            raise ValueError(
+            violations.append(
                 f'passing observable {expected.observable_id} is missing {name} evidence'
             )
-        if value > limit:
-            raise ValueError(
+        elif value > limit:
+            violations.append(
                 f'passing observable {expected.observable_id} exceeds {name} tolerance: '
                 f'{value} > {limit}'
             )
@@ -328,17 +328,17 @@ def _validate_observable_tolerance(expected, evidence: BakeoffObservableEvidence
     if expected.acceptance_relation == 'must_differ_from_peer':
         minimum = tolerance.minimum_difference
         if minimum is None:
-            raise ValueError('must-differ observable authority is missing minimum_difference')
-        if evidence.difference_from_peer is None:
-            raise ValueError(
+            violations.append('must-differ observable authority is missing minimum_difference')
+        elif evidence.difference_from_peer is None:
+            violations.append(
                 f'passing observable {expected.observable_id} is missing difference_from_peer'
             )
-        if evidence.difference_from_peer < minimum:
-            raise ValueError(
+        elif evidence.difference_from_peer < minimum:
+            violations.append(
                 f'passing observable {expected.observable_id} does not meet minimum difference: '
                 f'{evidence.difference_from_peer} < {minimum}'
             )
-        return
+        return tuple(violations)
 
     if expected.kind == 'transfer_phase_deg':
         require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
@@ -359,6 +359,15 @@ def _validate_observable_tolerance(expected, evidence: BakeoffObservableEvidence
             tolerance.statistical_stddev_max,
         )
 
+    return tuple(violations)
+
+
+def _validate_observable_tolerance(expected, evidence: BakeoffObservableEvidence) -> None:
+    if evidence.status != 'pass':
+        return
+    violations = observable_tolerance_violations(expected, evidence)
+    if violations:
+        raise ValueError(violations[0])
 
 def validate_bakeoff_run(
     benchmark: AcousticBenchmarkManifest,
