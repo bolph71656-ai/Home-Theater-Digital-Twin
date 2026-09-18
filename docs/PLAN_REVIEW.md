@@ -185,3 +185,33 @@ open一覧全件と各本文・コメントを確認。旧仕様はIssue 2件と
 closeは実装完了を意味しない。各本文の先頭に置換理由・正本・後継を追記し、元の本文と履歴を残した。既にclosed/mergedの37件は履歴として維持した。旧branchやデータの削除、旧PRのマージ、アプリ実装再開は行っていない。
 
 README、ロードマップ、実装状況の「PR #37を継続」の指示をIssue #41へ更新し、二重の正本が残らないようにした。今後のIssue/PRは正本を具体化する追跡票とし、仕様変更時は文書も同じPRで更新する。
+
+
+## 9. Issue #101 arbitrary-room acoustics 再レビュー（2026-09-18）
+
+### 対象
+
+PR #105/#106反映後のIssue #101、`ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md`、`IMPLEMENTATION_ROADMAP.md`、`PLACEMENT_OPTIMIZATION_ROADMAP.md`、`PROJECT_PLAN.md`、`IMPLEMENTATION_STATUS.md`、既存N70/O20〜O80 authorityを横断レビューした。RDC/実装作業は行っていない。
+
+### 指摘と修正
+
+| ID | 優先度 | 所見 | 修正 |
+|---|---|---|---|
+| ACR01 | 高 | R100で複雑fixtureを比較するのにR110/R120のauthorityが後続で、各solverが別問題を解く危険 | R100をR100A benchmark authority→R100B bakeoffへ分割 |
+| ACR02 | 高 | openingを単なるwall holeとして扱うと外側境界条件が不定 | AcousticRegion / Portal / BoundaryTerminationをR100A/R110/R120へ追加 |
+| ACR03 | 高 | source authorityに対しreceiver/calibration/timing authorityが弱い | ReceiverModel/calibrationと既存MicrophoneProfile/AcquisitionContext連携を追加 |
+| ACR04 | 高 | scalar absorptionしかないmaterialをwave solverへどう扱うか不明 | measured impedance / parametric / rigid assumption / geometric-only / unknown capabilityを分離 |
+| ACR05 | 高 | R130がcore discretizationとfrequency-dependent boundaryを一括しfailure isolation不能 | R130A rigid core → R130B simple lossy → R130C causal frequency-dependent boundaryへ分割 |
+| ACR06 | 高 | hybridでwaveとGAのdirect/early成分を二重計上し得る | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを型分離しdouble-counting防止を明記 |
+| ACR07 | 中 | R100の性能比較と必須条件が混在 | hard pass/fail gate通過後のみperformance比較する契約へ修正 |
+| ACR08 | 中 | cache/stale/cancel/provenanceがR140導入に見える | identity semanticsはR110/R130、R140はscheduler/resource最適化に限定 |
+| ACR09 | 中 | candidate parallelism中心でsolve reuseの優先順位が弱い | receiver batching、source grouping、reciprocity、matrix/grid/BVH reuseをR170へ明記 |
+| ACR10 | 中 | geometry hash一つではsemantic geometryとmesh/grid生成差を区別できない | semantic acoustic geometry hashとcompiled representation hashを分離 |
+| ACR11 | 中 | environment stateがmeasurement validationに対して弱い | environment/air-state authorityをsource/receiverと同格に追加 |
+| ACR12 | 高 | IMPLEMENTATION_STATUSが全software完了と読め、R-series未着手と矛盾 | v0.1/O-series完了、Issue #101 R-series未着手へ訂正 |
+
+### 結果
+
+数値方式の基本方針は変更しない。FDTDはfirst PoC、FEMは独立reference/alternative、BEM/DG/PSTD等はsecondary/referenceのまま。ただしproduction solver、final crossover、GPU API/vendor、mesh/grid preset、diffraction/late-field方式はR100B evidence前に固定しない。
+
+次に実装を再開する場合の開始点はR100Aであり、solver kernelから先に書き始めない。
