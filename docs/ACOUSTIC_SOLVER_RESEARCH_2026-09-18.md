@@ -1,7 +1,7 @@
 # Arbitrary-room acoustics research and implementation decision — 2026-09-18
 
 Tracking: Issue #101  
-Status: R100A executable fixture/tolerance authority is merged in PR #110. R100B bakeoff authority/candidate pinning is being implemented on `feat/issue-101-r100b-bakeoff`; numerical candidate evidence and the solver-selection ADR are not yet complete. Production backend, crossover and shipping dependencies remain benchmark-gated.
+Status: R100A executable fixture/tolerance authority is merged in PR #110. R100B authority is merged in PR #111; pyroomacoustics direct/first-reflection reference evidence is merged in PR #112; PFFDTD pinned Python/Numba Windows platform feasibility is merged in PR #113. The current `feat/issue-101-r100b-pffdtd-modes` slice evaluates PFFDTD rigid rectangular eigenfrequencies with grid refinement. The solver-selection ADR is not complete; production backend, crossover and shipping dependencies remain benchmark-gated.
 
 ## 1. Decision summary
 
