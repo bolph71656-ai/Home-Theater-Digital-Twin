@@ -1,0 +1,582 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime, timezone
+from threading import Event
+from uuid import uuid4
+
+import numpy as np
+import pyvista as pv
+from PySide6.QtCore import QObject, QSignalBlocker, QThread, Qt, Signal, Slot
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDockWidget,
+    QDoubleSpinBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QTreeWidget,
+    QListWidget,
+    QListWidgetItem,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from .analysis_markers import render_analysis_marker_cloud
+from .cad_adaptive_repository import CadAdaptivePlanRepository
+from .cad_adaptive_service import CadAdaptivePlannerService
+from .cad_extended_search import (
+    CadExtendedCandidate,
+    CadExtendedCandidateSetPage,
+    CadExtendedSearchAxis,
+    aim_horizontal_yaw_deg,
+    apply_extended_candidate,
+    build_extended_model_capability,
+    build_extended_search_spec,
+    extended_candidate_preview_document,
+    generate_extended_candidates,
+)
+from .cad_extended_search_repository import CadExtendedSearchRepository
+from .cad_repository import SceneRepository, SceneRevision
+from .cad_objectives import build_pareto_set
+from .cad_objective_repository import CadObjectiveRepository
+from .cad_scene import F1_DOCUMENT_ID
+from .cad_search import (
+    apply_candidate_positions,
+    build_cad_search_spec,
+    generate_cad_candidates,
+    search_spec_current_working,
+)
+from .cad_search_models import CadCandidate, CadCandidateSetPage, CadSearchAxis, CadSearchSpec
+from .cad_search_repository import CadSearchRepository
+from .measurement_workspace import _MeasurementScrollArea
+from .cad_measurement_repository import CadMeasurementRepository
+from .cad_model_validation_repository import CadModelValidationRepository
+from .cad_model_validation_service import CadModelValidationService
+from .cad_roomsim_repository import CadRoomSimRepository
+from .cad_measurement_loop import build_measurement_plan, complete_measurement_plan
+from .cad_validation_campaign import (
+    CadValidationCampaignCandidate,
+    CadValidationCampaignRepeatability,
+    CadValidationCampaignSensitivity,
+    CadValidationCampaignSeparation,
+    CadValidationTargetResponse,
+    build_validation_campaign,
+)
+from .cad_validation_campaign_repository import CadValidationCampaignRepository
+from .cad_validation_campaign_service import CadValidationCampaignService
+from .cad_validation_metrics import CadApplicabilityCheck
+from .native_editor import ROLE
+
+from .optimization_task import _SearchTask
+
+class ValidationControllerMixin:
+    def assign_selected_candidate_to_campaign(self, split: str) -> None:
+        candidate_id = self.search_selected_candidate_id
+        if candidate_id is None:
+            self.statusBar().showMessage('Campaignへ追加する候補を選択してください')
+            return
+        if split not in {'calibration', 'holdout'}:
+            raise ValueError('campaign split must be calibration or holdout')
+        self.campaign_assignments[candidate_id] = split
+        self._refresh_campaign_assignment_tree()
+        self.statusBar().showMessage(
+            f'Campaign draft · {candidate_id[:12]} → {split}'
+        )
+
+    def remove_selected_campaign_assignment(self) -> None:
+        tree = self.campaign_assignment_tree
+        if tree is None:
+            return
+        item = tree.currentItem()
+        candidate_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(candidate_id, str):
+            return
+        self.campaign_assignments.pop(candidate_id, None)
+        self._refresh_campaign_assignment_tree()
+
+    def _refresh_campaign_assignment_tree(self) -> None:
+        tree = self.campaign_assignment_tree
+        if tree is None:
+            return
+        tree.clear()
+        for candidate_id, split in self.campaign_assignments.items():
+            item = QTreeWidgetItem([candidate_id[:12], split])
+            item.setData(0, ROLE, candidate_id)
+            tree.addTopLevelItem(item)
+
+    def save_validation_campaign(self) -> None:
+        spec = self._selected_search_spec()
+        page = self.search_candidate_page
+        if spec is None or page is None:
+            self.statusBar().showMessage(
+                'SearchSpecを選択して候補集合を生成してからCampaignを保存してください'
+            )
+            return
+        if (
+            self.working is None
+            or not search_spec_current_working(
+                spec,
+                self.working,
+                self.constraint_set,
+                current_document_id=self.document_id,
+            )
+        ):
+            self.statusBar().showMessage(
+                'staleなSearchSpec/constraintからValidation Campaignを保存できません'
+            )
+            return
+        if page.search_spec_id != spec.search_spec_id:
+            self.statusBar().showMessage(
+                '候補pageと選択SearchSpecが一致しません · 候補を再生成してください'
+            )
+            return
+
+        assignments = tuple(self.campaign_assignments.items())
+        calibration = [candidate_id for candidate_id, split in assignments if split == 'calibration']
+        holdout = [candidate_id for candidate_id, split in assignments if split == 'holdout']
+        if len(calibration) < 1 or len(holdout) < 2:
+            self.statusBar().showMessage(
+                'Campaignには1件以上のcalibrationと2件以上のholdoutが必要です'
+            )
+            return
+
+        model_version = (
+            ''
+            if self.campaign_model_version_field is None
+            else self.campaign_model_version_field.text().strip()
+        )
+        low_hz = 20.0 if self.campaign_low_field is None else self.campaign_low_field.value()
+        high_hz = 160.0 if self.campaign_high_field is None else self.campaign_high_field.value()
+        max_residual = (
+            0.0 if self.campaign_residual_field is None
+            else self.campaign_residual_field.value()
+        )
+        max_sensitivity = (
+            0.0 if self.campaign_sensitivity_field is None
+            else self.campaign_sensitivity_field.value()
+        )
+        max_sensitivity_error = (
+            0.0 if self.campaign_sensitivity_error_field is None
+            else self.campaign_sensitivity_error_field.value()
+        )
+        separation_multiple = (
+            0.0 if self.campaign_separation_field is None
+            else self.campaign_separation_field.value()
+        )
+        if not model_version:
+            self.statusBar().showMessage('Campaignのmodel versionを明示してください')
+            return
+        if high_hz <= low_hz:
+            self.statusBar().showMessage('Campaignの検証帯域が不正です')
+            return
+        if min(max_residual, max_sensitivity, max_sensitivity_error, separation_multiple) <= 0:
+            self.statusBar().showMessage('Campaignの検証閾値をすべて明示設定してください')
+            return
+
+        holdout_a, holdout_b = holdout[:2]
+        try:
+            campaign = build_validation_campaign(
+                document_id=spec.document_id,
+                search_spec_id=spec.search_spec_id,
+                search_spec_sha256=spec.search_spec_sha256,
+                candidate_set_sha256=page.candidate_set_sha256,
+                model_id='rew-roomsim',
+                model_version=model_version,
+                requested_band_hz=(float(low_hz), float(high_hz)),
+                max_holdout_rms_db=float(max_residual),
+                candidates=tuple(
+                    CadValidationCampaignCandidate(
+                        candidate_id=candidate_id,
+                        split=split,
+                    )
+                    for candidate_id, split in assignments
+                ),
+                objective_ids=('response.shape_rms_db',),
+                target_response=CadValidationTargetResponse(
+                    frequency_hz=(float(low_hz), float(high_hz)),
+                    level_db=(0.0, 0.0),
+                ),
+                reference_band_hz=(float(low_hz), float(high_hz)),
+                sensitivity=(
+                    CadValidationCampaignSensitivity(
+                        objective_id='response.shape_rms_db',
+                        candidate_a_id=holdout_a,
+                        candidate_b_id=holdout_b,
+                        max_observed_sensitivity_per_m=float(max_sensitivity),
+                        max_model_error_per_m=float(max_sensitivity_error),
+                    ),
+                ),
+                repeatability=(
+                    CadValidationCampaignRepeatability(
+                        candidate_id=holdout_a,
+                        min_measurements=2,
+                    ),
+                ),
+                separation=(
+                    CadValidationCampaignSeparation(
+                        candidate_a_id=holdout_a,
+                        candidate_b_id=holdout_b,
+                        repeatability_candidate_id=holdout_a,
+                        min_repeatability_multiple=float(separation_multiple),
+                    ),
+                ),
+                required_applicability_codes=('geometry', 'band', 'routing'),
+            )
+            self.campaign_repository.save(campaign)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaignを保存できません · {exc}')
+            return
+
+        self.campaign_assignments.clear()
+        self._refresh_campaign_assignment_tree()
+        self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
+        self.statusBar().showMessage(
+            f'Validation Campaignを事前登録しました · {campaign.campaign_id[:8]}'
+        )
+
+    def refresh_validation_campaigns(
+        self,
+        *,
+        select_campaign_id: str | None = None,
+    ) -> None:
+        tree = self.campaign_tree
+        if tree is None:
+            return
+        tree.clear()
+        spec_id = self.search_selected_spec_id
+        if spec_id is None:
+            if self.campaign_detail_label is not None:
+                self.campaign_detail_label.setText('Campaign未選択')
+            return
+
+        selected_item: QTreeWidgetItem | None = None
+        try:
+            campaigns = self.campaign_repository.list_for_search_spec(spec_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaignを読めません · {exc}')
+            return
+        for campaign in campaigns:
+            try:
+                readiness = self.campaign_service.readiness(campaign.campaign_id)
+                missing_count = sum(
+                    len(candidate.missing_reasons)
+                    for candidate in readiness.candidates
+                ) + len(readiness.missing_reasons)
+                readiness_text = 'ready' if readiness.evidence_ready else f'missing {missing_count}'
+            except Exception as exc:
+                readiness_text = f'error: {exc}'
+            item = QTreeWidgetItem([
+                campaign.campaign_id[:8],
+                f'{campaign.model_id}/{campaign.model_version}',
+                str(len(campaign.candidates)),
+                readiness_text,
+            ])
+            item.setData(0, ROLE, campaign.campaign_id)
+            tree.addTopLevelItem(item)
+            if campaign.campaign_id == select_campaign_id:
+                selected_item = item
+        if selected_item is None and tree.topLevelItemCount() > 0:
+            selected_item = tree.topLevelItem(tree.topLevelItemCount() - 1)
+        if selected_item is not None:
+            tree.setCurrentItem(selected_item)
+        else:
+            self._campaign_selected()
+
+    def _selected_campaign(self):
+        tree = self.campaign_tree
+        if tree is None:
+            return None
+        item = tree.currentItem()
+        campaign_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(campaign_id, str):
+            return None
+        return self.campaign_repository.get(campaign_id)
+
+    def _campaign_selected(self) -> None:
+        campaign = self._selected_campaign()
+        label = self.campaign_detail_label
+        if label is None:
+            return
+        if campaign is None:
+            label.setText('Campaign未選択')
+            return
+        try:
+            readiness = self.campaign_service.readiness(campaign.campaign_id)
+        except Exception as exc:
+            label.setText(f'Campaign readinessを読めません · {exc}')
+            return
+        lines = [
+            f'campaign {campaign.campaign_id[:8]} · SHA {campaign.campaign_sha256[:8]}',
+            f'{campaign.model_id} / {campaign.model_version}',
+            f'band {campaign.requested_band_hz[0]:g}–{campaign.requested_band_hz[1]:g} Hz · '
+            f'objective {", ".join(campaign.objective_ids)}',
+            f'preregistered {campaign.created_at_utc}',
+        ]
+        for candidate in readiness.candidates:
+            state = 'ready' if not candidate.missing_reasons else 'missing'
+            lines.append(
+                f'{candidate.candidate_id[:12]} · {candidate.split} · {state} · '
+                f'measurements {len(candidate.measurement_ids)}'
+            )
+            lines.extend(
+                f'  - {reason}'
+                for reason in candidate.missing_reasons
+            )
+        lines.extend(f'stop: {reason}' for reason in readiness.missing_reasons)
+        lines.append(
+            'evidence ready' if readiness.evidence_ready else 'evidence不足 · O70はdisabled'
+        )
+        label.setText('\n'.join(lines))
+
+    def materialize_selected_campaign_objectives(self) -> None:
+        campaign = self._selected_campaign()
+        if campaign is None:
+            self.statusBar().showMessage('Campaignを選択してください')
+            return
+        try:
+            evaluation_ids = self.campaign_service.materialize_objective_evidence(
+                campaign.campaign_id
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f'objective evidenceを生成できません · {exc}')
+            self._campaign_selected()
+            return
+        self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
+        self.statusBar().showMessage(
+            f'O30 objective evidenceを確認/保存しました · {len(evaluation_ids)}件'
+        )
+
+
+
+    def build_and_save_selected_campaign_validation(self) -> None:
+        campaign = self._selected_campaign()
+        if campaign is None:
+            self.statusBar().showMessage('Campaignを選択してください')
+            return
+        try:
+            readiness = self.campaign_service.readiness(campaign.campaign_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaign readinessを読めません · {exc}')
+            return
+        if not readiness.evidence_ready:
+            self.statusBar().showMessage(
+                'Campaign evidenceが不足しています · readinessのmissing理由を解消してください'
+            )
+            self._campaign_selected()
+            return
+
+        checks: list[CadApplicabilityCheck] = []
+        for code in campaign.required_applicability_codes:
+            state_widget = self.campaign_applicability_state.get(code)
+            detail_widget = self.campaign_applicability_detail.get(code)
+            if state_widget is None or detail_widget is None:
+                self.statusBar().showMessage(
+                    f'Campaign applicability UIが未対応です · {code}'
+                )
+                return
+            state = str(state_widget.currentData())
+            detail = detail_widget.text().strip()
+            if state == 'pass' and not detail:
+                self.statusBar().showMessage(
+                    f'{code}をPASSにする場合は確認根拠を入力してください'
+                )
+                return
+            if not detail:
+                detail = '未確認' if state == 'unverified' else '適用条件FAIL'
+            checks.append(CadApplicabilityCheck(
+                code=code,
+                passed=state == 'pass',
+                detail=detail,
+            ))
+
+        try:
+            record = self.campaign_service.build_validation_record(
+                campaign.campaign_id,
+                tuple(checks),
+            )
+            self.validation_repository.save(record)
+        except Exception as exc:
+            self.statusBar().showMessage(f'ValidationRecordを保存できません · {exc}')
+            return
+
+        self.refresh_model_validations()
+        self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
+        gate_text = (
+            'eligible'
+            if record.recommendation_gate == 'eligible'
+            else 'disabled'
+        )
+        self.statusBar().showMessage(
+            f'O60 ValidationRecordを保存しました · gate {gate_text} · '
+            f'{record.validation_id[:8]}'
+        )
+
+    def read_selected_rew_for_campaign_async(self) -> None:
+        campaign = self._selected_campaign()
+        plan = self._selected_measurement_plan()
+        if campaign is None:
+            self.statusBar().showMessage('Campaignを選択してください')
+            return
+        if plan is None:
+            self.statusBar().showMessage('Campaign候補のMeasurement Planを選択してください')
+            return
+        if plan.status != 'planned':
+            self.statusBar().showMessage('REW読込にはplanned状態のMeasurement Planが必要です')
+            return
+        if (
+            plan.search_spec_id != campaign.search_spec_id
+            or plan.search_spec_sha256 != campaign.search_spec_sha256
+            or plan.candidate_set_sha256 != campaign.candidate_set_sha256
+        ):
+            self.statusBar().showMessage('Measurement PlanとCampaignの探索authorityが一致しません')
+            return
+        if not any(
+            assignment.candidate_id == plan.candidate_id
+            for assignment in campaign.candidates
+        ):
+            self.statusBar().showMessage('Measurement Plan候補は選択Campaignに含まれていません')
+            return
+        if (
+            self.working is None
+            or self.working.is_dirty
+            or self.working.source_revision_id != plan.applied_scene_revision_id
+        ):
+            self.statusBar().showMessage(
+                '現在SceneをMeasurement Planのapplied revisionへ戻し、未保存編集を無くしてください'
+            )
+            return
+
+        try:
+            self._start_selected_rew_read(
+                validation_scope='owned_room',
+                validation_campaign_id=campaign.campaign_id,
+                evidence_type_override='measured',
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaign REW読込を開始できません · {exc}')
+            return
+
+
+    @staticmethod
+    def _validation_gate_summary(checks) -> str:
+        if not checks:
+            return '—'
+        passed = sum(getattr(check, 'gate', None) == 'pass' for check in checks)
+        failed = sum(getattr(check, 'gate', None) == 'fail' for check in checks)
+        insufficient = sum(getattr(check, 'gate', None) == 'insufficient' for check in checks)
+        parts = [f'pass {passed}']
+        if failed:
+            parts.append(f'fail {failed}')
+        if insufficient:
+            parts.append(f'insufficient {insufficient}')
+        return ' / '.join(parts)
+
+    def refresh_model_validations(self) -> None:
+        tree = self.validation_tree
+        if tree is None:
+            return
+        tree.clear()
+        if self.validation_detail_label is not None:
+            self.validation_detail_label.setText('ValidationRecord未選択')
+        spec_id = self.search_selected_spec_id
+        if spec_id is None:
+            return
+        try:
+            records = self.validation_repository.list_for_search_spec(spec_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'ValidationRecordを読めません · {exc}')
+            return
+        for record in records:
+            repeatability = '—'
+            if record.repeatability_checks:
+                floors = ', '.join(
+                    f'{check.rms_floor_db:.3g} dB'
+                    for check in record.repeatability_checks
+                )
+                repeatability = f'{len(record.repeatability_checks)} group · {floors}'
+            item = QTreeWidgetItem([
+                record.validation_id[:8],
+                record.evidence_scope,
+                record.residual_gate,
+                self._validation_gate_summary(record.trend_checks),
+                self._validation_gate_summary(record.sensitivity_checks),
+                repeatability,
+                record.recommendation_gate,
+            ])
+            item.setData(0, ROLE, record.validation_id)
+            tree.addTopLevelItem(item)
+
+    def _validation_selected(self) -> None:
+        tree = self.validation_tree
+        label = self.validation_detail_label
+        if tree is None or label is None:
+            return
+        item = tree.currentItem()
+        validation_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(validation_id, str):
+            label.setText('ValidationRecord未選択')
+            return
+        record = self.validation_repository.get(validation_id)
+        if record is None:
+            label.setText('ValidationRecordが見つかりません')
+            return
+
+        calibration_count = sum(pair.split == 'calibration' for pair in record.pairs)
+        holdout_count = sum(pair.split == 'holdout' for pair in record.pairs)
+        lines = [
+            f'model {record.model_id} / {record.model_version}',
+            f'calibration {calibration_count} · holdout {holdout_count} · '
+            f'band {record.requested_band_hz[0]:g}–{record.requested_band_hz[1]:g} Hz',
+            f'residual {record.residual_gate} · holdout RMS '
+            f'{record.holdout_rms_db if record.holdout_rms_db is not None else "—"} dB',
+        ]
+        for check in record.trend_checks:
+            agreement = '—' if check.agreement_ratio is None else f'{check.agreement_ratio:.3f}'
+            lines.append(
+                f'trend {check.objective_id}: {check.gate} · agreement {agreement} · '
+                f'comparable {check.comparable_pairs}'
+            )
+        for check in record.sensitivity_checks:
+            lines.append(
+                f'sensitivity {check.objective_id} {check.candidate_a_id[:8]}/{check.candidate_b_id[:8]}: '
+                f'{check.gate} · observed {check.observed_sensitivity_per_m:.3g} '
+                f'{check.unit}/m · model error {check.model_error_per_m:.3g} {check.unit}/m'
+            )
+        for check in record.repeatability_checks:
+            lines.append(
+                f'repeatability Scene {check.scene_revision_id[:8]}: '
+                f'{check.rms_floor_db:.3g} dB · {len(check.measurement_ids)} repeats'
+            )
+        for check in record.separation_checks:
+            ratio = '∞' if check.separation_ratio is None and check.response_difference_rms_db > 0 else (
+                '—' if check.separation_ratio is None else f'{check.separation_ratio:.3g}×'
+            )
+            lines.append(
+                f'separation {check.candidate_a_id[:8]}/{check.candidate_b_id[:8]}: '
+                f'{check.gate} · {ratio} repeatability'
+            )
+        for check in record.applicability_checks:
+            lines.append(
+                f'applicability {check.code}: {"pass" if check.passed else "fail"} · {check.detail}'
+            )
+        lines.append(f'recommendation {record.recommendation_gate}')
+        if record.gate_reasons:
+            lines.extend(f'stop: {reason}' for reason in record.gate_reasons)
+        label.setText('\n'.join(lines))
+
+    def _selected_validation_record(self):
+        tree = self.validation_tree
+        if tree is None:
+            return None
+        item = tree.currentItem()
+        validation_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(validation_id, str):
+            return None
+        return self.validation_repository.get(validation_id)
+
