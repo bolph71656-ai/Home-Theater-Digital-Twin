@@ -493,6 +493,264 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self._unify_right_context_docks(dock)
         dock.raise_()
 
+    def assign_selected_candidate_to_campaign(self, split: str) -> None:
+        candidate_id = self.search_selected_candidate_id
+        if candidate_id is None:
+            self.statusBar().showMessage('Campaignへ追加する候補を選択してください')
+            return
+        if split not in {'calibration', 'holdout'}:
+            raise ValueError('campaign split must be calibration or holdout')
+        self.campaign_assignments[candidate_id] = split
+        self._refresh_campaign_assignment_tree()
+        self.statusBar().showMessage(
+            f'Campaign draft · {candidate_id[:12]} → {split}'
+        )
+
+    def remove_selected_campaign_assignment(self) -> None:
+        tree = self.campaign_assignment_tree
+        if tree is None:
+            return
+        item = tree.currentItem()
+        candidate_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(candidate_id, str):
+            return
+        self.campaign_assignments.pop(candidate_id, None)
+        self._refresh_campaign_assignment_tree()
+
+    def _refresh_campaign_assignment_tree(self) -> None:
+        tree = self.campaign_assignment_tree
+        if tree is None:
+            return
+        tree.clear()
+        for candidate_id, split in self.campaign_assignments.items():
+            item = QTreeWidgetItem([candidate_id[:12], split])
+            item.setData(0, ROLE, candidate_id)
+            tree.addTopLevelItem(item)
+
+    def save_validation_campaign(self) -> None:
+        spec = self._selected_search_spec()
+        page = self.search_candidate_page
+        if spec is None or page is None:
+            self.statusBar().showMessage(
+                'SearchSpecを選択して候補集合を生成してからCampaignを保存してください'
+            )
+            return
+
+        assignments = tuple(self.campaign_assignments.items())
+        calibration = [candidate_id for candidate_id, split in assignments if split == 'calibration']
+        holdout = [candidate_id for candidate_id, split in assignments if split == 'holdout']
+        if len(calibration) < 1 or len(holdout) < 2:
+            self.statusBar().showMessage(
+                'Campaignには1件以上のcalibrationと2件以上のholdoutが必要です'
+            )
+            return
+
+        model_version = (
+            ''
+            if self.campaign_model_version_field is None
+            else self.campaign_model_version_field.text().strip()
+        )
+        low_hz = 20.0 if self.campaign_low_field is None else self.campaign_low_field.value()
+        high_hz = 160.0 if self.campaign_high_field is None else self.campaign_high_field.value()
+        max_residual = (
+            0.0 if self.campaign_residual_field is None
+            else self.campaign_residual_field.value()
+        )
+        max_sensitivity = (
+            0.0 if self.campaign_sensitivity_field is None
+            else self.campaign_sensitivity_field.value()
+        )
+        max_sensitivity_error = (
+            0.0 if self.campaign_sensitivity_error_field is None
+            else self.campaign_sensitivity_error_field.value()
+        )
+        separation_multiple = (
+            0.0 if self.campaign_separation_field is None
+            else self.campaign_separation_field.value()
+        )
+        if not model_version:
+            self.statusBar().showMessage('Campaignのmodel versionを明示してください')
+            return
+        if high_hz <= low_hz:
+            self.statusBar().showMessage('Campaignの検証帯域が不正です')
+            return
+        if min(max_residual, max_sensitivity, max_sensitivity_error, separation_multiple) <= 0:
+            self.statusBar().showMessage('Campaignの検証閾値をすべて明示設定してください')
+            return
+
+        holdout_a, holdout_b = holdout[:2]
+        try:
+            campaign = build_validation_campaign(
+                document_id=spec.document_id,
+                search_spec_id=spec.search_spec_id,
+                search_spec_sha256=spec.search_spec_sha256,
+                candidate_set_sha256=page.candidate_set_sha256,
+                model_id='rew-roomsim',
+                model_version=model_version,
+                requested_band_hz=(float(low_hz), float(high_hz)),
+                max_holdout_rms_db=float(max_residual),
+                candidates=tuple(
+                    CadValidationCampaignCandidate(
+                        candidate_id=candidate_id,
+                        split=split,
+                    )
+                    for candidate_id, split in assignments
+                ),
+                objective_ids=('response.shape_rms_db',),
+                target_response=CadValidationTargetResponse(
+                    frequency_hz=(float(low_hz), float(high_hz)),
+                    level_db=(0.0, 0.0),
+                ),
+                reference_band_hz=(float(low_hz), float(high_hz)),
+                sensitivity=(
+                    CadValidationCampaignSensitivity(
+                        objective_id='response.shape_rms_db',
+                        candidate_a_id=holdout_a,
+                        candidate_b_id=holdout_b,
+                        max_observed_sensitivity_per_m=float(max_sensitivity),
+                        max_model_error_per_m=float(max_sensitivity_error),
+                    ),
+                ),
+                repeatability=(
+                    CadValidationCampaignRepeatability(
+                        candidate_id=holdout_a,
+                        min_measurements=2,
+                    ),
+                ),
+                separation=(
+                    CadValidationCampaignSeparation(
+                        candidate_a_id=holdout_a,
+                        candidate_b_id=holdout_b,
+                        repeatability_candidate_id=holdout_a,
+                        min_repeatability_multiple=float(separation_multiple),
+                    ),
+                ),
+                required_applicability_codes=('geometry', 'band', 'routing'),
+            )
+            self.campaign_repository.save(campaign)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaignを保存できません · {exc}')
+            return
+
+        self.campaign_assignments.clear()
+        self._refresh_campaign_assignment_tree()
+        self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
+        self.statusBar().showMessage(
+            f'Validation Campaignを事前登録しました · {campaign.campaign_id[:8]}'
+        )
+
+    def refresh_validation_campaigns(
+        self,
+        *,
+        select_campaign_id: str | None = None,
+    ) -> None:
+        tree = self.campaign_tree
+        if tree is None:
+            return
+        tree.clear()
+        spec_id = self.search_selected_spec_id
+        if spec_id is None:
+            if self.campaign_detail_label is not None:
+                self.campaign_detail_label.setText('Campaign未選択')
+            return
+
+        selected_item: QTreeWidgetItem | None = None
+        try:
+            campaigns = self.campaign_repository.list_for_search_spec(spec_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaignを読めません · {exc}')
+            return
+        for campaign in campaigns:
+            try:
+                readiness = self.campaign_service.readiness(campaign.campaign_id)
+                missing_count = sum(
+                    len(candidate.missing_reasons)
+                    for candidate in readiness.candidates
+                ) + len(readiness.missing_reasons)
+                readiness_text = 'ready' if readiness.evidence_ready else f'missing {missing_count}'
+            except Exception as exc:
+                readiness_text = f'error: {exc}'
+            item = QTreeWidgetItem([
+                campaign.campaign_id[:8],
+                f'{campaign.model_id}/{campaign.model_version}',
+                str(len(campaign.candidates)),
+                readiness_text,
+            ])
+            item.setData(0, ROLE, campaign.campaign_id)
+            tree.addTopLevelItem(item)
+            if campaign.campaign_id == select_campaign_id:
+                selected_item = item
+        if selected_item is None and tree.topLevelItemCount() > 0:
+            selected_item = tree.topLevelItem(tree.topLevelItemCount() - 1)
+        if selected_item is not None:
+            tree.setCurrentItem(selected_item)
+        else:
+            self._campaign_selected()
+
+    def _selected_campaign(self):
+        tree = self.campaign_tree
+        if tree is None:
+            return None
+        item = tree.currentItem()
+        campaign_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(campaign_id, str):
+            return None
+        return self.campaign_repository.get(campaign_id)
+
+    def _campaign_selected(self) -> None:
+        campaign = self._selected_campaign()
+        label = self.campaign_detail_label
+        if label is None:
+            return
+        if campaign is None:
+            label.setText('Campaign未選択')
+            return
+        try:
+            readiness = self.campaign_service.readiness(campaign.campaign_id)
+        except Exception as exc:
+            label.setText(f'Campaign readinessを読めません · {exc}')
+            return
+        lines = [
+            f'campaign {campaign.campaign_id[:8]} · SHA {campaign.campaign_sha256[:8]}',
+            f'{campaign.model_id} / {campaign.model_version}',
+            f'band {campaign.requested_band_hz[0]:g}–{campaign.requested_band_hz[1]:g} Hz · '
+            f'objective {", ".join(campaign.objective_ids)}',
+            f'preregistered {campaign.created_at_utc}',
+        ]
+        for candidate in readiness.candidates:
+            state = 'ready' if not candidate.missing_reasons else 'missing'
+            lines.append(
+                f'{candidate.candidate_id[:12]} · {candidate.split} · {state} · '
+                f'measurements {len(candidate.measurement_ids)}'
+            )
+            lines.extend(
+                f'  - {reason}'
+                for reason in candidate.missing_reasons
+            )
+        lines.extend(f'stop: {reason}' for reason in readiness.missing_reasons)
+        lines.append(
+            'evidence ready' if readiness.evidence_ready else 'evidence不足 · O70はdisabled'
+        )
+        label.setText('\n'.join(lines))
+
+    def materialize_selected_campaign_objectives(self) -> None:
+        campaign = self._selected_campaign()
+        if campaign is None:
+            self.statusBar().showMessage('Campaignを選択してください')
+            return
+        try:
+            evaluation_ids = self.campaign_service.materialize_objective_evidence(
+                campaign.campaign_id
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f'objective evidenceを生成できません · {exc}')
+            self._campaign_selected()
+            return
+        self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
+        self.statusBar().showMessage(
+            f'O30 objective evidenceを確認/保存しました · {len(evaluation_ids)}件'
+        )
+
     def create_measurement_plan_for_selected_candidate(self) -> None:
         if self.search_selected_spec_id is None or self.search_selected_candidate_id is None:
             self.statusBar().showMessage('探索仕様と候補を選択してください')
@@ -614,6 +872,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.statusBar().showMessage(f'実測を関連付けできません · {exc}')
             return
         self.refresh_measurement_plans()
+        self.refresh_validation_campaigns()
         self.statusBar().showMessage(
             f'実測候補をcompletedにしました · measured evidence {len(completed.measurement_ids)}件'
         )
@@ -1062,10 +1321,13 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.search_candidate_page = None
             self.search_selected_candidate_id = None
             self.search_preview_candidate_id = None
+            self.campaign_assignments.clear()
+            self._refresh_campaign_assignment_tree()
         self.search_selected_spec_id = normalized
         self._refresh_search_binding_state()
         self._refresh_search_candidate_tree()
         self.refresh_measurement_plans()
+        self.refresh_validation_campaigns()
         self.refresh_model_validations()
         self._render_search_overlay()
 
