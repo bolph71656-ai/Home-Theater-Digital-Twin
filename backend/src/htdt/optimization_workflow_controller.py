@@ -83,6 +83,45 @@ class _RewTask(QObject):
             self.completed.emit(self.key, result, None)
 
 
+_OBJECTIVE_LABELS = {
+    "response.rms_difference_db": "応答差 RMS",
+    "response.peak_excess_db": "ピーク超過",
+    "response.dip_deficit_db": "ディップ不足",
+    "response.shape_rms_db": "応答形状 RMS",
+    "pair.rms_difference_db": "ペア応答差 RMS",
+    "pair.shape_rms_db": "ペア形状 RMS",
+    "seat.pairwise_rms_difference_max_db": "座席間差 最大",
+    "seat.pairwise_rms_difference_rms_db": "座席間差 RMS",
+    "seat.pairwise_shape_max_db": "座席間形状差 最大",
+    "seat.pairwise_shape_rms_db": "座席間形状差 RMS",
+    "movement.total_m": "総移動量",
+    "movement.max_m": "最大移動量",
+}
+_EVIDENCE_CLASS_LABELS = {
+    "measured": "実測",
+    "predicted": "予測",
+    "derived": "派生",
+    "hypothesis": "仮説",
+}
+
+
+def _objective_display_name(objective_id: str) -> str:
+    known = _OBJECTIVE_LABELS.get(objective_id)
+    if known is not None:
+        return known
+    tail = objective_id.rsplit(".", 1)[-1]
+    return tail.replace("_", " ")
+
+
+def _evidence_display(input_refs) -> str:
+    labels = []
+    for ref in input_refs:
+        label = _EVIDENCE_CLASS_LABELS.get(ref.evidence_class, "根拠データ")
+        if label not in labels:
+            labels.append(label)
+    return " / ".join(labels) if labels else "—"
+
+
 class OptimizationWorkflowController(
     QObject,
     ValidationControllerMixin,
@@ -371,7 +410,7 @@ class OptimizationWorkflowController(
         }
         self.objective_list.clear()
         for objective_id in available:
-            list_item = QListWidgetItem(objective_id)
+            list_item = QListWidgetItem(_objective_display_name(objective_id))
             list_item.setData(Qt.ItemDataRole.UserRole, objective_id)
             self.objective_list.addItem(list_item)
             if not previous or objective_id in previous:
@@ -396,22 +435,19 @@ class OptimizationWorkflowController(
 
         non_dominated = set(pareto_set.result.non_dominated_candidate_ids)
         self.pareto_tree.clear()
-        for evaluation in evaluations:
+        for candidate_number, evaluation in enumerate(evaluations, start=1):
             metric_map = {
                 metric.objective_id: metric for metric in evaluation.vector.metrics
             }
-            provenance = ", ".join(
-                f"{ref.evidence_class}:{ref.source_kind}:{ref.source_id[:12]}"
-                for ref in evaluation.input_refs
-            )
+            provenance = _evidence_display(evaluation.input_refs)
             values = "; ".join(
-                f"{objective_id}={metric_map[objective_id].value:.4g} "
-                f"{metric_map[objective_id].unit}"
+                f"{_objective_display_name(objective_id)} "
+                f"{metric_map[objective_id].value:.4g} {metric_map[objective_id].unit}"
                 for objective_id in selected
             )
             item = QTreeWidgetItem(
                 [
-                    evaluation.candidate_id[:12],
+                    f"候補 {candidate_number}",
                     "非劣" if evaluation.candidate_id in non_dominated else "支配あり",
                     provenance,
                     values,
@@ -419,10 +455,10 @@ class OptimizationWorkflowController(
             )
             item.setData(0, ROLE, evaluation.candidate_id)
             self.pareto_tree.addTopLevelItem(item)
-        reused = " · 既存snapshot" if existing is not None else ""
+        reused = " · 保存済み結果を再利用" if existing is not None else ""
         self.pareto_summary_label.setText(
             f"{len(evaluations)}候補 · 非劣 {len(non_dominated)} · "
-            f"objective {len(selected)} · {pareto_set.pareto_set_id[:8]}{reused}"
+            f"指標 {len(selected)}{reused}"
         )
 
     def _pareto_candidate_selected(self) -> None:
@@ -643,7 +679,7 @@ class OptimizationWorkflowController(
         self.search_save_button = QPushButton("探索設定を保存")
         self.search_save_button.clicked.connect(self.save_search_spec)
         self.search_spec_tree = QTreeWidget()
-        self.search_spec_tree.setHeaderLabels(["探索仕様", "入力版", "状態"])
+        self.search_spec_tree.setHeaderLabels(["探索設定", "入力状態", "状態"])
         self.search_spec_tree.itemSelectionChanged.connect(self._search_spec_selected)
         self.search_generate_button = QPushButton("候補を生成")
         self.search_generate_button.clicked.connect(self.generate_search_candidates_async)
@@ -651,7 +687,7 @@ class OptimizationWorkflowController(
         self.search_cancel_button.clicked.connect(self.cancel_search_generation)
         self.search_summary_label = QLabel("候補未生成")
         self.search_candidate_tree = QTreeWidget()
-        self.search_candidate_tree.setHeaderLabels(["候補", "index", "位置"])
+        self.search_candidate_tree.setHeaderLabels(["候補", "番号", "位置"])
         self.search_candidate_tree.itemSelectionChanged.connect(self._search_candidate_selected)
         self.search_prev_button = QPushButton("前の候補")
         self.search_prev_button.clicked.connect(self.previous_search_page)
@@ -670,7 +706,7 @@ class OptimizationWorkflowController(
         )
         self.measurement_plan_label = QLabel("実測候補未登録")
         self.measurement_plan_tree = QTreeWidget()
-        self.measurement_plan_tree.setHeaderLabels(["実測候補", "状態", "Scene", "測定"])
+        self.measurement_plan_tree.setHeaderLabels(["実測候補", "状態", "保存状態", "測定"])
         self.measurement_plan_tree.itemSelectionChanged.connect(
             self._measurement_plan_selected
         )
@@ -724,8 +760,8 @@ class OptimizationWorkflowController(
         for code in ("geometry", "band", "routing"):
             state = QComboBox()
             state.addItem("未確認", "unverified")
-            state.addItem("PASS", "pass")
-            state.addItem("FAIL", "fail")
+            state.addItem("合格", "pass")
+            state.addItem("不合格", "fail")
             self.campaign_applicability_state[code] = state
             detail = QLineEdit()
             detail.setPlaceholderText("確認根拠 / 失敗理由")
@@ -759,7 +795,7 @@ class OptimizationWorkflowController(
         self.extended_parameter_combo = QComboBox()
         self.extended_parameter_combo.addItem("音響の向き（yaw）", "aim_yaw_deg")
         self.extended_parameter_combo.addItem(
-            "Physical cabinet toe-in", "body_yaw_deg"
+            "筐体の向き（toe-in）", "body_yaw_deg"
         )
         self.extended_parameter_combo.currentIndexChanged.connect(
             self._seed_extended_aim_range
@@ -776,7 +812,7 @@ class OptimizationWorkflowController(
         self.extended_limit_field.setValue(10_000)
         self.extended_axis_tree = QTreeWidget()
         self.extended_axis_tree.setHeaderLabels(
-            ["speaker", "parameter", "最小", "最大", "刻み"]
+            ["スピーカー", "パラメータ", "最小", "最大", "刻み"]
         )
         self.extended_spec_tree = QTreeWidget()
         self.extended_spec_tree.setHeaderLabels(
@@ -794,7 +830,7 @@ class OptimizationWorkflowController(
         self.extended_summary_label = QLabel("拡張候補は未生成です")
         self.extended_candidate_tree = QTreeWidget()
         self.extended_candidate_tree.setHeaderLabels(
-            ["候補", "base", "位置", "aim yaw", "body yaw"]
+            ["候補", "元候補", "位置", "音響 yaw", "筐体 yaw"]
         )
         self.extended_candidate_tree.itemSelectionChanged.connect(
             self._extended_candidate_selected
@@ -803,7 +839,7 @@ class OptimizationWorkflowController(
         self.extended_prev_button.clicked.connect(self.previous_extended_page)
         self.extended_next_button = QPushButton("次の拡張候補")
         self.extended_next_button.clicked.connect(self.next_extended_page)
-        self.extended_preview_button = QPushButton("extended候補をプレビュー")
+        self.extended_preview_button = QPushButton("拡張候補をプレビュー")
         self.extended_preview_button.clicked.connect(
             self.preview_selected_extended_candidate
         )
