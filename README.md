@@ -178,6 +178,7 @@ native stable releaseのcorrectnessはfrontend buildへ依存しません。
 | [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較、座標、保存契約 |
 | [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW / Windows / AVRの測定境界 |
 | [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 配置探索算法。O70/O80 gateを含む |
+| [O90_ROBUST_OPTIMIZATION.md](docs/O90_ROBUST_OPTIMIZATION.md) | 設置誤差・入力不確かさに対するrobust/tolerance-aware最適化の正式仕様 |
 | [ROOM_GEOMETRY.md](docs/ROOM_GEOMETRY.md) | polygon room geometry contract |
 | [PLACEMENT_CONSTRAINTS.md](docs/PLACEMENT_CONSTRAINTS.md) | placement hard constraints |
 | [REW_API.md](docs/REW_API.md) | REW API契約 |
