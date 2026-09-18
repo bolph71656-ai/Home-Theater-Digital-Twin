@@ -286,8 +286,8 @@ def seed_synthetic_optimization_demo(
             CadSearchAxis(
                 entity_id='synthetic-fl',
                 axis='x',
-                min_m=1.0,
-                max_m=2.0,
+                min_m=1.2,
+                max_m=2.2,
                 step_m=0.2,
             ),
         ),
