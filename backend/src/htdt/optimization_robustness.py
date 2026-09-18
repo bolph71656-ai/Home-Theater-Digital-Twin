@@ -183,7 +183,7 @@ class RobustnessSpec(BaseModel):
         'o90b-bounded-design-1',
     ] = ROBUSTNESS_ALGORITHM_VERSION
     sampling_seed: int | None = None
-    sample_count: int | None = Field(default=None, ge=2)
+    sample_count: int | None = Field(default=None, ge=3)
     linked_groups: tuple[LinkedPerturbationGroup, ...] = ()
     parent_robustness_spec_id: str | None = Field(default=None, min_length=1)
     parent_robustness_spec_sha256: str | None = Field(
