@@ -43,6 +43,7 @@ from .optimization_workflow_workspace import build_optimization_workspace_mount
 from .overview_readiness import OverviewReadinessService
 from .overview_workspace import OverviewWorkspace
 from .room_geometry_input import RoomGeometryInputController
+from .room_geometry_panel import RoomGeometryPanel
 from .room_prediction import RoomPredictionController, RoomPredictionPanel
 from .room_transform_input import RoomEntityTransformController
 from .room_viewport import RoomViewport3D
@@ -185,6 +186,8 @@ class WorkflowApplicationComposition:
 
         geometry_input = RoomGeometryInputController(workspace, workspace.viewport)
         workspace.attach_geometry_input(geometry_input)
+        geometry_panel = RoomGeometryPanel(geometry_input)
+        workspace.attach_geometry_panel(geometry_panel)
         transform_input = RoomEntityTransformController(workspace, workspace.viewport)
         workspace.attach_transform_input(transform_input)
         prediction = RoomPredictionController(
