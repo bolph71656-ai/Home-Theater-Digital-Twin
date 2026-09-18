@@ -329,6 +329,23 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         spec_id = self.search_selected_spec_id
         if spec_id is None or self.objective_list is None or self.pareto_tree is None:
             return
+        spec = self.search_repository.get(spec_id)
+        if (
+            spec is None
+            or self.working is None
+            or not search_spec_current_working(
+                spec,
+                self.working,
+                self.constraint_set,
+                current_document_id=self.document_id,
+            )
+        ):
+            self.pareto_tree.clear()
+            if self.pareto_summary_label is not None:
+                self.pareto_summary_label.setText('staleなSearchSpecではPareto集合を更新できません')
+            self.statusBar().showMessage('Pareto比較を拒否しました · SearchSpec/Scene/constraint authorityがstaleです')
+            return
+
         evaluations = self.objective_repository.latest_evaluations_by_candidate(spec_id)
         if not evaluations:
             self.objective_list.clear()
@@ -338,6 +355,21 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             return
 
         available = tuple(metric.objective_id for metric in evaluations[0].vector.metrics)
+        expected_ids = set(available)
+        expected_units = {metric.objective_id: metric.unit for metric in evaluations[0].vector.metrics}
+        for evaluation in evaluations[1:]:
+            metric_map = {metric.objective_id: metric for metric in evaluation.vector.metrics}
+            if set(metric_map) != expected_ids:
+                self.pareto_tree.clear()
+                self.pareto_summary_label.setText('objective集合が候補間で一致しません · Pareto比較を中止')
+                self.statusBar().showMessage('Pareto比較を拒否しました · objective集合不一致')
+                return
+            if any(metric_map[objective_id].unit != expected_units[objective_id] for objective_id in available):
+                self.pareto_tree.clear()
+                self.pareto_summary_label.setText('objective単位が候補間で一致しません · Pareto比較を中止')
+                self.statusBar().showMessage('Pareto比較を拒否しました · objective単位不一致')
+                return
+
         previous = {item.data(Qt.ItemDataRole.UserRole) for item in self.objective_list.selectedItems()}
         self.objective_list.clear()
         for objective_id in available:
@@ -353,13 +385,29 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         if not selected:
             selected = available
 
-        pareto_set = build_pareto_set(evaluations, selected)
-        self.objective_repository.save_pareto_set(pareto_set)
+        try:
+            built = build_pareto_set(evaluations, selected)
+            existing = self.objective_repository.find_pareto_set_by_sha(
+                spec_id, built.pareto_sha256
+            )
+            pareto_set = existing or built
+            if existing is None:
+                self.objective_repository.save_pareto_set(pareto_set)
+        except Exception as exc:
+            self.pareto_tree.clear()
+            if self.pareto_summary_label is not None:
+                self.pareto_summary_label.setText(f'Pareto比較を作成できません · {exc}')
+            self.statusBar().showMessage(f'Pareto比較を拒否しました · {exc}')
+            return
+
         non_dominated = set(pareto_set.result.non_dominated_candidate_ids)
         self.pareto_tree.clear()
         for evaluation in evaluations:
             metric_map = {metric.objective_id: metric for metric in evaluation.vector.metrics}
-            evidence = ', '.join(sorted({ref.evidence_class for ref in evaluation.input_refs}))
+            provenance = ', '.join(
+                f'{ref.evidence_class}:{ref.source_kind}:{ref.source_id[:12]}'
+                for ref in evaluation.input_refs
+            )
             values = '; '.join(
                 f'{objective_id}={metric_map[objective_id].value:.4g} {metric_map[objective_id].unit}'
                 for objective_id in selected
@@ -367,15 +415,16 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             item = QTreeWidgetItem([
                 evaluation.candidate_id[:12],
                 '非劣' if evaluation.candidate_id in non_dominated else '支配あり',
-                evidence,
+                provenance,
                 values,
             ])
             item.setData(0, ROLE, evaluation.candidate_id)
             self.pareto_tree.addTopLevelItem(item)
         if self.pareto_summary_label is not None:
+            reused = ' · 既存snapshot' if existing is not None else ''
             self.pareto_summary_label.setText(
                 f'{len(evaluations)}候補 · 非劣 {len(non_dominated)} · '
-                f'objective {len(selected)} · {pareto_set.pareto_set_id[:8]}'
+                f'objective {len(selected)} · {pareto_set.pareto_set_id[:8]}{reused}'
             )
 
     def _pareto_candidate_selected(self) -> None:
@@ -388,12 +437,18 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         if not isinstance(candidate_id, str):
             return
         self.search_selected_candidate_id = candidate_id
+        found = False
         for index in range(self.search_candidate_tree.topLevelItemCount()):
             candidate_item = self.search_candidate_tree.topLevelItem(index)
             payload = candidate_item.data(0, ROLE)
             if isinstance(payload, dict) and payload.get('candidate_id') == candidate_id:
                 self.search_candidate_tree.setCurrentItem(candidate_item)
+                found = True
                 break
+        if not found:
+            self.statusBar().showMessage(
+                'Pareto候補は現在のcandidate page外です · candidate pageを移動してからpreview/applyしてください'
+            )
 
     @staticmethod
     def _search_distance_field(*, minimum: float = -1000.0, value: float = 0.0) -> QDoubleSpinBox:
