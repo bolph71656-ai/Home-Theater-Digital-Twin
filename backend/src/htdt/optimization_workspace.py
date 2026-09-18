@@ -55,6 +55,7 @@ from .cad_validation_campaign import (
 )
 from .cad_validation_campaign_repository import CadValidationCampaignRepository
 from .cad_validation_campaign_service import CadValidationCampaignService
+from .cad_validation_metrics import CadApplicabilityCheck
 from .native_editor import ROLE
 from .prediction_workspace import PredictionWorkspaceWindow
 
@@ -192,6 +193,8 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.campaign_sensitivity_field: QDoubleSpinBox | None = None
         self.campaign_sensitivity_error_field: QDoubleSpinBox | None = None
         self.campaign_separation_field: QDoubleSpinBox | None = None
+        self.campaign_applicability_state: dict[str, QComboBox] = {}
+        self.campaign_applicability_detail: dict[str, QLineEdit] = {}
         self.campaign_assignments: dict[str, str] = {}
         self._search_actor_names: set[str] = set()
         self._search_tasks: dict[str, tuple[QThread, _SearchTask]] = {}
@@ -469,6 +472,40 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.campaign_detail_label = QLabel('Campaign未選択')
         self.campaign_detail_label.setWordWrap(True)
         layout.addWidget(self.campaign_detail_label)
+
+        applicability_label = QLabel(
+            '適用条件 · passを選ぶ場合は確認根拠を明示します。未確認/FAILはgateを開きません'
+        )
+        applicability_label.setWordWrap(True)
+        layout.addWidget(applicability_label)
+
+        applicability_form = QFormLayout()
+        for code, label_text in (
+            ('geometry', 'geometry'),
+            ('band', 'band'),
+            ('routing', 'routing'),
+        ):
+            state = QComboBox()
+            state.addItem('未確認', 'unverified')
+            state.addItem('PASS', 'pass')
+            state.addItem('FAIL', 'fail')
+            self.campaign_applicability_state[code] = state
+            applicability_form.addRow(f'{label_text} 判定', state)
+
+            detail = QLineEdit()
+            detail.setPlaceholderText('確認根拠 / 失敗理由')
+            self.campaign_applicability_detail[code] = detail
+            applicability_form.addRow(f'{label_text} 根拠', detail)
+        layout.addLayout(applicability_form)
+
+        campaign_build_validation = QPushButton('CampaignからValidationRecordを構築・保存')
+        campaign_build_validation.setToolTip(
+            'readinessが揃ったcampaignだけをO60検証し、applicabilityを含むimmutable recordとして保存します'
+        )
+        campaign_build_validation.clicked.connect(
+            self.build_and_save_selected_campaign_validation
+        )
+        layout.addWidget(campaign_build_validation)
 
         validation_label = QLabel(
             'モデル検証 · residual / trend / sensitivity / repeatabilityを独立表示'
@@ -758,6 +795,70 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             f'O30 objective evidenceを確認/保存しました · {len(evaluation_ids)}件'
         )
 
+
+
+    def build_and_save_selected_campaign_validation(self) -> None:
+        campaign = self._selected_campaign()
+        if campaign is None:
+            self.statusBar().showMessage('Campaignを選択してください')
+            return
+        try:
+            readiness = self.campaign_service.readiness(campaign.campaign_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaign readinessを読めません · {exc}')
+            return
+        if not readiness.evidence_ready:
+            self.statusBar().showMessage(
+                'Campaign evidenceが不足しています · readinessのmissing理由を解消してください'
+            )
+            self._campaign_selected()
+            return
+
+        checks: list[CadApplicabilityCheck] = []
+        for code in campaign.required_applicability_codes:
+            state_widget = self.campaign_applicability_state.get(code)
+            detail_widget = self.campaign_applicability_detail.get(code)
+            if state_widget is None or detail_widget is None:
+                self.statusBar().showMessage(
+                    f'Campaign applicability UIが未対応です · {code}'
+                )
+                return
+            state = str(state_widget.currentData())
+            detail = detail_widget.text().strip()
+            if state == 'pass' and not detail:
+                self.statusBar().showMessage(
+                    f'{code}をPASSにする場合は確認根拠を入力してください'
+                )
+                return
+            if not detail:
+                detail = '未確認' if state == 'unverified' else '適用条件FAIL'
+            checks.append(CadApplicabilityCheck(
+                code=code,
+                passed=state == 'pass',
+                detail=detail,
+            ))
+
+        try:
+            record = self.campaign_service.build_validation_record(
+                campaign.campaign_id,
+                tuple(checks),
+            )
+            self.validation_repository.save(record)
+        except Exception as exc:
+            self.statusBar().showMessage(f'ValidationRecordを保存できません · {exc}')
+            return
+
+        self.refresh_model_validations()
+        self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
+        gate_text = (
+            'eligible'
+            if record.recommendation_gate == 'eligible'
+            else 'disabled'
+        )
+        self.statusBar().showMessage(
+            f'O60 ValidationRecordを保存しました · gate {gate_text} · '
+            f'{record.validation_id[:8]}'
+        )
 
     def read_selected_rew_for_campaign_async(self) -> None:
         campaign = self._selected_campaign()
