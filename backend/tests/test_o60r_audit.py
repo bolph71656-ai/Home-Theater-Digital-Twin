@@ -4,6 +4,8 @@ from hashlib import sha256
 import importlib.util
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 from types import SimpleNamespace
 
 
@@ -44,6 +46,31 @@ def test_readonly_snapshot_includes_committed_wal_state_without_changing_source(
             assert copied.execute('PRAGMA integrity_check').fetchall() == [('ok',)]
     finally:
         connection.close()
+
+
+def test_inventory_cli_closes_initialized_snapshot_before_temp_cleanup(tmp_path: Path) -> None:
+    data_dir = tmp_path / 'data'
+    data_dir.mkdir()
+    sqlite3.connect(data_dir / audit_module.DATABASE_NAME).close()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / 'scripts' / 'inventory_o60_owned_room.py'),
+            '--data-dir',
+            str(data_dir),
+            '--skip-rew',
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'O60R_DATABASE_EXISTS=True' in result.stdout
+    assert 'O60R_CAMPAIGN_COUNT=0' in result.stdout
+    assert 'O60R_INVENTORY_ERROR=' not in result.stdout
 
 
 def _passing_record():
