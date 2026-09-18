@@ -60,8 +60,13 @@ def _uninstall(install_root: Path) -> None:
         '/NORESTART',
     ])
     executable = install_root / 'HTDT' / 'HTDT.exe'
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and (executable.exists() or uninstaller.exists()):
+        time.sleep(0.1)
     if executable.exists():
         raise AssertionError('application executable remains after uninstall')
+    if uninstaller.exists():
+        raise AssertionError('uninstaller remains after uninstall cleanup window')
 
 
 def _user32():
