@@ -35,7 +35,10 @@ Two scopes are intentionally separate:
   `eligible` O60 record.
 
 O70 uses per-objective residual correction and uncertainty. It does not collapse
-independent objectives into a single sound-quality score.
+independent objectives into a single sound-quality score. The current GP feature
+vector is the base O10 SearchSpec XYZ axes only; O80 extended parameters such as
+`aim_yaw_deg` are not currently part of O70 adaptive acquisition. Therefore
+“O70 complete” and “O80 complete” do not imply an Adaptive Extended Search loop.
 
 ## O80 Extended Search
 
@@ -43,8 +46,12 @@ The existing O10 SearchSpec already supports multiple entities and X/Y/Z axes,
 including speaker/listener height. O80 therefore does not duplicate that engine.
 
 O80 layers additional model-dependent parameters on the already feasible O10
-candidate set. The first implemented parameter is speaker horizontal aim
-(`aim_yaw_deg`, i.e. toe-in).
+candidate set. The first implemented parameter is speaker horizontal **acoustic
+aim** (`aim_yaw_deg`). This rotates `aim_xyz`; it does not rotate the speaker
+cabinet/body quaternion or re-evaluate an orientation-dependent cabinet
+footprint. The UI and documentation must therefore not present it as full
+physical cabinet toe-in. Physical toe-in is a separate future extension that
+must update body orientation and re-run hard constraints.
 
 An extended candidate contains:
 
