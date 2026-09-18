@@ -75,18 +75,53 @@ from .native_editor import ROLE
 
 from .optimization_task import _SearchTask
 
+_SPLIT_LABELS = {"calibration": "調整用", "holdout": "検証用"}
+_GATE_LABELS = {
+    "pass": "合格",
+    "fail": "不合格",
+    "insufficient": "不足",
+    "eligible": "推薦可",
+    "disabled": "無効",
+}
+_SCOPE_LABELS = {
+    "synthetic_fixture": "合成データ",
+    "development_synthetic": "合成データ",
+    "owned_room": "実室データ",
+    "owned_room_campaign": "実室データ",
+    "production_owned_room": "実室データ",
+}
+_APPLICABILITY_LABELS = {"geometry": "形状", "band": "帯域", "routing": "経路"}
+_OBJECTIVE_DISPLAY = {"response.shape_rms_db": "応答形状 RMS"}
+
+
+def _split_label(value: str) -> str:
+    return _SPLIT_LABELS.get(value, value)
+
+
+def _gate_label(value: str) -> str:
+    return _GATE_LABELS.get(value, value)
+
+
+def _scope_label(value: str) -> str:
+    return _SCOPE_LABELS.get(value, "根拠データ")
+
+
+def _objective_label(value: str) -> str:
+    return _OBJECTIVE_DISPLAY.get(value, value.rsplit(".", 1)[-1].replace("_", " "))
+
+
 class ValidationControllerMixin:
     def assign_selected_candidate_to_campaign(self, split: str) -> None:
         candidate_id = self.search_selected_candidate_id
         if candidate_id is None:
-            self.statusBar().showMessage('Campaignへ追加する候補を選択してください')
+            self.statusBar().showMessage('検証条件へ追加する候補を選択してください')
             return
         if split not in {'calibration', 'holdout'}:
             raise ValueError('campaign split must be calibration or holdout')
         self.campaign_assignments[candidate_id] = split
         self._refresh_campaign_assignment_tree()
         self.statusBar().showMessage(
-            f'Campaign draft · {candidate_id[:12]} → {split}'
+            f'候補を検証条件へ追加しました · {_split_label(split)}'
         )
 
     def remove_selected_campaign_assignment(self) -> None:
@@ -105,8 +140,10 @@ class ValidationControllerMixin:
         if tree is None:
             return
         tree.clear()
-        for candidate_id, split in self.campaign_assignments.items():
-            item = QTreeWidgetItem([candidate_id[:12], split])
+        for index, (candidate_id, split) in enumerate(
+            self.campaign_assignments.items(), start=1
+        ):
+            item = QTreeWidgetItem([f"候補 {index}", _split_label(split)])
             item.setData(0, ROLE, candidate_id)
             tree.addTopLevelItem(item)
 
@@ -115,7 +152,7 @@ class ValidationControllerMixin:
         page = self.search_candidate_page
         if spec is None or page is None:
             self.statusBar().showMessage(
-                'SearchSpecを選択して候補集合を生成してからCampaignを保存してください'
+                '探索設定を選択して候補を生成してから検証条件を保存してください'
             )
             return
         if (
@@ -128,12 +165,12 @@ class ValidationControllerMixin:
             )
         ):
             self.statusBar().showMessage(
-                'staleなSearchSpec/constraintからValidation Campaignを保存できません'
+                '部屋または制約が変更された探索設定から検証条件を保存できません'
             )
             return
         if page.search_spec_id != spec.search_spec_id:
             self.statusBar().showMessage(
-                '候補pageと選択SearchSpecが一致しません · 候補を再生成してください'
+                '表示中の候補と探索設定が一致しません · 候補を再生成してください'
             )
             return
 
@@ -142,7 +179,7 @@ class ValidationControllerMixin:
         holdout = [candidate_id for candidate_id, split in assignments if split == 'holdout']
         if len(calibration) < 1 or len(holdout) < 2:
             self.statusBar().showMessage(
-                'Campaignには1件以上のcalibrationと2件以上のholdoutが必要です'
+                '検証条件には調整用1件以上と検証用2件以上の候補が必要です'
             )
             return
 
@@ -170,13 +207,13 @@ class ValidationControllerMixin:
             else self.campaign_separation_field.value()
         )
         if not model_version:
-            self.statusBar().showMessage('Campaignのmodel versionを明示してください')
+            self.statusBar().showMessage('検証に使うモデル版を入力してください')
             return
         if high_hz <= low_hz:
-            self.statusBar().showMessage('Campaignの検証帯域が不正です')
+            self.statusBar().showMessage('検証帯域を確認してください')
             return
         if min(max_residual, max_sensitivity, max_sensitivity_error, separation_multiple) <= 0:
-            self.statusBar().showMessage('Campaignの検証閾値をすべて明示設定してください')
+            self.statusBar().showMessage('検証閾値をすべて設定してください')
             return
 
         holdout_a, holdout_b = holdout[:2]
@@ -230,15 +267,13 @@ class ValidationControllerMixin:
             )
             self.campaign_repository.save(campaign)
         except Exception as exc:
-            self.statusBar().showMessage(f'Campaignを保存できません · {exc}')
+            self.statusBar().showMessage(f'検証条件を保存できません · {exc}')
             return
 
         self.campaign_assignments.clear()
         self._refresh_campaign_assignment_tree()
         self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
-        self.statusBar().showMessage(
-            f'Validation Campaignを事前登録しました · {campaign.campaign_id[:8]}'
-        )
+        self.statusBar().showMessage('検証条件を測定前に保存しました')
 
     def refresh_validation_campaigns(
         self,
@@ -252,27 +287,31 @@ class ValidationControllerMixin:
         spec_id = self.search_selected_spec_id
         if spec_id is None:
             if self.campaign_detail_label is not None:
-                self.campaign_detail_label.setText('Campaign未選択')
+                self.campaign_detail_label.setText('検証条件が未選択です')
             return
 
         selected_item: QTreeWidgetItem | None = None
         try:
             campaigns = self.campaign_repository.list_for_search_spec(spec_id)
         except Exception as exc:
-            self.statusBar().showMessage(f'Campaignを読めません · {exc}')
+            self.statusBar().showMessage(f'検証条件を読み込めません · {exc}')
             return
-        for campaign in campaigns:
+        for display_index, campaign in enumerate(campaigns, start=1):
             try:
                 readiness = self.campaign_service.readiness(campaign.campaign_id)
                 missing_count = sum(
                     len(candidate.missing_reasons)
                     for candidate in readiness.candidates
                 ) + len(readiness.missing_reasons)
-                readiness_text = 'ready' if readiness.evidence_ready else f'missing {missing_count}'
+                readiness_text = (
+                    '準備完了'
+                    if readiness.evidence_ready
+                    else f'不足 {missing_count}件'
+                )
             except Exception as exc:
-                readiness_text = f'error: {exc}'
+                readiness_text = f'確認できません: {exc}'
             item = QTreeWidgetItem([
-                campaign.campaign_id[:8],
+                f'検証条件 {display_index}',
                 f'{campaign.model_id}/{campaign.model_version}',
                 str(len(campaign.candidates)),
                 readiness_text,
@@ -304,52 +343,56 @@ class ValidationControllerMixin:
         if label is None:
             return
         if campaign is None:
-            label.setText('Campaign未選択')
+            label.setText('検証条件が未選択です')
             return
         try:
             readiness = self.campaign_service.readiness(campaign.campaign_id)
         except Exception as exc:
-            label.setText(f'Campaign readinessを読めません · {exc}')
+            label.setText(f'検証条件の準備状況を読み込めません · {exc}')
             return
+        objective_text = ", ".join(
+            _objective_label(value) for value in campaign.objective_ids
+        )
         lines = [
-            f'campaign {campaign.campaign_id[:8]} · SHA {campaign.campaign_sha256[:8]}',
-            f'{campaign.model_id} / {campaign.model_version}',
-            f'band {campaign.requested_band_hz[0]:g}–{campaign.requested_band_hz[1]:g} Hz · '
-            f'objective {", ".join(campaign.objective_ids)}',
-            f'preregistered {campaign.created_at_utc}',
+            f'モデル {campaign.model_id} / {campaign.model_version}',
+            f'帯域 {campaign.requested_band_hz[0]:g}–{campaign.requested_band_hz[1]:g} Hz · '
+            f'指標 {objective_text}',
+            f'測定前に登録済み · {campaign.created_at_utc}',
         ]
-        for candidate in readiness.candidates:
-            state = 'ready' if not candidate.missing_reasons else 'missing'
+        for candidate_index, candidate in enumerate(readiness.candidates, start=1):
+            state = '準備完了' if not candidate.missing_reasons else '不足'
             lines.append(
-                f'{candidate.candidate_id[:12]} · {candidate.split} · {state} · '
-                f'measurements {len(candidate.measurement_ids)}'
+                f'候補 {candidate_index} · {_split_label(candidate.split)} · {state} · '
+                f'実測 {len(candidate.measurement_ids)}件'
             )
             lines.extend(
-                f'  - {reason}'
+                f'  - 不足: {reason}'
                 for reason in candidate.missing_reasons
             )
-        lines.extend(f'stop: {reason}' for reason in readiness.missing_reasons)
+        lines.extend(f'停止理由: {reason}' for reason in readiness.missing_reasons)
         lines.append(
-            'evidence ready' if readiness.evidence_ready else 'evidence不足 · O70はdisabled'
+            '根拠データは準備完了です'
+            if readiness.evidence_ready
+            else '根拠データが不足しています · 本番の次候補計算は無効です'
         )
         label.setText('\n'.join(lines))
 
     def materialize_selected_campaign_objectives(self) -> None:
         campaign = self._selected_campaign()
         if campaign is None:
-            self.statusBar().showMessage('Campaignを選択してください')
+            self.statusBar().showMessage('検証条件を選択してください')
             return
         try:
             evaluation_ids = self.campaign_service.materialize_objective_evidence(
                 campaign.campaign_id
             )
         except Exception as exc:
-            self.statusBar().showMessage(f'objective evidenceを生成できません · {exc}')
+            self.statusBar().showMessage(f'比較指標の根拠データを生成できません · {exc}')
             self._campaign_selected()
             return
         self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
         self.statusBar().showMessage(
-            f'O30 objective evidenceを確認/保存しました · {len(evaluation_ids)}件'
+            f'比較指標の根拠データを確認・保存しました · {len(evaluation_ids)}件'
         )
 
 
@@ -357,16 +400,16 @@ class ValidationControllerMixin:
     def build_and_save_selected_campaign_validation(self) -> None:
         campaign = self._selected_campaign()
         if campaign is None:
-            self.statusBar().showMessage('Campaignを選択してください')
+            self.statusBar().showMessage('検証条件を選択してください')
             return
         try:
             readiness = self.campaign_service.readiness(campaign.campaign_id)
         except Exception as exc:
-            self.statusBar().showMessage(f'Campaign readinessを読めません · {exc}')
+            self.statusBar().showMessage(f'検証条件の準備状況を読み込めません · {exc}')
             return
         if not readiness.evidence_ready:
             self.statusBar().showMessage(
-                'Campaign evidenceが不足しています · readinessのmissing理由を解消してください'
+                '検証に必要な根拠データが不足しています · 表示された不足理由を解消してください'
             )
             self._campaign_selected()
             return
@@ -377,7 +420,7 @@ class ValidationControllerMixin:
             detail_widget = self.campaign_applicability_detail.get(code)
             if state_widget is None or detail_widget is None:
                 self.statusBar().showMessage(
-                    f'Campaign applicability UIが未対応です · {code}'
+                    f'適用条件の入力欄が未対応です · {code}'
                 )
                 return
             state = str(state_widget.currentData())
@@ -402,45 +445,39 @@ class ValidationControllerMixin:
             )
             self.validation_repository.save(record)
         except Exception as exc:
-            self.statusBar().showMessage(f'ValidationRecordを保存できません · {exc}')
+            self.statusBar().showMessage(f'検証結果を保存できません · {exc}')
             return
 
         self.refresh_model_validations()
         self.refresh_validation_campaigns(select_campaign_id=campaign.campaign_id)
-        gate_text = (
-            'eligible'
-            if record.recommendation_gate == 'eligible'
-            else 'disabled'
-        )
         self.statusBar().showMessage(
-            f'O60 ValidationRecordを保存しました · gate {gate_text} · '
-            f'{record.validation_id[:8]}'
+            f'検証結果を保存しました · 推薦可否 {_gate_label(record.recommendation_gate)}'
         )
 
     def read_selected_rew_for_campaign_async(self) -> None:
         campaign = self._selected_campaign()
         plan = self._selected_measurement_plan()
         if campaign is None:
-            self.statusBar().showMessage('Campaignを選択してください')
+            self.statusBar().showMessage('検証条件を選択してください')
             return
         if plan is None:
-            self.statusBar().showMessage('Campaign候補のMeasurement Planを選択してください')
+            self.statusBar().showMessage('検証候補の実測計画を選択してください')
             return
         if plan.status != 'planned':
-            self.statusBar().showMessage('REW読込にはplanned状態のMeasurement Planが必要です')
+            self.statusBar().showMessage('REW読込には測定待ちの実測計画が必要です')
             return
         if (
             plan.search_spec_id != campaign.search_spec_id
             or plan.search_spec_sha256 != campaign.search_spec_sha256
             or plan.candidate_set_sha256 != campaign.candidate_set_sha256
         ):
-            self.statusBar().showMessage('Measurement PlanとCampaignの探索authorityが一致しません')
+            self.statusBar().showMessage('実測計画と検証条件の探索設定が一致しません')
             return
         if not any(
             assignment.candidate_id == plan.candidate_id
             for assignment in campaign.candidates
         ):
-            self.statusBar().showMessage('Measurement Plan候補は選択Campaignに含まれていません')
+            self.statusBar().showMessage('実測計画の候補が選択中の検証条件に含まれていません')
             return
         if (
             self.working is None
@@ -448,7 +485,7 @@ class ValidationControllerMixin:
             or self.working.source_revision_id != plan.applied_scene_revision_id
         ):
             self.statusBar().showMessage(
-                '現在SceneをMeasurement Planのapplied revisionへ戻し、未保存編集を無くしてください'
+                '実測計画を作成した保存状態へ部屋を戻し、未保存の編集を解消してください'
             )
             return
 
@@ -459,7 +496,7 @@ class ValidationControllerMixin:
                 evidence_type_override='measured',
             )
         except Exception as exc:
-            self.statusBar().showMessage(f'Campaign REW読込を開始できません · {exc}')
+            self.statusBar().showMessage(f'検証用REW読込を開始できません · {exc}')
             return
 
 
@@ -470,11 +507,11 @@ class ValidationControllerMixin:
         passed = sum(getattr(check, 'gate', None) == 'pass' for check in checks)
         failed = sum(getattr(check, 'gate', None) == 'fail' for check in checks)
         insufficient = sum(getattr(check, 'gate', None) == 'insufficient' for check in checks)
-        parts = [f'pass {passed}']
+        parts = [f'合格 {passed}']
         if failed:
-            parts.append(f'fail {failed}')
+            parts.append(f'不合格 {failed}')
         if insufficient:
-            parts.append(f'insufficient {insufficient}')
+            parts.append(f'不足 {insufficient}')
         return ' / '.join(parts)
 
     def refresh_model_validations(self) -> None:
@@ -483,31 +520,31 @@ class ValidationControllerMixin:
             return
         tree.clear()
         if self.validation_detail_label is not None:
-            self.validation_detail_label.setText('ValidationRecord未選択')
+            self.validation_detail_label.setText('検証結果が未選択です')
         spec_id = self.search_selected_spec_id
         if spec_id is None:
             return
         try:
             records = self.validation_repository.list_for_search_spec(spec_id)
         except Exception as exc:
-            self.statusBar().showMessage(f'ValidationRecordを読めません · {exc}')
+            self.statusBar().showMessage(f'検証結果を読み込めません · {exc}')
             return
-        for record in records:
+        for display_index, record in enumerate(records, start=1):
             repeatability = '—'
             if record.repeatability_checks:
                 floors = ', '.join(
                     f'{check.rms_floor_db:.3g} dB'
                     for check in record.repeatability_checks
                 )
-                repeatability = f'{len(record.repeatability_checks)} group · {floors}'
+                repeatability = f'{len(record.repeatability_checks)}組 · {floors}'
             item = QTreeWidgetItem([
-                record.validation_id[:8],
-                record.evidence_scope,
-                record.residual_gate,
+                f'検証 {display_index}',
+                _scope_label(record.evidence_scope),
+                _gate_label(record.residual_gate),
                 self._validation_gate_summary(record.trend_checks),
                 self._validation_gate_summary(record.sensitivity_checks),
                 repeatability,
-                record.recommendation_gate,
+                _gate_label(record.recommendation_gate),
             ])
             item.setData(0, ROLE, record.validation_id)
             tree.addTopLevelItem(item)
@@ -520,54 +557,53 @@ class ValidationControllerMixin:
         item = tree.currentItem()
         validation_id = None if item is None else item.data(0, ROLE)
         if not isinstance(validation_id, str):
-            label.setText('ValidationRecord未選択')
+            label.setText('検証結果が未選択です')
             return
         record = self.validation_repository.get(validation_id)
         if record is None:
-            label.setText('ValidationRecordが見つかりません')
+            label.setText('検証結果が見つかりません')
             return
 
         calibration_count = sum(pair.split == 'calibration' for pair in record.pairs)
         holdout_count = sum(pair.split == 'holdout' for pair in record.pairs)
         lines = [
-            f'model {record.model_id} / {record.model_version}',
-            f'calibration {calibration_count} · holdout {holdout_count} · '
-            f'band {record.requested_band_hz[0]:g}–{record.requested_band_hz[1]:g} Hz',
-            f'residual {record.residual_gate} · holdout RMS '
+            f'モデル {record.model_id} / {record.model_version}',
+            f'調整用 {calibration_count} · 検証用 {holdout_count} · '
+            f'帯域 {record.requested_band_hz[0]:g}–{record.requested_band_hz[1]:g} Hz',
+            f'残差 {_gate_label(record.residual_gate)} · 検証用 RMS '
             f'{record.holdout_rms_db if record.holdout_rms_db is not None else "—"} dB',
         ]
         for check in record.trend_checks:
             agreement = '—' if check.agreement_ratio is None else f'{check.agreement_ratio:.3f}'
             lines.append(
-                f'trend {check.objective_id}: {check.gate} · agreement {agreement} · '
-                f'comparable {check.comparable_pairs}'
+                f'傾向 {_objective_label(check.objective_id)}: {_gate_label(check.gate)} · '
+                f'一致率 {agreement} · 比較可能 {check.comparable_pairs}組'
             )
         for check in record.sensitivity_checks:
             lines.append(
-                f'sensitivity {check.objective_id} {check.candidate_a_id[:8]}/{check.candidate_b_id[:8]}: '
-                f'{check.gate} · observed {check.observed_sensitivity_per_m:.3g} '
-                f'{check.unit}/m · model error {check.model_error_per_m:.3g} {check.unit}/m'
+                f'感度 {_objective_label(check.objective_id)}: {_gate_label(check.gate)} · '
+                f'観測 {check.observed_sensitivity_per_m:.3g} {check.unit}/m · '
+                f'モデル誤差 {check.model_error_per_m:.3g} {check.unit}/m'
             )
         for check in record.repeatability_checks:
             lines.append(
-                f'repeatability Scene {check.scene_revision_id[:8]}: '
-                f'{check.rms_floor_db:.3g} dB · {len(check.measurement_ids)} repeats'
+                f'再現性: {check.rms_floor_db:.3g} dB · {len(check.measurement_ids)}回'
             )
         for check in record.separation_checks:
             ratio = '∞' if check.separation_ratio is None and check.response_difference_rms_db > 0 else (
                 '—' if check.separation_ratio is None else f'{check.separation_ratio:.3g}×'
             )
             lines.append(
-                f'separation {check.candidate_a_id[:8]}/{check.candidate_b_id[:8]}: '
-                f'{check.gate} · {ratio} repeatability'
+                f'候補差: {_gate_label(check.gate)} · {ratio} 再現性'
             )
         for check in record.applicability_checks:
             lines.append(
-                f'applicability {check.code}: {"pass" if check.passed else "fail"} · {check.detail}'
+                f'{_APPLICABILITY_LABELS.get(check.code, check.code)}: '
+                f'{"合格" if check.passed else "不合格"} · {check.detail}'
             )
-        lines.append(f'recommendation {record.recommendation_gate}')
+        lines.append(f'推薦可否: {_gate_label(record.recommendation_gate)}')
         if record.gate_reasons:
-            lines.extend(f'stop: {reason}' for reason in record.gate_reasons)
+            lines.extend(f'停止理由: {reason}' for reason in record.gate_reasons)
         label.setText('\n'.join(lines))
 
     def _selected_validation_record(self):
