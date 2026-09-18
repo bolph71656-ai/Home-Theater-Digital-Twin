@@ -46,6 +46,7 @@ class CommandShortcutBinder(QObject):
         registry: CommandRegistry,
         *,
         command_ids: Iterable[str],
+        shortcut_context: Qt.ShortcutContext = Qt.ShortcutContext.WindowShortcut,
     ) -> None:
         super().__init__(window)
         self._window = window
@@ -64,7 +65,7 @@ class CommandShortcutBinder(QObject):
             )
             for sequence in sequences:
                 shortcut = QShortcut(QKeySequence(sequence), window)
-                shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+                shortcut.setContext(shortcut_context)
                 shortcut.activated.connect(
                     lambda command_id=command_id: self._registry.execute(command_id)
                 )
@@ -80,8 +81,10 @@ class CommandShortcutBinder(QObject):
                 definition,
                 text_input_focused=text_input_focused,
             )
-            available = self._registry.availability(command_id).enabled
-            shortcut.setEnabled(focus_allows and available)
+            # Availability is checked by CommandRegistry.execute() at activation time.
+            # Keeping the QShortcut focus-gated only avoids stale enablement when
+            # selection/transform state changes without a focus transition.
+            shortcut.setEnabled(focus_allows)
 
     def _focus_changed(self, _old: QWidget | None, _new: QWidget | None) -> None:
         self.refresh()
