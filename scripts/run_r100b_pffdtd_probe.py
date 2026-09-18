@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.metadata
 import json
 import math
@@ -33,7 +34,7 @@ FIXTURE_ID = 'wave-rigid-rectangular-modes-v1'
 PROBE_SCHEMA = 'r100b-platform-probe-artifact-1'
 PROBE_ID = 'pffdtd-python-numba-windows-execution-smoke'
 ADAPTER_ID = 'htdt-r100b-pffdtd-python-smoke'
-ADAPTER_VERSION = '1'
+ADAPTER_VERSION = '2'
 FMAX_HZ = 100.0
 PPW = 7.5
 DURATION_S = 0.03
@@ -90,6 +91,46 @@ def _git_head(upstream_root: Path) -> str:
         ['git', '-C', str(upstream_root), 'rev-parse', 'HEAD'],
         text=True,
     ).strip().lower()
+
+
+def _apply_numpy_compatibility_patch(upstream_root: Path) -> dict[str, str]:
+    """Apply the one bounded source shim required by modern NumPy.
+
+    The pinned upstream commit predates removal of the deprecated `np.float`
+    alias. Refuse to patch if the exact expected source is not present so that
+    an upstream change can never be modified silently.
+    """
+
+    relative_path = Path('python/common/myfuncs.py')
+    source_path = upstream_root / relative_path
+    before = 'EPS = np.finfo(np.float).eps'
+    after = 'EPS = np.finfo(float).eps'
+    source = source_path.read_text(encoding='utf-8')
+    if source.count(before) != 1:
+        raise RuntimeError(
+            f'PFFDTD NumPy compatibility patch expected exactly one {before!r} '
+            f'in {relative_path.as_posix()}'
+        )
+    source_path.write_text(source.replace(before, after, 1), encoding='utf-8')
+
+    diff = subprocess.check_output(
+        ['git', '-C', str(upstream_root), 'diff', '--', relative_path.as_posix()],
+        text=True,
+    )
+    changed = subprocess.check_output(
+        ['git', '-C', str(upstream_root), 'diff', '--name-only'],
+        text=True,
+    ).splitlines()
+    if changed != [relative_path.as_posix()]:
+        raise RuntimeError(f'unexpected PFFDTD compatibility patch file set: {changed}')
+
+    return {
+        'patch_id': 'numpy-removed-np-float-alias-v1',
+        'path': relative_path.as_posix(),
+        'before': before,
+        'after': after,
+        'diff_sha256': hashlib.sha256(diff.encode('utf-8')).hexdigest(),
+    }
 
 
 def _platform() -> BakeoffPlatform:
@@ -240,6 +281,8 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
             f'PFFDTD checkout mismatch: expected {candidate.source_commit_sha}, got {actual_head}'
         )
 
+    compatibility_patch = _apply_numpy_compatibility_patch(upstream_root)
+
     upstream_python = upstream_root / 'python'
     if not (upstream_python / 'sim_setup.py').is_file():
         raise RuntimeError(f'PFFDTD Python runtime missing: {upstream_python}')
@@ -338,6 +381,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
             'triangle_orientation': 'outward',
         },
         'runtime_versions': _runtime_versions(),
+        'compatibility_patch': compatibility_patch,
         'pffdtd_runtime': {
             'Nx': int(engine.Nx),
             'Ny': int(engine.Ny),
@@ -368,6 +412,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         'diagnostics': [
             'The smoke uses R100A geometry/source/receiver authority but does not evaluate the analytical eigenfrequency observables.',
             'PFFDTD derives its simulation sound speed from temperature/humidity; the computed value is recorded instead of being silently treated as the R100A 343 m/s comparison authority.',
+            'One exact-source-checked NumPy alias compatibility patch is applied and recorded; no numerical algorithm code is changed.',
             'Successful source-checkout execution is not a Windows product packaging PASS and is not a CPU correctness baseline PASS.',
         ],
     }
