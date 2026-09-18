@@ -416,7 +416,8 @@ class ObjectPalette(QFrame):
         super().__init__(parent)
         self.setObjectName("roomObjectPalette")
         set_surface_role(self, SurfaceRole.RAISED)
-        self.setFixedWidth(172)
+        self.setMinimumWidth(140)
+        self.setMaximumWidth(176)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
@@ -452,7 +453,8 @@ class SelectionInspector(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("roomSelectionInspector")
-        self.setFixedWidth(292)
+        self.setMinimumWidth(248)
+        self.setMaximumWidth(320)
         set_surface_role(self, SurfaceRole.RAISED)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -680,6 +682,8 @@ class RoomWorkspace(QWidget):
         self.geometry_panel: QWidget | None = None
         self.acoustics_panel: QWidget | None = None
         self.prediction_results: tuple = ()
+        self._responsive_compact = False
+        self._palette_user_open = False
         self._viewport_factory = viewport_factory or (lambda owner: RoomViewport3D(owner))
 
         root = QVBoxLayout(self)
@@ -723,6 +727,8 @@ class RoomWorkspace(QWidget):
         self.inspector = SelectionInspector()
         self.inspector.editCommitted.connect(self._commit_inspector)
         self.right_stack = QStackedWidget()
+        self.right_stack.setMinimumWidth(248)
+        self.right_stack.setMaximumWidth(320)
         self.right_stack.addWidget(self.inspector)
         self.right_stack.setCurrentWidget(self.inspector)
         content.addWidget(self.right_stack)
@@ -868,7 +874,8 @@ class RoomWorkspace(QWidget):
             raise ValueError(f"unknown Room context: {context_id}")
         self.current_context = context_id
         self.tools.set_context(context_id)
-        self.object_palette.setVisible(context_id in {"objects", "placement"})
+        self._palette_user_open = False
+        self._update_responsive_layout()
         if context_id == "geometry" and self.geometry_panel is not None:
             self.right_stack.setCurrentWidget(self.geometry_panel)
             refresh = getattr(self.geometry_panel, "refresh", None)
@@ -920,9 +927,28 @@ class RoomWorkspace(QWidget):
             self._set_status("やり直しました")
         return changed
 
+    def _update_responsive_layout(self) -> None:
+        compact = self.width() < 900
+        self._responsive_compact = compact
+        right_width = 260 if self.width() < 720 else (280 if compact else 300)
+        self.right_stack.setFixedWidth(right_width)
+        show_palette = (
+            self.current_context in {"objects", "placement"}
+            and (not compact or self._palette_user_open)
+        )
+        self.object_palette.setVisible(show_palette)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
     def _tool_requested(self, tool_id: str) -> None:
         if tool_id == "show-palette":
-            self.object_palette.setVisible(True)
+            if self._responsive_compact:
+                self._palette_user_open = not self.object_palette.isVisible()
+                self._update_responsive_layout()
+            else:
+                self.object_palette.setVisible(True)
             return
         if tool_id == "focus-selection":
             if self.controller.selected_id is not None:
