@@ -219,3 +219,41 @@ Observed before the cleanup failure:
 Because a completed persisted attempt is only constructible after the production transaction has already verified exact pre/restored state equality, the transaction itself had completed its mandatory restore path. Nevertheless the live acceptance remains failed until the independent final state/FR re-read also completes.
 
 Gate-only fix `e16688346144572d45061f33474332379184324e` moves the independent live state/FR restore verification before temporary database teardown, then explicitly drops repository/result references and runs GC before `TemporaryDirectory` cleanup. Product code remains unchanged after accepted head `df630d68`.
+
+
+### Owned-Windows O20 writable acceptance — PASS
+
+After gate-only cleanup fix and CI #354 / run `35291463956` passed completely, the consolidated live gate was rerun on the owned Windows machine and passed.
+
+Accepted evidence:
+
+- stale temp directory from the failed harness run was removed first and confirmed absent;
+- original local SHA: `5ede848e8e0b0967a50c04c83ff679a649ca439b`, detached checkout;
+- pre-status count: 0;
+- gate SHA: `8a9a8d2a8895629da58171282f22abc62cf24347`;
+- accepted product head pinned by gate: `df630d686f4e0c1687f05427585c0af1ae7bcf79`;
+- REW: `5.40 Beta 135 API 0.9.8`;
+- Room Simulator OpenAPI subset SHA256: `c75b9269233f25b9394e15fc9925e1b8d3f386be3e5edd4f19a4bfe52c8d897b`;
+- 14 `/roomsim` paths observed;
+- active source: `Left`;
+- baseline full-state SHA256: `b428d4b26ba669c3c809ed297cfd11b1bcfa231bf8826242925ecfca4afeb5da`;
+- baseline source-specific FR SHA256: `ca4e7159c135a16d628b5210917cae7aaca04b7dbe23a6e5246ca4881119e870`, 751 points;
+- generated native candidate moved Main/head X from 2.00 m to 2.01 m;
+- immutable batch spec SHA256: `5ecdca3e74ba519f7bd155955cca84b6e178a8e1de028b5e2d88adb6121856c2`;
+- completed attempt SHA256: `0b45635544ef613b4ad29069a585f780fdfc98adb34adda2ba8c8b2046463227`;
+- applied-state SHA256: `f89b64ef3841ccef04abefa28d56ea346ec131c33bd5e029fa9bc425288c34ff` (different from baseline);
+- candidate FR SHA256: `12f194c45bf4a304714d0f7f983fc24364822fdf9c0e3a59085305aec8ebf0f4` (different from baseline);
+- independent post-transaction state SHA256 exactly returned to `b428d4b26ba669c3c809ed297cfd11b1bcfa231bf8826242925ecfca4afeb5da`;
+- independent post-transaction FR SHA256 exactly returned to `ca4e7159c135a16d628b5210917cae7aaca04b7dbe23a6e5246ca4881119e870`;
+- `N80_O20_STATE_RESTORE_MATCH=True`;
+- `N80_O20_FR_RESTORE_MATCH=True`;
+- `N80_O20_CANDIDATE_FR_CHANGED=True`;
+- `N80_O20_LIVE_GATE_RESULT=PASS`;
+- `N80_O20_HARDWARE_GATE_RESULT=PASS`;
+- original checkout restored to `5ede848e8e0b0967a50c04c83ff679a649ca439b`;
+- post-status count: 0;
+- repo restore OK.
+
+This accepts the current O20 position-only writable path for the observed REW version/API fingerprint: native SceneRevision/SearchSpec/candidate authority -> immutable batch persistence -> live REW position transaction -> source-specific Room Simulator FR capture -> exact Room Simulator state restore -> immutable completed-attempt provenance.
+
+No broader write authority is implied: room size, absorptions, options, source configuration and arbitrary REW state remain outside the accepted O20 write surface.
