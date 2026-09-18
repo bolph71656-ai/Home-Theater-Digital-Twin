@@ -81,6 +81,7 @@ try {
 
     $allowedAfterProduct = @(
         ".github/workflows/ci.yml",
+        "backend/tests/test_o60r_audit.py",
         "docs/O60R_PROGRESS.md",
         "scripts/audit_o60_owned_room.py",
         "scripts/run-o60-owned-room-gate.ps1"
