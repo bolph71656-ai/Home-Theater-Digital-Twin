@@ -938,4 +938,3 @@ class ExtendedSearchControllerMixin:
                 )
         self.viewport.render()
 
-    @staticmethod
