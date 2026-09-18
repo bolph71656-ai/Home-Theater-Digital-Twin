@@ -160,3 +160,13 @@ direct/first-reflection overlayまで接続した。
 詳細: [UX120 Room prediction integration](UX120_ROOM_PREDICTION_2026-09-19.md)
 
 Room側の残件は高度geometry editingとUX150/UX160 visual acceptance。
+
+
+## Advanced geometry follow-up — 2026-09-19
+
+Geometry contextのright surfaceを専用Inspectorへ拡張し、vertex/edge numeric edit、midpoint、
+wall topology、wall move/merge/delete、opening add/edit/deleteを接続した。
+`RoomWorkingDocument.replace_room_topology()` と既存 `cad_walls` をauthorityとして使用し、
+opening/bindingをorphanする操作はfail closedする。
+
+詳細: [UX120 Room advanced geometry](UX120_ROOM_ADVANCED_GEOMETRY_2026-09-19.md)
