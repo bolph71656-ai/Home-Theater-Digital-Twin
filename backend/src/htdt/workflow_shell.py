@@ -32,6 +32,7 @@ from .workflow_navigation import (
     WorkspaceContext,
     WorkspaceDeepLink,
     WorkspaceId,
+    normalize_workspace_context,
     normalize_workspace_id,
 )
 
@@ -149,15 +150,19 @@ class WorkspaceRouter(QStackedWidget):
             mount.on_activate()
         return mount
 
-    def select_context(self, workspace_id: WorkspaceId | str, context_id: str) -> None:
+    def select_context(self, workspace_id: WorkspaceId | str, context_id: str) -> str:
         destination = normalize_workspace_id(workspace_id)
+        normalized_context = normalize_workspace_context(destination, context_id)
         registration = self._registrations[destination]
         valid_ids = {context.context_id for context in registration.contexts}
-        if context_id not in valid_ids:
-            raise ValueError(f"unknown context {context_id!r} for workspace {destination.value!r}")
+        if normalized_context not in valid_ids:
+            raise ValueError(
+                f"unknown context {context_id!r} for workspace {destination.value!r}"
+            )
         mount = self._ensure_mount(destination)
         if mount.on_context_changed is not None:
-            mount.on_context_changed(context_id)
+            mount.on_context_changed(normalized_context)
+        return normalized_context
 
     def request_entity(self, workspace_id: WorkspaceId | str, entity_id: str) -> None:
         mount = self._ensure_mount(normalize_workspace_id(workspace_id))
@@ -402,9 +407,9 @@ class WorkflowShellWindow(QMainWindow):
 
     def _select_current_context(self, context_id: str) -> None:
         workspace_id = self.current_workspace_id
-        self.router.select_context(workspace_id, context_id)
-        self._selected_context[workspace_id] = context_id
-        self.context_bar.set_active_context(context_id)
+        normalized_context = self.router.select_context(workspace_id, context_id)
+        self._selected_context[workspace_id] = normalized_context
+        self.context_bar.set_active_context(normalized_context)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         current = self.router.mount(self.router.current_workspace_id) if self.router.current_workspace_id else None
