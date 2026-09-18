@@ -179,6 +179,29 @@ class CadExtendedSearchRepository:
             raise ValueError('extended search model capability does not exist')
         if capability.capability_sha256 != spec.capability_sha256:
             raise ValueError('extended search model capability hash mismatch')
+        if capability.evidence_scope == 'owned_room':
+            repository = self.validation_repository
+            if repository is None or capability.validation_id is None:
+                raise ValueError(
+                    'owned-room extended search requires validation repository authority'
+                )
+            validation = repository.get(capability.validation_id)
+            if validation is None or not production_validation_ready(validation):
+                raise ValueError(
+                    'owned-room extended search ValidationRecord is not eligible'
+                )
+            if (
+                validation.document_id != spec.document_id
+                or validation.search_spec_id != spec.base_search_spec_id
+                or validation.search_spec_sha256 != spec.base_search_spec_sha256
+                or validation.candidate_set_sha256 != spec.base_candidate_set_sha256
+                or validation.model_id != capability.model_id
+                or validation.model_version != capability.model_version
+            ):
+                raise ValueError(
+                    'owned-room extended capability does not match exact base '
+                    'SearchSpec/candidate-set validation authority'
+                )
         for axis in spec.axes:
             if axis.parameter not in capability.supported_parameters:
                 raise ValueError(
