@@ -188,19 +188,33 @@ class SystemVariant(BaseModel):
         if len(proposed_entity_ids) != len(set(proposed_entity_ids)):
             raise ValueError('SystemVariant proposed entity ids must be unique')
         role_set = set(role_ids)
+        for item in self.role_bindings:
+            if item.paired_role_id is not None and item.paired_role_id not in role_set:
+                raise ValueError('ChannelRoleBinding paired role is not present in the variant')
         for item in self.proposed_entities:
             if item.role_binding_id not in role_set:
                 raise ValueError('proposed entity references unknown ChannelRoleBinding')
         diff_ids = [item.entity_id for item in self.diff]
         if len(diff_ids) != len(set(diff_ids)):
             raise ValueError('SystemVariant diff entity ids must be unique')
+        proposed_set = set(proposed_entity_ids)
+        changed_proposed_set = {
+            item.entity_id
+            for item in self.diff
+            if item.kind in {'add', 'replace'}
+        }
+        if changed_proposed_set != proposed_set:
+            raise ValueError('SystemVariant add/replace diff must exactly match ProposedEntitySpec set')
         lifecycle_ids = [item.entity_id for item in self.entity_lifecycle]
         if len(lifecycle_ids) != len(set(lifecycle_ids)):
             raise ValueError('SystemVariant lifecycle bindings must be unique')
-        proposed_set = set(proposed_entity_ids)
-        for item in self.entity_lifecycle:
-            if item.entity_id in proposed_set and item.state != 'proposed':
-                raise ValueError('ProposedEntitySpec must remain in proposed lifecycle state')
+        lifecycle_proposed_set = {
+            item.entity_id
+            for item in self.entity_lifecycle
+            if item.state == 'proposed'
+        }
+        if lifecycle_proposed_set != proposed_set:
+            raise ValueError('proposed lifecycle bindings must exactly match ProposedEntitySpec set')
         provenance_keys = [item.key for item in self.provenance]
         if len(provenance_keys) != len(set(provenance_keys)):
             raise ValueError('SystemVariant provenance keys must be unique')
