@@ -1,7 +1,7 @@
 # Arbitrary-room acoustics research and implementation decision — 2026-09-18
 
 Tracking: Issue #101  
-Status: architecture research plus 2026-09-18 Deep Research refinement is complete enough to freeze the R100 evaluation scope; the production solver backend, crossover and shipping dependency set remain benchmark-gated.
+Status: architecture research plus 2026-09-18 Deep Research and plan re-review are complete enough to freeze the R100A benchmark contract and R100B evaluation scope; the production solver backend, crossover and shipping dependency set remain benchmark-gated.
 
 ## 1. Decision summary
 
@@ -13,7 +13,7 @@ The implementation baseline is:
 2. **Mid/high frequency domain**: geometrical acoustics with deterministic direct/specular paths first, then stochastic/diffuse ray energy where justified.
 3. **Hybrid result**: combine low-band coherent wave results and upper-band geometric results only inside an explicit overlap/crossover contract. Do not fabricate coherent phase for a stochastic late-field result that does not contain it.
 4. **Material authority**: separate energy-domain absorption/scattering from wave-domain complex impedance/admittance. Do not derive a unique phase-bearing impedance from a scalar absorption coefficient without an explicit model.
-5. **Source authority**: keep physical cabinet orientation, acoustic aim and frequency-dependent directivity separate. Store source/directivity dataset identity in every prediction.
+5. **Source/receiver authority**: keep physical cabinet orientation, acoustic aim, source excitation/level reference and frequency-dependent directivity separate. Receiver position/orientation/calibration/timing authority is equally explicit and binds to the prediction.
 6. **Execution**: CPU fallback is mandatory. GPU is an accelerator, not a correctness dependency. Candidate-level parallelism, solver-internal threading and GPU execution must be scheduled together to avoid oversubscription.
 7. **Validation**: analytical/reference numerical cases precede owned-room REW/UMIK-1 validation. Simulation alone never opens the production recommendation gate.
 
@@ -207,6 +207,47 @@ Every primary candidate must be judged against the same fixture families.
 
 R100 produces a decision record with at least: accuracy, runtime, peak RAM/VRAM, setup/build complexity, license, failure modes, valid band and unresolved risks. Production selection is made from this evidence, not from theoretical elegance alone.
 
+## 4D. Plan re-review: benchmark authority before solver bakeoff
+
+R100 is an umbrella with two ordered sub-gates.
+
+### R100A — benchmark authority / fixture contract
+
+Before any solver is compared, define a minimal solver-neutral benchmark representation. This is **not** the final product schema and must stay smaller than R110.
+
+It must represent only what is required to compare candidates without giving each backend a different physical problem:
+
+- acoustic regions / air volumes;
+- surfaces with stable fixture IDs;
+- explicit portals/openings between regions;
+- boundary termination when a portal intentionally leaves the modeled domain;
+- source excitation/reference point;
+- receiver point/orientation;
+- boundary/material model identity;
+- environment/air state;
+- expected analytical/reference observables and tolerances.
+
+A raw hole in a wall is not a complete acoustic boundary condition. For an opening, the fixture must say whether it connects to an explicitly modeled adjacent air region or to an explicit termination model. Unknown space beyond an opening is never silently converted to an absorbing boundary.
+
+R100A also separates **hard gates** from comparison metrics.
+
+Hard pass/fail gates include:
+
+- physically correct fixture interpretation;
+- required geometry/boundary capability for that candidate role;
+- demonstrated convergence for the quantity under test;
+- reproducible Windows build/run path for shipping candidates;
+- acceptable license/redistribution status for shipping candidates;
+- CPU correctness path for any shipping wave solver.
+
+Only candidates that pass the applicable hard gates are compared on runtime, RAM/VRAM, implementation complexity and acceleration potential.
+
+### R100B — solver bakeoff / ADR
+
+Run FDTD, independent FEM/reference and geometric reference candidates against the same R100A fixtures. R100B produces the solver-selection ADR and records rejected/secondary candidates with evidence.
+
+This ordering prevents the FDTD and FEM prototypes from each inventing incompatible geometry, opening or material semantics before the production AcousticSceneSnapshot exists.
+
 ## 5. Acoustic data model
 
 ### 5.1 AcousticSceneSnapshot
@@ -216,31 +257,37 @@ Compile an immutable solver snapshot from an exact SceneRevision.
 At minimum bind:
 
 - SceneRevision ID/content hash;
-- acoustic geometry hash;
+- semantic acoustic geometry hash;
+- compiled representation hash when a backend-specific mesh/grid/BVH exists;
+- acoustic compiler ID/version/tolerance/simplification policy;
 - surface/object material assignment hash;
-- source model/directivity hash;
-- receiver set;
-- air state used for sound speed/air loss;
+- source excitation + directivity model hash;
+- receiver model/calibration hash and receiver set;
+- environment/air-state hash used for sound speed/air loss;
 - solver ID/version/backend;
 - numerical resolution and frequency validity;
 - approximation/simplification rules;
 - random seed when stochastic algorithms are used.
 
+The semantic acoustic geometry hash describes the physical acoustic interpretation. The compiled representation hash describes the exact generated grid/mesh/BVH and therefore changes when compiler version, tolerance, meshing/voxelization parameters or backend representation changes.
+
 The snapshot is separate from the editable CAD scene. Editing the scene invalidates/stales the snapshot; it never mutates an existing prediction.
 
 ### 5.2 Geometry representations
 
-A single canonical acoustic surface model feeds backend-specific compiled forms:
+A canonical acoustic region/surface model feeds backend-specific compiled forms:
 
 ~~~text
 SceneRevision
-  -> Acoustic surface graph / triangle representation
-      -> structured wave grid / voxel boundary map
-      -> FEM surface/volume mesh (reference backend)
-      -> ray-tracing BVH
+  -> AcousticRegion(s)
+      -> surfaces / objects / explicit Portal(s) / BoundaryTermination(s)
+      -> canonical acoustic triangle/surface representation
+          -> structured wave grid / voxel boundary map
+          -> FEM surface/volume mesh (reference backend)
+          -> ray-tracing BVH
 ~~~
 
-This prevents each solver from inventing its own interpretation of doors, openings, furniture and materials.
+This prevents each solver from inventing its own interpretation of doors, openings, furniture and materials. An opening is not represented only as “missing wall geometry”: it either connects two modeled acoustic regions or carries an explicit termination model. Unmodeled adjacent space remains unknown/unsupported rather than being silently treated as anechoic.
 
 The compiler must detect and report:
 
@@ -288,7 +335,17 @@ A scalar absorption coefficient alone is insufficient to reconstruct unique low-
 
 Material presets must store source, version, applicable frequency range and uncertainty/assumption status. User-measured/custom materials are separate records.
 
-## 7. Source/directivity model
+Wave-domain material capability must be explicit. At minimum distinguish:
+
+- `measured_complex_impedance`;
+- `parametric_impedance_model`;
+- `rigid_assumption`;
+- `geometric_energy_only`;
+- `unknown`.
+
+A material that only has absorption/scattering data may still participate in geometrical acoustics, but it is not automatically valid for a phase-bearing low-frequency wave solve. Choosing a rigid or other equivalent approximation is an explicit model assumption with provenance, not an implicit default.
+
+## 7. Source / receiver / environment authority
 
 Internal source authority should support:
 
@@ -296,11 +353,23 @@ Internal source authority should support:
 - physical cabinet orientation;
 - acoustic aim independent of body orientation;
 - source channel/role;
+- excitation/level/phase reference needed by the selected solver;
 - frequency-dependent magnitude/phase/directivity dataset;
 - directivity coordinate frame;
 - dataset/version/provenance.
 
 Do not hard-code a particular commercial loudspeaker format into the domain model. Define an internal DirectivityDataset, then add import adapters where licensing/specification allows.
+
+Receiver authority is separate from the source and should support:
+
+- receiver acoustic point / microphone capsule position;
+- orientation when the measurement or receiver model requires it;
+- receiver response/calibration profile identity;
+- absolute/relative level reference;
+- timing reference and phase-validity state;
+- provenance linking to the existing MicrophoneProfile/AcquisitionContext authority when comparing against REW measurements.
+
+Environment authority must record the state/model used by the prediction, including temperature and the resulting sound-speed model at minimum; humidity/pressure/air attenuation are added when the selected valid band/model uses them. Measurement validation compares predictions against the environment known or assumed for that campaign rather than silently using a universal 343 m/s constant.
 
 SOFA is a useful general spatial-acoustics interchange candidate. Generic polar CSV/import is also needed because loudspeaker manufacturer data vary. CLF/GLL and other proprietary ecosystem formats require separate format/license review before implementation.
 
@@ -317,14 +386,23 @@ Store per-band provenance:
 - overlap band;
 - crossover/stitch algorithm and version.
 
-Initial design:
+Initial result types are intentionally distinct:
+
+- `CoherentTransfer` / coherent IR from a solver that carries phase;
+- `DeterministicPathSet` for direct/early geometric paths;
+- `LateEnergyDecay` for stochastic/diffuse energy that does not carry defensible coherent phase.
+
+Initial hybrid design:
 
 1. produce low-band coherent pressure/IR from the wave solver;
 2. produce direct/early specular paths from the geometric solver;
 3. produce stochastic/diffuse late energy only as an energy-domain result unless the algorithm explicitly defines phase;
-4. time-align common direct/early components;
-5. apply complementary crossover windows over a finite overlap band;
-6. validate amplitude/energy continuity and impulse timing at the stitch.
+4. identify which direct/early physical components are represented by both domains;
+5. time-align and crossfade/combine without double-counting those shared components;
+6. apply complementary crossover windows only to compatible quantities over a finite overlap band;
+7. validate amplitude/energy continuity and impulse timing at the stitch.
+
+A `LateEnergyDecay` is not converted into a complex FR merely to make the API uniform. Metrics are enabled only when their underlying result type and time/energy semantics support them.
 
 Crossover is not hard-coded globally to exactly 300 Hz. The default target can start near the wave-solver upper band, but the final crossover must respect:
 
@@ -391,7 +469,9 @@ For fixed geometry/materials:
 - use reciprocity where the exact source/receiver model allows it;
 - batch sources/receivers instead of restarting setup work per candidate.
 
-Cache identity includes geometry, material, source/directivity, receivers, solver/backend, numerical parameters and frequency band.
+Cache identity includes semantic geometry, compiled representation, material, source excitation/directivity, receiver model/set, environment, solver/backend, numerical parameters and frequency band.
+
+Before adding more outer workers, R170 should exploit exact reusable structure when the formulation permits it: receiver batching from one solve, source-equivalence grouping, reciprocity, reusable FEM matrices/preconditioners/factorizations and reusable grid/BVH compilation. These are optimization opportunities, never assumptions applied where source/receiver models break the required symmetry.
 
 ## 11. Validation ladder
 
@@ -466,61 +546,77 @@ UMIK-1/REW evidence remains the final owned-room validation path.
 
 ## 12. Implementation phases
 
-### R100 — research / bakeoff gate
+### R100 — research / bakeoff umbrella
+
+#### R100A — benchmark authority / fixture contract
+
+Deliver the solver-neutral fixture representation, hard pass/fail gates, quantity-specific tolerances and shared fixture corpus before comparing implementations.
+
+Minimum fixtures are the analytical rigid box, impedance/reflection boundary, concave/L-room, explicit region-to-region portal or explicit termination, reflecting obstacle, direct/first reflection geometric cases and later overlap-stitch cases.
+
+#### R100B — solver bakeoff / ADR
 
 Deliver:
 
 - this research note plus the Deep Research refinement;
 - third-party version/license/redistribution/Windows-package matrix;
 - common solver interface and provenance contract;
-- one shared benchmark harness and fixture corpus;
 - small deterministic FDTD CPU prototype;
 - one independent FEM/reference prototype;
 - simple geometric-acoustics prototype/reference;
 - measured CPU scaling and, when available, GPU-vs-CPU tolerance/resource evidence;
-- an explicit R100 decision record naming the selected first production stack and rejected/secondary alternatives with reasons.
+- an explicit decision record naming the selected first production stack and rejected/secondary alternatives with reasons.
 
-Minimum shared fixtures are the analytical rigid box, impedance boundary, concave/L-room, opening, reflecting obstacle, direct/first reflection geometric cases and overlap-stitch checks.
+Exit only after applicable hard gates pass and measured Windows/CI evidence selects the first production stack. R100 does **not** freeze the final crossover frequency, GPU vendor/backend, universal mesh density or the long-term BEM/DG/PSTD role.
 
-Exit only after measured Windows/CI evidence selects the first production stack. R100 does **not** freeze the final crossover frequency, GPU vendor/backend, universal mesh density or the long-term BEM/DG/PSTD role.
+### R110 — acoustic scene/material/source/receiver authority
 
-### R110 — acoustic scene/material/source authority
+Implement immutable AcousticSceneSnapshot, AcousticRegion/Portal/BoundaryTermination semantics, acoustic surfaces, object/surface material capability, source excitation/directivity, receiver/calibration, environment authority and prediction provenance schema.
 
-Implement immutable AcousticSceneSnapshot, acoustic surfaces, object/surface material assignment, source/directivity dataset authority and prediction provenance schema.
+Define semantic acoustic geometry identity separately from backend-compiled representation identity.
 
 No high-cost solver is required to finish the data contract.
 
 ### R120 — acoustic geometry compiler
 
-Compile exact Scene geometry into:
+Compile exact Scene geometry and R110 region/portal semantics into:
 
-- canonical triangulated acoustic surfaces;
+- canonical triangulated acoustic regions/surfaces;
+- explicit portal/termination representation;
 - wave-grid representation;
 - ray BVH input;
 - optional FEM mesh input.
 
-Add fail-closed diagnostics for non-manifold/open/degenerate/thin/unresolved geometry.
+Persist compiler version/tolerance/approximation provenance and compiled representation identity. Add fail-closed diagnostics for non-manifold/unintended-open/degenerate/thin/unresolved geometry.
 
 ### R130 — low-band wave solver
 
-Initial target: 20–300 Hz.
+Initial target: 20–300 Hz. Split correctness so boundary-model failures are distinguishable from the core discretization.
 
-First implementation path:
+#### R130A — rigid-boundary core
 
-- deterministic CPU structured-grid solver;
-- rigid boundary;
-- frequency-dependent boundary model;
+- deterministic CPU wave solver;
+- rigid rectangular analytical modes;
+- concave/portal-capable geometry path as supported by the chosen stack;
 - multiple receivers;
 - FR/phase/IR/spatial field output;
-- analytical/convergence/cross-solver validation.
+- convergence and independent cross-solver validation.
 
-GPU acceleration follows the same contract after correctness is established.
+#### R130B — simple lossy / locally reacting boundary
+
+Add the simplest independently verifiable impedance/admittance boundary required by the selected formulation and verify reflection magnitude/phase against reference cases.
+
+#### R130C — causal frequency-dependent boundary
+
+Add the production frequency-dependent boundary implementation only after R130A/B are sound. For time-domain execution, stability/passivity/causality behavior is part of acceptance.
+
+GPU acceleration follows the same physical contract after CPU correctness is established.
 
 ### R140 — hardware-aware execution
 
-Add CPU/GPU capability detection, resource estimation, scheduler, candidate batching, cancellation, cache/resume and provenance.
+R110/R130 already establish immutable identity, stale/cancel semantics and backend provenance. R140 **enhances execution**, adding CPU/GPU capability detection, resource estimation, two-level scheduler, candidate/source/receiver batching, oversubscription control and efficient cache/resume.
 
-A CPU-only machine remains supported.
+A CPU-only machine remains supported. R140 must not redefine prediction identity merely to fit a scheduler.
 
 ### R150 — geometric acoustics
 
