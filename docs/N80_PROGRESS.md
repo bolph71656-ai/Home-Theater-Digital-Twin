@@ -191,3 +191,31 @@ The consolidated live gate now:
 - the PowerShell runner refuses a dirty checkout, checks that no product code changed after `df630d68`, then restores the original checkout and verifies a clean status.
 
 CI compiles the new Windows harness, validates all PowerShell syntax, and preflights the O20 runner before any RDC call. The actual live gate remains pending until this gate-only branch is green.
+
+
+### First owned-Windows O20 gate attempt — harness cleanup failure, transaction evidence preserved
+
+The first live invocation reached the production transaction and immutable-attempt persistence successfully, then failed in the acceptance harness while deleting its temporary SQLite database on Windows (`PermissionError [WinError 32]`). The repository checkout was restored cleanly, so this is not accepted as a gate pass.
+
+Observed before the cleanup failure:
+
+- owned worktree discovered at `C:\Users\ka092\Desktop\HTDT\repo`;
+- original local SHA: `5ede848e8e0b0967a50c04c83ff679a649ca439b`, detached checkout; pre-status count 0;
+- gate SHA: `de41e296b86f2b3e87afd8378fb81a45c8eaa89f`;
+- REW: `5.40 Beta 135 API 0.9.8`;
+- Room Simulator OpenAPI subset SHA256: `c75b9269233f25b9394e15fc9925e1b8d3f386be3e5edd4f19a4bfe52c8d897b`;
+- 14 `/roomsim` paths observed; head/source positions expose GET/POST;
+- source-specific probe source: `Left`;
+- baseline full-state SHA256: `b428d4b26ba669c3c809ed297cfd11b1bcfa231bf8826242925ecfca4afeb5da`;
+- baseline FR SHA256: `ca4e7159c135a16d628b5210917cae7aaca04b7dbe23a6e5246ca4881119e870`, 751 points;
+- Main/head X: 2.00 m -> 2.01 m candidate;
+- batch spec SHA256: `9e819b6126cf55fa260fdb519770f27a0746d51b0fa72f0e5230f560a93a93a3`;
+- completed attempt SHA256: `0e6ede8b3e096707a99d00d020619f63e1b4cb4bca26d74a7f4e5700c6a1c5d1`;
+- applied-state SHA256: `f89b64ef3841ccef04abefa28d56ea346ec131c33bd5e029fa9bc425288c34ff`;
+- candidate FR SHA256: `12f194c45bf4a304714d0f7f983fc24364822fdf9c0e3a59085305aec8ebf0f4`;
+- gate result: FAIL because temporary `acceptance.sqlite3` deletion raised WinError 32 before the independent post-restore re-read;
+- local checkout restore: SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`, post-status count 0, repo restore OK.
+
+Because a completed persisted attempt is only constructible after the production transaction has already verified exact pre/restored state equality, the transaction itself had completed its mandatory restore path. Nevertheless the live acceptance remains failed until the independent final state/FR re-read also completes.
+
+Gate-only fix `e16688346144572d45061f33474332379184324e` moves the independent live state/FR restore verification before temporary database teardown, then explicitly drops repository/result references and runs GC before `TemporaryDirectory` cleanup. Product code remains unchanged after accepted head `df630d68`.
