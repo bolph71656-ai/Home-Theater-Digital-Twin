@@ -18,11 +18,20 @@ from .cad_model_validation_service import (
     CadValidationSensitivitySpec,
     CadValidationSeparationSpec,
 )
+from .cad_objective_models import CadObjectiveInputRef
+from .cad_objectives import build_objective_evaluation
 from .cad_objective_repository import CadObjectiveRepository
 from .cad_roomsim_repository import CadRoomSimRepository
+from .cad_roomsim_results import roomsim_attempt_frequency_response
 from .cad_validation_campaign import CadValidationCampaign
 from .cad_validation_campaign_repository import CadValidationCampaignRepository
 from .cad_validation_metrics import CadApplicabilityCheck
+from .comparison import FrequencyResponse
+from .optimization_objectives import (
+    ObjectiveVector,
+    ResponseObjectiveSpec,
+    target_response_objectives,
+)
 
 
 class CadValidationCandidateReadiness(BaseModel):
@@ -215,6 +224,137 @@ class CadValidationCampaignService:
                 continue
             matching.append(evaluation)
         return tuple(matching)
+
+    def _reuse_or_save_evaluation(self, evaluation):
+        for existing in self.objective_repository.list_evaluations(
+            evaluation.search_spec_id
+        ):
+            if existing.evaluation_sha256 == evaluation.evaluation_sha256:
+                return existing
+        self.objective_repository.save_evaluation(evaluation)
+        return evaluation
+
+    def materialize_objective_evidence(
+        self,
+        campaign_id: str,
+    ) -> tuple[str, ...]:
+        """Create O30 evidence from preregistered target semantics.
+
+        This performs no physical action. It only derives objective vectors from
+        already-persisted prediction attempts and owned-room measurements.
+        """
+
+        campaign = self.campaign_repository.get(campaign_id)
+        if campaign is None:
+            raise KeyError(campaign_id)
+        search_spec = self.validation_service.search_repository.get(
+            campaign.search_spec_id
+        )
+        if search_spec is None:
+            raise ValueError('campaign SearchSpec does not exist')
+        revision = self.validation_service.search_repository.scene_repository.get(
+            search_spec.scene_revision_id
+        )
+        if revision is None:
+            raise ValueError('campaign source SceneRevision does not exist')
+
+        objective_spec = ResponseObjectiveSpec(
+            low_hz=campaign.requested_band_hz[0],
+            high_hz=campaign.requested_band_hz[1],
+            reference_band_hz=campaign.reference_band_hz,
+            excluded_bands=campaign.excluded_bands,
+        )
+        target = FrequencyResponse(
+            frequency_hz=campaign.target_response.frequency_hz,
+            level_db=campaign.target_response.level_db,
+        )
+        evaluation_spec = json.loads(campaign.objective_evaluation_spec_json)
+        saved_ids: list[str] = []
+
+        for assignment in campaign.candidates:
+            attempts = self._matching_prediction_attempts(
+                campaign,
+                assignment.candidate_id,
+            )
+            if len(attempts) != 1:
+                raise ValueError(
+                    f'{assignment.candidate_id}: objective materialization requires '
+                    'exactly one completed prediction attempt'
+                )
+            plans = self._candidate_measured_plans(
+                campaign,
+                assignment.candidate_id,
+            )
+            if len(plans) != 1:
+                raise ValueError(
+                    f'{assignment.candidate_id}: objective materialization requires '
+                    'exactly one completed Measurement Plan'
+                )
+            records, reasons = self._validated_measurements(campaign, plans[0])
+            if reasons or not records:
+                detail = '; '.join(reasons) if reasons else 'measured evidence is missing'
+                raise ValueError(
+                    f'{assignment.candidate_id}: objective materialization is not ready: {detail}'
+                )
+            measurement = records[0]
+            dataset = self.measurement_repository.dataset_for_measurement(
+                measurement.measurement_id
+            )
+            if dataset is None:
+                raise ValueError(
+                    f'{assignment.candidate_id}: primary measurement has no frequency response'
+                )
+
+            evidence = (
+                (
+                    'predicted',
+                    CadObjectiveInputRef(
+                        evidence_class='predicted',
+                        source_kind='cad_roomsim_attempt',
+                        source_id=attempts[0].attempt_id,
+                    ),
+                    roomsim_attempt_frequency_response(attempts[0]),
+                ),
+                (
+                    'measured',
+                    CadObjectiveInputRef(
+                        evidence_class='measured',
+                        source_kind='cad_measurement',
+                        source_id=measurement.measurement_id,
+                    ),
+                    FrequencyResponse(
+                        frequency_hz=dataset.frequency_hz,
+                        level_db=dataset.level_db,
+                    ),
+                ),
+            )
+            for _evidence_class, input_ref, response in evidence:
+                full_vector = target_response_objectives(
+                    assignment.candidate_id,
+                    response,
+                    target,
+                    objective_spec,
+                )
+                selected_metrics = tuple(
+                    full_vector.metric(objective_id)
+                    for objective_id in campaign.objective_ids
+                )
+                vector = ObjectiveVector(
+                    candidate_id=assignment.candidate_id,
+                    metrics=selected_metrics,
+                )
+                evaluation = build_objective_evaluation(
+                    revision,
+                    search_spec,
+                    assignment.candidate_id,
+                    vector,
+                    evaluation_spec=evaluation_spec,
+                    input_refs=(input_ref,),
+                )
+                stored = self._reuse_or_save_evaluation(evaluation)
+                saved_ids.append(stored.evaluation_id)
+
+        return tuple(saved_ids)
 
     def readiness(self, campaign_id: str) -> CadValidationCampaignReadiness:
         campaign = self.campaign_repository.get(campaign_id)
