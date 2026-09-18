@@ -267,16 +267,9 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
         document_id=DOCUMENT_ID,
         constraints=(),
     )
-    topology = build_topology_search_spec(
-        baseline=baseline,
-        template_variants=(template,),
-        created_at_utc=NOW,
-    )
     spec = build_topology_placement_search_spec(
         baseline=baseline,
         template_variant=template,
-        topology_spec=topology,
-        topology_option_id=topology.options[0].option_id,
         topology_spec=topology,
         topology_option_id=option_id,
         placement_specs=placements,
@@ -461,9 +454,16 @@ def test_body_yaw_reuses_o80_oriented_allowed_region_rejection(
         proposed_entities=(surround,),
         created_at_utc=NOW,
     )
+    topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(template,),
+        created_at_utc=NOW,
+    )
     spec = build_topology_placement_search_spec(
         baseline=baseline,
         template_variant=template,
+        topology_spec=topology,
+        topology_option_id=topology.options[0].option_id,
         placement_specs=(
             ProposedPlacementSpec(
                 entity_id='sl',
