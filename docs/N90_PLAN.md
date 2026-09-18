@@ -96,3 +96,21 @@ RDC is reserved for this final installer/UI gate only. CI handles backup corrupt
 6. A15 harness/preflight;
 7. one consolidated owned-Windows A15 gate;
 8. acceptance/status docs and merge.
+
+
+## Completion result — 2026-09-18
+
+N90 implementation and A15 are complete on PR #79.
+
+- stable product version: `0.1.0`
+- product/artifact head: `968a9461435ac37138ddd15526140c06613fccb8`
+- final A15 gate head: `3ee2fb91b4976d7b0cac7b13718222cd6e359b76`
+- CI #458 / run `35299355927`: PASS
+- Windows Release Artifact #23 / run `35299355977`: PASS
+- A15 harness-fix CI #459 / run `35300374434`: PASS
+- owned-Windows A15: PASS
+- detailed evidence: [N90 Windows acceptance](N90_ACCEPTANCE_2026-09-18.md)
+
+The stable installer was accepted as an in-place update from `0.1.0.dev0` to `0.1.0`. Backup/restore, GUI reopen, uninstall data retention, reinstall/reopen and final repository cleanup all passed.
+
+O70/O80 remain intentionally disabled because the independent owned-room O60 evidence gate is not yet satisfied.
