@@ -11,6 +11,10 @@ on:
       - ".github/workflows/windows-release.yml"
   workflow_dispatch:
 
+concurrency:
+  group: windows-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package:
     runs-on: windows-latest
