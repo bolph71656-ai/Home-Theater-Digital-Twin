@@ -312,3 +312,15 @@ Current PR: #74 / branch `feat/n80-pareto-workspace`.
 - Residual validation is stored separately as `pass/fail/insufficient`. Automatic recommendation remains `disabled` even after a residual pass until independent trend/rank, sensitivity and repeatability evidence exists. Therefore O70 remains gated.
 - Added focused tests for exact candidate/revision rejection, planned→measured append-only history, Pareto semantic lookup, residual gating, and O60 cross-evidence persistence.
 - RDC use for PR #74 remains zero at this point. GitHub Actions remains the primary verification authority until the product branch is green.
+
+
+## 2026-09-18 — N80c/O50 owned-Windows acceptance PASS
+
+- Accepted product head: `2a891dbc1796d3cfdaebbe762d0d6e0d2636563f`.
+- Gate head: `44628a1e51c199c10b883ed8accba452578bb1eb`.
+- GitHub Actions CI #397 / run `35294094501`: PASS.
+- Owned-Windows 200% DPI gate: `N80C_HARDWARE_GATE_RESULT=PASS`.
+- Pareto rendering/provenance, semantic snapshot de-dup, candidate apply/save, exact-revision Measurement Plan creation, exact-revision N60 measured attachment, append-only planned→measured completion, and stale Pareto rejection all PASS.
+- Local checkout restored to `5ede848e8e0b0967a50c04c83ff679a649ca439b` with status count 0.
+- Detailed record: [N80c/O50 Windows acceptance](N80C_ACCEPTANCE_2026-09-18.md).
+- O60 trend/rank, sensitivity and repeatability continuation is tracked by Issue #75. O70 automatic recommendation remains disabled until independent real evidence passes that gate.
