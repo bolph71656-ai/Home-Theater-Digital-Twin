@@ -81,6 +81,10 @@ class CadRoomSimBatchSpec(BaseModel):
 
     @model_validator(mode='after')
     def valid_identity(self) -> 'CadRoomSimBatchSpec':
+        if self.model_id != ROOMSIM_MODEL_ID:
+            raise ValueError('Room Simulator batch model_id mismatch')
+        if self.adapter_version != ROOMSIM_BATCH_ADAPTER_VERSION:
+            raise ValueError('Room Simulator batch adapter_version mismatch')
         candidate_ids = [item.candidate_id for item in self.requests]
         if len(candidate_ids) != len(set(candidate_ids)):
             raise ValueError('Room Simulator batch candidate ids must be unique')
