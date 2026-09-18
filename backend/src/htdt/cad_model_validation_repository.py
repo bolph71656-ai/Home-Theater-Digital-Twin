@@ -398,6 +398,24 @@ class CadModelValidationRepository:
             ).fetchone()
         return None if row is None else CadModelValidationRecord.model_validate_json(row['payload_json'])
 
+    def latest_eligible_for_search_spec(
+        self,
+        search_spec_id: str,
+    ) -> CadModelValidationRecord | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM cad_model_validations "
+                "WHERE search_spec_id=? AND recommendation_gate='eligible' "
+                "ORDER BY seq DESC LIMIT 1",
+                (search_spec_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        record = CadModelValidationRecord.model_validate_json(row['payload_json'])
+        if record.evidence_scope != 'owned_room':
+            raise ValueError('eligible validation record is not owned-room evidence')
+        return record
+
     def list_for_search_spec(self, search_spec_id: str) -> tuple[CadModelValidationRecord, ...]:
         with self._connect() as connection:
             rows = connection.execute(
