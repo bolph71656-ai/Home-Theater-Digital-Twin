@@ -224,6 +224,8 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.extended_max_field: QDoubleSpinBox | None = None
         self.extended_step_field: QDoubleSpinBox | None = None
         self.extended_limit_field: QSpinBox | None = None
+        self.extended_axis_tree: QTreeWidget | None = None
+        self.extended_axes: dict[str, CadExtendedSearchAxis] = {}
         self.extended_spec_tree: QTreeWidget | None = None
         self.extended_candidate_tree: QTreeWidget | None = None
         self.extended_summary_label: QLabel | None = None
@@ -707,6 +709,22 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.extended_limit_field.setValue(10_000)
         extended_form.addRow('extended候補上限', self.extended_limit_field)
         layout.addLayout(extended_form)
+
+        extended_axis_actions = QHBoxLayout()
+        add_extended_axis = QPushButton('toe-in軸を追加 / 更新')
+        add_extended_axis.clicked.connect(self.add_or_update_extended_axis)
+        extended_axis_actions.addWidget(add_extended_axis)
+        remove_extended_axis = QPushButton('選択toe-in軸を削除')
+        remove_extended_axis.clicked.connect(self.remove_selected_extended_axis)
+        extended_axis_actions.addWidget(remove_extended_axis)
+        layout.addLayout(extended_axis_actions)
+
+        self.extended_axis_tree = QTreeWidget()
+        self.extended_axis_tree.setHeaderLabels([
+            'speaker', 'parameter', '最小', '最大', '刻み'
+        ])
+        self.extended_axis_tree.setMinimumHeight(105)
+        layout.addWidget(self.extended_axis_tree)
 
         save_extended = QPushButton('Extended SearchSpecをimmutable保存')
         save_extended.clicked.connect(self.save_extended_search_spec)
@@ -1886,6 +1904,73 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             f'{capability.capability_id[:8]}'
         )
 
+    def add_or_update_extended_axis(self) -> None:
+        if (
+            self.extended_entity_combo is None
+            or self.extended_min_field is None
+            or self.extended_max_field is None
+            or self.extended_step_field is None
+        ):
+            return
+        entity_id = self.extended_entity_combo.currentData()
+        if not isinstance(entity_id, str):
+            self.statusBar().showMessage(
+                'toe-in軸へ追加するexplicit-aim speakerを選択してください'
+            )
+            return
+        try:
+            axis = CadExtendedSearchAxis(
+                entity_id=entity_id,
+                min_value=float(self.extended_min_field.value()),
+                max_value=float(self.extended_max_field.value()),
+                step=float(self.extended_step_field.value()),
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f'toe-in軸が不正です · {exc}')
+            return
+        self.extended_axes[entity_id] = axis
+        self._refresh_extended_axis_tree()
+        self.statusBar().showMessage(
+            f'toe-in軸を追加/更新しました · {entity_id}'
+        )
+
+    def remove_selected_extended_axis(self) -> None:
+        tree = self.extended_axis_tree
+        if tree is None:
+            return
+        item = tree.currentItem()
+        entity_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(entity_id, str):
+            return
+        self.extended_axes.pop(entity_id, None)
+        self._refresh_extended_axis_tree()
+        self.statusBar().showMessage(
+            f'toe-in軸を削除しました · {entity_id}'
+        )
+
+    def _refresh_extended_axis_tree(self) -> None:
+        tree = self.extended_axis_tree
+        if tree is None:
+            return
+        tree.clear()
+        for entity_id in sorted(self.extended_axes):
+            axis = self.extended_axes[entity_id]
+            name = entity_id
+            if self.working is not None:
+                try:
+                    name = self.working.committed_document.entity(entity_id).name
+                except KeyError:
+                    pass
+            item = QTreeWidgetItem([
+                name,
+                axis.parameter,
+                f'{axis.min_value:.1f}°',
+                f'{axis.max_value:.1f}°',
+                f'{axis.step:.1f}°',
+            ])
+            item.setData(0, ROLE, entity_id)
+            tree.addTopLevelItem(item)
+
     def _selected_extended_capability(self):
         combo = self.extended_capability_combo
         if combo is None:
@@ -1930,16 +2015,15 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 'explicit aimを持つspeakerを選択してください'
             )
             return
+        if not self.extended_axes:
+            self.statusBar().showMessage(
+                '1つ以上のtoe-in軸を追加してからExtended SearchSpecを保存してください'
+            )
+            return
         try:
             revision = self.repository.get(base.scene_revision_id)
             if revision is None:
                 raise ValueError('base SceneRevision does not exist')
-            axis = CadExtendedSearchAxis(
-                entity_id=entity_id,
-                min_value=float(self.extended_min_field.value()),
-                max_value=float(self.extended_max_field.value()),
-                step=float(self.extended_step_field.value()),
-            )
             candidate_limit = (
                 10_000
                 if self.extended_limit_field is None
@@ -1951,7 +2035,10 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 base_candidate_set_sha256=page.candidate_set_sha256,
                 base_candidate_count=page.feasible_candidate_count,
                 capability=capability,
-                axes=(axis,),
+                axes=tuple(
+                    self.extended_axes[entity_id]
+                    for entity_id in sorted(self.extended_axes)
+                ),
                 candidate_limit=candidate_limit,
                 created_at_utc=datetime.now(timezone.utc).isoformat(),
             )
@@ -2749,6 +2836,8 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.extended_candidate_page = None
             self.extended_selected_candidate_id = None
             self.extended_preview_candidate_id = None
+            self.extended_axes.clear()
+            self._refresh_extended_axis_tree()
             self.campaign_assignments.clear()
             self._refresh_campaign_assignment_tree()
         self.search_selected_spec_id = normalized
