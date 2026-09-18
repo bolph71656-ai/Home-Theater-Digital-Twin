@@ -1,7 +1,7 @@
 # 配置探索・シミュレーション最適化ロードマップ
 
 > 改訂: 2026-09-18
-> 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とする。
+> 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とし、任意形状solverの技術判断は[ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md)に従う。
 > O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。
 > 以下の既存座標/G00/G10契約を新Sceneへ接続する際は[編集契約](CAD_EDITOR_SPEC.md)のadapterを用いる。
 
@@ -47,7 +47,7 @@ HTDTの配置探索は、部屋・スピーカー・MLPの可動範囲から候�
 | C/Surround | 固定から開始 | 個別の要件とモデル検証後 |
 | サブウーファー | v1.0必須外 | 将来の独立トラック |
 
-家具、開口、吸音率、スピーカー指向性を無視するモデルで中高域まで最適化したと主張しない。FEM/BEM/FDTDを前提にしない。
+家具、開口、材料、スピーカー指向性を無視するモデルで中高域まで最適化したと主張しない。Issue #101では20–300 Hz wave acoustics＋中高域geometrical acousticsのhybridを基本方針とするが、production backendはR100 benchmarkで選ぶ。FDTDはfirst PoC、FEMは独立reference/alternative、BEM/FMMはsecondary candidateとし、方式名だけで採用を固定しない。
 
 ### 3.1 実室Geometry: 非矩形を正本にする
 
@@ -64,13 +64,58 @@ REW Room Simulatorは公式にrectangular room用なので、8頂点実室のexa
 
 ## 4. モデル再利用方針
 
-第一候補の**矩形基準モデル**はREW Room Simulatorの再利用とし、HTDT独自のフル低域ソルバーを先に作らない。S01で、対象REW版に対して入力設定、結果取得、単位、座標変換、再現性、バッチ利用可能性を確認する。ただしREW Room Simulatorは矩形室専用なので、非矩形実室では外接/近似矩形によるbaseline predictorに限定する。
+**矩形基準モデル**としてREW Room Simulatorを維持する。S01は入力設定、結果取得、単位、座標変換、再現性、バッチ利用可能性のbaseline/referenceであり、非矩形実室では`rectangular_approximation`としてしか扱わない。
 
-非矩形polygon-prismの第一候補はS03でpyroomacousticsを評価する。`Room.from_corners()` + `extrude()`で一般polygonを3D化できるため車輪の再発明を避けられるが、Windows導入、座標/境界条件、低域精度、計算時間、再現性を実測と独立検証してから採用する。REW矩形近似とpolygon predictorは別model ID/版として保存し、結果を上書きしない。
+S03のpyroomacoustics評価は**geometrical-acoustics reference/PoC**へ位置付けを修正する。一般polyhedral/non-convex room、image-source/ray tracing、absorption/scattering、RIR生成の再利用価値は高いが、低域の干渉・回折・room modeを解くfull-wave solverではない。したがって、pyroomacousticsだけを「非矩形exact predictor」としてO20へ昇格させない。
+
+Issue #101のarbitrary-room modelはR-seriesで追加する。
+
+- R130: 20–300 Hz low-band wave predictor。first PoCはdeterministic CPU structured-grid/FDTDで、独立FEM/referenceと収束比較する。
+- R150: direct/early specular＋general-polyhedral ray tracing。pyroomacoustics/Embree等をreference/candidateとして比較する。
+- R160: wave/geometricのoverlap/crossoverを明示したhybrid predictor。
+- R170: multi-fidelity batch predictionとしてO20/O30/O40/O50/O60/O70へ接続する。
+
+REW baseline、geometric reference、wave predictor、hybrid predictorは別model ID/versionとして保存し、結果を上書き・暗黙昇格しない。
 
 REW側を安全かつ再現可能に自動駆動できない場合は、無理に画面自動操作へ依存しない。公開API、手動結果取込、検証済み外部ライブラリ、限定的な自前幾何モデルの順で具体的な不足を評価する。
 
 すべての予測器は内部的に同じ最小契約へ合わせる。汎用プラグイン基盤は作らず、必要になったモデルだけをアダプターとして追加する。
+
+### 4.1 Arbitrary-room prediction authority
+
+R-series predictionでは、少なくとも次をPredictionRunへimmutable bindingする。
+
+- exact SceneRevision/content hash
+- acoustic geometry hash
+- material/boundary configuration hash
+- source/directivity dataset hash
+- receiver set
+- solver/model ID + version
+- CPU/GPU backend/device
+- grid/mesh/BVH resolution
+- valid frequency band
+- approximation/simplification rule
+- stochastic seed
+- cache identity
+
+material authorityは用途別に分ける。
+
+- geometric acoustics: banded absorption / scattering / optional transmission
+- wave acoustics: complex impedance/admittanceまたは明示したfrequency-dependent boundary model
+
+scalar absorption coefficientから一意なphase-bearing impedanceを無言で生成しない。ラグ/カーテン等のthin surfaceがgrid resolutionで消える場合は、equivalent boundary modelをprovenance付きで用いるかunsupported/unresolvedとして止める。
+
+### 4.2 Multi-fidelity execution
+
+任意形状solverを全candidateへ最高精度で適用しない。
+
+1. hard constraintでfeasible候補を生成。
+2. cheap/reference predictorとcacheで粗screening。
+3. reduced setだけwave/geometric medium fidelity。
+4. Pareto/uncertainty候補だけhigh-resolution hybrid。
+5. MeasurementPlanへ落とし、O60/O70で実測価値を更新。
+
+fixed geometry/materialではwave-grid、ray BVH、FEM matrix/preconditioner等のsetupを再利用し、receiver batch・reciprocity等が成立する場合はcandidateごとの重複solveを避ける。
 ## 5. 正式マイルストーン
 
 | ID | 段階 | 主な成果 | 完了条件 |
@@ -227,6 +272,10 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 - allowed regionから家具/通路exclusionを差し引き、指定wall clearanceと筐体footprintを満たす候補だけが残ることを検証する。
 - 同一SearchSpec/seedからpolygon内の同一候補集合を再生成し、reference box内でも実室polygon外の点を生成しない。
 - REW矩形近似を使ったPredictionRunには`rectangular_approximation`を残し、polygon実室のexact predictionへ自動昇格しない。
+- R130 wave fixtureではrigid rectangular analytical mode、grid/mesh convergence、独立FEM/reference比較を行い、backendごとのvalid upper frequencyを測定で固定する。
+- R150ではdirect delay、first-reflection point/path length、seed repeatabilityを既知解と比較する。
+- R160ではoverlap bandのlevel/energy continuity、direct-arrival timing、unsupported high-band phaseを生成しないことを検証する。
+- CPU/GPU backend差は同一authority inputで数値許容差を定義し、device/backend/versionを保存する。
 
 ## 13. 自動推薦を止める条件
 
