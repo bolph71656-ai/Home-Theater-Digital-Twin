@@ -1,6 +1,6 @@
 # O100 — System Expansion / Virtual Channel Topology Optimization
 
-> Status: **O100A implemented / O100B–O100G planned** — tracking: [Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142) / implementation: [PR #144](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/144)
+> Status: **O100A–O100B implemented / O100C–O100G planned** — tracking: [Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142) / implementations: [PR #144](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/144), [PR #150](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/pull/150)
 >
 > O100 extends the existing N40 / G10 / O10–O90 / R-series authority. It does not replace them.
 >
@@ -684,6 +684,8 @@ Implemented in PR #144. The authority is intentionally limited to proposal topol
 - linked SL/SR pair;
 - O80 aim/toe-in/height integration;
 - deterministic candidate identity.
+
+O100B was implemented in PR #150. It reuses O100A variants, O10 deterministic grid generation, G10 hard constraints and O80 orientation-aware body semantics; candidate conversion requires exact deterministic search membership and does not mutate the baseline SceneRevision. Equipment/source capability and performance objectives remain outside this slice.
 
 ### O100C — EquipmentDefinition/source capability
 
