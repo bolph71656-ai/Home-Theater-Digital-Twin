@@ -10,7 +10,7 @@ HTDTは、部屋とホームシアター配置を3D CADのように直接構築�
 
 Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、move/rotate、snap、寸法入力で精密化する。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
 
-成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。Overviewは次に行う作業とblockerを示し、Room / Measurements / Optimizeの少数workspaceへdeep-linkする。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
+成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。Overviewは次に行う作業とblockerを示し、Room / Measurements / Optimizeの少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
 
 ## 2. 利用条件
 
@@ -56,7 +56,7 @@ N70/N80の完成をCAD previewや安定個人版の条件にしない。カレ�
 | 領域 | 再利用 | HTDTで作る部分 |
 |---|---|---|
 | 測定・校正・詳細解析 | REW | 条件・配置・原本の対応、取込、必要な比較 |
-| Windows shell | PySide6/Qt Widgets | compactなlayout、操作、Inspector、単位、状態表示 |
+| Windows shell | PySide6/Qt Widgets | workflow shell、dark-first design tokens、contextual Inspector、command palette、motion/feedback、単位・状態表示 |
 | 描画・科学可視化 | PyVista/VTK/PyVistaQt | entity projection、入力/選択、overlay、job結果対応 |
 | editor設計 | FreeCAD、Godot、Three.js等の局所設計 | domain独立のCommand/Tool/Selection/Snap |
 | 幾何 | Shapely、既存G00/G10 | room/wall/openingと制約の参照、adapter |
