@@ -361,7 +361,21 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - Measurementsは `読み込み → 割り当て → 品質 → 比較` の4 page compositionへ切替。REW background job中はdeactivation/restoreをblockする。
 - Optimization canonical contextは `setup / candidates / comparison / validation`。旧 `objectives / measurement-plan` deep-linkはshared navigation boundaryで互換normalizeする。
 - rail下部の「設定」から#128 Data Management UIへ入り、restore時は全mounted workspace guard→handle dispose→native restore→fresh SceneRepository→lazy rebuildを行う。
-- 既知残件: 新RoomへのN70 prediction実行/結果表示、旧wall/opening・高度geometry editingの完全移植、UX140のlegacy QMainWindow adapter除去、UX150/UX160 visual acceptance。
+- follow-upで新Roomへ既存N70 rectangular geometry predictionを接続。request identity / JobGuard / repository / constraint hashを再利用し、dirty/stale/cancelled resultはfail closed、current resultだけ3D overlayへ表示する。
+- 既知残件: 旧wall/opening・高度geometry editingの完全移植、UX140のlegacy QMainWindow adapter除去、UX150/UX160 visual acceptance。
 - workflow shellは引き続き明示 `--workflow-shell` preview。default launcherはUX160 acceptanceまで変更しない。
 - 詳細: [UX120–UX140 integration record](UX120_140_INTEGRATION_2026-09-19.md)
+- RDC未使用。
+
+
+### UX120 Room prediction integration — 2026-09-19
+
+- 新Roomの「音響」contextへN70矩形幾何予測を接続。
+- `rectangular_geometry_request_identity`、`PredictionJobGuard`、`CadPredictionRepository`、`constraint_workspace_snapshot` を既存authorityとして再利用。
+- prediction開始にはcleanな保存済みSceneRevisionとacoustic-reference receiverを要求。
+- Scene/constraint変更後の遅延result、cancelled token、identity mismatchを保存しない。
+- cancel後もworker thread終了まではworkspace移動/restore/new runをblock。
+- 保存済みrunは現在/要再計算を表示し、current runだけdirect/first-reflectionを3D overlayへ出す。
+- central `prediction.run` はRoom/acoustics deep-link後に新controllerへbind。
+- 詳細: [UX120 Room prediction integration](UX120_ROOM_PREDICTION_2026-09-19.md)
 - RDC未使用。
