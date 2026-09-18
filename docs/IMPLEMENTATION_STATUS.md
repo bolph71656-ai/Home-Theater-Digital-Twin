@@ -1,18 +1,20 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N80c・O50 owned-Windows acceptance PASS / O60継続
+> 更新: 2026-09-18 / N80c・O50 main反映済み / O60 full validation実装 CI PASS・実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 / N80a はmainへmerge済み。O20 immutable batch/result persistence と owned-Windows writable gate、O30/O40 objective/Pareto core もmain反映済み。現在はPR #74でnative Pareto比較、O50 Measurement Loop、O60 Model Validation authorityを実装中。**
+**N05〜N80 workspaceとO20〜O50はmainへmerge済み。N80c/O50はowned-Windows acceptance PASS。PR #76でO60 full validation（holdout trend・sensitivity・repeatability・applicability）を実装し、CI #425 PASS。実室の独立validation evidenceはまだ無いため、O70 automatic recommendationはdisabledのまま。**
 
-N70はIssue #63 / PR #64で完了済み。N80aはIssue #65の部分sliceとしてPR #66からmerge commit `7473bb3efdbc511369c9a023b0b210eb5cde3553` でmainへ反映済み。Issue #65はN80b/cのためopenのまま維持する。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
+N70はIssue #63 / PR #64で完了済み。N80 workspaceはIssue #65 / PR #74で完了し、merge commit `171f30a25ef322b09046adfee5f8eabe76e8c51b` でmain反映済み。残るmodel validation実装はIssue #75 / PR #76で独立追跡する。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **O20〜O40 coreまでmerge済み**。PR #70 `b4381f4b01683bba65b3857514ea583160f0eb7b` / PR #71 `cdbd0f45f8c66b01522fcc3006b8019e2cd1ba88` / PR #72 `df630d686f4e0c1687f05427585c0af1ae7bcf79` / PR #73 `43799ef871693ec214f792562176ad66724485e8` |
-| N80 tracking | Issue #65（open） / Issue #67（O20 closed） / PR #74（N80c/O50/O60 draft） |
+| main | **N80c/O50までmerge済み**。PR #74 merge `171f30a25ef322b09046adfee5f8eabe76e8c51b` |
+| N80 tracking | Issue #65（closed） / Issue #67（O20 closed） / PR #74 merged |
+| O60 tracking | Issue #75（open） / PR #76（draft） / code CI #425 PASS |
+| O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
 | N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
 | N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |
 | N80a product CI | #321 / run `35280237062` PASS |
@@ -29,7 +31,7 @@ N70はIssue #63 / PR #64で完了済み。N80aはIssue #65の部分sliceとし�
 | F5 | 50 editable objects＋10,000 markers、1 non-pickable actor、初回11.406 ms、orbit p95 27.963 ms PASS |
 | native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN80a `OptimizationWorkspaceWindow` compositionを起動 |
 | browser UI | 新CAD機能は凍結。二重実装しない |
-| 次工程 | **N80 — 最適化workspace** |
+| 次工程 | **O60文書確定・merge。O70は実室gate待ち。独立してN90安定releaseを進行可能** |
 
 ## N70 — 完了内容
 
@@ -126,7 +128,7 @@ A14はN70–N80にまたがるgate。今回の`unsupported` branchでは候補�
 - [N60](N60_ACCEPTANCE_2026-09-17.md)
 - [N70](N70_ACCEPTANCE_2026-09-18.md)
 
-## N80 — 進行中
+## N80 — workspace完了 / O60独立継続
 
 N80a（native SearchSpec + candidate workspace）はWindows実機受入を完了した。詳細: [N80a Windows acceptance](N80A_ACCEPTANCE_2026-09-18.md)。
 
@@ -137,7 +139,7 @@ N80a（native SearchSpec + candidate workspace）はWindows実機受入を完了
 - A13 stale/cancel/document/clean close PASS
 - A14 SearchSpec→candidate preview→1-command apply→1 Undo exact restore PASS
 
-N80全体は未完了。O30/O40 pure coreとnative persistence、O20 position-only transaction + immutable batch/result persistence + resume/cancelは実装済み。O20 owned-Windows writable acceptanceもREW 5.40 Beta 135 API 0.9.8でPASSした。次はnative Pareto比較UIとmeasurement loopへ接続する。
+N80 workspaceはPR #74で完了しmain反映済み。O20〜O50のprediction/objective/Pareto/measurement-loop authorityをnative CADへ接続し、N80c/O50 owned-Windows acceptanceもPASSした。O60 full validationはIssue #75 / PR #76へ分離して継続する。
 
 - PR #70: objective-vector / Pareto algorithms + immutable native objective/Pareto persistenceをmerge済み。
 - PR #71: position-only REW Room Simulator transaction + native Scene/SearchSpec/Candidate adapterをmerge済み。CI #345 PASS。
@@ -177,3 +179,20 @@ PR #74 product head `2a891dbc1796d3cfdaebbe762d0d6e0d2636563f` はCI #397 / run 
 詳細は [N80c/O50 Windows acceptance](N80C_ACCEPTANCE_2026-09-18.md)。
 
 N80 workspaceのIssue #65完了条件はこの受入で満たす。残るO60 full validationはIssue #75で独立継続し、trend/rank・sensitivity・repeatabilityと実データgateが成立するまでO70 automatic recommendationはdisabledを維持する。
+
+
+## O60 — full model-validation implementation
+
+PR #76 head `a8898bb1bbd919b95245f6298f7c999164dfab50` はCI #425 / run `35295505049` PASS。
+
+- calibration / holdout candidateを分離し、両方が無ければrecommendation gateを開かない。
+- objectiveごとのholdout pairwise-ordering agreementを保存し、tie/insufficient/failを独立表示する。
+- placement perturbationのobserved sensitivityとprediction error / mをobjectiveごとに保存する。
+- 同一SceneRevisionの再測定からrepeatability floorを算出し、candidate差がnoise floor以下ならgateを停止する。
+- geometry/band/routing等のapplicability checkとstop reasonをimmutable recordへ保存する。
+- O20 prediction attempt、O30 objective evaluation、O50 Measurement Plan、N60 measured evidence、SearchSpec/candidate-set SHAをrepository save時に再照合する。
+- `synthetic_fixture` はrecommendation eligibleにならない。`owned_room` は参照measurement provenanceの `validation_scope=owned_room` も必須。
+- native最適化dockでresidual / trend / sensitivity / repeatability / applicability / stop reasonを別々に表示する。
+- O70向けには永続化済み `eligible` recordだけを取得するAPIを設けたが、Adaptive Planner自体は実室O60 gate通過まで実装・有効化しない。
+
+このCI PASSは算法・authority実装の検証であり、REW Room Simulator等の特定modelが実室で妥当と証明されたことを意味しない。現時点ではowned-roomのcalibration/holdout/repeatability evidenceが無いため、O70 recommendation gateはdisabled。

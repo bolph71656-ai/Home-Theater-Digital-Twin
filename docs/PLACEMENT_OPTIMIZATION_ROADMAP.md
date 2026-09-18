@@ -1,8 +1,8 @@
 # 配置探索・シミュレーション最適化ロードマップ
 
-> 改訂: 2026-09-16
+> 改訂: 2026-09-18
 > 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とする。
-> O10はmain実装済み。O20の先行拡張は保留し、N05〜N40のCAD基盤を先に進める。N50/N70/N80との対応は同ロードマップを参照。
+> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityはIssue #75 / PR #76で実装済みだが、owned-roomの独立calibration/holdout/repeatability evidenceによるmodel gateは未通過。O70/O80はその実データgateを満たすまで自動推薦・拡張探索として有効化しない。
 > 以下の既存座標/G00/G10契約を新Sceneへ接続する際は[編集契約](CAD_EDITOR_SPEC.md)のadapterを用いる。
 
 ## 1. 目的
@@ -78,13 +78,13 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 | G10 | Placement Constraint Engine | entity別allowed region、禁止領域、壁離隔、相互離隔、連動拘束 | hard constraint違反候補を生成せず、拒否理由を機械的に説明できる |
 | O00 | 探索前提 | 同条件再測定、配置A/B、S01モデル契約、G00 | 測定ばらつきと予測モデルの適用条件を表示できる |
 | O10 | Search Space | O00、G10 | **ソフトウェア実装済み**。同一feasible候補集合を再生成可能。実測運用はO00の測定前提が満たされるまで推薦へ使わない |
-| O20 | Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはS03通過後 | 中断・再開可能で、予測を実測として保存せず、同一入力で再現できる。矩形近似は近似ラベルを保持 |
-| O30 | Objective Vector | 帯域別偏差、ピーク/谷、左右差、席間差、移動量などの独立指標 | 合成データで各指標を検証し、算法版と評価条件を保存する |
-| O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | 支配される候補をPareto集合へ含めず、探索条件から結果を再現できる |
-| O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | 候補→実配置→Measurement→予測残差を一つの履歴として追跡できる |
-| O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | 調整用と検証用を分離し、順位・傾向が不安定なら自動候補推薦を無効化する |
-| O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | O60を通過したデータだけを使い、提案根拠と不確実性を保存できる |
-| O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | 各追加変数を扱うモデルと独立検証が成立したものだけ有効化する |
+| O20 | Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはS03通過後 | **ソフトウェア実装済み**。中断・再開可能で、予測を実測として保存せず、同一入力で再現する。REW Room Simulatorのowned-Windows position transactionも受入済み。非矩形exact modelは別gate |
+| O30 | Objective Vector | 帯域別偏差、ピーク/谷、左右差、席間差、移動量などの独立指標 | **ソフトウェア実装済み**。独立指標・算法版・評価条件・evidence provenanceをimmutable保存 |
+| O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | **ソフトウェア実装済み**。objective vectorを保持したPareto集合、semantic snapshot de-dup、native比較UIを実装 |
+| O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | **ソフトウェア実装・owned-Windows受入済み**。candidate→exact applied SceneRevision→Measurement Plan→N60 measured evidenceをappend-only追跡 |
+| O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。calibration/holdout分離、objective trend、sensitivity、repeatability、candidate separation、applicabilityをimmutable検証し、不成立時は推薦disabled。特定modelの実室妥当性はowned-room evidenceで別途判定 |
+| O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **gate待ち・未有効化**。永続化済みowned-room O60 eligible ValidationRecordだけを入口とし、提案根拠と不確実性を保存できること |
+| O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | **gate待ち**。各追加変数を扱うモデルと独立検証が成立したものだけ有効化する |
 
 O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。
 
