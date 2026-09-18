@@ -222,11 +222,11 @@ prediction/measured objectiveはcampaignに保存した同一target response・e
 
 最初は検証済みsingle-sourceの低域FR objectiveから接続できる。複数音源は入力routing・gain/delay/EQ/source responseによる複素励振とroom transferを分離し、coherent sumとdB平均を混同しない。未知のAVR経路やsource responseをmaterial fittingへ押し付けない。receiver移動時のREW timing-reference経路と、適用済みmic correctionも比較条件へ含める。
 
-Calibrationはfit対象parameter/bounds・固定値・目的・training evidence・正規化をcampaignで事前登録する。fit後はmodel/configuration hashをappend-onlyで確定してからholdoutを評価する。この遷移をcampaign schemaで表現し、fit前に未生成hashを要求したり、holdout評価後のhash変更を許したりしない。低いresidualだけで材料が一意に同定できたと断定せず、感度/非一意性を報告する。fitは任意で、固定した明示modelの評価経路も保持する。
+Calibrationはfit対象parameter/bounds・固定値・目的・training evidence・正規化をcampaignで事前登録する。fit後はmodel/configuration hashをappend-onlyで確定してからholdoutを評価する。この遷移をcampaign schemaで表現し、fit前に未生成hashを要求したり、holdout評価後のhash変更を許したりしない。低いresidualだけで材料が一意に同定できたと断定せず、parameter sensitivity・correlation・非一意性/識別不能groupを報告する。ValidationRecordは「予測精度は対象observableで許容、物理parameterは一意同定不能」の状態を表現できるようにし、best-fit値を真の材料定数へ昇格しない。fitは任意で、固定した明示modelの評価経路も保持する。
 
 holdoutを見てmodel/parameter/正規化を調整した後は、そのデータを次版の独立holdoutとして再利用しない。新production claimには新しい独立holdoutを用意する。既存の実測前campaign保存とsynthetic分離は維持する。
 
-eligible recordの適用範囲をmodel/config、band、observable、source/receiver/room/material条件で限定する。FR合格はphase/IR/decay/directional validationではない。R180Aは低域FR等の対象だけ、R180Bは追加observableのmetric/measurement adapterと独立検証を受け持つ。hash不一致、holdout使い回し、FR合格からphaseを誤解禁するnegative fixtureを含める。
+eligible recordの適用範囲をmodel/config、band、observable、source/receiver/room/material条件で限定する。Measurement/AcquisitionContext側のcapabilityもmagnitude-valid、relative-phase-valid、common-time-reference/arrival-time-valid等に分け、弱い測定authorityから強いphase/IR claimへ昇格しない。FR合格はphase/IR/decay/directional validationではない。R180Aは低域FR等の対象だけ、R180Bは追加observableのmetric/measurement adapterと独立検証を受け持つ。hash不一致、holdout使い回し、FR合格からphaseを誤解禁するnegative fixtureを含める。
 
 ## 8.2 Synthetic software-completion lane
 
@@ -255,6 +255,17 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 - 単純な格子/ランダム/粗探索基準と比較し、測定回数削減の効果を検証する。
 - データが少ない場合や外挿領域では強い推薦を出さない。
 詳細なsynthetic completion契約とdemo手順は [O70/O80 Synthetic Software Completion](O70_O80_SYNTHETIC_COMPLETION.md) を参照する。
+
+### 9.1 physics-aware accelerationの順序
+
+Issue #101 R-seriesのfull-order solverがcorrectness gateを通過した後、探索高速化はgeneric surrogateを先に増やすのではなく、物理operatorの再利用を優先する。
+
+1. fixed geometry/materialでのreceiver batching、成立条件付きreciprocity、grid/BVH/matrix/preconditioner/factorization reuse、source-equivalence grouping;
+2. modal/Green-function/reduced-basis/ROMを明示parameter domain内で評価;
+3. forward/boundary modelが検証済みの場合のみadjoint gradientによる高次元calibration/optimizationを研究;
+4. その後にresidual GP等のstatistical surrogateを追加する。
+
+ROM/adjointはO-series production gateの依存にしない。採用する場合はtraining/full-order authority hash、適用domain、独立error validationまたはerror estimator、geometry/material/source変更時のinvalidation ruleを保存する。研究論文のspeedup値をHTDTの性能保証へ転記しない。
 
 ## 10. 保存契約
 
