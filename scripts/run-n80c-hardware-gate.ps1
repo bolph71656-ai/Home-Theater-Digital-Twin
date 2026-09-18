@@ -1,7 +1,7 @@
 param(
     [string]$RepoRoot = '',
     [string]$Branch = 'feat/n80-pareto-workspace',
-    [string]$ExpectedProductHead = '62954561ed9e37a787014616c39119ee4e6a0319',
+    [string]$ExpectedProductHead = '2a891dbc1796d3cfdaebbe762d0d6e0d2636563f',
     [switch]$PreflightOnly
 )
 
