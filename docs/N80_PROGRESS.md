@@ -148,3 +148,24 @@ The product does not modify Room Simulator room dimensions, absorptions, options
 Focused tests use fake transport/state and cover success, dimension/source mismatch, documented POST routes, external change, restore failure, coupled-source side effects, shifted rectangles, acoustic-reference offsets and L-room rejection.
 
 The existing 2026-09-16 owned-PC probe already established that beta135 can change the head by 1 cm, produce a changed FR, then restore state and raw FR exactly. PR #71 first converts that observation into a fail-closed production transaction contract. A new RDC write gate will be deferred until CI and the later native batch/persistence integration are complete, so real-machine calls stay minimal.
+
+
+## 2026-09-18 — O20 transaction accepted; immutable result slice started
+
+PR #71 was accepted after CI #345 / run `35289874654` passed completely and merged to main as `cdbd0f45f8c66b01522fcc3006b8019e2cd1ba88`.
+
+The initial CI #344 failure was a representation bug in expected derived HTDT coordinates plus an overly broad restore-error classification. Commit `fb1ba7a90c15810a01284a68dab9245679fab347` fixed both without widening REW write authority. PR #68 was then closed unmerged as superseded by the narrower position-only contract.
+
+Current branch `feat/n80-o20-result-persistence` continues Issue #67 with the next O20 slice:
+
+- immutable batch specs bound to exact SceneRevision/SearchSpec/candidate-set hash;
+- candidate requests frozen before any REW write;
+- append-only completed/failed candidate attempts;
+- exact REW/state/FR provenance for completed attempts;
+- failure records never publish an FR;
+- resume skips completed candidates and retries failed candidates using a new immutable attempt index;
+- cancellation is checked between candidates so the active transaction always completes its restore path;
+- any candidate failure halts that invocation instead of continuing writes blindly;
+- completed attempt FR can be converted to the existing O30 `FrequencyResponse` input without changing its evidence class.
+
+Focused tests cover cancel→resume, failed-attempt retry, authority binding, exact request freezing and exact Room Simulator state restoration. No RDC is used in this slice before CI is green; the writable owned-Windows gate remains consolidated with the later native integration.
