@@ -173,6 +173,7 @@ native stable releaseのcorrectnessはfrontend buildへ依存しません。
 | [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | CAD-first製品スコープとrelease方針 |
 | [CAD_EDITOR_OSS_RESEARCH.md](docs/CAD_EDITOR_OSS_RESEARCH.md) | 3D CAD/OSS調査、採否、参照コード |
 | [ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md](docs/ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101のwave/geometric hybrid、OSS、CPU/GPU、材料、validation調査 |
+| [COMPETITIVE_PRODUCT_RESEARCH_2026-09-19.md](docs/COMPETITIVE_PRODUCT_RESEARCH_2026-09-19.md) | 類似製品比較、HTDTの機能gap、追加/修正候補と優先順位 |
 | [ADR-0001](docs/adr/0001-native-cad-editor-stack.md) | native CAD editor技術決定 |
 | [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較、座標、保存契約 |
 | [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW / Windows / AVRの測定境界 |
