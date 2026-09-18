@@ -179,6 +179,32 @@ class CadExtendedSearchRepository:
             raise ValueError('extended search model capability does not exist')
         if capability.capability_sha256 != spec.capability_sha256:
             raise ValueError('extended search model capability hash mismatch')
+        for axis in spec.axes:
+            if axis.parameter not in capability.supported_parameters:
+                raise ValueError(
+                    f'extended model capability does not support {axis.parameter}'
+                )
+            try:
+                entity = source.document.entity(axis.entity_id)
+            except KeyError as exc:
+                raise ValueError(
+                    f'extended search axis references unknown entity: {axis.entity_id}'
+                ) from exc
+            if entity.kind != 'speaker':
+                raise ValueError(
+                    f'extended aim axis requires a speaker: {axis.entity_id}'
+                )
+            if entity.aim_xyz is None:
+                raise ValueError(
+                    f'extended aim axis requires explicit speaker aim: {axis.entity_id}'
+                )
+            horizontal = (
+                float(entity.aim_xyz.x) ** 2 + float(entity.aim_xyz.y) ** 2
+            ) ** 0.5
+            if horizontal <= 1e-9:
+                raise ValueError(
+                    f'extended aim axis cannot rotate vertical-only aim: {axis.entity_id}'
+                )
 
         page = self._base_page(base)
         if page.candidate_set_sha256 != spec.base_candidate_set_sha256:
