@@ -475,6 +475,7 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
         self._start_selected_rew_read(
             validation_scope=None,
             validation_campaign_id=None,
+            evidence_type_override=None,
         )
 
     def _start_selected_rew_read(
@@ -482,6 +483,7 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
         *,
         validation_scope: str | None,
         validation_campaign_id: str | None,
+        evidence_type_override: str | None = None,
     ) -> None:
         if self.rew_combo is None:
             return
@@ -512,8 +514,13 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
             query={'unit': 'SPL', 'ppo': None, 'smoothing': None},
         )
         self._rew_tokens[token.job_id] = token
+        evidence_type = (
+            self._evidence_type()
+            if evidence_type_override is None
+            else evidence_type_override
+        )
         self._rew_semantics[token.job_id] = (
-            self._evidence_type(),
+            evidence_type,
             self._channel_role(),
             validation_scope,
             validation_campaign_id,
