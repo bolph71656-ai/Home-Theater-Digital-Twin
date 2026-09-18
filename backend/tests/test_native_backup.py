@@ -11,6 +11,7 @@ from htdt.cad_document import WorkingDocument
 from htdt.cad_measurement_repository import CadMeasurementRepository
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, make_f1_scene
+import htdt.native_backup as native_backup
 from htdt.native_backup import create_backup, restore_backup, validate_backup
 
 
@@ -180,3 +181,35 @@ def test_backup_normalizes_existing_windows_asset_relative_paths(tmp_path: Path)
 
     assert f'measurement-assets/{digest}' in {entry.path for entry in manifest.files}
     validate_backup(archive)
+
+
+def test_restore_swap_failure_rolls_back_original_database_and_assets(tmp_path: Path, monkeypatch):
+    data_dir = tmp_path / 'data'
+    repository, first, digest, raw = _seed_data(data_dir)
+    baseline = tmp_path / 'baseline.htdt-backup'
+    create_backup(data_dir, baseline)
+
+    second = _mutate_scene(repository, first.revision_id)
+    original_replace = native_backup.os.replace
+    failed = False
+
+    def fail_staged_asset_swap(source, destination):
+        nonlocal failed
+        source_path = Path(source)
+        if (
+            not failed
+            and source_path.name == 'measurement-assets'
+            and 'htdt-restore-stage-' in str(source_path.parent)
+        ):
+            failed = True
+            raise OSError('injected staged asset swap failure')
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(native_backup.os, 'replace', fail_staged_asset_swap)
+
+    with pytest.raises(OSError, match='injected staged asset swap failure'):
+        restore_backup(data_dir, baseline)
+
+    reopened = SceneRepository(data_dir / 'cad-scenes.sqlite3')
+    assert reopened.latest(first.document_id).revision_id == second.revision_id
+    assert (data_dir / 'measurement-assets' / digest).read_bytes() == raw
