@@ -97,7 +97,8 @@ def main(argv: list[str] | None = None) -> int:
                 f'search={result.search_spec_id} '
                 f'validation={result.validation_id} '
                 f'adaptive={result.adaptive_plan_id} '
-                f'extended={result.extended_search_id}'
+                f'extended={result.extended_search_id} '
+                f'adaptive-extended={result.adaptive_extended_plan_id}'
             )
             print('synthetic demo is development-only and does not unlock owned-room recommendation')
             return 0
