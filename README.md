@@ -118,7 +118,7 @@ HTDTの中心は、数値フォームを先に埋める方式ではなく、同�
 
 配置探索も単一の「音質総合点」へ縮約せず、独立objective vectorとPareto集合を保持します。実測validationで傾向・順位・感度・再現性・適用条件が成立しないmodelから自動推薦を出しません。
 
-## 現在mainにある主要実装
+## 現在の主要実装
 
 - N20b: multi-select、common pivot、object/grid/angle snap、hide/lock
 - N30a: 凹polygon room sketch、vertex edit、dimension、self-intersection拒否
