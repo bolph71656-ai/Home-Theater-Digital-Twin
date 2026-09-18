@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -22,7 +23,7 @@ class CadSearchRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_search_specs (
@@ -54,7 +55,7 @@ class CadSearchRepository:
             raise ValueError('SearchSpec source content hash does not match revision')
 
         payload_json = spec.model_dump_json()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 INSERT INTO cad_search_specs(
@@ -75,7 +76,7 @@ class CadSearchRepository:
             )
 
     def get(self, search_spec_id: str) -> CadSearchSpec | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_search_specs WHERE search_spec_id=?',
                 (search_spec_id,),
@@ -83,7 +84,7 @@ class CadSearchRepository:
         return None if row is None else CadSearchSpec.model_validate_json(row['payload_json'])
 
     def list_specs(self, document_id: str) -> tuple[CadSearchSpec, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_search_specs WHERE document_id=? ORDER BY seq ASC',
                 (document_id,),
