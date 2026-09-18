@@ -28,6 +28,7 @@ from .optimization_objectives import ObjectiveMetric, ObjectiveVector
 
 ROBUSTNESS_SCHEMA_VERSION = 1
 ROBUSTNESS_ALGORITHM_VERSION = 'o90a-local-stencil-1'
+ROBUSTNESS_MULTIDIMENSIONAL_ALGORITHM_VERSION = 'o90b-bounded-design-1'
 RobustnessCandidate = CadCandidate | CadExtendedCandidate
 RobustnessCandidateKind = Literal['cad_candidate', 'extended_candidate']
 RobustnessAxisParameter = Literal[
@@ -116,6 +117,37 @@ class UncertaintyAxis(BaseModel):
         return self
 
 
+class LinkedPerturbationGroup(BaseModel):
+    """Explicit deterministic linkage between bounded O90 input axes.
+
+    The shared normalized coordinate is a sampling-design relationship only.
+    It is not a probability distribution or a statistical correlation estimate.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    group_id: str = Field(min_length=1)
+    axis_multipliers: dict[str, float] = Field(min_length=2)
+    relationship: Literal['shared_normalized_coordinate'] = (
+        'shared_normalized_coordinate'
+    )
+
+    @model_validator(mode='after')
+    def valid_group(self) -> 'LinkedPerturbationGroup':
+        if len(self.axis_multipliers) < 2:
+            raise ValueError('linked perturbation group requires at least two axes')
+        for axis_id, multiplier in self.axis_multipliers.items():
+            if not axis_id:
+                raise ValueError('linked perturbation axis IDs must be non-empty')
+            value = float(multiplier)
+            if not isfinite(value) or value == 0.0 or abs(value) > 1.0:
+                raise ValueError(
+                    'linked perturbation multipliers must be finite, non-zero, '
+                    'and within [-1, 1]'
+                )
+        return self
+
+
 class RobustnessSpec(BaseModel):
     """Immutable O90A authority bound to existing Scene/Search/Objective evidence."""
 
@@ -142,11 +174,21 @@ class RobustnessSpec(BaseModel):
     prediction_provider_id: str = Field(min_length=1)
     fidelity: str = Field(min_length=1)
     axes: tuple[UncertaintyAxis, ...] = Field(min_length=1)
-    sampling_strategy: Literal['deterministic_local_stencil'] = (
-        'deterministic_local_stencil'
-    )
-    algorithm_version: Literal['o90a-local-stencil-1'] = (
-        ROBUSTNESS_ALGORITHM_VERSION
+    sampling_strategy: Literal[
+        'deterministic_local_stencil',
+        'deterministic_multidimensional_bounded',
+    ] = 'deterministic_local_stencil'
+    algorithm_version: Literal[
+        'o90a-local-stencil-1',
+        'o90b-bounded-design-1',
+    ] = ROBUSTNESS_ALGORITHM_VERSION
+    sampling_seed: int | None = None
+    sample_count: int | None = Field(default=None, ge=3)
+    linked_groups: tuple[LinkedPerturbationGroup, ...] = ()
+    parent_robustness_spec_id: str | None = Field(default=None, min_length=1)
+    parent_robustness_spec_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
     )
     software_version: str = Field(min_length=1)
     robustness_spec_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
@@ -160,6 +202,56 @@ class RobustnessSpec(BaseModel):
             raise ValueError('robustness axis IDs must be unique')
         if len(axis_targets) != len(set(axis_targets)):
             raise ValueError('robustness axes must be unique by entity + parameter')
+        known_axis_ids = set(axis_ids)
+        linked_axis_ids: set[str] = set()
+        group_ids: set[str] = set()
+        for group in self.linked_groups:
+            if group.group_id in group_ids:
+                raise ValueError('linked perturbation group IDs must be unique')
+            group_ids.add(group.group_id)
+            group_axis_ids = set(group.axis_multipliers)
+            unknown = group_axis_ids - known_axis_ids
+            if unknown:
+                raise ValueError(
+                    f'linked perturbation group references unknown axes: {sorted(unknown)}'
+                )
+            overlap = linked_axis_ids & group_axis_ids
+            if overlap:
+                raise ValueError(
+                    f'uncertainty axes may belong to only one linked group: '
+                    f'{sorted(overlap)}'
+                )
+            linked_axis_ids.update(group_axis_ids)
+        if self.sampling_strategy == 'deterministic_local_stencil':
+            if self.algorithm_version != ROBUSTNESS_ALGORITHM_VERSION:
+                raise ValueError('local robustness spec requires O90A algorithm version')
+            if (
+                self.sampling_seed is not None
+                or self.sample_count is not None
+                or self.linked_groups
+                or self.parent_robustness_spec_id is not None
+                or self.parent_robustness_spec_sha256 is not None
+            ):
+                raise ValueError('O90A local spec cannot carry O90B sampling metadata')
+        else:
+            if (
+                self.algorithm_version
+                != ROBUSTNESS_MULTIDIMENSIONAL_ALGORITHM_VERSION
+            ):
+                raise ValueError(
+                    'multidimensional robustness spec requires O90B algorithm version'
+                )
+            if self.sampling_seed is None or self.sample_count is None:
+                raise ValueError(
+                    'multidimensional robustness spec requires seed and sample_count'
+                )
+            if (
+                self.parent_robustness_spec_id is None
+                or self.parent_robustness_spec_sha256 is None
+            ):
+                raise ValueError(
+                    'multidimensional robustness spec requires exact O90A parent'
+                )
         try:
             candidate_payload = json.loads(self.candidate_payload_json)
         except json.JSONDecodeError as exc:
@@ -179,7 +271,7 @@ class RobustnessSpec(BaseModel):
         return self
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             'schema_version': self.schema_version,
             'document_id': self.document_id,
             'scene_revision_id': self.scene_revision_id,
@@ -208,6 +300,21 @@ class RobustnessSpec(BaseModel):
             'algorithm_version': self.algorithm_version,
             'software_version': self.software_version,
         }
+        if self.sampling_strategy == 'deterministic_multidimensional_bounded':
+            payload.update(
+                {
+                    'sampling_seed': self.sampling_seed,
+                    'sample_count': self.sample_count,
+                    'linked_groups': [
+                        group.model_dump(mode='json') for group in self.linked_groups
+                    ],
+                    'parent_robustness_spec_id': self.parent_robustness_spec_id,
+                    'parent_robustness_spec_sha256': (
+                        self.parent_robustness_spec_sha256
+                    ),
+                }
+            )
+        return payload
 
 
 class LocalPerturbation(BaseModel):
@@ -216,7 +323,7 @@ class LocalPerturbation(BaseModel):
     sample_id: str = Field(min_length=1)
     sample_index: int = Field(ge=0)
     axis_id: str | None = None
-    step: Literal['nominal', 'minus', 'plus']
+    step: Literal['nominal', 'minus', 'plus', 'multidimensional']
     parameter_deltas: dict[str, float]
 
     @model_validator(mode='after')
@@ -224,9 +331,18 @@ class LocalPerturbation(BaseModel):
         if self.step == 'nominal':
             if self.axis_id is not None or self.parameter_deltas:
                 raise ValueError('nominal perturbation must not contain an axis delta')
+        elif self.step == 'multidimensional':
+            if self.axis_id is not None:
+                raise ValueError(
+                    'multidimensional perturbation must not name one local axis'
+                )
+            if not self.parameter_deltas:
+                raise ValueError(
+                    'multidimensional perturbation requires parameter deltas'
+                )
         else:
             if self.axis_id is None:
-                raise ValueError('non-nominal perturbation requires axis_id')
+                raise ValueError('local perturbation requires axis_id')
             if set(self.parameter_deltas) != {self.axis_id}:
                 raise ValueError('local perturbation must contain exactly its axis delta')
         if any(not isfinite(float(value)) for value in self.parameter_deltas.values()):
@@ -255,7 +371,7 @@ class PerturbationSample(BaseModel):
     candidate_id: str = Field(min_length=1)
     sample_index: int = Field(ge=0)
     axis_id: str | None = None
-    step: Literal['nominal', 'minus', 'plus']
+    step: Literal['nominal', 'minus', 'plus', 'multidimensional']
     parameter_deltas: dict[str, float]
     perturbed_scene_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     feasible: bool
@@ -354,6 +470,33 @@ class LocalSensitivity(BaseModel):
     state: Literal['available', 'infeasible_or_failed']
 
 
+class SampledObjectiveEnvelope(BaseModel):
+    """Observed finite-sample objective range; never an asserted true worst-case."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sampled_min_sample_id: str = Field(min_length=1)
+    sampled_min_value: float
+    sampled_max_sample_id: str = Field(min_length=1)
+    sampled_max_value: float
+    percentile_values: dict[str, float] | None = None
+
+    @model_validator(mode='after')
+    def valid_envelope(self) -> 'SampledObjectiveEnvelope':
+        if not all(
+            isfinite(float(value))
+            for value in (self.sampled_min_value, self.sampled_max_value)
+        ):
+            raise ValueError('sampled envelope values must be finite')
+        if self.sampled_max_value < self.sampled_min_value:
+            raise ValueError('sampled envelope max must be >= min')
+        if self.percentile_values is not None and any(
+            not isfinite(float(value)) for value in self.percentile_values.values()
+        ):
+            raise ValueError('sampled percentile values must be finite')
+        return self
+
+
 class RobustnessEvaluation(BaseModel):
     """Per-objective O90A result; never a scalar overall robustness score."""
 
@@ -376,6 +519,13 @@ class RobustnessEvaluation(BaseModel):
     sample_ids: tuple[str, ...] = Field(min_length=1)
     infeasible_sample_ids: tuple[str, ...] = ()
     failed_sample_ids: tuple[str, ...] = ()
+    sampled_envelope: SampledObjectiveEnvelope | None = None
+    feasible_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
+    sampling_provenance_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    percentile_semantics: Literal['not_available_bounded_interval'] | None = None
     evaluation_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     created_at_utc: str = Field(min_length=1)
 
@@ -390,6 +540,27 @@ class RobustnessEvaluation(BaseModel):
             raise ValueError('nominal sample must be part of robustness evaluation')
         if self.sampled_worst_sample_id not in self.sample_ids:
             raise ValueError('sampled worst sample must be part of robustness evaluation')
+        multidimensional_values = (
+            self.sampled_envelope,
+            self.feasible_fraction,
+            self.sampling_provenance_sha256,
+            self.percentile_semantics,
+        )
+        if any(value is not None for value in multidimensional_values):
+            if any(value is None for value in multidimensional_values):
+                raise ValueError(
+                    'multidimensional robustness summary must be complete'
+                )
+            assert self.sampled_envelope is not None
+            if self.sampled_envelope.percentile_values is not None:
+                raise ValueError(
+                    'bounded interval sampling cannot expose percentile values'
+                )
+            if (
+                self.sampled_envelope.sampled_min_sample_id not in self.sample_ids
+                or self.sampled_envelope.sampled_max_sample_id not in self.sample_ids
+            ):
+                raise ValueError('sampled envelope samples must belong to evaluation')
         expected = canonical_robustness_sha256(self.identity_payload())
         if expected != self.evaluation_sha256:
             raise ValueError('robustness evaluation identity hash mismatch')
@@ -398,7 +569,7 @@ class RobustnessEvaluation(BaseModel):
         return self
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             'schema_version': self.schema_version,
             'robustness_spec_id': self.robustness_spec_id,
             'robustness_spec_sha256': self.robustness_spec_sha256,
@@ -418,6 +589,16 @@ class RobustnessEvaluation(BaseModel):
             'infeasible_sample_ids': list(self.infeasible_sample_ids),
             'failed_sample_ids': list(self.failed_sample_ids),
         }
+        if self.sampled_envelope is not None:
+            payload.update(
+                {
+                    'sampled_envelope': self.sampled_envelope.model_dump(mode='json'),
+                    'feasible_fraction': self.feasible_fraction,
+                    'sampling_provenance_sha256': self.sampling_provenance_sha256,
+                    'percentile_semantics': self.percentile_semantics,
+                }
+            )
+        return payload
 
 
 def _semantic_id(prefix: str, digest: str) -> str:
@@ -599,12 +780,14 @@ def build_robustness_spec(
 
 
 def build_local_stencil(spec: RobustnessSpec) -> tuple[LocalPerturbation, ...]:
+    if spec.sampling_strategy != 'deterministic_local_stencil':
+        raise ValueError('local stencil requires an O90A local robustness spec')
     plans: list[LocalPerturbation] = []
 
     def add(
         *,
         axis_id: str | None,
-        step: Literal['nominal', 'minus', 'plus'],
+        step: Literal['nominal', 'minus', 'plus', 'multidimensional'],
         deltas: dict[str, float],
     ) -> None:
         payload = {
