@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from .analysis_markers import render_analysis_marker_cloud
+from .cad_adaptive_repository import CadAdaptivePlanRepository
+from .cad_adaptive_service import CadAdaptivePlannerService
 from .cad_repository import SceneRepository, SceneRevision
 from .cad_objectives import build_pareto_set
 from .cad_objective_repository import CadObjectiveRepository
@@ -136,6 +138,16 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.measurement_repository,
             self.objective_repository,
         )
+        self.adaptive_repository = CadAdaptivePlanRepository(
+            self.search_repository,
+            self.validation_repository,
+        )
+        self.adaptive_service = CadAdaptivePlannerService(
+            self.search_repository,
+            self.objective_repository,
+            self.validation_repository,
+            self.adaptive_repository,
+        )
         self.campaign_repository = CadValidationCampaignRepository(
             self.search_repository,
             self.measurement_repository,
@@ -183,6 +195,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.validation_tree: QTreeWidget | None = None
         self.validation_detail_label: QLabel | None = None
         self.validation_refresh_button: QPushButton | None = None
+        self.adaptive_scope_combo: QComboBox | None = None
+        self.adaptive_length_scale_field: QDoubleSpinBox | None = None
+        self.adaptive_proposal_limit_field: QSpinBox | None = None
+        self.adaptive_build_button: QPushButton | None = None
+        self.adaptive_tree: QTreeWidget | None = None
+        self.adaptive_detail_label: QLabel | None = None
         self.campaign_assignment_tree: QTreeWidget | None = None
         self.campaign_tree: QTreeWidget | None = None
         self.campaign_detail_label: QLabel | None = None
@@ -528,6 +546,58 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.validation_detail_label = QLabel('ValidationRecord未選択')
         self.validation_detail_label.setWordWrap(True)
         layout.addWidget(self.validation_detail_label)
+
+        adaptive_label = QLabel(
+            'Adaptive Planner · synthetic開発とowned-room本番を明示分離します'
+        )
+        adaptive_label.setWordWrap(True)
+        layout.addWidget(adaptive_label)
+
+        adaptive_form = QFormLayout()
+        self.adaptive_scope_combo = QComboBox()
+        self.adaptive_scope_combo.addItem(
+            'Synthetic development',
+            'development_synthetic',
+        )
+        self.adaptive_scope_combo.addItem(
+            'Owned-room production',
+            'production_owned_room',
+        )
+        adaptive_form.addRow('実行scope', self.adaptive_scope_combo)
+
+        self.adaptive_length_scale_field = QDoubleSpinBox()
+        self.adaptive_length_scale_field.setRange(0.01, 20.0)
+        self.adaptive_length_scale_field.setDecimals(3)
+        self.adaptive_length_scale_field.setSingleStep(0.05)
+        self.adaptive_length_scale_field.setValue(0.5)
+        self.adaptive_length_scale_field.setSuffix(' m')
+        adaptive_form.addRow('GP length scale', self.adaptive_length_scale_field)
+
+        self.adaptive_proposal_limit_field = QSpinBox()
+        self.adaptive_proposal_limit_field.setRange(1, 100)
+        self.adaptive_proposal_limit_field.setValue(20)
+        adaptive_form.addRow('表示proposal上限', self.adaptive_proposal_limit_field)
+        layout.addLayout(adaptive_form)
+
+        self.adaptive_build_button = QPushButton('次の測定候補を計算・immutable保存')
+        self.adaptive_build_button.setToolTip(
+            'synthetic scopeは開発検証専用です。owned-room productionは'
+            'current campaign-backed eligible O60 ValidationRecordだけを受け付けます'
+        )
+        self.adaptive_build_button.clicked.connect(self.build_selected_adaptive_plan)
+        layout.addWidget(self.adaptive_build_button)
+
+        self.adaptive_tree = QTreeWidget()
+        self.adaptive_tree.setHeaderLabels([
+            'plan / candidate', 'scope', 'acquisition', '補正objective'
+        ])
+        self.adaptive_tree.setMinimumHeight(180)
+        self.adaptive_tree.itemSelectionChanged.connect(self._adaptive_selected)
+        layout.addWidget(self.adaptive_tree)
+
+        self.adaptive_detail_label = QLabel('Adaptive Plan未選択')
+        self.adaptive_detail_label.setWordWrap(True)
+        layout.addWidget(self.adaptive_detail_label)
         layout.addStretch(1)
 
         dock = QDockWidget('最適化', self)
@@ -1156,6 +1226,218 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             lines.extend(f'stop: {reason}' for reason in record.gate_reasons)
         label.setText('\n'.join(lines))
 
+    def _selected_validation_record(self):
+        tree = self.validation_tree
+        if tree is None:
+            return None
+        item = tree.currentItem()
+        validation_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(validation_id, str):
+            return None
+        return self.validation_repository.get(validation_id)
+
+    def build_selected_adaptive_plan(self) -> None:
+        record = self._selected_validation_record()
+        spec = self._selected_search_spec()
+        if record is None or spec is None:
+            self.statusBar().showMessage(
+                'Adaptive PlannerにはSearchSpecとValidationRecordの選択が必要です'
+            )
+            return
+        if (
+            self.working is None
+            or not search_spec_current_working(
+                spec,
+                self.working,
+                self.constraint_set,
+                current_document_id=self.document_id,
+            )
+        ):
+            self.statusBar().showMessage(
+                'staleなSearchSpec/Scene/constraintからAdaptive Planを作成できません'
+            )
+            return
+        if record.search_spec_id != spec.search_spec_id:
+            self.statusBar().showMessage(
+                '選択ValidationRecordは現在のSearchSpecに属していません'
+            )
+            return
+
+        scope = (
+            'development_synthetic'
+            if self.adaptive_scope_combo is None
+            else str(self.adaptive_scope_combo.currentData())
+        )
+        length_scale = (
+            0.5
+            if self.adaptive_length_scale_field is None
+            else float(self.adaptive_length_scale_field.value())
+        )
+        proposal_limit = (
+            20
+            if self.adaptive_proposal_limit_field is None
+            else int(self.adaptive_proposal_limit_field.value())
+        )
+        try:
+            plan = self.adaptive_service.build_and_save(
+                validation_id=record.validation_id,
+                execution_scope=scope,
+                length_scale_m=length_scale,
+                proposal_limit=proposal_limit,
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f'Adaptive Planを作成できません · {exc}')
+            return
+
+        self.refresh_adaptive_plans(select_plan_id=plan.plan_id)
+        mode = (
+            'synthetic開発'
+            if plan.execution_scope == 'development_synthetic'
+            else 'owned-room本番'
+        )
+        self.statusBar().showMessage(
+            f'O70 Adaptive Planを保存しました · {mode} · '
+            f'次候補 {plan.selected_candidate_id[:12]}'
+        )
+
+    def refresh_adaptive_plans(
+        self,
+        *,
+        select_plan_id: str | None = None,
+    ) -> None:
+        tree = self.adaptive_tree
+        if tree is None:
+            return
+        tree.clear()
+        if self.adaptive_detail_label is not None:
+            self.adaptive_detail_label.setText('Adaptive Plan未選択')
+        spec_id = self.search_selected_spec_id
+        if spec_id is None:
+            return
+        try:
+            plans = self.adaptive_repository.list_for_search_spec(spec_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'Adaptive Planを読めません · {exc}')
+            return
+
+        selected_item: QTreeWidgetItem | None = None
+        for plan in reversed(plans):
+            scope_text = (
+                'synthetic'
+                if plan.execution_scope == 'development_synthetic'
+                else 'owned-room'
+            )
+            root = QTreeWidgetItem([
+                f'plan {plan.plan_id[:8]}',
+                scope_text,
+                'selected ' + plan.selected_candidate_id[:12],
+                ', '.join(plan.objective_ids),
+            ])
+            root.setData(0, ROLE, {'plan_id': plan.plan_id})
+            tree.addTopLevelItem(root)
+            if plan.plan_id == select_plan_id:
+                selected_item = root
+            for proposal in plan.proposals:
+                objective_text = '; '.join(
+                    f'{estimate.objective_id}: '
+                    f'{estimate.corrected_mean:.4g}±{estimate.residual_uncertainty:.3g} '
+                    f'{estimate.unit}'
+                    for estimate in proposal.objectives
+                )
+                child = QTreeWidgetItem([
+                    proposal.candidate_id[:12],
+                    scope_text,
+                    f'{proposal.acquisition_score:.4f}',
+                    objective_text,
+                ])
+                child.setData(0, ROLE, {
+                    'plan_id': plan.plan_id,
+                    'candidate_id': proposal.candidate_id,
+                })
+                root.addChild(child)
+            root.setExpanded(plan.plan_id == select_plan_id)
+
+        if selected_item is None and tree.topLevelItemCount() > 0:
+            selected_item = tree.topLevelItem(0)
+        if selected_item is not None:
+            tree.setCurrentItem(selected_item)
+        else:
+            self._adaptive_selected()
+
+    def _adaptive_selected(self) -> None:
+        tree = self.adaptive_tree
+        label = self.adaptive_detail_label
+        if tree is None or label is None:
+            return
+        item = tree.currentItem()
+        payload = None if item is None else item.data(0, ROLE)
+        if not isinstance(payload, dict):
+            label.setText('Adaptive Plan未選択')
+            return
+        plan_id = payload.get('plan_id')
+        if not isinstance(plan_id, str):
+            label.setText('Adaptive Plan未選択')
+            return
+        plan = self.adaptive_repository.get(plan_id)
+        if plan is None:
+            label.setText('Adaptive Planが見つかりません')
+            return
+
+        lines = [
+            f'scope {plan.execution_scope} · source {plan.source_evidence_scope}',
+            f'validation {plan.validation_id[:8]} · {plan.model_id}/{plan.model_version}',
+            f'algorithm {plan.algorithm_version} · acquisition {plan.acquisition_function}',
+            f'length scale {plan.length_scale_m:g} m · training '
+            f'{len(plan.training_candidate_ids)} · measured除外 '
+            f'{len(plan.excluded_measured_candidate_ids)}',
+            f'candidate pool {plan.candidate_pool_count} · proposals {len(plan.proposals)}',
+            f'next candidate {plan.selected_candidate_id[:12]}',
+        ]
+        if plan.execution_scope == 'development_synthetic':
+            lines.append(
+                'synthetic development only · production recommendationは開きません'
+            )
+        candidate_id = payload.get('candidate_id')
+        if isinstance(candidate_id, str):
+            proposal = next(
+                (
+                    proposal
+                    for proposal in plan.proposals
+                    if proposal.candidate_id == candidate_id
+                ),
+                None,
+            )
+            if proposal is not None:
+                lines.append(
+                    f'candidate {candidate_id[:12]} · acquisition '
+                    f'{proposal.acquisition_score:.4f}'
+                )
+                for estimate in proposal.objectives:
+                    lines.append(
+                        f'{estimate.objective_id}: predicted {estimate.predicted_value:.4g} '
+                        f'→ corrected {estimate.corrected_mean:.4g} {estimate.unit} · '
+                        f'uncertainty {estimate.residual_uncertainty:.3g} {estimate.unit}'
+                    )
+                self.search_selected_candidate_id = candidate_id
+                if self.search_candidate_tree is not None:
+                    found = False
+                    for index in range(self.search_candidate_tree.topLevelItemCount()):
+                        candidate_item = self.search_candidate_tree.topLevelItem(index)
+                        candidate_payload = candidate_item.data(0, ROLE)
+                        if (
+                            isinstance(candidate_payload, dict)
+                            and candidate_payload.get('candidate_id') == candidate_id
+                        ):
+                            self.search_candidate_tree.setCurrentItem(candidate_item)
+                            found = True
+                            break
+                    if not found:
+                        self.statusBar().showMessage(
+                            'Adaptive候補は現在のcandidate page外です · '
+                            'pageを移動してpreview/applyしてください'
+                        )
+        label.setText('\n'.join(lines))
+
     def refresh_pareto_comparison(self) -> None:
         spec_id = self.search_selected_spec_id
         if spec_id is None or self.objective_list is None or self.pareto_tree is None:
@@ -1501,6 +1783,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.refresh_measurement_plans()
         self.refresh_validation_campaigns()
         self.refresh_model_validations()
+        self.refresh_adaptive_plans()
         self._render_search_overlay()
 
     def _selected_search_spec(self) -> CadSearchSpec | None:
