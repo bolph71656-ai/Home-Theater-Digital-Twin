@@ -330,7 +330,10 @@ class CadModelValidationRepository:
     def _aware_timestamp(value: str | None) -> datetime | None:
         if not value:
             return None
-        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        try:
+            parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            return None
         return parsed if parsed.tzinfo is not None else None
 
     def _validate_campaign_binding(self, record: CadModelValidationRecord, plans) -> None:
