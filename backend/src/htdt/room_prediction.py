@@ -241,12 +241,11 @@ class RoomPredictionController(QObject):
         thread = QThread(self)
         worker = _PredictionWorker(spec, self._operation)
         worker.moveToThread(thread)
+        thread.setProperty("predictionJobId", spec.token.job_id)
         thread.started.connect(worker.run)
         worker.completed.connect(self._task_completed)
         worker.completed.connect(thread.quit)
-        thread.finished.connect(
-            lambda job_id=spec.token.job_id: self._task_finished(job_id)
-        )
+        thread.finished.connect(self._thread_finished)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         self._tokens[spec.token.job_id] = spec.token
@@ -385,7 +384,15 @@ class RoomPredictionController(QObject):
             RoomPredictionRunState(True, "予測処理を終了しています…")
         )
 
-    def _task_finished(self, job_id: str) -> None:
+    @Slot()
+    def _thread_finished(self) -> None:
+        thread = self.sender()
+        if not isinstance(thread, QThread):
+            return
+        raw_job_id = thread.property("predictionJobId")
+        if raw_job_id is None:
+            return
+        job_id = str(raw_job_id)
         self._tasks.pop(job_id, None)
         final_state = self._completion_states.pop(
             job_id,
