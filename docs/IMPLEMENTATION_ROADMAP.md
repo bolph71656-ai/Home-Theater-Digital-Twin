@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 arbitrary-room acoustics計画反映
+> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 Deep Research bakeoff計画反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -90,7 +90,7 @@ R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、そ�
 
 | ID | 先行条件 | 成果 / 完了gate |
 |---|---|---|
-| R100 — solver bakeoff | N70 prediction authority | FDTD CPU PoC、独立FEM/reference、geometric reference、license/package matrix、共通benchmark。Windows/CIの実測でfirst production stackを選定 |
+| R100 — solver bakeoff | N70 prediction authority | deterministic FDTD CPU PoC、独立FEM/reference、geometric reference、secondary BEM/PSTD等の評価範囲、version/license/redistribution/Windows package matrix、共通fixture corpus。accuracy・convergence・runtime・RAM/VRAM・CPU/GPU tolerance・geometry/material failure modeを同一benchmarkで測定し、first production stackを選定 |
 | R110 — acoustic authority | R100 interface決定 | immutable AcousticSceneSnapshot、surface/object material、source/directivity、solver/backend provenance。scalar absorptionとcomplex impedanceを区別 |
 | R120 — geometry compiler | R110 | exact SceneRevision→canonical acoustic surfaces→wave grid / ray BVH / optional FEM mesh。non-manifold/open/degenerate/thin unresolvedをfail-closed |
 | R130 — low-band wave | R120 | 20–300 Hzを初期targetにCPU correctness baseline。FR/phase/IR/spatial field、frequency-dependent boundary、分析解＋convergence＋cross-solver gate |
@@ -100,7 +100,11 @@ R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、そ�
 | R170 — optimization integration | R140/R160 + O10〜O70 | multi-fidelity candidate prediction→ObjectiveVector→Pareto→MeasurementPlan→N60/O60/O70。geometry/BVH/grid再利用とsemantic cache |
 | R180 — owned-room validation | R170 | target roomでREW/UMIK-1 validation。新solver/model versionごとにO60 applicability/holdout gate。simulationだけでproduction recommendationを開かない |
 
-R100では「候補ライブラリを先に製品依存へ固定」しない。FDTDをfirst PoCとするが、staircase/thin-surface/material-boundary精度またはWindows packagingがgate未達なら、MFEM等のFEM pathを同じfixtureで比較して決める。BEM/FMMはsecondary referenceとし、初期production dependencyにはしない。
+R100では「候補ライブラリを先に製品依存へ固定」しない。FDTDをfirst PoCとするが、staircase/thin-surface/material-boundary精度またはWindows packagingがgate未達なら、MFEM等のFEM pathを同じfixtureで比較して決める。BEM/FMM、DG/high-order FEM、PSTD/k-spaceはsecondary/reference候補とし、初期production dependencyにはしない。
+
+Deep Research反映後のR100共通fixtureは最低限、rigid rectangular analytical modes、grid/mesh convergence、単一impedance boundary、L字/凹room、明示opening、counter相当のreflecting obstacle、direct path、first reflection、seed repeatability、hybrid overlap continuityを含む。points/elements-per-wavelength等の経験則は初期値に使えてもacceptanceそのものにはせず、backendごとの収束測定からvalid upper frequencyを決める。
+
+R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU correctness baseline、材料authority分離、immutable provenance、O60 real-data gateである。production wave library、最終crossover、GPU vendor/API、mesh/grid preset、FEM mesher/linear-solver stack、diffraction/late-field方式はbenchmark前に固定しない。研究報告中の一般的GPU speedup値や単一ハードウェア例をHTDTの性能要件へ直接転記しない。
 
 ### N05 / N10の実装slice
 
