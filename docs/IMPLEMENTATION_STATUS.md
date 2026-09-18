@@ -379,3 +379,16 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - central `prediction.run` はRoom/acoustics deep-link後に新controllerへbind。
 - 詳細: [UX120 Room prediction integration](UX120_ROOM_PREDICTION_2026-09-19.md)
 - RDC未使用。
+
+
+### UX120 Room advanced geometry — 2026-09-19
+
+- 新Roomへvertex/edge selection、midpoint handle、wall drag、numeric vertex/edge/ceiling editを追加。
+- Room > 形状の右contextを専用Geometry Inspectorへ分離。
+- wall topology / opening editは既存 `RoomWorkingDocument.replace_room_topology()` と `cad_walls` authorityを再利用。
+- wall thickness、opening update/deleteをreusable `cad_walls` helperへ抽出し、全操作をexisting topology validationへ通す。
+- split/merge/delete/moveでwall/opening referenceを維持し、orphan/overflowはfail closed。
+- selected wall / opening extentをviewport overlayへ表示。
+- 詳細: [UX120 Room advanced geometry](UX120_ROOM_ADVANCED_GEOMETRY_2026-09-19.md)
+- Roomの主要機能残件はUX150/UX160 polish/acceptance。UX140 legacy adapter cleanupは別途。
+- RDC未使用。
