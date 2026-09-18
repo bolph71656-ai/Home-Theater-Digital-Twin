@@ -253,4 +253,5 @@ Issue #83 / PR #85で、実室campaign完了後に使うread-only監査harness�
 - clean worktree / exact product-head ancestor / checkout restoreをWindows runnerが保証する。
 - CI preflightはPASS済み。実室PASSはまだ主張しない。
 - `inventory_o60_owned_room.py`でcampaign/readiness/REW read-only状態を1コマンド確認できる。
+- owned-Windows inventory preflightで検出したtemp SQLite `WinError 32`に対し、Search/RoomSim/Objective/ModelValidation repositoryの接続を明示closeへ統一し、DB存在時のinventory cleanup回帰testを追加した。
 - 残る作業は人手のspeaker/setup移動とREW実測を伴うowned-room campaign実行のみ。これを満たすまでO70/O80はdisabled。
