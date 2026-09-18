@@ -14,6 +14,7 @@ from .cad_synthetic_demo import seed_synthetic_optimization_demo
 from .constraint_editor import ConstraintEditorWindow
 from .measurement_editor import MeasurementEditorWindow
 from .measurement_workspace import MeasurementWorkspaceWindow
+from .native_command_adapter import install_native_command_palette
 from .native_backup import create_backup, restore_backup
 from .native_editor import default_data_dir
 from .optimization_workspace import OptimizationWorkspaceWindow
@@ -106,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         app = QApplication([sys.argv[0]])
         repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
         window = OptimizationWorkspaceWindow(repository, args.document_id)
+        install_native_command_palette(window)
         window.show()
         return int(app.exec())
     finally:
