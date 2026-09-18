@@ -100,6 +100,7 @@ def candidate_cloud_points(
 
 
 class SearchControllerMixin:
+    @staticmethod
     def _search_distance_field(*, minimum: float = -1000.0, value: float = 0.0) -> QDoubleSpinBox:
         field = QDoubleSpinBox()
         field.setRange(minimum, 1000.0)
