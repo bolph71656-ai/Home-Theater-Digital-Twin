@@ -53,7 +53,8 @@ class RoomGeometryPanel(QFrame):
         self.geometry = geometry
         self.controller = geometry.workspace.controller
         self.setObjectName("roomGeometryPanel")
-        self.setFixedWidth(320)
+        self.setMinimumWidth(248)
+        self.setMaximumWidth(320)
         set_surface_role(self, SurfaceRole.RAISED)
 
         root = QVBoxLayout(self)
