@@ -418,7 +418,8 @@ def build_adaptive_plan(
         )
 
     proposals.sort(key=lambda item: (-item.acquisition_score, item.candidate_id))
-    proposals = proposals[: min(int(proposal_limit), len(proposals))]
+    candidate_pool_count = len(proposals)
+    proposals = proposals[: min(int(proposal_limit), candidate_pool_count)]
     provisional = CadAdaptivePlan.model_construct(
         plan_id=str(uuid4()),
         document_id=spec.document_id,
@@ -436,7 +437,7 @@ def build_adaptive_plan(
         objective_ids=objective_ids,
         training_candidate_ids=training_ids,
         excluded_measured_candidate_ids=measured_ids,
-        candidate_pool_count=len(proposals),
+        candidate_pool_count=candidate_pool_count,
         length_scale_m=float(length_scale_m),
         seed=0,
         acquisition_function='max_normalized_residual_uncertainty',
