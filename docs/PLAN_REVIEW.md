@@ -5,7 +5,7 @@
 > 追加対象: mainの10dabf995453e1351fce32e2041790c925d2e31bにある計画6文書
 > 範囲: 計画書の検証・詳細化。アプリ実装、Windows実機検証、実測データ検証は実施していない。
 
-**最新の技術レビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化とIssue/PR整理は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
+**最新のIssue #101ゼロベースレビューは§11、追加レビューは§10、前回は§9。CAD-firstレビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
 
 §1–5は初回レビューの記録を残す。追加レビューの指摘と反映先は[§6](#6-追加レビュー)を参照。現在の仕様は各設計文書を正本とする。
 
@@ -215,3 +215,60 @@ PR #105/#106反映後のIssue #101、`ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md`、
 数値方式の基本方針は変更しない。FDTDはfirst PoC、FEMは独立reference/alternative、BEM/DG/PSTD等はsecondary/referenceのまま。ただしproduction solver、final crossover、GPU API/vendor、mesh/grid preset、diffraction/late-field方式はR100B evidence前に固定しない。
 
 次に実装を再開する場合の開始点はR100Aであり、solver kernelから先に書き始めない。
+
+## 10. Issue #101 実装開始条件・数値比較・探索の追加レビュー（2026-09-18）
+
+### 対象と結論
+
+main `e8db17fc2399d171f9fed4d619540b5decc17310`（PR #107反映後）のIssue #101、研究文書、実装/最適化ロードマップ、CAD仕様、製品計画/実装状況をGitHubで確認。現行 `cad_scene.py` の単一RoomPrismとprediction modelの範囲も照合した。FDTD-first PoC・FEM独立reference・CPU baseline・O60 evidence gateは維持する。
+
+### 指摘と修正
+
+| ID | 優先度 | 所見と影響 | 修正・反映先 |
+|---|---|---|---|
+| ACR13 | 高 | 研究§14がR100 PoC/kernel開始を促し、R100A先行と矛盾。R100の比較項目に後続製品機能も混在 | §14をR100A manifest→R100B実行へ訂正。stage別evidence表、shipping/reference環境とGPU対象外を区別。研究§4D/§14、実装ロードマップ |
+| ACR14 | 高 | mode誤差だけではFR/phase/decayを保証できず、無損失共振点を有限FRとして比較する危険 | 単位・励振・座標補間・dt/観測時間・処理・null mask・独立reference/tolerance契約。lossless modeとlossy/有限時間応答を区別。研究§4D/§12 |
+| ACR15 | 高 | overlapが存在しない場合、経路のphase不足、IR tail不足の具体的停止条件がない | gapの保持、complex pathの必要条件、decay/clarityの適用/打切りfixture。研究§8、実装ロードマップ |
+| ACR16 | 高 | 粗計算で真の良候補を落とし、異なるfidelityでPareto支配を誤判定し得る。物理cabinet移動時のreuse条件も不十分 | discrepancy/除外候補audit/順位逆転fixture、共通fidelity再評価、operator単位cache失効とimmutable run binding。研究§10、最適化§4.2/§4.3 |
+| ACR17 | 高 | 現行単室CADにmaterial/隣接regionを入力する工程がなく、任意meshを扱えるsolverと製品入力範囲が混同される | R110に入力/保存/Undo/再open、R120にID対応を追加。初期prism範囲と未対応形状、hideとacoustic participation、cabinet/source結合を明記。研究§5、実装ロードマップ、CAD仕様§4 |
+| ACR18 | 中 | resource計画がR140中心で、CPU PoCや全field時系列保存が上限なしになり得る | R100Bからmemory/output/duration上限、R110/R130取消、出力subsetとCPU fallback再見積り。研究§9、実装ロードマップ |
+
+### 根拠と確認範囲
+
+無損失共振の扱いは[COMSOL公式例](https://www.comsol.com/blogs/how-to-model-fundamental-sources-in-enclosed-spaces)、小室のRT60適用限界と処理条件は[REW公式説明](https://www.roomeqwizard.com/help/help/html/graph_rt60.html)を再確認した。その他のstage分割・入力工程・cache/screening契約は、このrepositoryの要件と既存authorityから導いた設計判断であり、実測済み性能を主張しない。
+
+GitHubから取得した文書間のmilestone/参照整合と変更範囲を確認する文書限定改訂。ローカルclone・ファイル編集・実行・RDC利用なし。新test追加やsolver/実機benchmarkは行わない。R-series実装とowned-room validationは未着手のままで、次の実装開始点はR100A。
+
+## 11. Issue #101 ゼロベースレビュー（2026-09-18）
+
+### 判定と対象
+
+Issue #101の目的・9要件・17 Acceptanceを起点に、main `e8db17f` と未マージPR #108 head `5da57b8` の計画を再評価した。前回ACR13–ACR18の結論を受入条件として固定せず、既存実装・一次資料・依存関係へ戻って照合した。
+
+**修正前の計画は、そのまま実装開始する計画としては不十分。** 主因は、低域優先に対してhybrid完成まで実室feedbackが遅れる工程、既存O60への接続作業の欠落、自作kernelの事実上の先決めである。設計原則の追加だけでは直らないため、依存表・R170/R180の成果物・OSS採否手順を変更した。
+
+維持する判断: wave/GAを分ける最終hybrid目標、CPU path、scalar吸音率からphaseを作らない契約、immutable provenance、O60独立実測gate。変更する判断: FDTD-firstは評価順に限定し、低域測定loopを広帯域完成から分離する。実行結果なしに特定solver・性能・実室精度を承認しない。
+
+### 指摘と修正
+
+| ID | 優先度 | 根拠・失敗シナリオ | 反映 |
+|---|---|---|---|
+| ACR19 | 高 | IssueはOSS優先なのにR100B成果物が新HTDT FDTD CPU prototypeを必須化。既存engine/adapterで足りる可能性を評価せず保守対象を増やす | R100Bは再利用→adapter/port→不足部分の自作。bounded workload/性能判定値をR100A成果物とし、採用またはno-go ADRで終了可能。研究§1/§4B/§4D/§12/§15、実装表 |
+| ACR20 | 高 | R170がR140/R160に依存し、R180がR170待ち。低域modelの実室不適合を最終段階まで発見できない | R170A/R180Aを低域CPU batch/測定の縦断経路、R170B/R180Bをhybrid/拡張へ分割。低域合格でumbrellaをcloseしないcoverage表を追加 |
+| ACR21 | 高 | O60 serviceはRoomSim attemptを取得し、campaignはFR objective 4種類のみ。新solverやIRを接続済み扱いすると型/証拠を偽装する | R170Aへtyped result providerと各O-series bindingを明記。既存recordを保持し、FR合格をphase/IR/decay/aimへ転用しない。研究§11、最適化§8.1a |
+| ACR22 | 高 | room transferだけをREW実測と比較すると、AVR低音転送・source response・複数音源干渉・reference speakerの移動依存を壁の誤差と取り違える | physical sourceへのrouting/複素励振とroom transferを分離。single-source初期経路、相対/絶対比較条件、timing/mic二重補正negative fixture。研究§7、最適化§8.1a |
+| ACR23 | 高 | Portalのidentityだけでは内部接続を吸収境界にしても通る。係数のenergy/amplitude・入射条件・sheet/wall違いでも同一問題にならない | 内部continuity、分割不変性・開閉・flux fixture、impedance単位/入射/backing、反射/吸収/透過/scattering収支。研究§5.2/§6 |
+| ACR24 | 高 | calibration/holdout分離だけではfit後model固定や再調整によるholdout汚染を防げず、FR gateの有効範囲も広がり得る | preregistered fitting→append-only model freeze→holdoutの遷移、非一意fit、再利用holdout禁止、observable/band/config限定eligibility。研究§11、最適化§8.1a |
+
+### 実装・一次資料との照合
+
+- [現行O60 service](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/blob/5da57b8a5ce86b7c1d58f5a95c6cff13fa3b10cb/backend/src/htdt/cad_model_validation_service.py) の `roomsim_repository.get_attempt` / `roomsim_attempt_frequency_response` と、[campaign](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/blob/5da57b8a5ce86b7c1d58f5a95c6cff13fa3b10cb/backend/src/htdt/cad_validation_campaign.py) の `supported_objectives` を読んだ。一般solver adapterやphase/IR検証が実装済みとは判断していない。
+- [PFFDTD公式](https://github.com/bsxfun/pffdtd): CPU経路とLinux前提を確認。Windowsへそのまま配布可能とは判断しない。
+- [REW公式](https://www.roomeqwizard.com/help/help/html/makingmeasurements.html): 音響timing referenceが距離差に基づく点を確認。
+- [COMSOL continuity](https://doc.comsol.com/6.3/doc/com.comsol.help.aco/aco_ug_pressure.05.096.html)、[interior impedance](https://doc.comsol.com/6.3/doc/com.comsol.help.aco/aco_ug_pressure.05.114.html)、[impedance](https://doc.comsol.com/6.4/doc/com.comsol.help.aco/aco_ug_pressure.05.023.html): 内部接続/transfer boundaryと係数・単位の区別を確認。具体的なHTDT fixture/許容値はR100Aの設計成果物とする。
+
+### 完了範囲と残る判断
+
+計画レビューと文書修正のみ。次工程は引き続きR100Aであり、数値gate、OSS Windows package、workload別時間/メモリ、実室calibration/holdoutは未実行。Issue #101のAcceptance対応表を実装ロードマップへ置き、低域先行と最終要求の縮小を混同しない。
+
+全作業はGitHub APIによる取得・更新と一次資料参照で実施。ローカルclone・ファイル編集・コマンド実行・RDC・solver実装なし。
