@@ -79,9 +79,11 @@ _CONTEXT_DOCK_TITLES: dict[WorkspaceId, dict[str, tuple[str, ...]]] = {
     WorkspaceId.OPTIMIZATION: {
         "setup": ("最適化", "制約"),
         "candidates": ("最適化",),
+        "comparison": ("最適化",),
+        "validation": ("最適化", "実測"),
+        # Compatibility while callers migrate to the UX140 canonical pages.
         "objectives": ("最適化",),
         "measurement-plan": ("最適化", "実測"),
-        "validation": ("最適化",),
     },
 }
 
