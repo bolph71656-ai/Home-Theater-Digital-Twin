@@ -160,13 +160,21 @@ class BakeoffFixtureEvidence(BaseModel):
     solve_s: float | None = Field(default=None, ge=0.0)
     postprocess_s: float | None = Field(default=None, ge=0.0)
     peak_ram_mb: float | None = Field(default=None, ge=0.0)
+    disk_mb: float | None = Field(default=None, ge=0.0)
     output_mb: float | None = Field(default=None, ge=0.0)
     observables: tuple[BakeoffObservableEvidence, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
     @model_validator(mode='after')
     def evidence_requirements(self) -> 'BakeoffFixtureEvidence':
-        values = (self.compile_s, self.solve_s, self.postprocess_s, self.peak_ram_mb, self.output_mb)
+        values = (
+            self.compile_s,
+            self.solve_s,
+            self.postprocess_s,
+            self.peak_ram_mb,
+            self.disk_mb,
+            self.output_mb,
+        )
         if any(value is not None and not isfinite(float(value)) for value in values):
             raise ValueError('fixture resource metrics must be finite')
         if self.status in {'pass', 'fail'} and not self.evidence_ref:
@@ -419,6 +427,7 @@ def validate_bakeoff_run(
             ('solve_s', evidence.solve_s, budget.max_solve_s),
             ('postprocess_s', evidence.postprocess_s, budget.max_postprocess_s),
             ('peak_ram_mb', evidence.peak_ram_mb, float(budget.ram_budget_mb)),
+            ('disk_mb', evidence.disk_mb, float(budget.disk_budget_mb)),
             ('output_mb', evidence.output_mb, budget.max_output_mb),
         )
         if evidence.status == 'pass':
