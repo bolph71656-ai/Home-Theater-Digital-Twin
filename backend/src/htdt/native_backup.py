@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -121,7 +122,7 @@ def _sqlite_health(path: Path) -> None:
     if not path.is_file():
         raise ValueError('native backup database is missing')
     try:
-        with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as connection:
+        with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as connection:
             integrity = connection.execute('PRAGMA integrity_check').fetchall()
             if integrity != [('ok',)]:
                 raise ValueError(f'SQLite integrity check failed: {integrity!r}')
@@ -133,7 +134,7 @@ def _sqlite_health(path: Path) -> None:
 
 
 def _asset_rows(database_path: Path) -> tuple[tuple[str, str, int], ...]:
-    with sqlite3.connect(f'file:{database_path.as_posix()}?mode=ro', uri=True) as connection:
+    with closing(sqlite3.connect(f'file:{database_path.as_posix()}?mode=ro', uri=True)) as connection:
         table = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cad_measurement_assets'"
         ).fetchone()
@@ -199,8 +200,9 @@ def _snapshot_database(source_path: Path, destination_path: Path) -> None:
         raise FileNotFoundError(f'native database does not exist: {source_path}')
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with sqlite3.connect(source_path) as source, sqlite3.connect(destination_path) as destination:
+        with closing(sqlite3.connect(source_path)) as source, closing(sqlite3.connect(destination_path)) as destination:
             source.backup(destination)
+            destination.commit()
     except sqlite3.DatabaseError as exc:
         raise ValueError(f'could not create consistent SQLite backup: {exc}') from exc
     _sqlite_health(destination_path)
