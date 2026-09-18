@@ -43,8 +43,23 @@ def normalize_rew_capture_timestamp(
         parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
     except ValueError:
         try:
-            parsed = datetime.strptime(raw, '%Y-%b-%d %H:%M:%S')
-        except ValueError:
+            date_part, time_part = raw.split(' ', 1)
+            year_text, month_text, day_text = date_part.split('-', 2)
+            hour_text, minute_text, second_text = time_part.split(':', 2)
+            month = {
+                'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
+                'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+                'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+            }[month_text.lower()]
+            parsed = datetime(
+                int(year_text),
+                month,
+                int(day_text),
+                int(hour_text),
+                int(minute_text),
+                int(second_text),
+            )
+        except (KeyError, TypeError, ValueError):
             return None, 'unparsed'
 
     if parsed.tzinfo is not None:
