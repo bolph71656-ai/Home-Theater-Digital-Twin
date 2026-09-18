@@ -26,11 +26,12 @@ def _fixture(manifest: AcousticBenchmarkManifest, fixture_id: str) -> AcousticBe
 def test_r100a_manifest_loads_as_immutable_canonical_authority() -> None:
     manifest = _manifest()
 
-    assert manifest.schema_version == 'r100a-1'
+    assert manifest.schema_version == 'r100a-2'
     assert manifest.manifest_id == 'htdt-issue-101-r100a-benchmark-authority'
-    assert manifest.revision == 1
+    assert manifest.revision == 2
     assert len(manifest.fixtures) == 10
     assert len(manifest.hard_gates) == 6
+    assert all(item.environment.density_kg_m3 == pytest.approx(1.2) for item in manifest.fixtures)
     assert len(manifest.semantic_hash()) == 64
 
     reparsed = AcousticBenchmarkManifest.model_validate_json(manifest.canonical_json())
