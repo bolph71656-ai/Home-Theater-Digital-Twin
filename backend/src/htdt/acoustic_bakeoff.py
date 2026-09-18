@@ -413,11 +413,19 @@ def preflight_summary(
     benchmark: AcousticBenchmarkManifest,
     candidates: BakeoffCandidateManifest,
 ) -> dict[str, object]:
+    coverage = {
+        candidate.candidate_id: set(applicable_fixture_ids(benchmark, candidate))
+        for candidate in candidates.candidates
+    }
+    covered = set().union(*coverage.values()) if coverage else set()
     return {
         'r100a_manifest_id': benchmark.manifest_id,
         'r100a_semantic_hash': benchmark.semantic_hash(),
         'candidate_manifest_id': candidates.manifest_id,
         'candidate_manifest_hash': candidates.semantic_hash(),
+        'uncovered_fixture_ids': sorted(
+            fixture.fixture_id for fixture in benchmark.fixtures if fixture.fixture_id not in covered
+        ),
         'candidates': [
             {
                 'candidate_id': candidate.candidate_id,
