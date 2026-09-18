@@ -364,6 +364,7 @@ class BenchmarkTolerance(BaseModel):
     phase_deg: float | None = Field(default=None, ge=0.0)
     null_mask_below_db: float | None = None
     statistical_stddev_max: float | None = Field(default=None, ge=0.0)
+    minimum_difference: float | None = Field(default=None, gt=0.0)
 
     @model_validator(mode='after')
     def has_metric(self) -> 'BenchmarkTolerance':
@@ -374,6 +375,7 @@ class BenchmarkTolerance(BaseModel):
                 self.relative,
                 self.phase_deg,
                 self.statistical_stddev_max,
+                self.minimum_difference,
             )
         ):
             raise ValueError('benchmark tolerance must define at least one comparison metric')
@@ -383,6 +385,7 @@ class BenchmarkTolerance(BaseModel):
             self.phase_deg,
             self.null_mask_below_db,
             self.statistical_stddev_max,
+            self.minimum_difference,
         )
         if any(value is not None and not isfinite(float(value)) for value in values):
             raise ValueError('benchmark tolerance values must be finite')
@@ -444,6 +447,10 @@ class BenchmarkExpectedObservable(BaseModel):
             raise ValueError('peer comparison requires peer_fixture_id')
         if not needs_peer and self.peer_fixture_id is not None:
             raise ValueError('peer_fixture_id is only valid for peer comparisons')
+        if self.acceptance_relation == 'must_differ_from_peer' and self.tolerance.minimum_difference is None:
+            raise ValueError('must_differ_from_peer requires minimum_difference')
+        if self.acceptance_relation != 'must_differ_from_peer' and self.tolerance.minimum_difference is not None:
+            raise ValueError('minimum_difference is only valid for must_differ_from_peer')
         return self
 
 
@@ -484,7 +491,7 @@ class AcousticBenchmarkFixture(BaseModel):
     fixture_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
     benchmark_role: Literal['wave', 'geometric', 'hybrid']
-    required_capabilities: tuple[BenchmarkCapability, ...]
+    required_capabilities: tuple[BenchmarkCapability, ...] = Field(min_length=1)
     regions: tuple[AcousticRegion, ...] = Field(min_length=1)
     obstacles: tuple[AcousticObstacle, ...] = ()
     portals: tuple[AcousticPortal, ...] = ()
@@ -507,6 +514,7 @@ class AcousticBenchmarkFixture(BaseModel):
                 raise ValueError(f'{label} ids must be unique')
             return set(items)
 
+        unique(list(self.required_capabilities), 'required capability')
         region_ids = unique([item.region_id for item in self.regions], 'region')
         material_ids = unique([item.material_id for item in self.materials], 'material')
         boundary_ids = unique([item.boundary_id for item in self.boundaries], 'boundary')
@@ -610,6 +618,18 @@ class AcousticBenchmarkManifest(BaseModel):
             raise ValueError('fixture ids must be unique')
         if len(gate_ids) != len(set(gate_ids)):
             raise ValueError('hard gate ids must be unique')
+        required_gate_categories = {
+            'physics_correctness',
+            'cpu_baseline',
+            'windows_packaging',
+            'license_redistribution',
+            'required_capability',
+            'reproducible_authority',
+        }
+        present_gate_categories = {item.category for item in self.hard_gates}
+        missing_gate_categories = sorted(required_gate_categories - present_gate_categories)
+        if missing_gate_categories:
+            raise ValueError(f'manifest is missing required hard gate categories: {missing_gate_categories}')
         known_fixtures = set(fixture_ids)
         dangling_peers = [
             f'{fixture.fixture_id}:{observable.observable_id}->{observable.peer_fixture_id}'
