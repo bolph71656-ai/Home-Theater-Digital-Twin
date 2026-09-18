@@ -465,6 +465,7 @@ class ExtendedSearchControllerMixin:
         self._refresh_extended_candidate_tree()
         self._refresh_extended_binding_state()
         self._render_extended_overlay()
+        self.refresh_adaptive_extended_plans()
 
     def _selected_extended_spec(self):
         if self.extended_selected_spec_id is None:
@@ -520,6 +521,10 @@ class ExtendedSearchControllerMixin:
         if self.extended_apply_button is not None:
             self.extended_apply_button.setEnabled(
                 current and candidate is not None
+            )
+        if self.adaptive_extended_build_button is not None:
+            self.adaptive_extended_build_button.setEnabled(
+                current and not busy
             )
         if self.extended_clear_preview_button is not None:
             self.extended_clear_preview_button.setEnabled(
