@@ -93,6 +93,7 @@ Issue #118は既存A01〜A15のdomain/editor correctnessを置き換えない。
 | UX-A13 / UX150 | 概要/部屋/測定/最適化、menu、tooltip、empty/blocked/error stateを巡回 | GUIは日本語が基本。内部class/job/schema名や不要な英語labelを露出しない。REW/FR/SPL/RT60/CPU/GPU/CAD/3D/dB/Hz等の合理的な英語・略語例外は一貫して使用 |
 | UX-A14 / UX160 | 初見ユーザーにshortcut一覧を事前提示せず、部屋でpan/orbit/zoom/move/rotate/fitを実施 | 主要操作はtoolbar tooltip/context hintから発見でき、MMB navigationは一般CAD操作として自然に完遂できる。shortcutを知らなくてもUI操作でも同じcommandへ到達できる |
 | UX-A15 / O90D | 最適化で同じ候補のnominalと設置誤差評価を開き、±位置/aimの感度・sampled envelope・3D tolerance overlayを確認 | nominalとrobustnessが別指標として見える。bounded intervalだけでpercentileを表示しない。infeasible sampleを隠さない。3D envelopeはsampled evidenceか近似かを識別でき、overall scoreでA/Bを勝手に一本化しない |
+| UX-A16 / O100G | current 3.0.2 fixtureから仮想SL/SRを追加し、左右の配置可能範囲・role/source modelを設定→candidate生成→3.0.2/5.0.2比較→1案applyまで実施 | baseline SceneRevisionはproposal作成で変化しない。SL/SRはproposed badge/ghostで識別できる。directivity等が不足するobjectiveはdisabled reasonを表示する。candidateはG10/O80 constraintを通り、apply時のみ新SceneRevisionを作る。未設置SL/SRへmeasured badge/evidenceを付けない |
 
 ### UX visual evidence
 
@@ -131,3 +132,8 @@ headless screenshotは補助資料にできるが、Windows実機mouse/focus/DPI
 - O90のbounded toleranceを確率分布として表示する
 - nominalとrobustnessを一つの不透明な総合scoreへ縮約する
 - O90のinfeasible perturbationやsampling不足をUIから隠す
+- O100 proposal作成だけでbaseline SceneRevisionを変更する
+- 仮想speakerと実際に設置済み/実測済みspeakerを同じ表示・evidence stateにする
+- source/directivity/SPL dataが無いのにcoverage/headroom objectiveを数値化する
+- baselineに存在しないchannel responseを0としてtopology比較する
+- routing/phaseが未定義のmulti-channelをcoherent sumして「system FR」と表示する

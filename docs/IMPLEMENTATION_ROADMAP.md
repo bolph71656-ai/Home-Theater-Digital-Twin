@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization計画＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
+> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization＋O100 system expansion計画＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -22,6 +22,7 @@ PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持�
 | [DATA_AND_ANALYSIS](DATA_AND_ANALYSIS.md) / [MEASUREMENT_WORKFLOW](MEASUREMENT_WORKFLOW.md) | 不変測定・比較・REW連携契約 |
 | [PLACEMENT_OPTIMIZATION_ROADMAP](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 予測・最適化の算法詳細。作業順は本書に従う |
 | [O90_ROBUST_OPTIMIZATION](O90_ROBUST_OPTIMIZATION.md) | O90設置誤差・入力不確かさ・robust Paretoのauthority / acceptance |
+| [O100_SYSTEM_EXPANSION_OPTIMIZATION](O100_SYSTEM_EXPANSION_OPTIMIZATION.md) | O100仮想speaker/channel追加・system topology/equipment/placement比較のauthority / acceptance |
 | [ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101の数値手法/OSS調査、hybrid solver方針、R100〜R180の技術根拠 |
 | [PLAN_REVIEW](PLAN_REVIEW.md) | 指摘・修正・検証記録 |
 
@@ -116,6 +117,22 @@ O90は完成済みO10〜O80のnominal探索authorityを置き換えず、**現�
 | O90E — owned-room robust validation | O90B + eligible O60/R180 evidence | preregistered perturbation validation、O60 sensitivity evidence再利用。対象model/observable/perturbation domainがvalidation scope外ならproduction robustness recommendationをfail-closed |
 
 初期O90のfirst-line uncertaintyはspeaker/seat XYZ、acoustic aim、physical cabinet yawとする。material/directivity/environment uncertaintyは対応R110+ authority成立後のみ解禁する。± toleranceを確率分布として扱わず、probability/percentileは明示distributionがある場合だけ表示する。
+
+### Post-0.1 / O100 — system expansion / virtual channel topology optimization ([Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142))
+
+O100は既存speakerの位置最適化だけでなく、**現在存在しないSL/SR等をProposed entityとしてDigital Twinへ追加し、channel topology・equipment/source・配置可能領域・aim/toe-inを含むsystem expansion候補を比較する**。詳細は[O100 System Expansion Optimization](O100_SYSTEM_EXPANSION_OPTIMIZATION.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| O100A — SystemVariant / proposed lifecycle | N40 + SceneRevision authority | immutable SystemVariant / ProposedEntitySpec / ChannelRoleBinding。current/proposed/as-built/measuredを分離し、baselineを変更せず3.0.2→5.0.2等のvariantを作成。選択variantは新SceneRevisionとしてapply |
+| O100B — topology + virtual placement search | O100A + G10/O10/O80 | TopologySearchSpec、add/remove/replaceの明示操作、role別allowed/exclusion、高さ、pair/link、aim/toe-in。SL/SR等をdeterministic candidateとして生成 |
+| O100C — EquipmentDefinition / source capability | O100A + R110 source authority interface | cabinet/acoustic reference/directivity/sensitivity/SPL等のcapability/provenanceを保持。unknown/magnitude-only/complex/analyticを区別し、missing dataを捏造しない |
+| O100D — capability-gated system objectives | O100B/C + O30/O40 + 使用prediction capability | layout/profile、coverage、worst-seat/seat spread、SPL/headroom、FR/reflection、installation complexityを独立objectiveとしてPareto比較。unsupported objectiveはdisabled |
+| O100E — multi-fidelity topology search | O100D + 使用R-series capability | topology→geometry/profile→coverage→acousticの段階screeningとcommon-fidelity final comparison。approximate pruningはaudit可能にする |
+| O100F — robust expansion | O100D + O90 | exact proposed candidateをO90へ渡し、位置/aim/seat等の設置誤差耐性を比較。O90 semanticsを再実装しない |
+| O100G — UX / as-built / measurement loop | O100B〜F + UX120/UX140 | Roomで仮想speaker追加・配置範囲作図、Optimizeで構成比較、proposed ghost表示、選択案→As-built→MeasurementPlan→REW実測のlineage。proposedにfake measured evidenceを付けない |
+
+O100はO80/O90を置換しない。O80はexact topology内のextended placement parameter、O90はexact candidateのtolerance robustnessを担当する。O100のproduction claimも対象observable/modelのO60/R180 gateを迂回しない。channel topologyが違う候補のmulti-channel比較では、per-channel transferと明示excitation/routing scenarioを分離し、未定義のcoherent sumを生成しない。
 
 ### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
 
@@ -255,7 +272,7 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationは正式計画化済みだが未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationとO100 system expansion / virtual channel topology optimizationは正式計画化済みだが未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
