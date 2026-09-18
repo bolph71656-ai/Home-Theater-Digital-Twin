@@ -56,7 +56,7 @@ The module exports:
 It returns the existing WorkspaceMount contract with:
 
 - on_activate -> refresh from the latest SceneRevision only when the local working document is clean
-- before_deactivate -> fail closed while a transform preview is active
+- before_deactivate -> fail closed while a transform preview, unsaved draft, or recovery decision is active
 - on_context_changed -> switch geometry / objects / placement / acoustics contextual controls
 - on_entity_requested -> select the requested entity for deep links
 - on_close -> standard QWidget close lifecycle; recovery and view state are persisted by RoomWorkspace
@@ -109,7 +109,7 @@ Acoustics:
 - a pre-existing recovery snapshot blocks editing until recovered or discarded
 - save uses SceneRepository.save(parent_revision_id=current source revision)
 - workspace activation reloads a newer formal revision only when the local working document is clean and no recovery is pending
-- active transform previews fail closed on workspace deactivation
+- active transform previews, unsaved drafts, and pending recovery decisions fail closed on workspace deactivation
 
 This keeps the new component compatible with the stale-state fence introduced by UX110.
 
