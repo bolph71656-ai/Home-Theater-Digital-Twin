@@ -1424,10 +1424,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                     for index in range(self.search_candidate_tree.topLevelItemCount()):
                         candidate_item = self.search_candidate_tree.topLevelItem(index)
                         candidate_payload = candidate_item.data(0, ROLE)
-                        if (
-                            isinstance(candidate_payload, dict)
-                            and candidate_payload.get('candidate_id') == candidate_id
-                        ):
+                        if candidate_payload == candidate_id:
                             self.search_candidate_tree.setCurrentItem(candidate_item)
                             found = True
                             break
@@ -1554,7 +1551,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         for index in range(self.search_candidate_tree.topLevelItemCount()):
             candidate_item = self.search_candidate_tree.topLevelItem(index)
             payload = candidate_item.data(0, ROLE)
-            if isinstance(payload, dict) and payload.get('candidate_id') == candidate_id:
+            if payload == candidate_id:
                 self.search_candidate_tree.setCurrentItem(candidate_item)
                 found = True
                 break
