@@ -72,7 +72,11 @@ try {
 
     & git -C $RepoRoot cat-file -e ($ExpectedProductHead + "^{commit}") 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "Expected product head is unavailable: $ExpectedProductHead"
+        Invoke-Git @("fetch", "--no-tags", "origin", $ExpectedProductHead) | Out-Null
+    }
+    & git -C $RepoRoot cat-file -e ($ExpectedProductHead + "^{commit}") 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Expected product head is unavailable after explicit fetch: $ExpectedProductHead"
     }
     & git -C $RepoRoot merge-base --is-ancestor $ExpectedProductHead $remoteRef
     if ($LASTEXITCODE -ne 0) {
