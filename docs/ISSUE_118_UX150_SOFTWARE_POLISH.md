@@ -127,3 +127,23 @@ Gate:
 これらはUX160でowned-Windows visual acceptanceとして一度に確認する。
 
 RDC is not used in this UX150 software slice.
+
+
+## Japanese-first copy / internal-ID audit
+
+UX150 review additionally treats the following as normal-user presentation debt rather than
+domain semantics:
+
+- standard Optimize lists show `候補 1`, `実測候補 1`, `検証条件 1`, `検証 1`
+  instead of truncated candidate / measurement / campaign / validation IDs
+- raw IDs continue to be stored in Qt `UserRole` and repository records; selection and
+  persistence authority are unchanged
+- Pareto UI keeps objective IDs internally but presents natural labels such as
+  `応答形状 RMS`, and evidence is shown as `実測 / 予測 / 派生 / 仮説`
+- SearchSpec / SceneRevision / stale / Campaign / ValidationRecord / authority /
+  evidence jargon is removed from the normal task path and replaced by task-oriented Japanese
+- REW UUIDs and SceneRevision IDs are not used as fallback display labels
+- algorithm/model names, REW, Pareto, GP, O70/O80A, yaw and toe-in remain where they are
+  natural technical terms, especially under progressive-disclosure advanced controls
+
+Internal provenance values are not deleted; they are moved out of the standard presentation.
