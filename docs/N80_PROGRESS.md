@@ -156,7 +156,7 @@ PR #71 was accepted after CI #345 / run `35289874654` passed completely and merg
 
 The initial CI #344 failure was a representation bug in expected derived HTDT coordinates plus an overly broad restore-error classification. Commit `fb1ba7a90c15810a01284a68dab9245679fab347` fixed both without widening REW write authority. PR #68 was then closed unmerged as superseded by the narrower position-only contract.
 
-Current branch `feat/n80-o20-result-persistence` continues Issue #67 with the next O20 slice:
+Current branch `feat/n80-o20-result-persistence` / draft PR #72 continues Issue #67 with the next O20 slice:
 
 - immutable batch specs bound to exact SceneRevision/SearchSpec/candidate-set hash;
 - candidate requests frozen before any REW write;
