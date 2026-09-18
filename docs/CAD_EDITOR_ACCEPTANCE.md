@@ -70,3 +70,44 @@ N40で初見操作として「L字室を作り、speakerを左右に置き、座
 文書・余白・色など可逆で低影響の変更へ新規testを追加しない。実装時に回帰損害がある不変条件（座標変換、Undo/cancel、形状/参照整合、保存原子性、stale結果の抑止）だけ必要な自動testを選ぶ。
 
 Qt/VTKの実機操作を、headless CIやpixel一致testの成功で代替しない。今回の文書レビューではrelative link・milestone・差分・根拠を検査し、Windows実機gateは実行しない。既存CIが自動実行される場合、その結果もPRへ記録する。
+
+
+## 7. Issue #118 UX-series acceptance
+
+Issue #118は既存A01〜A15のdomain/editor correctnessを置き換えない。UX-seriesは**発見性・情報設計・layout安定性**を追加で受け入れる。
+
+| Gate | 手順 | 合格条件 |
+|---|---|---|
+| UX-A01 / UX110 | 新規projectを開きOverviewだけを見る | Room作成、既存project確認、REW importへの入口をmanual説明なしで発見できる。current workspaceとsave stateが明確 |
+| UX-A02 / UX110 | `Ctrl+K` で Draw room / Add speaker / Import REW / Run prediction / candidate compareを検索 | commandまたは該当workspaceへ到達。利用不可なら短い理由を表示。内部class/job名は出さない |
+| UX-A03 / UX120 | F2をRoomで作図→speaker/seat配置→選択/寸法/aim編集 | viewportが主領域。Geometry/Objects/Speakers context以外の不要controlを常設しない。selection Inspectorが一致 |
+| UX-A04 / UX130 | REW fixtureをimport→speaker/seatへassignment→quality確認→prediction比較 | import/assignment/quality/compareの順が画面上で理解でき、巨大right dockや複数nested scrollを必要としない |
+| UX-A05 / UX140 | SearchSpec作成→candidate生成→objective/Pareto比較→MeasurementPlan→validation | Setup/Candidates/Compare/Measure-Validateの現在地が明確。internal IDsを知らずに完遂できる |
+| UX-A06 / UX150 | 1280×800と1440×900、100/150/200% DPIでOverview/Room/Measurements/Optimizeを巡回 | primary controlのclipping/overlapなし。accidental horizontal scrollなし。label baseline/control height/spacingがtokenに従う |
+| UX-A07 / UX160 | Room→Measurements→Optimize→Overviewを往復し、entity/resultをdeep-link | SceneRevision、selection、stale、measured/predicted capabilityが矛盾しない。戻る/移動で古いresultをcurrentへ誤適用しない |
+| UX-A08 / UX160 | 初見task: L字室→3.0.2→REW import→比較→candidate確認 | primary actionの場所についてmanualを要求しない。迷った箇所・誤操作・説明が必要だった箇所を記録し、未解消ならgate未達 |
+
+### UX visual evidence
+
+UX160では同一fixtureでOverview / Room / Measurements / Optimizeの代表screenを保存し、少なくとも以下を比較する。
+
+- 1280×800 @100%
+- 1440×900 @100%
+- 1440×900 @150%
+- 可能なら200%
+
+pixel-perfect一致は要求しない。代わりにlayout integrity、text visibility、control alignment、scroll behavior、active state、warning/state badgeを確認する。
+
+headless screenshotは補助資料にできるが、Windows実機mouse/focus/DPIの代替にはしない。RDCを使う場合はUX160の一回へ可能な限りまとめる。
+
+### UX acceptanceの停止条件
+
+以下が残る場合は「見た目は改善した」としてcloseしない。
+
+- primary taskが複数toolbar/dockに重複していて入口が曖昧
+- user-facing画面でUUID/hash/schema/job等を理解しないと操作できない
+- 1280×800で主要controlが画面外へ押し出される
+- DPI変更でbutton/textが重なる
+- Measurements/Optimizeが一枚の巨大scroll formのまま
+- selection/contextと右panel内容が一致しない
+- Overviewが単なる数値dashboardで、actionable deep-linkを持たない
