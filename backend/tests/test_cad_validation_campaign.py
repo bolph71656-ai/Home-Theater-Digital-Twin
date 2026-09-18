@@ -16,6 +16,7 @@ from htdt.cad_validation_campaign import (
     CadValidationCampaignRepeatability,
     CadValidationCampaignSensitivity,
     CadValidationCampaignSeparation,
+    CadValidationTargetResponse,
     build_validation_campaign,
 )
 from htdt.cad_validation_campaign_repository import CadValidationCampaignRepository
@@ -81,11 +82,11 @@ def _campaign(spec, page, candidate_ids):
             CadValidationCampaignCandidate(candidate_id=candidate_ids[2], split='calibration'),
         ),
         objective_ids=('response.shape_rms_db',),
-        objective_evaluation_spec={
-            'algorithm_version': 'objective-vector-1',
-            'objectives': ['response.shape_rms_db'],
-            'response_band_hz': [20.0, 160.0],
-        },
+        target_response=CadValidationTargetResponse(
+            frequency_hz=(20.0, 40.0, 80.0, 160.0),
+            level_db=(0.0, 0.0, 0.0, 0.0),
+        ),
+        reference_band_hz=(20.0, 160.0),
         sensitivity=(
             CadValidationCampaignSensitivity(
                 objective_id='response.shape_rms_db',
@@ -162,11 +163,11 @@ def test_campaign_rejects_candidate_outside_exact_search_set(tmp_path):
             CadValidationCampaignCandidate(candidate_id='not-a-candidate', split='calibration'),
         ),
         objective_ids=('response.shape_rms_db',),
-        objective_evaluation_spec={
-            'algorithm_version': 'objective-vector-1',
-            'objectives': ['response.shape_rms_db'],
-            'response_band_hz': [20.0, 160.0],
-        },
+        target_response=CadValidationTargetResponse(
+            frequency_hz=(20.0, 40.0, 80.0, 160.0),
+            level_db=(0.0, 0.0, 0.0, 0.0),
+        ),
+        reference_band_hz=(20.0, 160.0),
         sensitivity=(
             CadValidationCampaignSensitivity(
                 objective_id='response.shape_rms_db',
@@ -235,9 +236,11 @@ def test_campaign_requires_two_holdout_candidates():
                 CadValidationCampaignCandidate(candidate_id='b', split='calibration'),
             ),
             objective_ids=('response.shape_rms_db',),
-            objective_evaluation_spec={
-                'objectives': ['response.shape_rms_db'],
-            },
+            target_response=CadValidationTargetResponse(
+                frequency_hz=(20.0, 40.0, 80.0, 160.0),
+                level_db=(0.0, 0.0, 0.0, 0.0),
+            ),
+            reference_band_hz=(20.0, 160.0),
             sensitivity=(
                 CadValidationCampaignSensitivity(
                     objective_id='response.shape_rms_db',
