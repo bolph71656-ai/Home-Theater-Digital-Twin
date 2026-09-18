@@ -2,7 +2,7 @@
 
 > Tracking: Issue #101
 > Depends on: R100A merged by PR #110 (`1714c078d4063f59da93f0d733171547f7eb486d`)
-> Current state: R100A/R100B authority, raw-observation evaluation, the first pyroomacoustics reference evidence, and the PFFDTD Windows Python/Numba platform smoke are merged. The current slice evaluates PFFDTD against the R100A rigid rectangular modal fixture; production solver selection remains pending.
+> Current state: R100B authority, pyroomacoustics geometric reference, PFFDTD Windows reuse + rigid modes, and MFEM rigid-mode reference are merged. PR #116 revises pressure authority to R100A-2 and evaluates PFFDTD complex-pressure grid convergence; production solver selection remains pending.
 
 ## Purpose
 
@@ -106,6 +106,12 @@ The sampled evaluator:
 
 The first external probe is `pyroomacoustics v0.10.1` against `geometric-direct-first-reflection-v1`. GitHub Actions resolves the official CPython 3.12 Windows wheel, records its SHA-256, maps the exact R100A box/material/source/receiver into a first-order image-source room, and stores raw image-derived path observations plus R100B evidence as an artifact. Missing Windows wheel/installability is recorded as a blocked candidate probe rather than silently switching version/backend.
 
+## R100A-2 replay boundary
+
+PR #116 intentionally changes R100A identity before pressure-transfer evidence is accepted. Revision 1 omitted air density even though the research contract requires density/sound speed authority. R100A-2 adds explicit density and removes the contradictory duplicate zero-degree phase gate from the complex RMS convergence observable without changing its 0.02 Pa / 2% tolerances.
+
+Because every R100B run binds the whole manifest semantic hash, revision-1 artifacts below remain useful historical measurements but are stale for current solver selection until their dedicated workflows replay against R100A-2. This is expected fail-closed behavior, not a reason to weaken hash binding.
+
 ## Accepted external evidence so far
 
 ### pyroomacoustics geometric reference
@@ -164,13 +170,23 @@ Evidence authority:
 
 This is a fixture-level physics PASS, not a candidate-wide solver acceptance.
 
+## MFEM independent rigid-mode reference
+
+PR #114 / merge `245a3efc66144b81742d65c62ad99ba081fe7426` adds the first independent FEM numerical reference. Pinned MFEM v4.10 is built serially on Windows without MPI/METIS/LAPACK; MFEM assembles the H1 Neumann Laplacian stiffness/mass matrices and the probe solves the small deterministic generalized eigensystem. Latest revision-1 run `35350707920` used order 5 / 216 DOF and passed all four rigid-mode observables with maximum absolute error 9.06e-6 Hz, 0.0787 s eigensolve, 9.32 MiB peak RSS and explicit disk evidence. This reference must replay under R100A-2 before it is current selection evidence.
+
+## Complex-pressure convergence boundary
+
+PR #116 adds a specialized common evaluator for unsampled `field_pressure_pa` convergence. Adapters return keyed complex samples for ordered coarse-to-fine representations; HTDT centrally computes complex RMS absolute/relative error against the finest level, requires decreasing error, and applies the frozen final tolerances.
+
+For PFFDTD, the adapter does not label native `u` as Pa. Pinned upstream treats `u` as acoustic velocity potential. HTDT therefore uses the explicit R100A density and Fourier convention to evaluate `P/Q = -i*omega*rho*Phi/Q` against the physical pre-grid volume-velocity source. The probe runs the complete 2.0 s record at h=0.5/0.25/0.125 m and evaluates the exact 20–300 Hz / 1 Hz grid with no window or filter.
+
 ## Next R100B implementation slices
 
 The numerical bakeoff proceeds in this order:
 
-1. add the PFFDTD rectangular transfer/grid convergence fixture now that the rigid-modal gate has passed;
+1. complete R100A-2 replay and the PFFDTD rectangular complex-pressure convergence fixture;
 2. evaluate the explicit complex-impedance reflection fixture without deriving impedance from scalar absorption;
-3. implement the minimal MFEM acoustic reference prototype for rigid rectangular/concave fixtures and then the explicit impedance fixture;
+3. extend the merged MFEM rigid reference toward concave/impedance fixtures where it provides independent authority;
 4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls;
 5. record exact compile/solve/postprocess/RAM/disk/output evidence under the R100A resource budgets;
 6. publish the R100B ADR only after applicable hard gates have real evidence.

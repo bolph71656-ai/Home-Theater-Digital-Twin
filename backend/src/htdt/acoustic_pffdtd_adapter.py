@@ -233,3 +233,60 @@ def recombine_pffdtd_receiver_traces(
     if not np.all(np.isfinite(recombined)):
         raise ValueError('PFFDTD recombined receiver output contains non-finite values')
     return recombined
+
+
+def pffdtd_velocity_potential_to_pressure_transfer(
+    velocity_potential_trace: np.ndarray,
+    source_volume_velocity_trace: np.ndarray,
+    *,
+    time_step_s: float,
+    frequency_hz: np.ndarray,
+    density_kg_m3: float,
+) -> np.ndarray:
+    """Convert PFFDTD velocity potential to pressure/volume-velocity transfer.
+
+    PFFDTD state u is acoustic velocity potential. With HTDT's
+    exp(-i*omega*t) convention, p = -rho * d(phi)/dt becomes
+    P = -i*omega*rho*Phi. The same finite-record DTFT is applied to the
+    physical pre-grid source volume-velocity samples, so the common time-step
+    factor cancels in P/Q.
+    """
+
+    phi = np.asarray(velocity_potential_trace, dtype=np.float64)
+    source = np.asarray(source_volume_velocity_trace, dtype=np.float64)
+    frequencies = np.asarray(frequency_hz, dtype=np.float64)
+
+    if phi.ndim != 1 or source.ndim != 1 or phi.shape != source.shape:
+        raise ValueError(
+            f'PFFDTD pressure conversion requires matching 1D traces: '
+            f'phi={phi.shape}, source={source.shape}'
+        )
+    if phi.size < 2:
+        raise ValueError('PFFDTD pressure conversion requires at least two time samples')
+    if not np.all(np.isfinite(phi)) or not np.all(np.isfinite(source)):
+        raise ValueError('PFFDTD pressure conversion traces must be finite')
+    if frequencies.ndim != 1 or frequencies.size == 0:
+        raise ValueError('PFFDTD pressure conversion requires a non-empty 1D frequency grid')
+    if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0.0):
+        raise ValueError('PFFDTD pressure conversion frequencies must be finite and positive')
+    if not np.isfinite(time_step_s) or time_step_s <= 0.0:
+        raise ValueError('PFFDTD pressure conversion time_step_s must be finite and positive')
+    if not np.isfinite(density_kg_m3) or density_kg_m3 <= 0.0:
+        raise ValueError('PFFDTD pressure conversion density_kg_m3 must be finite and positive')
+
+    times = np.arange(phi.size, dtype=np.float64) * float(time_step_s)
+    kernel = np.exp(-2j * np.pi * frequencies[:, None] * times[None, :])
+    phi_spectrum = kernel @ phi
+    source_spectrum = kernel @ source
+
+    source_floor = np.finfo(np.float64).eps * max(
+        1.0, float(np.max(np.abs(source_spectrum)))
+    )
+    if np.any(np.abs(source_spectrum) <= source_floor):
+        raise ValueError('PFFDTD physical source spectrum is zero on the comparison grid')
+
+    omega = 2.0 * np.pi * frequencies
+    transfer = (-1j * omega * float(density_kg_m3)) * phi_spectrum / source_spectrum
+    if not np.all(np.isfinite(transfer.real)) or not np.all(np.isfinite(transfer.imag)):
+        raise ValueError('PFFDTD pressure transfer contains non-finite values')
+    return transfer

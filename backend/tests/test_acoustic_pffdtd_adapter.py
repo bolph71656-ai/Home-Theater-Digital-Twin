@@ -9,6 +9,7 @@ from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
 from htdt.acoustic_pffdtd_adapter import (
     compile_rigid_fixture_model,
     recombine_pffdtd_receiver_traces,
+    pffdtd_velocity_potential_to_pressure_transfer,
 )
 
 
@@ -74,4 +75,32 @@ def test_receiver_recombination_rejects_authority_mismatch() -> None:
             np.zeros((1, 8), dtype=np.float64),
             receiver_count=1,
             nt=3,
+        )
+
+
+def test_velocity_potential_pressure_transfer_uses_exp_minus_iwt_authority() -> None:
+    source = np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    potential = 2.0 * source
+    frequencies = np.asarray([100.0, 200.0], dtype=np.float64)
+
+    actual = pffdtd_velocity_potential_to_pressure_transfer(
+        potential,
+        source,
+        time_step_s=0.001,
+        frequency_hz=frequencies,
+        density_kg_m3=1.2,
+    )
+
+    expected = -1j * 2.0 * np.pi * frequencies * 1.2 * 2.0
+    assert np.allclose(actual, expected)
+
+
+def test_velocity_potential_pressure_transfer_rejects_zero_source_spectrum() -> None:
+    with pytest.raises(ValueError, match='source spectrum is zero'):
+        pffdtd_velocity_potential_to_pressure_transfer(
+            np.ones(4, dtype=np.float64),
+            np.zeros(4, dtype=np.float64),
+            time_step_s=0.001,
+            frequency_hz=np.asarray([100.0]),
+            density_kg_m3=1.2,
         )
