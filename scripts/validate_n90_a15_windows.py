@@ -64,8 +64,29 @@ def _uninstall(install_root: Path) -> None:
         raise AssertionError('application executable remains after uninstall')
 
 
-def _visible_window_for_pid(process_id: int) -> int | None:
+def _user32():
     user32 = ctypes.WinDLL('user32', use_last_error=True)
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.PostMessageW.argtypes = [
+        wintypes.HWND,
+        wintypes.UINT,
+        wintypes.WPARAM,
+        wintypes.LPARAM,
+    ]
+    user32.PostMessageW.restype = wintypes.BOOL
+    return user32
+
+
+def _visible_window_for_pid(process_id: int) -> int | None:
+    user32 = _user32()
     found: list[int] = []
 
     callback_type = ctypes.WINFUNCTYPE(
@@ -73,6 +94,8 @@ def _visible_window_for_pid(process_id: int) -> int | None:
         wintypes.HWND,
         wintypes.LPARAM,
     )
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
 
     @callback_type
     def visit(hwnd, _lparam):
@@ -114,7 +137,7 @@ def _launch_and_close(executable: Path, data_dir: Path) -> tuple[str, str]:
         if hwnd is None:
             raise AssertionError('visible HTDT GUI window did not appear')
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32 = _user32()
         if not user32.PostMessageW(hwnd, WM_CLOSE, 0, 0):
             raise ctypes.WinError(ctypes.get_last_error())
         try:
@@ -194,88 +217,107 @@ def _run_gate(
     backup_path = backup_dir / 'baseline.htdt-backup'
     sentinel = data_dir / 'a15-user-data-retention.txt'
 
-    baseline_exe = _install(baseline_installer, install_root)
-    baseline_revision, baseline_hash = _launch_and_close(baseline_exe, data_dir)
-    print('A15_BASELINE_GUI_SEEDED', True, flush=True)
-    print('A15_BASELINE_REVISION', baseline_revision, flush=True)
+    gate_error: BaseException | None = None
+    try:
+        baseline_exe = _install(baseline_installer, install_root)
+        baseline_revision, baseline_hash = _launch_and_close(baseline_exe, data_dir)
+        print('A15_BASELINE_GUI_SEEDED', True, flush=True)
+        print('A15_BASELINE_REVISION', baseline_revision, flush=True)
 
-    _run([
-        str(baseline_exe),
-        '--data-dir',
-        str(data_dir),
-        '--backup',
-        str(backup_path),
-    ])
-    backup_ok = backup_path.is_file() and backup_path.stat().st_size > 0
-    print('A15_BACKUP_CREATED', backup_ok, flush=True)
-    if not backup_ok:
-        return False
+        _run([
+            str(baseline_exe),
+            '--data-dir',
+            str(data_dir),
+            '--backup',
+            str(backup_path),
+        ])
+        backup_ok = backup_path.is_file() and backup_path.stat().st_size > 0
+        print('A15_BACKUP_CREATED', backup_ok, flush=True)
+        if not backup_ok:
+            return False
 
-    _add_post_backup_marker(data_dir)
-    sentinel.write_text('retain-me', encoding='utf-8')
-    if not _marker_exists(data_dir):
-        return False
+        _add_post_backup_marker(data_dir)
+        sentinel.write_text('retain-me', encoding='utf-8')
+        if not _marker_exists(data_dir):
+            return False
 
-    update_exe = _install(update_installer, install_root)
-    update_preserved = (
-        _marker_exists(data_dir)
-        and sentinel.is_file()
-        and _latest_revision(data_dir) == (baseline_revision, baseline_hash)
-    )
-    print('A15_UPDATE_PRESERVED_DATA', update_preserved, flush=True)
-    if not update_preserved:
-        return False
+        update_exe = _install(update_installer, install_root)
+        update_preserved = (
+            _marker_exists(data_dir)
+            and sentinel.is_file()
+            and _latest_revision(data_dir) == (baseline_revision, baseline_hash)
+        )
+        print('A15_UPDATE_PRESERVED_DATA', update_preserved, flush=True)
+        if not update_preserved:
+            return False
 
-    _run([
-        str(update_exe),
-        '--data-dir',
-        str(data_dir),
-        '--restore',
-        str(backup_path),
-    ])
-    restore_ok = (
-        not _marker_exists(data_dir)
-        and sentinel.is_file()
-        and _latest_revision(data_dir) == (baseline_revision, baseline_hash)
-    )
-    print('A15_RESTORE_EXACT', restore_ok, flush=True)
-    if not restore_ok:
-        return False
+        _run([
+            str(update_exe),
+            '--data-dir',
+            str(data_dir),
+            '--restore',
+            str(backup_path),
+        ])
+        restore_ok = (
+            not _marker_exists(data_dir)
+            and sentinel.is_file()
+            and _latest_revision(data_dir) == (baseline_revision, baseline_hash)
+        )
+        print('A15_RESTORE_EXACT', restore_ok, flush=True)
+        if not restore_ok:
+            return False
 
-    reopened_revision = _launch_and_close(update_exe, data_dir)
-    reopen_ok = reopened_revision == (baseline_revision, baseline_hash)
-    print('A15_REOPEN_AFTER_RESTORE', reopen_ok, flush=True)
-    if not reopen_ok:
-        return False
+        reopened_revision = _launch_and_close(update_exe, data_dir)
+        reopen_ok = reopened_revision == (baseline_revision, baseline_hash)
+        print('A15_REOPEN_AFTER_RESTORE', reopen_ok, flush=True)
+        if not reopen_ok:
+            return False
 
-    _uninstall(install_root)
-    uninstall_retained = (
-        not (install_root / 'HTDT' / 'HTDT.exe').exists()
-        and (data_dir / DATABASE_NAME).is_file()
-        and sentinel.is_file()
-    )
-    print('A15_UNINSTALL_RETAINED_USER_DATA', uninstall_retained, flush=True)
-    if not uninstall_retained:
-        return False
+        _uninstall(install_root)
+        uninstall_retained = (
+            not (install_root / 'HTDT' / 'HTDT.exe').exists()
+            and (data_dir / DATABASE_NAME).is_file()
+            and sentinel.is_file()
+        )
+        print('A15_UNINSTALL_RETAINED_USER_DATA', uninstall_retained, flush=True)
+        if not uninstall_retained:
+            return False
 
-    reinstalled_exe = _install(update_installer, install_root)
-    reinstall_revision = _launch_and_close(reinstalled_exe, data_dir)
-    reinstall_ok = (
-        reinstall_revision == (baseline_revision, baseline_hash)
-        and sentinel.is_file()
-    )
-    print('A15_REINSTALL_OPENED_RETAINED_DATA', reinstall_ok, flush=True)
-    if not reinstall_ok:
-        return False
+        reinstalled_exe = _install(update_installer, install_root)
+        reinstall_revision = _launch_and_close(reinstalled_exe, data_dir)
+        reinstall_ok = (
+            reinstall_revision == (baseline_revision, baseline_hash)
+            and sentinel.is_file()
+        )
+        print('A15_REINSTALL_OPENED_RETAINED_DATA', reinstall_ok, flush=True)
+        if not reinstall_ok:
+            return False
 
-    _uninstall(install_root)
-    final_retention = (
-        (data_dir / DATABASE_NAME).is_file()
-        and sentinel.is_file()
-        and _latest_revision(data_dir) == (baseline_revision, baseline_hash)
-    )
-    print('A15_FINAL_DATA_RETENTION', final_retention, flush=True)
-    return final_retention
+        _uninstall(install_root)
+        final_retention = (
+            (data_dir / DATABASE_NAME).is_file()
+            and sentinel.is_file()
+            and _latest_revision(data_dir) == (baseline_revision, baseline_hash)
+        )
+        print('A15_FINAL_DATA_RETENTION', final_retention, flush=True)
+        return final_retention
+
+    except BaseException as exc:
+        gate_error = exc
+        raise
+    finally:
+        uninstaller = install_root / 'unins000.exe'
+        if uninstaller.is_file():
+            try:
+                _uninstall(install_root)
+            except Exception as cleanup_error:
+                if gate_error is None:
+                    raise
+                print(
+                    f'A15_CLEANUP_WARNING {cleanup_error}',
+                    file=sys.stderr,
+                    flush=True,
+                )
 
 
 def main() -> int:
