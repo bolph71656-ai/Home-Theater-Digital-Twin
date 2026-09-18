@@ -232,7 +232,7 @@ def _run_level(
     level_dir: Path,
     target_h_m: float,
     warm_jit: bool,
-) -> tuple[dict[str, object], np.ndarray, np.ndarray, float, float, float]:
+) -> tuple[dict[str, object], np.ndarray, np.ndarray, np.ndarray, float, float, float]:
     internal_c = 343.2 * math.sqrt(float(fixture.environment.temperature_c) / 20.0)
     ppw = internal_c / (FMAX_HZ * target_h_m)
 
@@ -337,7 +337,15 @@ def _run_level(
         'mode_estimates': estimates,
     }
     compile_s = setup_s + warm_prepare_s + jit_s + prepare_s
-    return detail, raw_grid, receiver, compile_s, solve_s, post_s
+    return (
+        detail,
+        raw_grid,
+        receiver,
+        np.asarray(engine.out_alpha, dtype=np.float64).copy(),
+        compile_s,
+        solve_s,
+        post_s,
+    )
 
 
 def _execute(
@@ -385,7 +393,15 @@ def _execute(
             label = f'h_{str(target_h_m).replace(".", "p")}'
             level_dir = work_dir / label
             level_dir.mkdir(parents=True, exist_ok=True)
-            detail, raw_grid, receiver, level_compile, level_solve, level_post = _run_level(
+            (
+                detail,
+                raw_grid,
+                receiver,
+                out_alpha,
+                level_compile,
+                level_solve,
+                level_post,
+            ) = _run_level(
                 sim_setup=sim_setup,
                 SimEngine=SimEngine,
                 fixture=fixture,
@@ -398,10 +414,7 @@ def _execute(
             levels.append(detail)
             traces[f'{label}_raw_grid'] = raw_grid
             traces[f'{label}_receiver'] = receiver
-            traces[f'{label}_out_alpha'] = np.asarray(
-                _prepare_engine(SimEngine, level_dir).out_alpha,
-                dtype=np.float64,
-            )
+            traces[f'{label}_out_alpha'] = out_alpha
             compile_s += level_compile
             solve_s += level_solve
             postprocess_s += level_post
@@ -461,6 +474,7 @@ def _execute(
             'extrapolated_hz': extrapolated_hz,
         }
 
+    output.parent.mkdir(parents=True, exist_ok=True)
     signal_path = output.with_name('pffdtd_rigid_modes_signals.npz')
     np.savez_compressed(signal_path, **traces)
     signal_sha = _file_sha256(signal_path)
