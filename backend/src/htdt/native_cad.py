@@ -18,8 +18,16 @@ from .native_backup import create_backup, restore_backup
 from .native_editor import default_data_dir
 from .optimization_workspace import OptimizationWorkspaceWindow
 from .prediction_workspace import PredictionWorkspaceWindow
+from .room_editor import RoomEditorWindow
 from .runtime_instance import SingleInstanceGuard
 from .theater_workflow import TheaterWorkflowWindow
+from .workflow_shell import (
+    WorkflowShellWindow,
+    WorkspaceId,
+    WorkspaceMount,
+    build_canonical_workspace_registrations,
+    make_overview_mount,
+)
 
 # Preserve the public theater-editor alias while the concrete product composition
 # advances through N80. N40-N70 behavior remains inherited unchanged.
@@ -34,8 +42,34 @@ __all__ = [
     'MeasurementWorkspaceWindow',
     'PredictionWorkspaceWindow',
     'OptimizationWorkspaceWindow',
+    'WorkflowShellWindow',
+    'build_workflow_shell',
     'main',
 ]
+
+
+def build_workflow_shell(repository: SceneRepository, document_id: str) -> WorkflowShellWindow:
+    """Compose the shell from replaceable workspace factories.
+
+    Room/measurement/optimization currently bridge the existing product windows.
+    Their factories are intentionally isolated here so future workspace rewrites can
+    replace one destination at a time without changing shell navigation or domain
+    authority.
+    """
+
+    factories = {
+        WorkspaceId.OVERVIEW: make_overview_mount,
+        WorkspaceId.ROOM: lambda: WorkspaceMount.from_widget(
+            RoomEditorWindow(repository, document_id)
+        ),
+        WorkspaceId.MEASUREMENT: lambda: WorkspaceMount.from_widget(
+            MeasurementWorkspaceWindow(repository, document_id)
+        ),
+        WorkspaceId.OPTIMIZATION: lambda: WorkspaceMount.from_widget(
+            OptimizationWorkspaceWindow(repository, document_id)
+        ),
+    }
+    return WorkflowShellWindow(build_canonical_workspace_registrations(factories))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -105,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
 
         app = QApplication([sys.argv[0]])
         repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
-        window = OptimizationWorkspaceWindow(repository, args.document_id)
+        window = build_workflow_shell(repository, args.document_id)
         window.show()
         return int(app.exec())
     finally:
