@@ -1,6 +1,6 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N80a・O30/O40 core・O20 Room Simulator transaction merge済み / N80継続
+> 更新: 2026-09-18 / N80a・O30/O40 core・O20 Room Simulator transaction+persistence実装・owned-Windows writable acceptance PASS / N80継続
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
@@ -137,7 +137,7 @@ N80a（native SearchSpec + candidate workspace）はWindows実機受入を完了
 - A13 stale/cancel/document/clean close PASS
 - A14 SearchSpec→candidate preview→1-command apply→1 Undo exact restore PASS
 
-N80全体は未完了。O30/O40 pure coreとnative persistence、O20 position-only transactionは実装済み。現在はO20 immutable batch/result persistence・resume/cancelを実装し、その後native Pareto比較/measurement loopへ接続する。
+N80全体は未完了。O30/O40 pure coreとnative persistence、O20 position-only transaction + immutable batch/result persistence + resume/cancelは実装済み。O20 owned-Windows writable acceptanceもREW 5.40 Beta 135 API 0.9.8でPASSした。次はnative Pareto比較UIとmeasurement loopへ接続する。
 
 - PR #70: objective-vector / Pareto algorithms + immutable native objective/Pareto persistenceをmerge済み。
 - PR #71: position-only REW Room Simulator transaction + native Scene/SearchSpec/Candidate adapterをmerge済み。CI #345 PASS。
