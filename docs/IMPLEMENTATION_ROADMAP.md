@@ -1,12 +1,12 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 Deep Research bakeoff計画反映
+> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 acoustics＋Issue #118 UI/UX overhaul計画反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
 ## 0. 決定と文書の関係
 
-HTDTの中心を、mouseで部屋・スピーカー・座席・スクリーン・家具を直接構築し、測定・予測・配置候補を同じ空間で確認する3D CAD型editorにする。旧GUI、API、DB、ファイル形式の互換性は要件にしない。言語や過去の実装量より、操作品質と将来の実装・保守効率を優先する。
+HTDTの中心を、mouseで部屋・スピーカー・座席・スクリーン・家具を直接構築し、測定・予測・配置候補を同じdigital twinへ結び付けるnative applicationにする。Room/Placementでは3D CAD型viewportを主役にする一方、Measurements/Optimizeまで全てを同じdock shellへ押し込まない。旧GUI、API、DB、ファイル形式の互換性は要件にしない。言語や過去の実装量より、操作品質と将来の実装・保守効率を優先する。
 
 PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持する。ただし、標準widgetでCAD操作が完成すると仮定しない。N05/N20の操作・配布gateを通過してから範囲を拡大する。根拠は[OSS調査](CAD_EDITOR_OSS_RESEARCH.md)、決定は[ADR-0001](adr/0001-native-cad-editor-stack.md)。
 
@@ -83,6 +83,24 @@ N番号は既存PRとの追跡用に維持する。N05を追加し、N20/N30を�
 | N90 — 安定release | 公開する機能のgate | installer/update、復元、性能、操作の仕上げ。A15。N70/N80は必須にしない |
 
 N30aの単純頂点操作にN20b全機能は不要。N50とN60はN40後に独立して進められる。保存と配布の重大リスクはN90まで待たずN05/N10で確認する。
+
+### Post-0.1 / UX-series — native UI/UX overhaul (Issue #118)
+
+現行N/O-series機能を削除せず、window compositionとnavigationをworkflow-firstへ再構成する。HTMはUX benchmarkとして参照するが、asset/code/UIをコピーしない。詳細は[UI_DESIGN](UI_DESIGN.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| UX100 — information architecture | 現行main | current task/control inventory、Overview/Room/Measurements/Optimize、sub-context、deep-link schema、primary/contextual/advanced分類を固定。現行UI screenshotとlayout failureを記録 |
+| UX110 — new shell | UX100 | left rail、Overview、workspace router、context bar、Ctrl+K command palette、design token foundation。global toolbar/dock増殖を止める |
+| UX120 — Room workspace | UX110 | viewport-centric Room、contextual tools、selection Inspector、object palette。Geometry/Objects/Speakers/Acousticsを分離し、permanent toolbar/dockを削減 |
+| UX130 — Measurements workspace | UX110 | import→assignment→quality/capability→predicted-vs-measuredをpage化。現行measurement dockをtask pageへ移す |
+| UX140 — Optimize workspace | UX110 + current O-series | Setup/Candidates/Compare/Measure-Validateへ分割。現行monolithic optimization scroll panelを廃止し、Pareto/candidate comparisonを主表示へ |
+| UX150 — visual system / DPI | UX120〜UX140 | typography/spacing/alignment/theme token、1280×800/1440×900、100/150/200% DPI、focus/keyboard/hit target、clipping/overlap解消 |
+| UX160 — first-use / visual acceptance | UX150 | Overviewから主要taskを発見できるfirst-use確認、command palette、navigation、layout screenshot、state consistency。Windows実機visual acceptanceを一度にまとめる |
+
+R100BはUI非依存なのでUX-seriesと並行可能。ただし **R110以降のmaterial/source/receiver/acoustic input UIを現行dock architectureへ追加しない**。R110のdomain/schema設計は進められるが、user-facing inputはUX110〜UX130のnew shell/workspaceへ統合する。
+
+UX-seriesでdomain/service/SceneRevision/evidence semanticsを簡略化しない。GUI compositionだけを置き換え、既存service/modelを再利用する。
 
 ### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
 
@@ -228,6 +246,6 @@ Issue #90のsynthetic software-completion laneは完了。real-repository fixtur
 
 現行O10〜O80 modelをproduction-owned-roomへ昇格させる未完了gateは [Issue #83 — O60R owned-room campaign execution / hardware evidence](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/83)。これはsoftware実装ではなく、実際のspeaker/setup移動とREW測定を伴う実室model validationである。eligible campaign-backed owned-room ValidationRecordとO60R audit PASSが成立するまで、O70 `production_owned_room` recommendationとO80 owned-room directional capabilityはfail-closedを維持する。
 
-新規software feature trackとして [Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101) と [Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
+新規software feature trackとして [Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101)、[Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102)、[Issue #118 — native UI/UX overhaul](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/118) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#118はUX100〜UX160として、HTMをUX benchmarkにしつつnavigation/workspace/layoutを再構成する。R100Bは並行可能だが、R110+の新しい入力UIを旧dock shellへ増築しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
 
 旧Issue #41等の初期milestoneは履歴としてclose済みであり、今後の再開点として扱わない。追加機能を実装する場合は、この完成済みmainを起点に新しいIssue/PRを作り、既存authority契約を弱めない。
