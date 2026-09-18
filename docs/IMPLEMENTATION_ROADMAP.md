@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 acoustics＋Issue #118 UI/UX overhaul計画反映
+> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization計画＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -21,6 +21,7 @@ PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持�
 | [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) | main、branch、報告済みPoC、未検証の区別 |
 | [DATA_AND_ANALYSIS](DATA_AND_ANALYSIS.md) / [MEASUREMENT_WORKFLOW](MEASUREMENT_WORKFLOW.md) | 不変測定・比較・REW連携契約 |
 | [PLACEMENT_OPTIMIZATION_ROADMAP](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 予測・最適化の算法詳細。作業順は本書に従う |
+| [O90_ROBUST_OPTIMIZATION](O90_ROBUST_OPTIMIZATION.md) | O90設置誤差・入力不確かさ・robust Paretoのauthority / acceptance |
 | [ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101の数値手法/OSS調査、hybrid solver方針、R100〜R180の技術根拠 |
 | [PLAN_REVIEW](PLAN_REVIEW.md) | 指摘・修正・検証記録 |
 
@@ -101,6 +102,20 @@ N30aの単純頂点操作にN20b全機能は不要。N50とN60はN40後に独立
 R100BはUI非依存なのでUX-seriesと並行可能。ただし **R110以降のmaterial/source/receiver/acoustic input UIを現行dock architectureへ追加しない**。R110のdomain/schema設計は進められるが、user-facing inputはUX110〜UX130のnew shell/workspaceへ統合する。
 
 UX-seriesでdomain/service/SceneRevision/evidence semanticsを簡略化しない。GUI compositionだけを置き換え、既存service/modelを再利用する。
+
+### Post-0.1 / O90 — robust / tolerance-aware optimization
+
+O90は完成済みO10〜O80のnominal探索authorityを置き換えず、**現実的な設置誤差・入力不確かさに対する性能の安定性**を追加評価する。詳細は[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| O90A — authority / local sensitivity | O30/O40/O80 | immutable RobustnessSpec / UncertaintyAxis / PerturbationSample / RobustnessEvaluation。position/seat/aim等の±local stencil、G10/O80 constraint再評価、exact provenance |
+| O90B — multidimensional robust Pareto | O90A | bounded/distribution/empirical/discrete uncertainty、明示correlation、sampled envelope、distribution時のみpercentile、feasible fraction、O40 Pareto統合。有限sampleをworst-caseと誤表示しない |
+| O90C — multi-fidelity robustness | O90B + 使用prediction capability | nominal Pareto→local sensitivity→coarse sampling→shortlist→common-fidelity refinement。R140 cache/schedulerを利用可能だがR175はcorrectness依存にしない |
+| O90D — UX140 integration | O90B + UX140 | 「最適化 > ばらつき耐性」。nominal/robust比較、感度、性能分布、3D tolerance/aim envelope、infeasible feedback、Advanced provenance |
+| O90E — owned-room robust validation | O90B + eligible O60/R180 evidence | preregistered perturbation validation、O60 sensitivity evidence再利用。対象model/observable/perturbation domainがvalidation scope外ならproduction robustness recommendationをfail-closed |
+
+初期O90のfirst-line uncertaintyはspeaker/seat XYZ、acoustic aim、physical cabinet yawとする。material/directivity/environment uncertaintyは対応R110+ authority成立後のみ解禁する。± toleranceを確率分布として扱わず、probability/percentileは明示distributionがある場合だけ表示する。
 
 ### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
 
@@ -240,7 +255,7 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-18時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationは正式計画化済みだが未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
