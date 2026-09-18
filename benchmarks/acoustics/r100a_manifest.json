@@ -276,7 +276,8 @@
             "relative": 0.001,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -298,7 +299,8 @@
             "relative": 0.001,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -320,7 +322,8 @@
             "relative": 0.0015,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -342,7 +345,8 @@
             "relative": 0.0015,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -602,7 +606,8 @@
             "relative": 0.02,
             "phase_deg": 0,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": null
@@ -892,7 +897,8 @@
             "relative": 0.02,
             "phase_deg": 1,
             "null_mask_below_db": -80,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -1278,7 +1284,8 @@
             "relative": 0.05,
             "phase_deg": null,
             "null_mask_below_db": -60,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": null
@@ -1295,7 +1302,8 @@
             "relative": 0,
             "phase_deg": 8,
             "null_mask_below_db": -40,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": null
@@ -1724,7 +1732,8 @@
             "relative": 0.03,
             "phase_deg": null,
             "null_mask_below_db": -60,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": "wave-rectangular-convergence-v1"
@@ -1741,7 +1750,8 @@
             "relative": 0,
             "phase_deg": 6,
             "null_mask_below_db": -40,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": "wave-rectangular-convergence-v1"
@@ -2038,7 +2048,8 @@
             "relative": 0.08,
             "phase_deg": null,
             "null_mask_below_db": -60,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": null
@@ -2324,7 +2335,8 @@
             "relative": 0.000001,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -2346,7 +2358,8 @@
             "relative": 0.000001,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -2368,7 +2381,8 @@
             "relative": 0.000001,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -2394,7 +2408,8 @@
             "relative": 0.000001,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [
             {
@@ -2815,11 +2830,12 @@
           "reference_description": "Adding a participating reflecting obstacle must change the deterministic path set; it must not be ignored as visual-only furniture.",
           "acceptance_relation": "must_differ_from_peer",
           "tolerance": {
-            "absolute": 0.00001,
+            "absolute": null,
             "relative": null,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": 0.001
           },
           "samples": [],
           "peer_fixture_id": "geometric-direct-first-reflection-v1"
@@ -3111,7 +3127,8 @@
             "relative": 0.005,
             "phase_deg": null,
             "null_mask_below_db": null,
-            "statistical_stddev_max": 0.05
+            "statistical_stddev_max": 0.05,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": null
@@ -3366,7 +3383,8 @@
             "relative": 0.05,
             "phase_deg": null,
             "null_mask_below_db": -60,
-            "statistical_stddev_max": null
+            "statistical_stddev_max": null,
+            "minimum_difference": null
           },
           "samples": [],
           "peer_fixture_id": null
