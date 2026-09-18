@@ -381,11 +381,13 @@ def _all_base_candidates(
 def _candidate_id(
     spec: CadExtendedSearchSpec,
     base_candidate_id: str,
+    positions: dict[str, dict[str, float]],
     aim_yaw_deg: dict[str, float],
 ) -> str:
     return 'ec-' + _digest({
         'extended_search_sha256': spec.extended_search_sha256,
         'base_candidate_id': base_candidate_id,
+        'positions': positions,
         'aim_yaw_deg': aim_yaw_deg,
     })[:20]
 
@@ -437,7 +439,12 @@ def generate_extended_candidates(
                 axis.entity_id: round(float(value), 12)
                 for axis, value in zip(spec.axes, combination, strict=True)
             }
-            candidate_id = _candidate_id(spec, base_candidate.candidate_id, aim_map)
+            candidate_id = _candidate_id(
+                spec,
+                base_candidate.candidate_id,
+                base_candidate.positions,
+                aim_map,
+            )
             ids.append(candidate_id)
             if offset <= feasible_index < offset + limit:
                 page_candidates.append(CadExtendedCandidate(
@@ -538,6 +545,7 @@ def apply_extended_candidate(
     expected_id = _candidate_id(
         extended_spec,
         candidate.base_candidate_id,
+        candidate.positions,
         candidate.aim_yaw_deg,
     )
     if expected_id != candidate.candidate_id:
