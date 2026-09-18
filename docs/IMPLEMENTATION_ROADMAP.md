@@ -92,14 +92,14 @@ R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、そ�
 |---|---|---|
 | R100A — benchmark authority | N70 prediction authority | solver-neutral fixture contractを先に固定。AcousticRegion、Portal/BoundaryTermination、source/receiver、boundary/material、environment、expected observable、quantity-specific toleranceを定義。hard gateと性能比較を分離 |
 | R100B — solver bakeoff / ADR | R100A | deterministic FDTD CPU PoC、独立FEM/reference、geometric reference、secondary BEM/PSTD等、version/license/redistribution/Windows package matrixを同一fixtureで比較。hard gate通過候補からfirst production stackを選定 |
-| R110 — acoustic authority | R100B interface決定 | immutable AcousticSceneSnapshot、AcousticRegion/Portal/BoundaryTermination、surface/object material capability、source excitation/directivity、receiver/calibration、environment、solver/backend provenance。semantic geometry hashとcompiled representation hashを分離 |
+| R110 — acoustic authority / 入力・保存 | R100B interface決定 | immutable AcousticSceneSnapshotとexact SceneRevisionに結ぶacoustic configuration。material/source/receiver/environment、隣接region・portal/terminationの入力と保存、Undo/Redo、既存Sceneの未設定状態を実装。semantic geometry hashとcompiled representation hashを分離 |
 | R120 — geometry compiler | R110 | exact SceneRevision→canonical acoustic regions/surfaces/portals→wave grid / ray BVH / optional FEM mesh。compiler version/toleranceをprovenanceへ保存し、non-manifold/unintended-open/degenerate/thin unresolvedをfail-closed |
 | R130A — rigid wave core | R120 | 20–300 Hz初期target。CPU correctness baseline、rigid analytical modes、FR/phase/IR/spatial field、convergence＋cross-solver gate |
 | R130B — lossy boundary | R130A | 独立referenceを持つsimple impedance/admittance boundaryを追加し、reflection magnitude/phaseを検証 |
 | R130C — frequency-dependent boundary | R130B | causal frequency-dependent boundary。time-domainではstability/passivity/causalityもacceptance対象 |
 | R140 — hardware-aware execution | R130A以降 | R110/R130のidentity/stale/cancel/provenanceを維持したままCPU/GPU検出、RAM/VRAM estimate、candidate/solver二階層scheduler、oversubscription回避、efficient cache/resume、silent quality downgrade禁止 |
 | R150 — geometric acoustics | R120 | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance。diffractionは独立fixture成立時のみ追加 |
-| R160 — typed hybrid broadband | R130/R150 | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、explicit overlap/crossoverと共有成分のdouble-counting防止を実装。unsupported phase/metricを生成しない |
+| R160 — typed hybrid broadband | 使用する境界capabilityのR130A/B/C gate + R150 + 有効overlap | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、explicit overlap/crossoverと共有成分のdouble-counting防止を実装。unsupported phase/metricを生成しない |
 | R170 — optimization integration | R140/R160 + O10〜O70 | multi-fidelity candidate prediction→ObjectiveVector→Pareto→MeasurementPlan→N60/O60/O70。geometry/grid/BVH再利用に加えreceiver batching、source-equivalence grouping、reciprocity等を成立条件付きで利用 |
 | R180 — owned-room validation | R170 | target roomでREW/UMIK-1 validation。receiver calibration/environmentをmeasurement authorityへ対応付け、新solver/model versionごとにO60 applicability/holdout gate。simulationだけでproduction recommendationを開かない |
 
@@ -110,6 +110,20 @@ R100Bでは「候補ライブラリを先に製品依存へ固定」しない。
 共通fixtureは最低限、rigid rectangular analytical modes、grid/mesh convergence、単一impedance/reflection boundary、L字/凹room、region-to-region portalまたは明示termination、counter相当のreflecting obstacle、direct path、first reflection、seed repeatability、hybrid overlap continuityを含む。points/elements-per-wavelength等の経験則は初期値に使えてもacceptanceそのものにはせず、backendごとの収束測定からvalid upper frequencyを決める。license/redistribution、Windows再現性、必要physics capability、CPU correctness等のhard gateを通過した候補だけを速度・memory・実装複雑度で比較する。
 
 R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU correctness baseline、材料authority分離、receiver/environment authority、immutable provenance、O60 real-data gateである。production wave library、最終crossover、GPU vendor/API、mesh/grid preset、FEM mesher/linear-solver stack、diffraction/late-field方式はbenchmark前に固定しない。研究報告中の一般的GPU speedup値や単一ハードウェア例をHTDTの性能要件へ直接転記しない。
+
+### R-series追加受入契約（2026-09-18）
+
+詳細は[研究文書 §4D–§10](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md#4d-plan-re-review-benchmark-authority-before-solver-bakeoff)。
+
+- **工程**: 次の実装はR100Aのfixture/observable/tolerance manifest。R100Bは適用対象PoCの比較までとし、後続の製品GUI・scheduler・hybridの完成を前提にしない。shipping candidateのWindows/CPU gateと、別環境でも再現可能な独立referenceを区別する。GPU未搭載はGPU比較のみ対象外。
+- **数値比較**: source単位・正規化、座標・補間、phase/Fourier符号、時間原点、dt/周波数刻み、観測時間、精度、window/filter、reference・許容差を固定する。無損失閉室の固有モードと、共振点の有限FR/RT60を混同しない。FR/phaseは成立する損失条件または有限時間処理を揃え、null付近の位相・相対誤差をmaskする。
+- **製品入力**: 現行CADは単一RoomPrismであり、複数regionの編集済みとは扱わない。R110/R120の初期対応を凹prism・対応object・隣接prism/terminationへ明示限定し、傾斜/曲面等は別gateまでunsupported。material割当・隣接空間・boundaryをGUIで入力し、保存/再open、Undo/Redo、staleを検証する。
+- **物体の意味**: hide/lockとacoustic participationを分ける。speaker cabinetを反射体として含む場合は移動/回転でgeometryを更新し、密閉cabinet内部の点音源やdirectivityとの二重計上を無検証で許さない。
+- **帯域・指標**: wave/GAの検証済み帯域が重ならなければgapを残し、広帯域IRやcoherent phaseを生成しない。経路だけで複素応答を認めず、reflection/source/timing authorityを要求。RT60/EDT/C50/C80はfilter・時間原点・tail/fit条件を保存し、打切り/減衰不足を判定する。
+- **計算資源**: R100B CPU PoCからRAM/出力容量・実行長の上限を設け、R110/R130で取消・staleを保持する。全空間×全時刻のfield保存を既定にしない。R140のCPU fallbackも再見積りし、OOMや無断出力縮小を避ける。
+- **最適化**: reuseはoperator不変を検証し、物体移動/回転・材料変更で必要なcacheを失効する。粗計算の誤差/順位逆転・除外候補auditを検証し、未対応値を悪いscoreに置換しない。最終Paretoは同一fidelity・帯域・objective条件で再評価する。
+
+R100A〜R180の実装・数値benchmark・owned-room validationは、この文書改訂によって完了したことにはならない。
 
 ### N05 / N10の実装slice
 

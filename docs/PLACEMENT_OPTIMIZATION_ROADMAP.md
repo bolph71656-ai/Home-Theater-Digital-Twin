@@ -114,12 +114,22 @@ scalar absorption coefficientから一意なphase-bearing impedanceを無言で�
 任意形状solverを全candidateへ最高精度で適用しない。
 
 1. hard constraintでfeasible候補を生成。
-2. cheap/reference predictorとcacheで粗screening。
+2. 対象形状・帯域で検証したcheap/reference predictorとcacheで粗screening。矩形専用modelで非矩形候補を除外しない。
 3. reduced setだけwave/geometric medium fidelity。
-4. Pareto/uncertainty候補だけhigh-resolution hybrid。
+4. Pareto/uncertainty候補をrefinementし、最終比較の候補は共通の検証済みfidelity・帯域・objective条件で再評価。
 5. MeasurementPlanへ落とし、O60/O70で実測価値を更新。
 
 fixed geometry/materialではwave-grid、ray BVH、FEM matrix/preconditioner等のsetupを再利用する。さらにreceiver batching、source-equivalence grouping、Green's-function/transfer reuse、reciprocity等が**選択したsource/receiver modelと境界条件で成立する場合に限り**利用し、candidateごとの重複solveを避ける。
+### 4.3 Screening / reuseの成立条件
+
+粗screeningによる音響候補の除外は、hard constraintによる設置不能判定とは別である。coarse/fineのdiscrepancy・順位逆転・不確実性を検証し、除外候補のaudit sampleと順位逆転時の再探索を保存する。誤差境界が未検証ならheuristic shortlistと表示し、全探索のPareto集合を保ったとは主張しない。unsupported/missing objectiveを0・無限大・低scoreへ変換して候補を消さない。portal接続や必要な薄い物体が粗gridで消えた場合も同様に止める。
+
+物理geometry/material/environment、離散化・周波数/formulationが同一の場合だけoperator/setupを再利用する。speaker/seat等をacoustic obstacleとして含む場合は、その移動・body yaw変更でもgeometry/grid/BVH/matrixの該当cacheを失効する。source/receiver markerの移動と物理物体の移動を区別する。新receiverの時系列を保存していなければ追加評価/solveが必要であり、batch対応から任意位置の結果保管を推定しない。
+
+cache artifactとPredictionRunのexact SceneRevision bindingを分離する。同一物理入力の再利用でも、新要求への参照を明示し、過去runを書き換えない。reuse対fresh solve、cabinet回転、material変更、receiver移動、view-only hideをfixture化する。
+
+最終simulated Paretoは同一の検証済みfidelity・帯域・source/reference・objective specで比較する。再評価budgetが不足した場合はpreliminaryのまま。wave/GAのvalid bandにgapがある場合はその帯域を必要とするobjectiveを停止し、O60 production gateを迂回しない。
+
 ## 5. 正式マイルストーン
 
 | ID | 段階 | 主な成果 | 完了条件 |

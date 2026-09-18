@@ -5,7 +5,7 @@
 > 追加対象: mainの10dabf995453e1351fce32e2041790c925d2e31bにある計画6文書
 > 範囲: 計画書の検証・詳細化。アプリ実装、Windows実機検証、実測データ検証は実施していない。
 
-**最新の技術レビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化とIssue/PR整理は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
+**最新のIssue #101追加レビューは§10、前回は§9。CAD-firstレビューは[§7](#7-cad-first追加レビュー2026-09-16)、正本化は[§8](#8-正本化と旧issueprの整理2026-09-16)を参照。§1–6は当時の判断の記録であり、旧browser方針を今後の指示として適用しない。**
 
 §1–5は初回レビューの記録を残す。追加レビューの指摘と反映先は[§6](#6-追加レビュー)を参照。現在の仕様は各設計文書を正本とする。
 
@@ -215,3 +215,26 @@ PR #105/#106反映後のIssue #101、`ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md`、
 数値方式の基本方針は変更しない。FDTDはfirst PoC、FEMは独立reference/alternative、BEM/DG/PSTD等はsecondary/referenceのまま。ただしproduction solver、final crossover、GPU API/vendor、mesh/grid preset、diffraction/late-field方式はR100B evidence前に固定しない。
 
 次に実装を再開する場合の開始点はR100Aであり、solver kernelから先に書き始めない。
+
+## 10. Issue #101 実装開始条件・数値比較・探索の追加レビュー（2026-09-18）
+
+### 対象と結論
+
+main `e8db17fc2399d171f9fed4d619540b5decc17310`（PR #107反映後）のIssue #101、研究文書、実装/最適化ロードマップ、CAD仕様、製品計画/実装状況をGitHubで確認。現行 `cad_scene.py` の単一RoomPrismとprediction modelの範囲も照合した。FDTD-first PoC・FEM独立reference・CPU baseline・O60 evidence gateは維持する。
+
+### 指摘と修正
+
+| ID | 優先度 | 所見と影響 | 修正・反映先 |
+|---|---|---|---|
+| ACR13 | 高 | 研究§14がR100 PoC/kernel開始を促し、R100A先行と矛盾。R100の比較項目に後続製品機能も混在 | §14をR100A manifest→R100B実行へ訂正。stage別evidence表、shipping/reference環境とGPU対象外を区別。研究§4D/§14、実装ロードマップ |
+| ACR14 | 高 | mode誤差だけではFR/phase/decayを保証できず、無損失共振点を有限FRとして比較する危険 | 単位・励振・座標補間・dt/観測時間・処理・null mask・独立reference/tolerance契約。lossless modeとlossy/有限時間応答を区別。研究§4D/§12 |
+| ACR15 | 高 | overlapが存在しない場合、経路のphase不足、IR tail不足の具体的停止条件がない | gapの保持、complex pathの必要条件、decay/clarityの適用/打切りfixture。研究§8、実装ロードマップ |
+| ACR16 | 高 | 粗計算で真の良候補を落とし、異なるfidelityでPareto支配を誤判定し得る。物理cabinet移動時のreuse条件も不十分 | discrepancy/除外候補audit/順位逆転fixture、共通fidelity再評価、operator単位cache失効とimmutable run binding。研究§10、最適化§4.2/§4.3 |
+| ACR17 | 高 | 現行単室CADにmaterial/隣接regionを入力する工程がなく、任意meshを扱えるsolverと製品入力範囲が混同される | R110に入力/保存/Undo/再open、R120にID対応を追加。初期prism範囲と未対応形状、hideとacoustic participation、cabinet/source結合を明記。研究§5、実装ロードマップ、CAD仕様§4 |
+| ACR18 | 中 | resource計画がR140中心で、CPU PoCや全field時系列保存が上限なしになり得る | R100Bからmemory/output/duration上限、R110/R130取消、出力subsetとCPU fallback再見積り。研究§9、実装ロードマップ |
+
+### 根拠と確認範囲
+
+無損失共振の扱いは[COMSOL公式例](https://www.comsol.com/blogs/how-to-model-fundamental-sources-in-enclosed-spaces)、小室のRT60適用限界と処理条件は[REW公式説明](https://www.roomeqwizard.com/help/help/html/graph_rt60.html)を再確認した。その他のstage分割・入力工程・cache/screening契約は、このrepositoryの要件と既存authorityから導いた設計判断であり、実測済み性能を主張しない。
+
+GitHubから取得した文書間のmilestone/参照整合と変更範囲を確認する文書限定改訂。ローカルclone・ファイル編集・実行・RDC利用なし。新test追加やsolver/実機benchmarkは行わない。R-series実装とowned-room validationは未着手のままで、次の実装開始点はR100A。

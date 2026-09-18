@@ -1,7 +1,7 @@
 # Arbitrary-room acoustics research and implementation decision — 2026-09-18
 
 Tracking: Issue #101  
-Status: architecture research plus 2026-09-18 Deep Research and plan re-review are complete enough to freeze the R100A benchmark contract and R100B evaluation scope; the production solver backend, crossover and shipping dependency set remain benchmark-gated.
+Status: planning/research only. The scope of R100A and R100B is defined; the executable fixture contract, tolerance manifest and benchmark evidence are not yet delivered. Production backend, crossover and shipping dependencies remain benchmark-gated.
 
 ## 1. Decision summary
 
@@ -25,7 +25,7 @@ This preserves the existing HTDT evidence model: measured, predicted, derived an
 
 Mesh/grid resolution scales with the shortest wavelength. A single 20 Hz–20 kHz full-wave model would force the whole room to use high-frequency spatial resolution and becomes wasteful in both memory and compute. The engineering response is a banded/hybrid model rather than pretending one discretization is efficient everywhere.
 
-For HTDT's first target band, 20–300 Hz, the wavelength is long enough that a consumer PC can solve useful 3D room grids at practical resolution. This makes a low-band wave solver realistic even for concave rooms and furniture-scale geometry.
+20–300 Hz is a feasibility target, not a demonstrated consumer-PC performance guarantee. R100B must measure representative room/adjacent-region size, boundary state, simulation duration and requested output on a declared CPU/RAM budget before promising interactive or batch performance.
 
 ### 2.2 FDTD first, but not as an irreversible commitment
 
@@ -248,6 +248,33 @@ Run FDTD, independent FEM/reference and geometric reference candidates against t
 
 This ordering prevents the FDTD and FEM prototypes from each inventing incompatible geometry, opening or material semantics before the production AcousticSceneSnapshot exists.
 
+### Numerical observable contract and staged gates
+
+R100A must fix units and conventions before solver comparison: source quantity and normalization (for example volume velocity and pressure transfer), density/sound speed, Fourier/phase sign, time zero, peak/RMS convention, boundary-normal direction, and the physical source/receiver coordinates. Each adapter records injection/sampling interpolation and coordinate error; moving probes to convenient grid nodes silently is prohibited.
+
+A rigid **lossless closed** room fixture tests eigenfrequencies, symmetry and finite-time energy behavior. Its steady forced response at an excited eigenfrequency is not a finite reference FR, and its decay is not a finite RT60. Compare FR/phase either away from poles under an explicitly shared formulation, or with a separately specified loss/regularization model; compare finite-time IRs with the same excitation, observation duration and processing. Never introduce hidden damping just to make solvers agree. [COMSOL's enclosed-space example](https://www.comsol.com/blogs/how-to-model-fundamental-sources-in-enclosed-spaces) documents the lossless resonance issue.
+
+The manifest also fixes:
+
+- spatial resolution, time step/stability condition or frequency sampling, duration, precision, solver residual/termination criteria and convergence refinement sequence;
+- excitation spectrum and normalization/deconvolution, analysis window, resampling/filtering, frequency grid and output units;
+- observable-specific absolute/relative tolerances and reference provenance; near-zero pressure uses an absolute floor and phase-validity mask instead of unbounded relative/dB/phase error;
+- independently generated analytical/reference outputs and their own convergence evidence; sharing a buggy compiler must not be the only cross-solver check.
+
+Zero padding does not replace a longer observation for resolving nearby modes. Modal-frequency accuracy alone does not establish transfer-amplitude, phase or decay accuracy. Time step, duration, precision and post-processing belong to result identity and resource estimates as well as the benchmark report.
+
+R100A specifies the fixture families and initial hard tolerances before R100B evaluation. A reference-derived tolerance may be finalized after a documented reference convergence study, but must be versioned and frozen before candidate acceptance; do not relax it retrospectively to pass a candidate.
+
+| Gate | Evidence required at this stage |
+|---|---|
+| R100A | Versioned fixture/observable/tolerance manifest, role-to-fixture applicability and analytical/reference provenance plan. No production kernel or GUI required |
+| R100B | Executed primary PoCs on their applicable fixtures, reference convergence, initial Windows/CPU resource envelope and ADR. Report unsupported, failed and deferred separately |
+| R110–R130 | Product persistence/editor/compiler, stale/cancel/resource preflight and wave boundary fixtures for each delivered capability |
+| R140–R170 | Production scheduler/cache/resume, optional GPU comparisons, hybrid and optimization integration fixtures |
+| R180 | Preregistered owned-room campaign evidence |
+
+Later product integration or hybrid acceptance is not a prerequisite for completing R100B. A shipping candidate must demonstrate the required CPU/Windows path; an independent reference may use another platform when its reproducible environment and exported results are recorded. GPU absence is an explicit not-applicable acceleration comparison, never a waiver of CPU correctness.
+
 ## 5. Acoustic data model
 
 ### 5.1 AcousticSceneSnapshot
@@ -300,7 +327,17 @@ The compiler must detect and report:
 
 No automatic rectangularization is permitted.
 
-### 5.3 Thin objects
+### 5.3 Product input and acoustic participation
+
+The current SceneDocument has a single RoomPrism; the existing editor does not already author arbitrary connected air volumes. R110 must define a persisted, versioned acoustic configuration linked to the exact SceneRevision, plus authoring of material assignments, source/receiver/environment properties, adjacent-region geometry and portal/termination choices. R120 must compile this configuration and retain surface-to-Scene IDs for diagnostics/selection. Save/reopen, Undo/Redo, stale invalidation and old-scene loading are acceptance cases. Old scenes open with unresolved acoustic inputs; they do not acquire invented materials or adjacent rooms.
+
+The first supported product geometry is an explicit subset: concave polygon prisms, supported object surfaces/volumes and connected prism regions or declared terminations. Sloped/curved ceilings and other general 3D shapes remain unsupported until separately specified, authored and verified; a backend's mesh capability alone does not establish an editor feature. The umbrella goal remains broader than the first release.
+
+Separate visibility from acoustic participation. Hiding a sofa or locking a cabinet does not remove its acoustic boundary. Source and receiver markers are not automatically solid obstacles. For each physical entity record whether/how its volume or thin surface participates, including any deliberate omission.
+
+When a loudspeaker cabinet participates as an obstacle, its movement/rotation changes the acoustic domain. Define emitter/baffle coupling or a verified equivalent model; a point source trapped inside a sealed rigid cabinet is invalid. Free-field directivity data that already include cabinet radiation must not receive the same cabinet effect twice without a validated coupling model. Unsupported combinations fail closed.
+
+### 5.4 Thin objects
 
 Rugs, curtains and thin panels should not be forced into thick furniture volumes.
 
@@ -413,11 +450,21 @@ Crossover is not hard-coded globally to exactly 300 Hz. The default target can s
 
 If a metric is not valid for a band/result type, the UI disables it instead of extrapolating.
 
+A usable overlap is not guaranteed. If wave convergence ends below the geometric method's validated lower limit (including occlusion/diffraction applicability), preserve separate band-limited outputs and mark the gap unsupported. R160 may proceed only after extending verified wave coverage, adding a verified bridging method, or explicitly narrowing the requested output. Smoothing across a gap or quoting a Schroeder estimate is not evidence of valid overlap. Add both valid-overlap and no-overlap fixtures.
+
+Deterministic path geometry alone does not authorize coherent pressure: path-to-transfer conversion also needs compatible source normalization, complex reflection/directivity and timing. When those are absent, retain path/energy output and disable coherent summation. Any synthesized stochastic tail is a separately labeled realization with seed/model provenance, not recovered physical phase.
+
+Decay/clarity output needs its own analysis contract: band filters, direct-arrival time origin, observation length, tail truncation/noise treatment, fit interval/quality and energy coverage. Insufficient decay or a missing tail gives unavailable/qualified output, not a misleading finite RT60 or C50/C80. Distinguish local modal decay from diffuse-field reverberation time, especially in the low-band target; [REW's RT60 documentation](https://www.roomeqwizard.com/help/help/html/graph_rt60.html) explains the small-room limitation. R160 acceptance includes a truncated tail and a non-decaying rigid reference.
+
 ## 9. Compute architecture
 
 ### 9.1 Correctness baseline
 
 Every solver selected for shipping must have a CPU path that can execute the acceptance fixtures. GPU is optional acceleration.
+
+Even the first CPU prototype needs bounded execution: preflight its grid/mesh, boundary/filter state, solve workspace, receiver histories and requested field output against an explicit memory/disk budget; specify duration/work limit and cancellation checkpoints. Product jobs keep the existing stale/document-switch guard from R110/R130. R140 adds automatic hardware discovery and coordinated planning, rather than introducing these basic protections for the first time.
+
+Full space-by-time field storage is opt-in and budgeted. Probe histories, selected snapshots or frequency slices can be requested separately; requested and executed output coverage is immutable. Do not silently drop requested outputs or restart an oversized GPU job on a CPU without rechecking RAM/work limits.
 
 ### 9.2 Scheduler hierarchy
 
@@ -472,6 +519,16 @@ For fixed geometry/materials:
 Cache identity includes semantic geometry, compiled representation, material, source excitation/directivity, receiver model/set, environment, solver/backend, numerical parameters and frequency band.
 
 Before adding more outer workers, R170 should exploit exact reusable structure when the formulation permits it: receiver batching from one solve, source-equivalence grouping, reciprocity, reusable FEM matrices/preconditioners/factorizations and reusable grid/BVH compilation. These are optimization opportunities, never assumptions applied where source/receiver models break the required symmetry.
+
+### Reuse and candidate-selection acceptance
+
+Reuse depends on the actual operator, not on candidate membership in one search. Source-only or receiver-only movement can reuse fixed compilation when acoustic geometry/material/environment and discretization remain unchanged. Moving/rotating an acoustically participating cabinet, seat or other obstacle invalidates affected geometry/grid/BVH/matrix caches. Changing material, environment, boundary, frequency/formulation or numerical settings invalidates the relevant layers. A receiver sample not retained in an earlier run requires new evaluation or a solve; receiver batching does not imply an arbitrary saved full field.
+
+Separate reusable numerical artifacts from immutable PredictionRun bindings. A cache hit for equivalent physical inputs creates an explicit result association to the requesting exact SceneRevision and candidate; it never relabels an old run as current. Verify reuse versus a fresh solve, and include cabinet rotation, material-only change, receiver-only change and view-only hide as invalidation fixtures.
+
+Coarse fidelity is an explicitly validated model/resolution, not merely a faster setting. It must preserve portal connectivity and required thin/obstacle behavior or report unsupported. A rectangular-only predictor must not eliminate concave-room candidates. Unsupported/missing objectives are not zero, infinity or poor scores.
+
+Screening uses hard geometric constraints for definitive feasibility rejection. Acoustic coarse screening needs documented discrepancy/uncertainty criteria against finer runs, an audit sample of discarded candidates and recovery when ranking reversals are observed. Without a validated error bound it is heuristic shortlisting, not proof that the global Pareto set was retained. Before reporting a final simulated Pareto comparison, recompute retained candidates with a common validated fidelity, band, source/reference and objective spec; mixed-fidelity scores cannot silently establish dominance. Include a coarse/fine ranking-reversal fixture. If the budget cannot support refinement, label the result preliminary and keep the production recommendation gate closed.
 
 ## 11. Validation ladder
 
@@ -599,7 +656,7 @@ Initial target: 20–300 Hz. Split correctness so boundary-model failures are di
 - rigid rectangular analytical modes;
 - concave/portal-capable geometry path as supported by the chosen stack;
 - multiple receivers;
-- FR/phase/IR/spatial field output;
+- FR/phase/IR/spatial field output subject to the numerical observable contract (lossless eigenmodes and finite-time responses are distinct);
 - convergence and independent cross-solver validation.
 
 #### R130B — simple lossy / locally reacting boundary
@@ -658,7 +715,7 @@ SearchSpec
  -> O70 adaptive planning
 ~~~
 
-Use coarse screening, cache reuse and uncertainty to avoid high-resolution solves for every candidate.
+Use coarse screening, cache reuse and uncertainty to avoid high-resolution solves for every candidate, subject to the reuse and candidate-selection acceptance contract in §10.
 
 ### R180 — owned-room validation and production gate
 
@@ -682,18 +739,9 @@ Do not:
 
 ## 14. Next implementation gate (not started)
 
-Implementation remains intentionally not started by this planning update. When coding resumes, the first slice should be **R100 PoC**, not the full solver.
+Implementation remains not started. Resume at **R100A**, delivering the solver-neutral fixture/observable manifest, role-specific hard gates, tolerance policy and reference provenance plan in §4D. Do not start solver kernels first.
 
-It should produce one repeatable benchmark command that runs:
-
-1. rectangular rigid-room analytical modes;
-2. 8-vertex concave-room geometry compile;
-3. CPU wave prototype;
-4. independent FEM/reference comparison;
-5. geometric direct + first-reflection reference;
-6. runtime/memory report.
-
-This is the smallest slice that can falsify the architecture before HTDT commits to a large dependency or GPU implementation.
+After R100A is accepted, R100B delivers one repeatable benchmark command covering the rigid modal reference, concave geometry, CPU wave PoC, independent FEM/reference, geometric direct/first reflection and runtime/memory report, with lossy/portal/obstacle cases according to the candidate's required capability. Record failed and deferred cases explicitly. This is the smallest executable bakeoff that can falsify the architecture; it is not completion of R110–R180 or an owned-room accuracy claim.
 
 ## 15. What is frozen now vs. what remains benchmark-gated
 
