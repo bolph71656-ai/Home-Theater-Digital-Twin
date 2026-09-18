@@ -109,6 +109,8 @@ class CadModelValidationBuildSpec(BaseModel):
         if len(candidate_ids) != len(set(candidate_ids)):
             raise ValueError('validation candidate bindings must be unique')
         split_by_candidate = {candidate.candidate_id: candidate.split for candidate in self.candidates}
+        if not any(split == 'calibration' for split in split_by_candidate.values()):
+            raise ValueError('validation build spec requires calibration candidates')
         if not any(split == 'holdout' for split in split_by_candidate.values()):
             raise ValueError('validation build spec requires holdout candidates')
         if any(value < 0 for value in self.trend_tolerance_by_objective.values()):
