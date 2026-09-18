@@ -71,9 +71,8 @@ CANONICAL_WORKSPACE_CONTEXTS: dict[WorkspaceId, tuple[WorkspaceContext, ...]] = 
     WorkspaceId.OPTIMIZATION: (
         WorkspaceContext("setup", "探索設定"),
         WorkspaceContext("candidates", "候補"),
-        WorkspaceContext("objectives", "目的"),
-        WorkspaceContext("measurement-plan", "測定計画"),
-        WorkspaceContext("validation", "検証"),
+        WorkspaceContext("comparison", "比較"),
+        WorkspaceContext("validation", "測定・検証"),
     ),
 }
 
