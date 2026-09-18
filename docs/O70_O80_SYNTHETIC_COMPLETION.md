@@ -110,6 +110,23 @@ To inspect it in the native application, launch that same data directory with:
 python -m htdt.native_cad --data-dir <demo-data-dir> --document-id htdt-synthetic-o70-o80-demo-v1
 ```
 
+## Acceptance result
+
+Software completion was accepted on 2026-09-18:
+
+- O70 core: PR #92;
+- O70 native UI: PR #93;
+- O80 + real-repository synthetic completion: PR #94;
+- PR #94 merge: `6faf554bcf3670f64ff13c530fa4fc79ab1881b8`;
+- CI #548 / run `35313405578`: **PASS**;
+- Windows Release Artifact #93 / run `35313405629`: **PASS**;
+- packaged `--seed-synthetic-demo`: **PASS**;
+- per-user installer build and install/uninstall data-retention smoke: **PASS**;
+- RDC: **not used** for this completion slice.
+
+These results establish software-path completeness and packaging integrity. They do
+not establish real-room acoustic validity; that remains Issue #83.
+
 ## Production boundary
 
 None of the following is permitted:
