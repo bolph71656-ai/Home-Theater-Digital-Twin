@@ -338,8 +338,7 @@ class WorkflowApplicationComposition:
         def close() -> None:
             deactivate()
             cad_input.dispose()
-            transform_input.dispose()
-            geometry_input.dispose()
+            # RoomWorkspace owns the geometry/transform controller lifetime.
             workspace.close()
 
         workspace.viewport.contextMenuRequested.connect(
