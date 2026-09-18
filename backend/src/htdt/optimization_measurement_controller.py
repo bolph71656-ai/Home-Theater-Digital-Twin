@@ -202,4 +202,3 @@ class MeasurementPlanControllerMixin:
             f'実測候補をcompletedにしました · measured evidence {len(completed.measurement_ids)}件'
         )
 
-    @staticmethod
