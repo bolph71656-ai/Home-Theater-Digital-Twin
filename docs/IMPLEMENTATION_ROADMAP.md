@@ -90,13 +90,13 @@ N30aの単純頂点操作にN20b全機能は不要。N50とN60はN40後に独立
 
 | ID | 先行条件 | 成果 / 完了gate |
 |---|---|---|
-| UX100 — information architecture | 現行main | current task/control inventory、Overview/Room/Measurements/Optimize、sub-context、deep-link schema、primary/contextual/advanced分類を固定。現行UI screenshotとlayout failureを記録 |
+| UX100 — information architecture | 現行main | current task/control inventory、概要/部屋/測定/最適化、sub-context、deep-link schema、primary/contextual/advanced分類を固定。user-facing日本語用語集とCAD shortcut mapを作成し、現行UI screenshot/layout failureを記録 |
 | UX110 — new shell | UX100 | left rail、Overview、workspace router、context bar、Ctrl+K command palette、dark-first design token foundation。semantic surface/accent/typography/focusを共通化し、global toolbar/dock増殖を止める |
-| UX120 — Room workspace | UX110 | dark 3D viewport中心のRoom、contextual tools、selection Inspector、object palette。neutral lighting、low-contrast grid、selection outline、overlay layer/focus modeを含め、Geometry/Objects/Speakers/Acousticsを分離してpermanent toolbar/dockを削減 |
+| UX120 — Room workspace | UX110 | dark 3D viewport中心の部屋workspace、contextual tools、selection Inspector、object palette。CAD defaultとしてMMB pan / Shift+MMB orbit / wheel zoom / RMB context、M move / R rotate / F fit等を実装。neutral lighting、low-contrast grid、selection outline、overlay layer/focus modeを含め、形状/物体/スピーカー/音響を分離してpermanent toolbar/dockを削減 |
 | UX130 — Measurements workspace | UX110 | import→assignment→quality/capability→predicted-vs-measuredをpage化。現行measurement dockをtask pageへ移す |
 | UX140 — Optimize workspace | UX110 + current O-series | Setup/Candidates/Compare/Measure-Validateへ分割。現行monolithic optimization scroll panelを廃止し、Pareto/candidate comparisonを主表示へ |
-| UX150 — visual / interaction quality | UX120〜UX140 | dark-first appearanceをfreeze。surface/accent/typography/spacing/control rhythm、3D lighting/grid/material/overlay、hover/pressed/focus/disabled/selected state、purposeful motion、scientific plot readability、1280×800/1440×900、100/150/200% DPI、clipping/overlap解消 |
-| UX160 — first-use / visual acceptance | UX150 | Overviewから主要taskを発見できるfirst-use確認、command palette、navigation、dark 3D readability、motion/feedback、layout screenshot、state consistency。Windows実機visual acceptanceを一度にまとめる |
+| UX150 — visual / interaction / language quality | UX120〜UX140 | dark-first appearanceとJapanese-first user-facing copyをfreeze。surface/accent/typography/spacing/control rhythm、3D lighting/grid/material/overlay、hover/pressed/focus/disabled/selected state、purposeful motion、scientific plot readability、日本語tooltip/menu/message、1280×800/1440×900、100/150/200% DPI、clipping/overlap解消 |
+| UX160 — first-use / visual acceptance | UX150 | 「概要」から主要taskを発見できるfirst-use確認、command search、CAD shortcut discoverability、Japanese copy、navigation、dark 3D readability、motion/feedback、layout screenshot、state consistency。Windows実機visual acceptanceを一度にまとめる |
 
 R100BはUI非依存なのでUX-seriesと並行可能。ただし **R110以降のmaterial/source/receiver/acoustic input UIを現行dock architectureへ追加しない**。R110のdomain/schema設計は進められるが、user-facing inputはUX110〜UX130のnew shell/workspaceへ統合する。
 
