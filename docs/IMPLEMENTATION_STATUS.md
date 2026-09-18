@@ -1,18 +1,18 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N80a SearchSpec・candidate preview/apply Windows実機受入完了 / N80継続
+> 更新: 2026-09-18 / N80a・O30/O40 core・O20 Room Simulator transaction merge済み / N80継続
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 / N80a はmainへmerge済み。N80aはSearchSpec・candidate preview/applyのWindows実機受入を完了し、N80b/cを継続する。**
+**N05 / N10 / N20a / N20b / N30a / N30b / N40 / N50 / N60 / N70 / N80a はmainへmerge済み。N80ではさらにO30/O40 objective/Pareto coreとO20 REW Room Simulator position transactionまでmainへmerge済みで、immutable batch result/persistence・native比較UI・measurement loopを継続する。**
 
 N70はIssue #63 / PR #64で完了済み。N80aはIssue #65の部分sliceとしてPR #66からmerge commit `7473bb3efdbc511369c9a023b0b210eb5cde3553` でmainへ反映済み。Issue #65はN80b/cのためopenのまま維持する。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N80aまでmerge済み**。PR #66 merge `7473bb3efdbc511369c9a023b0b210eb5cde3553` |
-| N80 tracking | Issue #65（open） / PR #66（N80a merged） |
+| main | **N80 O20 transactionまでmerge済み**。PR #70 merge `b4381f4b01683bba65b3857514ea583160f0eb7b` / PR #71 merge `cdbd0f45f8c66b01522fcc3006b8019e2cd1ba88` |
+| N80 tracking | Issue #65（open） / Issue #67（O20 open） / PR #66・#70・#71 merged |
 | N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
 | N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |
 | N80a product CI | #321 / run `35280237062` PASS |
@@ -137,8 +137,11 @@ N80a（native SearchSpec + candidate workspace）はWindows実機受入を完了
 - A13 stale/cancel/document/clean close PASS
 - A14 SearchSpec→candidate preview→1-command apply→1 Undo exact restore PASS
 
-N80全体は未完了。次はO20〜O40の該当gateを満たす。
+N80全体は未完了。O30/O40 pure coreとnative persistence、O20 position-only transactionは実装済み。現在はO20 immutable batch/result persistence・resume/cancelを実装し、その後native Pareto比較/measurement loopへ接続する。
 
+- PR #70: objective-vector / Pareto algorithms + immutable native objective/Pareto persistenceをmerge済み。
+- PR #71: position-only REW Room Simulator transaction + native Scene/SearchSpec/Candidate adapterをmerge済み。CI #345 PASS。
+- 現在: exact batch spec / candidate attempt / resume-cancel persistenceをIssue #67で継続する。
 - N50/N60/N70とO20〜O40の該当gateを前提にする。
 - SearchSpec編集とO10候補集合をnative Sceneへadapter接続する。
 - 候補preview/適用は1 commandでUndo可能にする。
