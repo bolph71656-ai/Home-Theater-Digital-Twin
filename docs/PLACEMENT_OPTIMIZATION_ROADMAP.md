@@ -75,7 +75,8 @@ Issue #101のarbitrary-room modelはR-seriesで追加する。
 - R130A/B/C: 20–300 Hz low-band wave predictorをrigid core → independently verified lossy boundary → causal frequency-dependent boundaryの順で構築する。
 - R150: direct/early specular＋general-polyhedral ray tracing。pyroomacoustics/Embree等をreference/candidateとして比較する。
 - R160: CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、double-countingを避けたoverlap/crossoverを実装する。
-- R170: multi-fidelity batch predictionとしてO20/O30/O40/O50/O60/O70へ接続し、receiver batching / source grouping / reciprocity等の再利用を成立条件付きで優先する。
+- R170A→R180A: 検証済み低域waveをtyped result adapterでCPU batch/O30/O40/O50/N60/O60へ接続し、低域owned-room campaignを先行する。R140/R150/R160完成を待たない。
+- R170B→R180B: R140/R160後にmulti-fidelity・hybrid・O70適応/O80拡張を接続し、追加能力ごとにvalidationする。receiver batching / source grouping / reciprocity等の再利用は成立条件付き。
 
 REW baseline、geometric reference、wave predictor、hybrid predictorは別model ID/versionとして保存し、結果を上書き・暗黙昇格しない。
 
@@ -91,7 +92,7 @@ R-series predictionでは、少なくとも次をPredictionRunへimmutable bindi
 - semantic acoustic geometry hash
 - compiled representation hash + acoustic compiler version/tolerance
 - material/boundary configuration hash + material capability state
-- source excitation/directivity dataset hash
+- source excitation/directivity dataset hash + input-channel→physical-source routing/gain/delay/filter model hash
 - receiver model/calibration hash + receiver set
 - environment/air-state hash
 - solver/model ID + version
@@ -214,6 +215,18 @@ O50以降では、予測候補から実測対象を選んだ時点でMeasurement
 CampaignはSearchSpec/candidate-set SHA、model版、candidate split、target response、帯域、objective、trend threshold、sensitivity pair/threshold、repeatability候補/回数、candidate separation倍率、required applicability codeを固定する。campaign作成以前にcapturedされたmeasurement、またはcampaign保存時点ですでにmeasured planとなっていたcandidateは、そのcampaignのvalidation evidenceへ昇格させない。
 
 prediction/measured objectiveはcampaignに保存した同一target response・evaluation specからO30 vectorを導出する。readinessはmissing/ambiguous evidenceを明示し、条件不足を自動補完しない。O70が読むeligible ValidationRecordはpersisted campaignへ再照合できるものに限定する。
+
+### 8.1a R-series result / calibration adapter（未実装）
+
+現行 `CadModelValidationService` はRoomSim attemptからFRを取得し、campaignのobjectiveはFRの4種類に限定される。R170Aでは新wave resultと既存RoomSimを区別するtyped result providerを追加し、candidate/SceneRevision、model/config/result hash、band、unit/level/time referenceをO20/O30/O50/O60/O70へ伝える。既存recordを保持し、RoomSim用payloadの偽装やmodel IDだけの付替えで接続しない。
+
+最初は検証済みsingle-sourceの低域FR objectiveから接続できる。複数音源は入力routing・gain/delay/EQ/source responseによる複素励振とroom transferを分離し、coherent sumとdB平均を混同しない。未知のAVR経路やsource responseをmaterial fittingへ押し付けない。receiver移動時のREW timing-reference経路と、適用済みmic correctionも比較条件へ含める。
+
+Calibrationはfit対象parameter/bounds・固定値・目的・training evidence・正規化をcampaignで事前登録する。fit後はmodel/configuration hashをappend-onlyで確定してからholdoutを評価する。この遷移をcampaign schemaで表現し、fit前に未生成hashを要求したり、holdout評価後のhash変更を許したりしない。低いresidualだけで材料が一意に同定できたと断定せず、感度/非一意性を報告する。fitは任意で、固定した明示modelの評価経路も保持する。
+
+holdoutを見てmodel/parameter/正規化を調整した後は、そのデータを次版の独立holdoutとして再利用しない。新production claimには新しい独立holdoutを用意する。既存の実測前campaign保存とsynthetic分離は維持する。
+
+eligible recordの適用範囲をmodel/config、band、observable、source/receiver/room/material条件で限定する。FR合格はphase/IR/decay/directional validationではない。R180Aは低域FR等の対象だけ、R180Bは追加observableのmetric/measurement adapterと独立検証を受け持つ。hash不一致、holdout使い回し、FR合格からphaseを誤解禁するnegative fixtureを含める。
 
 ## 8.2 Synthetic software-completion lane
 

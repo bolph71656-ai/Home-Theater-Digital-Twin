@@ -9,13 +9,13 @@ HTDT should not extend the current rectangular predictor into a silently approxi
 
 The implementation baseline is:
 
-1. **20–300 Hz wave domain**: a structured-grid time-domain solver is the first production PoC, with a deterministic CPU implementation as the correctness baseline and optional GPU backends behind the same solver contract.
+1. **20–300 Hz wave domain**: evaluate a reusable FDTD CPU path first against an independent FEM/reference. This is an evaluation order, not a requirement to author a new kernel or select FDTD for production. Deliver useful low-band prediction and its measurement loop before requiring the broadband hybrid stack.
 2. **Mid/high frequency domain**: geometrical acoustics with deterministic direct/specular paths first, then stochastic/diffuse ray energy where justified.
 3. **Hybrid result**: combine low-band coherent wave results and upper-band geometric results only inside an explicit overlap/crossover contract. Do not fabricate coherent phase for a stochastic late-field result that does not contain it.
 4. **Material authority**: separate energy-domain absorption/scattering from wave-domain complex impedance/admittance. Do not derive a unique phase-bearing impedance from a scalar absorption coefficient without an explicit model.
 5. **Source/receiver authority**: keep physical cabinet orientation, acoustic aim, source excitation/level reference and frequency-dependent directivity separate. Receiver position/orientation/calibration/timing authority is equally explicit and binds to the prediction.
 6. **Execution**: CPU fallback is mandatory. GPU is an accelerator, not a correctness dependency. Candidate-level parallelism, solver-internal threading and GPU execution must be scheduled together to avoid oversubscription.
-7. **Validation**: analytical/reference numerical cases precede owned-room REW/UMIK-1 validation. Simulation alone never opens the production recommendation gate.
+7. **Validation**: analytical/reference cases precede owned-room validation of the same capability. R180A validates a low-band model after R170A; R180B later validates hybrid/extended capabilities. Simulation alone never opens a production recommendation gate.
 
 This preserves the existing HTDT evidence model: measured, predicted, derived and hypothesis remain distinct, and production recommendation still requires O60 owned-room evidence.
 
@@ -144,13 +144,15 @@ The first bakeoff should stay deliberately small enough to finish, while keeping
 
 | Layer | First-line shortlist | Secondary/reference | Explicit non-role |
 |---|---|---|---|
-| Wave time-domain | small HTDT CPU prototype; PFFDTD as implementation/algorithm reference | k-Wave executables where useful for comparison | do not adopt CUDA-only correctness |
+| Wave time-domain | existing FDTD CPU engine/adaptor, with PFFDTD evaluated for reuse as well as reference | a minimal HTDT teaching/reference kernel only if an explicit reuse gap warrants it; k-Wave for comparison | do not require a new kernel or adopt CUDA-only correctness |
 | FEM | MFEM-based acoustic prototype, with Gmsh or another controlled mesh path if needed | FEniCSx / PETSc / SLEPc as research or solver-infrastructure references | do not make a heavy HPC stack a desktop dependency before packaging evidence |
 | BEM | none as first shipping path | Bempp-cl / FMM-BEM research fixtures | do not block R130 on BEM |
 | Geometric | pyroomacoustics for general-polyhedral RIR/reference cases; Embree as CPU intersection-kernel candidate | Steam Audio / Wayverb as architecture/behavior references | do not treat game-audio or GA output as low-band full-wave authority |
 | Commercial | none as dependency | COMSOL/ANSYS/Actran/VA One for independent numerical comparison when available; ODEON/CATT/EASE/Treble for workflow/GA comparison | do not copy closed implementation assumptions into HTDT authority |
 
 R100 must record exact version/commit, license, redistribution implications, Windows build/install path and backend availability for every candidate actually executed. A project name in a research matrix is not enough to approve a dependency.
+
+R100B evaluates direct reuse, a thin adapter, a maintained port, then a new kernel only for a documented unmet requirement. [PFFDTD](https://github.com/bsxfun/pffdtd) documents CPU execution and frequency-dependent boundaries but a Linux-oriented setup; neither native Windows readiness nor the need to reimplement it has been demonstrated here. Compare total integration/maintenance and packaging cost as well as solve time. If no candidate passes, publish a no-go/next experiment ADR with failed gates; do not force a production selection or keep the bakeoff open indefinitely.
 
 ### Deep Research claims intentionally not promoted to architecture facts
 
@@ -263,15 +265,18 @@ The manifest also fixes:
 
 Zero padding does not replace a longer observation for resolving nearby modes. Modal-frequency accuracy alone does not establish transfer-amplitude, phase or decay accuracy. Time step, duration, precision and post-processing belong to result identity and resource estimates as well as the benchmark report.
 
-R100A specifies the fixture families and initial hard tolerances before R100B evaluation. A reference-derived tolerance may be finalized after a documented reference convergence study, but must be versioned and frozen before candidate acceptance; do not relax it retrospectively to pass a candidate.
+R100A specifies the fixture families, initial hard tolerances and a bounded workload before R100B evaluation: room/adjacent-volume sizes, required band/observables, source/receiver counts, solve duration, candidate workload and declared CPU/RAM/disk limits. Record numerical error budgets and end-to-end compile/solve/postprocess latency and peak-memory acceptance values in the manifest before performance ranking. Values remain an R100A deliverable; this planning review does not invent a measured hardware target.
+
+R100A specifies these tolerances before candidate evaluation. A reference-derived tolerance may be finalized after a documented reference convergence study, but must be versioned and frozen before candidate acceptance; do not relax it retrospectively to pass a candidate.
 
 | Gate | Evidence required at this stage |
 |---|---|
 | R100A | Versioned fixture/observable/tolerance manifest, role-to-fixture applicability and analytical/reference provenance plan. No production kernel or GUI required |
 | R100B | Executed primary PoCs on their applicable fixtures, reference convergence, initial Windows/CPU resource envelope and ADR. Report unsupported, failed and deferred separately |
 | R110–R130 | Product persistence/editor/compiler, stale/cancel/resource preflight and wave boundary fixtures for each delivered capability |
-| R140–R170 | Production scheduler/cache/resume, optional GPU comparisons, hybrid and optimization integration fixtures |
-| R180 | Preregistered owned-room campaign evidence |
+| R170A / R180A | Low-band result adapter and CPU batch/measurement loop, then its own preregistered owned-room validation; no R150/R160 dependency |
+| R140 / R150 / R160 / R170B / R180B | Scheduler acceleration, geometric/hybrid and extended optimization fixtures, then validation of those additional capabilities |
+
 
 Later product integration or hybrid acceptance is not a prerequisite for completing R100B. A shipping candidate must demonstrate the required CPU/Windows path; an independent reference may use another platform when its reproducible environment and exported results are recorded. GPU absence is an explicit not-applicable acceleration comparison, never a waiver of CPU correctness.
 
@@ -324,6 +329,10 @@ The compiler must detect and report:
 - zero-area/degenerate faces;
 - thin surfaces that would disappear at the selected wave-grid resolution;
 - simplification error.
+
+An internal open Portal in the same air medium couples pressure and normal volume flow; it is not an extra absorbing wall. Model the aperture/reveal geometry once, remove duplicate coincident walls at the connection, and retain actual closed-door panels as surfaces/solids or explicitly supported transfer boundaries. An exterior truncation/termination has its own radiation/reflection model and validity, not merely a label saying “open”.
+
+R100A/R120 include partition-invariance (one volume versus two connected regions with no physical divider), closed-versus-open door, and flux/energy balance cases. An aperture with a finite wall must retain its obstruction and diffraction geometry. This physical contract follows the distinction between [interior continuity](https://doc.comsol.com/6.3/doc/com.comsol.help.aco/aco_ug_pressure.05.096.html) and [transfer impedance](https://doc.comsol.com/6.3/doc/com.comsol.help.aco/aco_ug_pressure.05.114.html); the exact fixture tolerances are HTDT decisions.
 
 No automatic rectangularization is permitted.
 
@@ -382,6 +391,12 @@ Wave-domain material capability must be explicit. At minimum distinguish:
 
 A material that only has absorption/scattering data may still participate in geometrical acoustics, but it is not automatically valid for a phase-bearing low-frequency wave solve. Choosing a rigid or other equivalent approximation is an explicit model assumption with provenance, not an implicit default.
 
+### Coefficient and interface conventions
+
+Material metadata must distinguish pressure-amplitude from energy coefficients, normal/angle-dependent from random-incidence data, dimensional specific impedance (Pa·s/m) from normalized impedance, and backing/thickness/air-gap conditions. Distinguish one-sided wall impedance from a two-sided sheet/transfer impedance; a freely hanging curtain is not automatically the same boundary as wall-mounted treatment. These distinctions are supported by [COMSOL's impedance specification](https://doc.comsol.com/6.4/doc/com.comsol.help.aco/aco_ug_pressure.05.023.html).
+
+For a passive geometric boundary, reflected + absorbed + transmitted energy must balance incident energy within the declared numerical tolerance. Scattering redistributes reflected energy and is not an extra absorption term. If transmission is not implemented, require an explicitly opaque model or report unsupported; do not silently absorb transmitted energy. In the overlap, wave and geometric representations of a material must implement a documented consistent physical model. Add normal/oblique reflection, scattering-budget and unsupported-sheet fixtures to R130B/C and R150.
+
 ## 7. Source / receiver / environment authority
 
 Internal source authority should support:
@@ -411,6 +426,14 @@ Environment authority must record the state/model used by the prediction, includ
 SOFA is a useful general spatial-acoustics interchange candidate. Generic polar CSV/import is also needed because loudspeaker manufacturer data vary. CLF/GLL and other proprietary ecosystem formats require separate format/license review before implementation.
 
 For very low frequencies, an omnidirectional/monopole approximation can be an explicit source model when its validity is documented; it must not silently replace a supplied directional model outside its valid band.
+
+### Room transfer versus the measured playback chain
+
+Store the room transfer separately from source excitation and the playback/measurement chain. For a declared linear model, a receiver pressure is the complex sum `p_r(f) = sum_s H_rs(f) q_s(f)`; the input-channel-to-source routing, gains, delays, crossovers/EQ and source response determine `q_s`. Save their model/version and phase reference. Source batching does not mean all sources may be excited simultaneously when separate transfers are requested. Accept independent source solves or a verified separation method; include two coherent sources with constructive/destructive interference and a bass-routed input fixture.
+
+The first owned-room lane may use an explicitly verified single physical source. Unknown AVR routing/source response does not become unit excitation and must not be “fixed” by fitting wall absorption. Relative FR-shape comparisons remain possible under a preregistered normalization; absolute SPL and coherent multisource/phase comparisons require their stronger reference conditions. Do not equate dB averaging with coherent summation.
+
+For REW comparisons, preserve which microphone/source/electronic corrections are already applied. Acoustic timing is relative to a reference speaker, not automatically the solver emission time; receiver movement changes that reference path. Bind reference-speaker identity/position, timing offset and known electronic delay, or limit the comparison to justified relative quantities. [REW documents this relative timing behavior](https://www.roomeqwizard.com/help/help/html/makingmeasurements.html). Add moved-receiver timing and double-calibration negative fixtures.
 
 ## 8. Hybrid result contract
 
@@ -590,7 +613,7 @@ Agreement tolerance is defined from convergence error and the quantity being com
 
 ### L6 — owned room
 
-Use the existing O60 campaign authority:
+Reuse the O60 campaign invariants through an explicit new-result adapter, not by pretending its current service already accepts arbitrary solver outputs:
 
 - calibration/holdout separation;
 - residual trend;
@@ -600,6 +623,14 @@ Use the existing O60 campaign authority:
 - applicability.
 
 UMIK-1/REW evidence remains the final owned-room validation path.
+
+Current implementation evidence: `cad_model_validation_service.py` reads `roomsim_repository.get_attempt` and converts with `roomsim_attempt_frequency_response`; `cad_validation_campaign.py` accepts four FR objectives. R170A must add a typed prediction-result binding/provider with model/configuration/result hashes and validated-band/reference metadata for O20/O30/O50/O60/O70. Keep the REW adapter and its stored records valid. Do not put wave/GA data into a fabricated RoomSim attempt or mark a FR-only gate as validation of phase, IR, decay or O80 directional behavior.
+
+Validation scope is explicit: model/configuration, observable, frequency band, source/receiver family and room/material applicability. Unsupported new observables need their own metric/measurement adapter and acceptance before recommendation. An eligible low-band FR record enables only its approved objectives; it cannot enable the whole Issue #101 feature set.
+
+Material/boundary calibration is optional model fitting, separate from microphone calibration and O70 residual correction. Preregister fitted parameters/bounds, fixed parameters, fitting objective and training evidence; check sensitivity/identifiability and report non-unique fits rather than claiming recovered physical materials. Freeze the calibrated model/configuration hash and all gain/delay/normalization rules before evaluating holdout, and produce new predictions without overwriting prior runs. The preregistered campaign must represent that calibration-to-frozen-model transition append-only; it must not require a fitted hash before calibration exists or allow an untracked change after holdout.
+
+After holdout results influence model selection/tuning, treat those measurements as development evidence for the next revision and use fresh independent holdout for a new production claim. Do not repeatedly tune against the same “holdout” until it passes. Add model-hash mismatch, recycled-holdout, non-identifiable-fit and FR-pass/phase-unvalidated fixtures.
 
 ## 12. Implementation phases
 
@@ -618,13 +649,13 @@ Deliver:
 - this research note plus the Deep Research refinement;
 - third-party version/license/redistribution/Windows-package matrix;
 - common solver interface and provenance contract;
-- small deterministic FDTD CPU prototype;
+- reproducible FDTD CPU evaluation using an existing engine/adapter where feasible; new kernel work requires the documented reuse decision in §4B;
 - one independent FEM/reference prototype;
 - simple geometric-acoustics prototype/reference;
 - measured CPU scaling and, when available, GPU-vs-CPU tolerance/resource evidence;
 - an explicit decision record naming the selected first production stack and rejected/secondary alternatives with reasons.
 
-Exit only after applicable hard gates pass and measured Windows/CI evidence selects the first production stack. R100 does **not** freeze the final crossover frequency, GPU vendor/backend, universal mesh density or the long-term BEM/DG/PSTD role.
+Deliver either a selected first production stack supported by applicable hard gates and measured Windows/CI evidence, or a no-go ADR with bounded follow-up experiments. Only the selected-and-passing branch authorizes R110+ product integration. R100 does **not** freeze the final crossover frequency, GPU vendor/backend, universal mesh density or the long-term BEM/DG/PSTD role.
 
 ### R110 — acoustic scene/material/source/receiver authority
 
@@ -699,29 +730,29 @@ Implement overlap/crossover and derive only metrics supported by the combined au
 - spatial field where meaningful;
 - RT60/EDT/C50/C80 where the underlying result is valid.
 
-### R170 — optimization integration
+### R170 — optimization integration umbrella
 
-Connect arbitrary-room prediction to:
+#### R170A — low-band vertical slice
 
-~~~text
-SearchSpec
- -> feasible candidates
- -> multi-fidelity prediction
- -> ObjectiveVector
- -> Pareto
- -> MeasurementPlan
- -> N60 evidence
- -> O60 validation
- -> O70 adaptive planning
-~~~
+After R110/R120 and the R130 boundary capabilities required by the declared model, connect one wave result through N70 visualization, bounded CPU candidate batch, O30/O40 comparison, O50 MeasurementPlan and N60/O60 validation. Deliver the typed result adapter in §11 and basic identity/cancel/cache/resume semantics. R140 acceleration, R150 geometric acoustics, R160 hybrid and adaptive search are not prerequisites.
 
-Use coarse screening, cache reuse and uncertainty to avoid high-resolution solves for every candidate, subject to the reuse and candidate-selection acceptance contract in §10.
+The first slice uses validated single-source/receiver and FR objectives where appropriate; 20–300 Hz remains the target, and any narrower delivered band is explicit. Unknown boundary data permits a labeled numerical hypothesis, not owned-room eligibility.
 
-### R180 — owned-room validation and production gate
+#### R170B — hybrid / multi-fidelity / extended search
 
-Run the real target-room campaign only after numerical/reference gates pass.
+After R170A, R140 and R160, add hybrid batch outputs, validated coarse/fine scheduling, reuse in §10, O70 residual/adaptive integration and O80 directional/multiseat/multichannel capabilities where the source/result contracts support them. R170A retains O60/O70 authority bindings but does not have to ship every adaptive feature.
 
-The new solver does not bypass Issue #83/O60 evidence policy. A new solver/model version needs its own applicability/owned-room validation before production recommendation.
+### R180 — owned-room validation umbrella
+
+#### R180A — low-band owned-room validation
+
+After R170A and applicable numerical/reference gates, run the preregistered low-band campaign. Validate actual material/source/measurement assumptions early, before investing in the full broadband stack. Unsupported unknowns keep recommendation closed, but do not require R150/R160 to start this campaign. This lane does not certify phase, decay, broadband or directional behavior by passing FR objectives.
+
+#### R180B — additional capability validation
+
+After R170B and its numerical gates, validate each additional claimed observable/band/directional capability. Neither an old RoomSim approval nor R180A grants approval to a new hybrid model.
+
+Both lanes preserve O60/Issue #83 evidence rules, the model-freeze/holdout policy in §11, and synthetic-versus-owned-room separation. R170/R180 remain umbrella IDs; their A/B slices are not independently renamed completed features.
 
 ## 13. Rejected shortcuts
 
@@ -749,7 +780,7 @@ After R100A is accepted, R100B delivers one repeatable benchmark command coverin
 
 - arbitrary-room support uses a hybrid/multi-fidelity architecture rather than silent rectangular approximation;
 - 20–300 Hz is the initial low-band wave target, not a promise that 300 Hz is the final crossover;
-- FDTD is the first time-domain PoC and FEM is the primary independent reference/alternative;
+- evaluate reusable FDTD first with FEM as the primary independent reference/alternative; a custom kernel and production FDTD selection are not frozen;
 - BEM/FMM, DG/high-order FEM and PSTD/k-space remain secondary/reference candidates unless R100 evidence promotes them;
 - geometric direct/early paths and stochastic late energy have different semantics;
 - scalar absorption, scattering and complex impedance/admittance are distinct authorities;
