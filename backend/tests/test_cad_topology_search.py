@@ -405,6 +405,28 @@ def test_302_to_502_pair_search_is_reproducible_and_persistable(
             candidate=tampered,
         )
 
+    # A self-consistent hash is not enough: conversion must accept only an exact
+    # member of the deterministic O10/O100B search grid.
+    import htdt.cad_topology_search as topology_search
+
+    forged_aim = dict(candidate.aim_yaw_deg)
+    forged_aim['sl'] = 5.0
+    forged_payload = candidate.identity_payload()
+    forged_payload['aim_yaw_deg'] = forged_aim
+    forged_sha = topology_search._digest(forged_payload)
+    forged = candidate.model_copy(update={
+        'aim_yaw_deg': forged_aim,
+        'candidate_sha256': forged_sha,
+        'candidate_id': 'tpc-' + forged_sha[:20],
+    })
+    with pytest.raises(ValueError, match='exact deterministic search member'):
+        topology_candidate_document(
+            baseline=baseline,
+            template_variant=template,
+            spec=spec,
+            candidate=forged,
+        )
+
 
 def test_body_yaw_reuses_o80_oriented_allowed_region_rejection(
     tmp_path: Path,
