@@ -7,9 +7,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QWidget
 
 import htdt.optimization_workflow_workspace as optimization_workflow
+import htdt.workflow_application as workflow_application
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import F1_DOCUMENT_ID
-from htdt.command_registry import WorkspaceDeepLink, WorkspaceId, default_command_definitions
+from htdt.command_registry import (
+    CommandRegistry,
+    WorkspaceDeepLink,
+    WorkspaceId,
+    default_command_definitions,
+    register_default_commands,
+)
 from htdt.optimization_workflow_workspace import (
     OPTIMIZATION_PAGE_IDS,
     OptimizationWorkflowWorkspace,
@@ -109,6 +116,94 @@ def test_ux140_real_workspace_has_no_legacy_mainwindow_or_docks(tmp_path) -> Non
     allowed, reason = workspace.before_deactivate()
     assert allowed is False
     assert reason is not None and "未保存" in reason
+
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+def test_ux140_workflow_application_binds_commands_without_legacy_qactions(monkeypatch) -> None:
+    app = _app()
+    events: list[str] = []
+
+    class Working:
+        is_dirty = True
+        can_undo = True
+        can_redo = False
+        has_preview = False
+
+    class Scene:
+        recovery_candidate = None
+
+    class Controller:
+        def __init__(self) -> None:
+            self.working = Working()
+            self.scene = Scene()
+            self.search_selected_spec_id = "spec-1"
+            self._rew_tasks = {}
+
+        def active_search_worker_count(self) -> int:
+            return 0
+
+        def active_extended_worker_count(self) -> int:
+            return 0
+
+        def save(self) -> bool:
+            events.append("save")
+            self.working.is_dirty = False
+            return True
+
+        def undo(self) -> bool:
+            events.append("undo")
+            self.working.can_undo = False
+            self.working.can_redo = True
+            return True
+
+        def redo(self) -> bool:
+            events.append("redo")
+            return True
+
+        def refresh_pareto_comparison(self) -> None:
+            events.append("compare")
+
+    class FakeWorkspace(QWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self.controller = Controller()
+
+    workspace = FakeWorkspace()
+    fake_mount = WorkspaceMount.from_widget(workspace, on_activate=lambda: events.append("activate"))
+    monkeypatch.setattr(
+        workflow_application,
+        "build_optimization_workspace_mount",
+        lambda _repository, _document_id: fake_mount,
+    )
+
+    composition = object.__new__(workflow_application.WorkflowApplicationComposition)
+    composition.repository = object()
+    composition.document_id = "document-1"
+    composition.registry = CommandRegistry()
+    register_default_commands(composition.registry)
+
+    mount = composition._make_optimization()
+    assert mount.on_activate is not None
+    mount.on_activate()
+
+    assert composition.registry.availability("project.save").enabled
+    assert composition.registry.availability("edit.undo").enabled
+    assert not composition.registry.availability("edit.redo").enabled
+    assert composition.registry.availability("optimization.compare_candidates").enabled
+
+    composition.registry.execute("project.save")
+    composition.registry.execute("edit.undo")
+    composition.registry.execute("edit.redo")
+    composition.registry.execute("optimization.compare_candidates")
+    assert events == ["activate", "save", "undo", "redo", "compare"]
+
+    assert mount.on_deactivate is not None
+    mount.on_deactivate()
+    assert not composition.registry.is_bound("project.save")
+    assert not composition.registry.is_bound("optimization.compare_candidates")
 
     workspace.close()
     workspace.deleteLater()
