@@ -198,3 +198,8 @@ Focused tests are in `backend/tests/test_data_management_ui.py` and cover:
 
 Authority-level hash/integrity/path traversal/schema/rollback tests remain in
 the existing `test_native_backup.py`. The UI tests do not duplicate them.
+
+
+## Shell integration update — 2026-09-19
+
+The UX120–UX140 integration composition now hosts this component from the shell rail's **設定** utility. `ApplicationDataLifecycle` freezes navigation, checks every mounted workspace guard, disposes all data workspaces, delegates destructive restore to the existing native backup authority, constructs a fresh `SceneRepository`, and lazily rebuilds workspaces from Overview. The accepted legacy launcher remains unchanged until UX160 acceptance.
