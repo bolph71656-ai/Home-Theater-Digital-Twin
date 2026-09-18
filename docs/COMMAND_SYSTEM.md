@@ -33,8 +33,6 @@ Scene保存、Undo/Redo、測定、予測、Pareto計算などのdomain authorit
 - `backend/src/htdt/native_command_adapter.py`
   - 現行native windowの既存method/actionへdelegateするadapter
   - save / undo / redo / room draw / speaker add / REW import / prediction / candidate compare
-- `backend/src/htdt/native_cad.py`
-  - 現行windowへpaletteを最小接続
 
 ## 初期command
 
@@ -42,52 +40,77 @@ Scene保存、Undo/Redo、測定、予測、Pareto計算などのdomain authorit
 |---|---|---|---|---|
 | `navigation.overview` | 概要 | — | global / overview | `overview` |
 | `navigation.room` | 部屋 | — | global / room | `room` |
-| `navigation.measurements` | 測定 | — | global / measurements | `measurements` |
+| `navigation.measurements` | 測定 | — | global / measurement | `measurement` |
 | `navigation.optimization` | 最適化 | — | global / optimization | `optimization` |
 | `project.save` | 保存 | Ctrl+S | global | — |
 | `edit.undo` | 元に戻す | Ctrl+Z | global / room | — |
 | `edit.redo` | やり直す | Ctrl+Y / Ctrl+Shift+Z | global / room | — |
 | `room.draw` | 部屋作図 | — | room | `room/geometry` |
-| `room.add_speaker` | スピーカー追加 | — | room | `room/speakers` |
-| `measurements.import_rew` | REW読み込み | — | measurements | `measurements/import` |
+| `room.add_speaker` | スピーカー追加 | — | room | `room/placement` |
+| `measurements.import_rew` | REW読み込み | — | measurement | `measurement/import` |
 | `prediction.run` | 予測実行 | — | room | `room/acoustics` |
 | `optimization.compare_candidates` | 候補比較 | — | optimization | `optimization/candidates` |
 
 ## Agent A / shell integration
 
-navigation commandはshell本体をこのPRで実装しない。registryはdeep-link handlerを後付けできる。
+Agent AのPR #122が定義したcanonical shell IDに合わせる。
+
+- workspace: `overview / room / measurement / optimization`
+- Room context: `geometry / objects / placement / acoustics`
+- Measurement context: `import / assignment / quality / comparison`
+- Optimization context: `setup / candidates / objectives / measurement-plan / validation`
+
+このPRはAgent Aと同じ `native_cad.py` を編集しない。paletteはshellを親にして1回だけ生成し、
+workspace routerの `navigate()` / `select_context()` をdeep-link handlerへ接続する。
 
 ~~~python
-controller = install_native_command_palette(
-    window,
-    deep_link_handler=workspace_router.open_deep_link,
-    context_provider=workspace_router.current_command_context,
+def open_deep_link(link: WorkspaceDeepLink) -> None:
+    shell.navigate(link.workspace.value)
+    if link.section is not None:
+        shell.select_context(link.section)
+
+registry = CommandRegistry(deep_link_handler=open_deep_link)
+register_default_commands(registry)
+
+controller = CommandPaletteController(
+    shell,
+    registry,
+    context_provider=lambda: CommandContext(shell.current_workspace_id.value),
+)
+shell.command_palette_controller = controller
+~~~
+
+`register_default_commands()` はexecutor未接続でも全metadataを先に登録できる。
+lazy workspaceがmountされた時点で、workspace側の既存authorityを `bind()` する。
+
+~~~python
+room = RoomEditorWindow(repository, document_id)
+registry.bind(
+    'room.draw',
+    execute=room.start_room_sketch,
+    availability=lambda: command_availability_from(room.draw_room_action),
 )
 ~~~
 
-またはshell生成後に既存controllerへ接続してよい。
+deep-link付きtask commandを実行すると、registryはまずshell navigationを行う。
+navigation中のlazy mountで `bind()` されたexecutorがあれば、その後に同じcommandを実行する。
+したがってshellがdomain/service authorityを持つ必要はない。
 
-~~~python
-window.command_palette_controller.registry.set_deep_link_handler(
-    workspace_router.open_deep_link
-)
-~~~
+`project.save` / `edit.undo` / `edit.redo` のようなdeep-linkを持たないcommandは、
+active workspace変更時に対応する既存action/methodへbindする。未bind時は
+「この操作は現在の画面では利用できません」と理由付きdisabledになる。
 
-deep-link handler未接続時、navigation commandはpaletteに残るがdisabledになり、
-「画面切替の準備が完了すると利用できます」と理由を表示する。
-これは旧dock構造へnavigation authorityを二重実装しないための意図的な境界。
-
-task commandにもdeep-link metadataを持たせる。Agent Aは必要に応じて該当workspaceを開いてから
-同じcommand IDを実行できる。command callback自体は既存authorityへのdelegateのまま維持する。
+deep-link handler自体が未接続の場合、navigation commandはpaletteに残るがdisabledになり、
+「画面切替の準備が完了すると利用できます」と表示する。
 
 ## command追加方法
 
 1. `default_command_definitions()` にstable ID、日本語表示名、context、keywords、必要ならshortcut/deep-linkを追加する。
-2. 実行処理が既存native authorityにある場合、`native_command_adapter.py` の `bindings` へcallbackを接続する。
+2. metadataを先に登録し、実行処理が存在するworkspaceのmount/activate時に `registry.bind()` で既存authorityへ接続する。legacy単一windowでは `native_command_adapter.py` の `bindings` を利用できる。
 3. availabilityは既存actionの `isEnabled()`、既存precondition method、repositoryのread-only state等を参照する。domain判定をcommand側へ再実装しない。
 4. disabled時は短い日本語理由を返す。
 5. scene/document shortcutを追加する場合は `ShortcutBehavior.FOCUS_SAFE` を使う。
-6. shell navigationだけのcommandはexecutorを作らず `WorkspaceDeepLink` を指定する。
+6. shell navigationだけのcommandはexecutorを作らず `WorkspaceDeepLink` を指定する。task commandもdeep-linkを持たせると、shell navigation後のlazy bindingを利用できる。
 7. registry contractを変える場合だけ `backend/tests/test_command_registry.py` を更新する。単なるmetadata追加のために不要なGUI testを増やさない。
 
 例:
@@ -102,13 +125,14 @@ CommandDefinition(
 )
 ~~~
 
-adapter:
+binding:
 
 ~~~python
-'room.add_seat': (
-    lambda: window.add_object('seat'),
-    lambda: existing_availability_check(window),
-),
+registry.bind(
+    'room.add_seat',
+    execute=lambda: room_workspace.add_object('seat'),
+    availability=lambda: existing_availability_check(room_workspace),
+)
 ~~~
 
 ## shortcut / focus contract
@@ -144,7 +168,7 @@ command availabilityはUIの入口を説明するためのread-only判定であ�
 
 ## 現在の残件
 
-- Agent Aのworkspace router接続前は4 navigation commandが理由付きdisabled。
+- Agent AのPR #122へpalette controller / deep-link handler / workspace bindingを接続する統合作業が必要。APIとcanonical ID/contextはこのPRで整合済み。
 - entity search、設定、ヘルプはIssue #118の後続scope。registry APIを拡張せず追加可能。
-- legacy toolbar/actionのshortcutを一括削除・置換する作業はこのPRでは行わない。
+- legacy toolbar/actionのshortcutを一括削除・置換する作業はこのPRでは行わない。新shell側はregistry shortcut metadataを使用する。
 - visual token適用はAgent Bのtheme foundationへ委譲する。paletteはQt palette roleだけを使用し、独自色を持たない。
