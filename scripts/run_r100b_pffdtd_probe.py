@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.metadata
 import json
-import math
 import os
 from pathlib import Path
 import platform
-import subprocess
 import sys
 import threading
 import time
@@ -27,6 +24,13 @@ from htdt.acoustic_bakeoff import (
     validate_bakeoff_run,
 )
 from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
+from htdt.acoustic_pffdtd_adapter import (
+    acoustic_position_array,
+    apply_pffdtd_runtime_compatibility_patches,
+    compile_rigid_fixture_model,
+    pffdtd_git_head,
+    recombine_pffdtd_receiver_traces,
+)
 
 
 CANDIDATE_ID = 'pffdtd-main-aa319f6'
@@ -71,10 +75,6 @@ def _fixture(benchmark):
     return next(item for item in benchmark.fixtures if item.fixture_id == FIXTURE_ID)
 
 
-def _position(position) -> np.ndarray:
-    return np.asarray([position.x_m, position.y_m, position.z_m], dtype=np.float64)
-
-
 def _runtime_versions() -> dict[str, str]:
     names = ('numpy', 'numba', 'h5py', 'scipy', 'tqdm', 'psutil', 'memory-profiler')
     versions: dict[str, str] = {}
@@ -84,112 +84,6 @@ def _runtime_versions() -> dict[str, str]:
         except importlib.metadata.PackageNotFoundError:
             versions[name] = 'not-installed'
     return versions
-
-
-def _git_head(upstream_root: Path) -> str:
-    return subprocess.check_output(
-        ['git', '-C', str(upstream_root), 'rev-parse', 'HEAD'],
-        text=True,
-    ).strip().lower()
-
-
-def _apply_compatibility_patches(upstream_root: Path) -> dict[str, object]:
-    """Apply bounded, exact-source-checked runtime compatibility shims.
-
-    The pinned PFFDTD commit predates two Python/NumPy runtime changes that
-    otherwise prevent the existing Python/Numba CPU path from executing on the
-    current Windows/Python 3.12 CI image. Refuse to patch if any expected source
-    text differs, and record the complete diff hash.
-    """
-
-    patches = (
-        {
-            'patch_id': 'numpy-removed-np-float-alias-v1',
-            'path': 'python/common/myfuncs.py',
-            'before': 'EPS = np.finfo(np.float).eps',
-            'after': 'EPS = np.finfo(float).eps',
-        },
-        {
-            'patch_id': 'python312-shared-memory-exported-view-cleanup-v1',
-            'path': 'python/voxelizer/vox_grid_base.py',
-            'before': (
-                '            #cleanup shared memory\n'
-                '            Ntris_vox_shm.close()\n'
-                '            Ntris_vox_shm.unlink()\n\n'
-                '            N_tribox_tests_shm.close()\n'
-                '            N_tribox_tests_shm.unlink()'
-            ),
-            'after': (
-                '            #cleanup shared memory\n'
-                '            del Ntris_vox\n'
-                '            del N_tribox_tests\n'
-                '            Ntris_vox_shm.close()\n'
-                '            Ntris_vox_shm.unlink()\n\n'
-                '            N_tribox_tests_shm.close()\n'
-                '            N_tribox_tests_shm.unlink()'
-            ),
-        },
-        {
-            'patch_id': 'python312-vox-scene-shared-memory-view-cleanup-v1',
-            'path': 'python/voxelizer/vox_scene.py',
-            'before': (
-                '        #clean up shared memory\n'
-                '        Nb_proc_shm.close()\n'
-                '        Nb_proc_shm.unlink()'
-            ),
-            'after': (
-                '        #clean up shared memory\n'
-                '        del Nb_proc\n'
-                '        Nb_proc_shm.close()\n'
-                '        Nb_proc_shm.unlink()'
-            ),
-        },
-    )
-
-    applied: list[dict[str, str]] = []
-    for patch in patches:
-        relative_path = Path(patch['path'])
-        source_path = upstream_root / relative_path
-        source = source_path.read_text(encoding='utf-8')
-        before = patch['before']
-        after = patch['after']
-        if source.count(before) != 1:
-            raise RuntimeError(
-                f"PFFDTD compatibility patch {patch['patch_id']} expected exactly one "
-                f"{before!r} in {relative_path.as_posix()}"
-            )
-        source_path.write_text(source.replace(before, after, 1), encoding='utf-8')
-        applied.append(
-            {
-                'patch_id': patch['patch_id'],
-                'path': relative_path.as_posix(),
-                'before_sha256': hashlib.sha256(before.encode('utf-8')).hexdigest(),
-                'after_sha256': hashlib.sha256(after.encode('utf-8')).hexdigest(),
-            }
-        )
-
-    diff = subprocess.check_output(
-        ['git', '-C', str(upstream_root), 'diff', '--'],
-        text=True,
-    )
-    changed = sorted(
-        subprocess.check_output(
-            ['git', '-C', str(upstream_root), 'diff', '--name-only'],
-            text=True,
-        ).splitlines()
-    )
-    expected_changed = sorted(patch['path'] for patch in patches)
-    if changed != expected_changed:
-        raise RuntimeError(
-            f'unexpected PFFDTD compatibility patch file set: {changed}; '
-            f'expected {expected_changed}'
-        )
-
-    return {
-        'patches': applied,
-        'changed_files': changed,
-        'diff_sha256': hashlib.sha256(diff.encode('utf-8')).hexdigest(),
-    }
 
 
 def _platform() -> BakeoffPlatform:
@@ -281,52 +175,6 @@ def _make_run(benchmark, candidates, evidence_ref: str, outcome: str, diagnostic
     return run
 
 
-def _triangulated_rigid_model(fixture) -> dict[str, object]:
-    if fixture.portals or fixture.terminations or fixture.obstacles:
-        raise ValueError('rigid PFFDTD smoke expects one closed obstacle-free region')
-    if len(fixture.regions) != 1 or len(fixture.sources) != 1 or len(fixture.receivers) != 1:
-        raise ValueError('rigid PFFDTD smoke expects one region/source/receiver')
-
-    region = fixture.regions[0]
-    vertex_by_id = {vertex.vertex_id: _position(vertex.position) for vertex in region.vertices}
-    vertex_ids = list(vertex_by_id)
-    index_by_id = {vertex_id: index for index, vertex_id in enumerate(vertex_ids)}
-    points = np.asarray([vertex_by_id[vertex_id] for vertex_id in vertex_ids], dtype=np.float64)
-    region_centroid = points.mean(axis=0)
-
-    triangles: list[list[int]] = []
-    for face in region.faces:
-        if len(face.vertex_ids) < 3:
-            raise ValueError(f'face {face.face_id} has fewer than three vertices')
-        face_points = np.asarray([vertex_by_id[item] for item in face.vertex_ids], dtype=np.float64)
-        face_centroid = face_points.mean(axis=0)
-        for offset in range(1, len(face.vertex_ids) - 1):
-            tri_ids = [face.vertex_ids[0], face.vertex_ids[offset], face.vertex_ids[offset + 1]]
-            tri_points = np.asarray([vertex_by_id[item] for item in tri_ids], dtype=np.float64)
-            normal = np.cross(tri_points[1] - tri_points[0], tri_points[2] - tri_points[0])
-            if float(np.dot(normal, face_centroid - region_centroid)) < 0.0:
-                tri_ids = [tri_ids[0], tri_ids[2], tri_ids[1]]
-            triangles.append([index_by_id[item] for item in tri_ids])
-
-    return {
-        'mats_hash': {
-            '_RIGID': {
-                'tris': triangles,
-                'pts': points.tolist(),
-                'color': [220, 220, 220],
-                'sides': [0] * len(triangles),
-            }
-        },
-        'sources': [
-            {'xyz': _position(fixture.sources[0].position).tolist(), 'name': fixture.sources[0].source_id}
-        ],
-        'receivers': [
-            {'xyz': _position(fixture.receivers[0].position).tolist(), 'name': fixture.receivers[0].receiver_id}
-        ],
-        'export_datetime': 'R100B deterministic fixture compiler',
-    }
-
-
 def _directory_size_mb(path: Path) -> float:
     return sum(item.stat().st_size for item in path.rglob('*') if item.is_file()) / (1024.0 * 1024.0)
 
@@ -334,13 +182,13 @@ def _directory_size_mb(path: Path) -> float:
 def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict[str, object]:
     candidate = _candidate(candidates)
     fixture = _fixture(benchmark)
-    actual_head = _git_head(upstream_root)
+    actual_head = pffdtd_git_head(upstream_root)
     if actual_head != candidate.source_commit_sha:
         raise RuntimeError(
             f'PFFDTD checkout mismatch: expected {candidate.source_commit_sha}, got {actual_head}'
         )
 
-    compatibility_patch = _apply_compatibility_patches(upstream_root)
+    compatibility_patch = apply_pffdtd_runtime_compatibility_patches(upstream_root)
 
     upstream_python = upstream_root / 'python'
     if not (upstream_python / 'sim_setup.py').is_file():
@@ -356,7 +204,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
     material_dir = work_dir / 'materials'
     material_dir.mkdir(parents=True, exist_ok=True)
     model_path = work_dir / 'r100a_rigid_box_pffdtd.json'
-    model = _triangulated_rigid_model(fixture)
+    model = compile_rigid_fixture_model(fixture)
     model_path.write_text(json.dumps(model, indent=2, sort_keys=True) + '\n', encoding='utf-8')
 
     monitor = PeakRssMonitor()
@@ -404,33 +252,12 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         raise RuntimeError('PFFDTD did not produce sim_outs.h5')
     with h5py.File(output_path, 'r') as handle:
         output = np.asarray(handle['u_out'][...], dtype=np.float64)
-    if output.ndim != 2 or output.shape != (int(engine.Nr), int(engine.Nt)):
-        raise RuntimeError(
-            f'unexpected PFFDTD raw output shape: {output.shape}; '
-            f'expected {(int(engine.Nr), int(engine.Nt))}'
-        )
-    if not np.all(np.isfinite(output)):
-        raise RuntimeError('PFFDTD raw output contains non-finite values')
-    if engine.out_alpha.ndim != 2 or engine.out_alpha.size != int(engine.Nr):
-        raise RuntimeError(
-            f'unexpected PFFDTD interpolation weights shape: {engine.out_alpha.shape}; '
-            f'Nr={int(engine.Nr)}'
-        )
-
-    # PFFDTD stores one raw grid trace per trilinear interpolation corner.
-    # Recombine exactly as upstream ProcessOutputs.initial_process() before
-    # interpreting the result as one physical receiver trace.
-    recombined = np.sum(
-        (output * engine.out_alpha.flat[:][:, None]).reshape((*engine.out_alpha.shape, -1)),
-        axis=1,
+    recombined = recombine_pffdtd_receiver_traces(
+        output,
+        engine.out_alpha,
+        receiver_count=len(fixture.receivers),
+        nt=int(engine.Nt),
     )
-    if recombined.shape != (len(fixture.receivers), int(engine.Nt)):
-        raise RuntimeError(
-            f'unexpected recombined PFFDTD receiver shape: {recombined.shape}; '
-            f'expected {(len(fixture.receivers), int(engine.Nt))}'
-        )
-    if not np.all(np.isfinite(recombined)):
-        raise RuntimeError('PFFDTD recombined receiver output contains non-finite values')
 
     raw_max_abs = float(np.max(np.abs(output))) if output.size else 0.0
     raw_nonzero_samples = int(np.count_nonzero(output))
@@ -440,7 +267,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         raise RuntimeError('PFFDTD recombined receiver output contains no propagated signal')
 
     expected_dims = np.ptp(
-        np.asarray([_position(vertex.position) for vertex in fixture.regions[0].vertices]),
+        np.asarray([acoustic_position_array(vertex.position) for vertex in fixture.regions[0].vertices]),
         axis=0,
     )
 
@@ -452,8 +279,8 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         'upstream_git_head': actual_head,
         'fixture_id': fixture.fixture_id,
         'authority_room_extent_m': expected_dims.tolist(),
-        'authority_source_m': _position(fixture.sources[0].position).tolist(),
-        'authority_receiver_m': _position(fixture.receivers[0].position).tolist(),
+        'authority_source_m': acoustic_position_array(fixture.sources[0].position).tolist(),
+        'authority_receiver_m': acoustic_position_array(fixture.receivers[0].position).tolist(),
         'probe_controls': {
             'fmax_hz': FMAX_HZ,
             'points_per_wavelength': PPW,

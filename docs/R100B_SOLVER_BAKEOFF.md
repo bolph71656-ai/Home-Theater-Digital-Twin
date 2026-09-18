@@ -2,7 +2,7 @@
 
 > Tracking: Issue #101
 > Depends on: R100A merged by PR #110 (`1714c078d4063f59da93f0d733171547f7eb486d`)
-> Current state: bakeoff authority is merged via PR #111. Raw-observation evaluation and the first pyroomacoustics Windows reference probe are being implemented; production solver selection remains pending.
+> Current state: R100A/R100B authority, raw-observation evaluation, the first pyroomacoustics reference evidence, and the PFFDTD Windows Python/Numba platform smoke are merged. The current slice evaluates PFFDTD against the R100A rigid rectangular modal fixture; production solver selection remains pending.
 
 ## Purpose
 
@@ -31,7 +31,7 @@ Upstream evidence is recorded in `benchmarks/acoustics/r100b_candidates.json`. T
 - **probe capabilities**, explicitly distinct from verified capabilities;
 - platform/thread/device authority;
 - fixture evidence and per-observable status/error summaries;
-- compile/solve/postprocess time, RAM and output size;
+- compile/solve/postprocess time, RAM, generated disk usage and output size;
 - hard-gate evidence;
 - final decision state.
 
@@ -53,7 +53,7 @@ The validator rejects:
 - duplicate fixture/gate evidence;
 - a passing fixture without all required observable records;
 - a PASS observable whose reported error exceeds the R100A quantity-specific tolerance;
-- a PASS fixture with missing or over-budget compile/solve/postprocess/RAM/output/thread evidence;
+- a PASS fixture with missing or over-budget compile/solve/postprocess/RAM/disk/output/thread evidence;
 - missing required hard-gate evidence;
 - `not_applicable` for a hard gate that applies to the candidate;
 - selecting a reference-only candidate for the production stack;
@@ -102,19 +102,77 @@ The sampled evaluator:
 - compares scalar, complex and 3D vector samples without backend-specific tolerance logic;
 - computes absolute/relative/phase error centrally;
 - refuses observables without explicit expected samples and requires a specialized evaluator for convergence, cross-fixture and independent-reference cases;
-- preserves compile/solve/postprocess/RAM/output evidence for the existing R100B budget gate.
+- preserves compile/solve/postprocess/RAM/disk/output evidence for the existing R100B budget gate.
 
 The first external probe is `pyroomacoustics v0.10.1` against `geometric-direct-first-reflection-v1`. GitHub Actions resolves the official CPython 3.12 Windows wheel, records its SHA-256, maps the exact R100A box/material/source/receiver into a first-order image-source room, and stores raw image-derived path observations plus R100B evidence as an artifact. Missing Windows wheel/installability is recorded as a blocked candidate probe rather than silently switching version/backend.
+
+## Accepted external evidence so far
+
+### pyroomacoustics geometric reference
+
+PR #112 / merge `5725f8f2eecb150773202bf324132a34a40ba492` established the raw-observation evaluator and a Windows reference probe for `geometric-direct-first-reflection-v1`.
+
+- official pyroomacoustics v0.10.1 CPython 3.12 Windows AMD64 wheel was resolved and SHA-256 pinned;
+- direct distance, direct delay, first y-min reflection point and reflected path length all passed the R100A tolerances with zero error;
+- the candidate remains reference-only and this evidence does not authorize a wave solver.
+
+### PFFDTD Windows source-checkout feasibility
+
+PR #113 / merge `ea5f5b8631e5097d37788210b2652b3089a28807` proved that pinned PFFDTD `aa319f6c86517cb95aabfae8656277da62c3ead5` can execute its existing Python/Numba CPU pipeline on GitHub-hosted Windows.
+
+The accepted platform smoke records three exact-source-checked runtime shims required by the pinned upstream on Python 3.12 / modern NumPy:
+
+1. replace the removed `np.float` alias used only to obtain machine epsilon;
+2. release two NumPy views before closing shared memory in `vox_grid_base.py`;
+3. release the final NumPy shared-memory view in `vox_scene.py`.
+
+No FDTD stencil, voxel-intersection, material or source algorithm is modified. The accepted smoke completed geometry -> voxelization -> HDF5 setup -> CPU FDTD -> `sim_outs.h5` -> upstream-equivalent receiver interpolation on Windows. This is platform/reuse evidence only: the R100A eigenfrequencies were deliberately not scored, and Windows product packaging remains a separate gate.
+
+## Accepted PFFDTD rigid-mode physics evidence
+
+PR #115 numerical run `35349358027` passes `wave-rigid-rectangular-modes-v1` on the current branch. The durable summary is `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json`; raw traces remain bound by the recorded Actions artifact/hash.
+
+- `backend/src/htdt/acoustic_pffdtd_adapter.py` centralizes the three source-checked compatibility shims, rigid R100A geometry compiler and upstream receiver interpolation contract.
+- R100B fixture evidence now requires generated disk usage and enforces `disk_budget_mb` in addition to compile/solve/postprocess/RAM/output/thread limits.
+- the modal probe solves the same room at Cartesian grid spacings 0.5 m, 0.25 m and 0.125 m;
+- every grid spacing divides the 4 x 5 x 2.5 m room dimensions exactly;
+- receiver traces are archived for audit;
+- each mode is extracted from the actual time trace with a deterministic Hann-window spectral estimator;
+- the 0.5 -> 0.25 -> 0.125 m sequence must show decreasing refinement deltas;
+- the final sample passed to the central R100A evaluator is a declared second-order Richardson extrapolation from the 0.25 and 0.125 m results.
+
+PFFDTD internally derives 343.2 m/s at 20 deg C while the R100A fixture authority is exactly 343.0 m/s. The adapter records that difference instead of silently rewriting either authority.
+
+Accepted results:
+
+| Observable | h=0.5 m | h=0.25 m | h=0.125 m | p=2 extrapolated | R100A abs error | Result |
+|---|---:|---:|---:|---:|---:|---|
+| m010 | 34.218337 | 34.287349 | 34.304913 | 34.310768 | 0.010768 Hz | PASS |
+| m100 | 42.715319 | 42.856153 | 42.890952 | 42.902552 | 0.027552 Hz | PASS |
+| m110 | 54.827426 | 54.910278 | 54.931240 | 54.938228 | 0.031438 Hz | PASS |
+| m001 | 67.877782 | 68.453956 | 68.593824 | 68.640446 | 0.040446 Hz | PASS |
+
+The coarse-to-medium / medium-to-fine delta ratios are 3.93–4.12, consistent with the declared second-order refinement model. The total evidence uses 6.014 s compile/setup/JIT, 0.586 s solve, 0.066 s postprocess, 202.66 MiB peak RSS, 1.238 MiB generated disk and 0.387 MiB raw output, all within the fixture budget.
+
+Evidence authority:
+
+- workflow run: `35349358027`;
+- Actions artifact: `10549576187`;
+- artifact digest: `sha256:0f97ada6fd1555e89de24168316526b20b7a6a874a0281b4f1f0ac22aa96632e`;
+- raw signal archive SHA-256: `019766f208fa4e6a4bee93bb26d56700c095e5ff2f0b6b76289db4ae5b9c6b85`;
+- BakeoffRun semantic hash: `c54f7ec2758f94e5ed4b433a002b0cc30ccfe0a841d42ad2fbe0bf35470855f9`.
+
+This is a fixture-level physics PASS, not a candidate-wide solver acceptance.
 
 ## Next R100B implementation slices
 
 The numerical bakeoff proceeds in this order:
 
-1. finish the common raw-observation evaluator and pyroomacoustics direct/first-reflection Windows probe;
-2. probe PFFDTD reuse/port feasibility on GitHub-hosted Windows without RDC; if native Windows integration is not practical, record that gate failure instead of reimplementing it silently;
+1. add the PFFDTD rectangular transfer/grid convergence fixture now that the rigid-modal gate has passed;
+2. evaluate the explicit complex-impedance reflection fixture without deriving impedance from scalar absorption;
 3. implement the minimal MFEM acoustic reference prototype for rigid rectangular/concave fixtures and then the explicit impedance fixture;
-4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls only after the first probe is accepted;
-5. record exact compile/solve/postprocess/RAM/output evidence under the R100A resource budgets;
+4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls;
+5. record exact compile/solve/postprocess/RAM/disk/output evidence under the R100A resource budgets;
 6. publish the R100B ADR only after applicable hard gates have real evidence.
 
 If no shipping candidate clears the gates, R100B exits with a no-go ADR and a bounded next experiment. It must not force a winner.
@@ -124,7 +182,7 @@ If no shipping candidate clears the gates, R100B exits with a no-go ADR and a bo
 This slice does not:
 
 - select PFFDTD, MFEM or pyroomacoustics for production;
-- claim numerical accuracy for any candidate;
+- claim candidate-wide numerical accuracy from the single accepted PFFDTD rigid-modal fixture;
 - claim Windows packaging for PFFDTD;
 - claim that an upstream capability maps exactly to HTDT Portal/BoundaryTermination/object semantics;
 - validate the owned room;

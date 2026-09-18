@@ -82,6 +82,7 @@ class RawFixtureObservation(BaseModel):
     solve_s: float = Field(ge=0.0)
     postprocess_s: float = Field(ge=0.0)
     peak_ram_mb: float = Field(ge=0.0)
+    disk_mb: float = Field(ge=0.0)
     output_mb: float = Field(ge=0.0)
     observations: tuple[RawObservableObservation, ...] = Field(min_length=1)
     diagnostics: tuple[str, ...] = ()
@@ -93,6 +94,7 @@ class RawFixtureObservation(BaseModel):
             self.solve_s,
             self.postprocess_s,
             self.peak_ram_mb,
+            self.disk_mb,
             self.output_mb,
         )
         if any(not isfinite(float(value)) for value in resources):
@@ -280,6 +282,7 @@ def evaluate_sampled_fixture(
         solve_s=raw.solve_s,
         postprocess_s=raw.postprocess_s,
         peak_ram_mb=raw.peak_ram_mb,
+        disk_mb=raw.disk_mb,
         output_mb=raw.output_mb,
         observables=evidence,
         diagnostics=raw.diagnostics,

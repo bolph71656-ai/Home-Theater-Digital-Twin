@@ -246,6 +246,7 @@ def _execute_probe(
         solve_s=solve_s,
         postprocess_s=0.0,
         peak_ram_mb=0.0,
+        disk_mb=0.0,
         output_mb=float(images.nbytes) / (1024.0 * 1024.0),
         observations=(
             RawObservableObservation(
