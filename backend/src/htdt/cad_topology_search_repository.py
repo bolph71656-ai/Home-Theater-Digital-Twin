@@ -1,0 +1,553 @@
+from __future__ import annotations
+
+from contextlib import closing
+from pathlib import Path
+import sqlite3
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .cad_system_variant import SystemVariant
+from .cad_system_variant_repository import CadSystemVariantRepository
+from .cad_topology_space import TopologySearchSpec
+from .cad_topology_search import (
+    TopologyPlacementCandidate,
+    TopologyPlacementCandidateSetPage,
+    TopologyPlacementSearchSpec,
+)
+
+
+class TopologyPlacementComparisonRef(BaseModel):
+    """Identity-only bridge into existing comparison/objective authorities."""
+
+    model_config = ConfigDict(frozen=True)
+
+    search_id: str = Field(min_length=1)
+    search_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    candidate_id: str = Field(min_length=1)
+    candidate_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    candidate_set_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    baseline_revision_id: str = Field(min_length=1)
+    baseline_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    template_variant_id: str = Field(min_length=1)
+    template_variant_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    topology_search_id: str = Field(min_length=1)
+    topology_search_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    topology_option_id: str = Field(min_length=1)
+    variant_id: str | None = Field(default=None, min_length=1)
+    variant_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    proposed_content_hash: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    applied_revision_id: str | None = Field(default=None, min_length=1)
+    applied_content_hash: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+
+    @model_validator(mode='after')
+    def valid_variant_ref(self) -> 'TopologyPlacementComparisonRef':
+        variant_fields = (
+            self.variant_id,
+            self.variant_sha256,
+            self.proposed_content_hash,
+        )
+        if any(value is None for value in variant_fields) and any(
+            value is not None for value in variant_fields
+        ):
+            raise ValueError('candidate variant comparison fields must be supplied together')
+        if (self.applied_revision_id is None) != (self.applied_content_hash is None):
+            raise ValueError('applied revision/hash must be supplied together')
+        if self.variant_id is None and self.applied_revision_id is not None:
+            raise ValueError('applied revision requires a persisted candidate variant')
+        return self
+
+
+class CadTopologySearchRepository:
+    """O100B persistence layered on O100A variant and SceneRevision authority."""
+
+    def __init__(self, variant_repository: CadSystemVariantRepository) -> None:
+        self.variant_repository = variant_repository
+        self.scene_repository = variant_repository.scene_repository
+        self.path = Path(self.scene_repository.path)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA foreign_keys=ON')
+        return connection
+
+    def _initialize(self) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS cad_topology_spaces (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topology_search_id TEXT NOT NULL UNIQUE,
+                    topology_search_sha256 TEXT NOT NULL UNIQUE,
+                    document_id TEXT NOT NULL,
+                    baseline_revision_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    FOREIGN KEY(baseline_revision_id)
+                        REFERENCES scene_revisions(revision_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_topology_space_document_seq
+                    ON cad_topology_spaces(document_id, seq ASC);
+
+                CREATE TABLE IF NOT EXISTS cad_topology_space_options (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topology_search_id TEXT NOT NULL,
+                    option_id TEXT NOT NULL,
+                    template_variant_id TEXT NOT NULL,
+                    UNIQUE(topology_search_id, option_id),
+                    FOREIGN KEY(topology_search_id)
+                        REFERENCES cad_topology_spaces(topology_search_id),
+                    FOREIGN KEY(template_variant_id)
+                        REFERENCES cad_system_variants(variant_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS cad_topology_search_specs (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id TEXT NOT NULL UNIQUE,
+                    search_sha256 TEXT NOT NULL UNIQUE,
+                    document_id TEXT NOT NULL,
+                    baseline_revision_id TEXT NOT NULL,
+                    template_variant_id TEXT NOT NULL,
+                    topology_search_id TEXT NOT NULL,
+                    topology_option_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    FOREIGN KEY(baseline_revision_id)
+                        REFERENCES scene_revisions(revision_id),
+                    FOREIGN KEY(template_variant_id)
+                        REFERENCES cad_system_variants(variant_id),
+                    FOREIGN KEY(topology_search_id)
+                        REFERENCES cad_topology_spaces(topology_search_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_topology_search_document_seq
+                    ON cad_topology_search_specs(document_id, seq ASC);
+
+                CREATE TABLE IF NOT EXISTS cad_topology_placement_candidates (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidate_id TEXT NOT NULL UNIQUE,
+                    candidate_sha256 TEXT NOT NULL UNIQUE,
+                    search_id TEXT NOT NULL,
+                    candidate_set_sha256 TEXT NOT NULL,
+                    feasible_index INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(search_id)
+                        REFERENCES cad_topology_search_specs(search_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_topology_candidate_search_feasible
+                    ON cad_topology_placement_candidates(
+                        search_id, feasible_index ASC
+                    );
+
+                CREATE TABLE IF NOT EXISTS cad_topology_candidate_variants (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidate_id TEXT NOT NULL UNIQUE,
+                    variant_id TEXT NOT NULL UNIQUE,
+                    FOREIGN KEY(candidate_id)
+                        REFERENCES cad_topology_placement_candidates(candidate_id),
+                    FOREIGN KEY(variant_id)
+                        REFERENCES cad_system_variants(variant_id)
+                );
+                """
+            )
+
+    def save_topology_spec(self, spec: TopologySearchSpec) -> None:
+        spec = TopologySearchSpec.model_validate(spec.model_dump(mode='python'))
+        baseline = self.scene_repository.get(spec.baseline_revision_id)
+        if baseline is None:
+            raise ValueError('TopologySearchSpec baseline SceneRevision does not exist')
+        if (
+            baseline.document_id != spec.document_id
+            or baseline.content_hash != spec.baseline_content_hash
+        ):
+            raise ValueError('TopologySearchSpec baseline authority mismatch')
+
+        for option in spec.options:
+            variant = self.variant_repository.get_variant(
+                option.template_variant_id
+            )
+            if variant is None:
+                raise ValueError(
+                    'TopologySearchSpec option SystemVariant is not persisted'
+                )
+            if (
+                variant.variant_sha256 != option.template_variant_sha256
+                or variant.baseline_revision_id != spec.baseline_revision_id
+                or variant.baseline_content_hash != spec.baseline_content_hash
+            ):
+                raise ValueError(
+                    'TopologySearchSpec option SystemVariant authority mismatch'
+                )
+
+        existing = self.get_topology_spec(spec.topology_search_id)
+        if existing is not None:
+            if existing != spec:
+                raise ValueError(
+                    'topology_search_id already stores different payload'
+                )
+            return
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO cad_topology_spaces(
+                    topology_search_id, topology_search_sha256,
+                    document_id, baseline_revision_id,
+                    payload_json, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    spec.topology_search_id,
+                    spec.topology_search_sha256,
+                    spec.document_id,
+                    spec.baseline_revision_id,
+                    spec.model_dump_json(),
+                    spec.created_at_utc,
+                ),
+            )
+            for option in spec.options:
+                connection.execute(
+                    """
+                    INSERT INTO cad_topology_space_options(
+                        topology_search_id, option_id, template_variant_id
+                    ) VALUES (?, ?, ?)
+                    """,
+                    (
+                        spec.topology_search_id,
+                        option.option_id,
+                        option.template_variant_id,
+                    ),
+                )
+
+    def get_topology_spec(
+        self,
+        topology_search_id: str,
+    ) -> TopologySearchSpec | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_topology_spaces '
+                'WHERE topology_search_id=?',
+                (topology_search_id,),
+            ).fetchone()
+        return (
+            None
+            if row is None
+            else TopologySearchSpec.model_validate_json(row['payload_json'])
+        )
+
+    def save_spec(self, spec: TopologyPlacementSearchSpec) -> None:
+        spec = TopologyPlacementSearchSpec.model_validate(
+            spec.model_dump(mode='python')
+        )
+        baseline = self.scene_repository.get(spec.baseline_revision_id)
+        if baseline is None:
+            raise ValueError('topology search baseline SceneRevision does not exist')
+        if (
+            baseline.document_id != spec.document_id
+            or baseline.content_hash != spec.baseline_content_hash
+        ):
+            raise ValueError('topology search baseline SceneRevision authority mismatch')
+        topology = self.get_topology_spec(spec.topology_search_id)
+        if topology is None:
+            raise ValueError(
+                'TopologySearchSpec must be persisted before placement search'
+            )
+        if topology.topology_search_sha256 != spec.topology_search_sha256:
+            raise ValueError('topology placement TopologySearchSpec hash mismatch')
+        try:
+            option = topology.option(spec.topology_option_id)
+        except KeyError as exc:
+            raise ValueError(
+                'topology placement references unknown topology option'
+            ) from exc
+        if (
+            option.template_variant_id != spec.template_variant_id
+            or option.template_variant_sha256 != spec.template_variant_sha256
+        ):
+            raise ValueError('topology placement option/template authority mismatch')
+
+        template = self.variant_repository.get_variant(spec.template_variant_id)
+        if template is None:
+            raise ValueError('topology search template SystemVariant is not persisted')
+        if template.variant_sha256 != spec.template_variant_sha256:
+            raise ValueError('topology search template SystemVariant hash mismatch')
+
+        existing = self.get_spec(spec.search_id)
+        if existing is not None:
+            if existing != spec:
+                raise ValueError('topology search_id already stores different payload')
+            return
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO cad_topology_search_specs(
+                    search_id, search_sha256, document_id,
+                    baseline_revision_id, template_variant_id,
+                    topology_search_id, topology_option_id,
+                    payload_json, created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    spec.search_id,
+                    spec.search_sha256,
+                    spec.document_id,
+                    spec.baseline_revision_id,
+                    spec.template_variant_id,
+                    spec.topology_search_id,
+                    spec.topology_option_id,
+                    spec.model_dump_json(),
+                    spec.created_at_utc,
+                ),
+            )
+
+    def get_spec(self, search_id: str) -> TopologyPlacementSearchSpec | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_topology_search_specs '
+                'WHERE search_id=?',
+                (search_id,),
+            ).fetchone()
+        return (
+            None
+            if row is None
+            else TopologyPlacementSearchSpec.model_validate_json(
+                row['payload_json']
+            )
+        )
+
+    def list_specs(self, document_id: str) -> tuple[TopologyPlacementSearchSpec, ...]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                'SELECT payload_json FROM cad_topology_search_specs '
+                'WHERE document_id=? ORDER BY seq ASC',
+                (document_id,),
+            ).fetchall()
+        return tuple(
+            TopologyPlacementSearchSpec.model_validate_json(row['payload_json'])
+            for row in rows
+        )
+
+    def save_candidate_page(
+        self,
+        page: TopologyPlacementCandidateSetPage,
+    ) -> None:
+        spec = self.get_spec(page.search_id)
+        if spec is None:
+            raise ValueError('topology search spec must be persisted before candidates')
+        if page.search_sha256 != spec.search_sha256:
+            raise ValueError('topology candidate page search hash mismatch')
+
+        with closing(self._connect()) as connection, connection:
+            for candidate in page.candidates:
+                if (
+                    candidate.search_id != spec.search_id
+                    or candidate.search_sha256 != spec.search_sha256
+                    or candidate.topology_search_id != spec.topology_search_id
+                    or candidate.topology_search_sha256
+                    != spec.topology_search_sha256
+                    or candidate.topology_option_id != spec.topology_option_id
+                ):
+                    raise ValueError('topology candidate belongs to another search')
+                row = connection.execute(
+                    'SELECT candidate_set_sha256, payload_json '
+                    'FROM cad_topology_placement_candidates '
+                    'WHERE candidate_id=?',
+                    (candidate.candidate_id,),
+                ).fetchone()
+                if row is not None:
+                    stored = TopologyPlacementCandidate.model_validate_json(
+                        row['payload_json']
+                    )
+                    if (
+                        stored != candidate
+                        or row['candidate_set_sha256']
+                        != page.candidate_set_sha256
+                    ):
+                        raise ValueError(
+                            'deterministic topology candidate identity collision'
+                        )
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO cad_topology_placement_candidates(
+                        candidate_id, candidate_sha256, search_id,
+                        candidate_set_sha256, feasible_index, payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        candidate.candidate_id,
+                        candidate.candidate_sha256,
+                        candidate.search_id,
+                        page.candidate_set_sha256,
+                        candidate.feasible_index,
+                        candidate.model_dump_json(),
+                    ),
+                )
+
+    def get_candidate(
+        self,
+        candidate_id: str,
+    ) -> TopologyPlacementCandidate | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_topology_placement_candidates '
+                'WHERE candidate_id=?',
+                (candidate_id,),
+            ).fetchone()
+        return (
+            None
+            if row is None
+            else TopologyPlacementCandidate.model_validate_json(
+                row['payload_json']
+            )
+        )
+
+    def list_candidates(
+        self,
+        search_id: str,
+    ) -> tuple[TopologyPlacementCandidate, ...]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                'SELECT payload_json FROM cad_topology_placement_candidates '
+                'WHERE search_id=? ORDER BY feasible_index ASC',
+                (search_id,),
+            ).fetchall()
+        return tuple(
+            TopologyPlacementCandidate.model_validate_json(row['payload_json'])
+            for row in rows
+        )
+
+    def save_candidate_variant(
+        self,
+        candidate_id: str,
+        variant: SystemVariant,
+    ) -> None:
+        candidate = self.get_candidate(candidate_id)
+        if candidate is None:
+            raise ValueError('topology candidate must be persisted before its variant')
+        spec = self.get_spec(candidate.search_id)
+        if spec is None:
+            raise ValueError('topology candidate search spec is missing')
+        variant = SystemVariant.model_validate(variant.model_dump(mode='python'))
+        if (
+            variant.document_id != spec.document_id
+            or variant.baseline_revision_id != spec.baseline_revision_id
+            or variant.baseline_content_hash != spec.baseline_content_hash
+        ):
+            raise ValueError('candidate SystemVariant baseline authority mismatch')
+        if variant.parent_variant_id != spec.template_variant_id:
+            raise ValueError('candidate SystemVariant must descend from topology template')
+        provenance = {item.key: item.value for item in variant.provenance}
+        if (
+            provenance.get('o100b.topology_search_sha256')
+            != spec.topology_search_sha256
+            or provenance.get('o100b.topology_option_id')
+            != spec.topology_option_id
+            or provenance.get('o100b.search_sha256') != spec.search_sha256
+            or provenance.get('o100b.candidate_id') != candidate.candidate_id
+            or provenance.get('o100b.candidate_sha256') != candidate.candidate_sha256
+        ):
+            raise ValueError('candidate SystemVariant O100B provenance mismatch')
+
+        existing_variant = self.variant_repository.get_variant(variant.variant_id)
+        if existing_variant is None:
+            self.variant_repository.save_variant(variant)
+        elif existing_variant != variant:
+            raise ValueError('candidate variant_id already stores different payload')
+
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT variant_id FROM cad_topology_candidate_variants '
+                'WHERE candidate_id=?',
+                (candidate_id,),
+            ).fetchone()
+            if row is not None:
+                if row['variant_id'] != variant.variant_id:
+                    raise ValueError(
+                        'topology candidate already maps to another SystemVariant'
+                    )
+                return
+            connection.execute(
+                'INSERT INTO cad_topology_candidate_variants('
+                'candidate_id, variant_id) VALUES (?, ?)',
+                (candidate_id, variant.variant_id),
+            )
+
+    def variant_for_candidate(self, candidate_id: str) -> SystemVariant | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT variant_id FROM cad_topology_candidate_variants '
+                'WHERE candidate_id=?',
+                (candidate_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        variant = self.variant_repository.get_variant(row['variant_id'])
+        if variant is None:
+            raise ValueError('topology candidate mapping references missing variant')
+        return variant
+
+    def comparison_ref(
+        self,
+        candidate_id: str,
+    ) -> TopologyPlacementComparisonRef:
+        candidate = self.get_candidate(candidate_id)
+        if candidate is None:
+            raise ValueError('topology placement candidate does not exist')
+        spec = self.get_spec(candidate.search_id)
+        if spec is None:
+            raise ValueError('topology placement search spec does not exist')
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT candidate_set_sha256 '
+                'FROM cad_topology_placement_candidates '
+                'WHERE candidate_id=?',
+                (candidate_id,),
+            ).fetchone()
+        assert row is not None
+
+        variant = self.variant_for_candidate(candidate_id)
+        if variant is None:
+            return TopologyPlacementComparisonRef(
+                search_id=spec.search_id,
+                search_sha256=spec.search_sha256,
+                candidate_id=candidate.candidate_id,
+                candidate_sha256=candidate.candidate_sha256,
+                candidate_set_sha256=row['candidate_set_sha256'],
+                baseline_revision_id=spec.baseline_revision_id,
+                baseline_content_hash=spec.baseline_content_hash,
+                template_variant_id=spec.template_variant_id,
+                template_variant_sha256=spec.template_variant_sha256,
+                topology_search_id=spec.topology_search_id,
+                topology_search_sha256=spec.topology_search_sha256,
+                topology_option_id=spec.topology_option_id,
+            )
+
+        comparison = self.variant_repository.comparison_ref(variant.variant_id)
+        return TopologyPlacementComparisonRef(
+            search_id=spec.search_id,
+            search_sha256=spec.search_sha256,
+            candidate_id=candidate.candidate_id,
+            candidate_sha256=candidate.candidate_sha256,
+            candidate_set_sha256=row['candidate_set_sha256'],
+            baseline_revision_id=spec.baseline_revision_id,
+            baseline_content_hash=spec.baseline_content_hash,
+            template_variant_id=spec.template_variant_id,
+            template_variant_sha256=spec.template_variant_sha256,
+            topology_search_id=spec.topology_search_id,
+            topology_search_sha256=spec.topology_search_sha256,
+            topology_option_id=spec.topology_option_id,
+            variant_id=variant.variant_id,
+            variant_sha256=variant.variant_sha256,
+            proposed_content_hash=comparison.proposed_content_hash,
+            applied_revision_id=comparison.applied_revision_id,
+            applied_content_hash=comparison.applied_content_hash,
+        )
