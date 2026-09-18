@@ -87,6 +87,6 @@ def build_model_validation(*, model_id: str, model_version: str,
     gate='eligible' if not reasons else 'disabled'
     payload={'model_id':model_id,'model_version':model_version,'requested_band_hz':[low_hz,high_hz],
         'pairs':[p.model_dump(mode='json') for p in pairs],'holdout_rms_db':hold,'calibration_rms_db':cal,
-        'recommendation_gate':gate,'gate_reasons':reasons,'algorithm_version':VALIDATION_ALGORITHM_VERSION}
+        'recommendation_gate':gate,'gate_reasons':tuple(reasons),'algorithm_version':VALIDATION_ALGORITHM_VERSION}
     return CadModelValidationRecord(validation_id=str(uuid4()), created_at_utc=datetime.now(timezone.utc).isoformat(),
         validation_sha256=_hash(payload), **payload)
