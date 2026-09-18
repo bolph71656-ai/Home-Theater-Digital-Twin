@@ -81,10 +81,8 @@ class CommandShortcutBinder(QObject):
                 definition,
                 text_input_focused=text_input_focused,
             )
-            # Availability is checked by CommandRegistry.execute() at activation time.
-            # Keeping the QShortcut focus-gated only avoids stale enablement when
-            # selection/transform state changes without a focus transition.
-            shortcut.setEnabled(focus_allows)
+            available = self._registry.availability(command_id).enabled
+            shortcut.setEnabled(focus_allows and available)
 
     def _focus_changed(self, _old: QWidget | None, _new: QWidget | None) -> None:
         self.refresh()
