@@ -311,6 +311,17 @@ measurementとsceneの相互selectionは維持し、必要なら小さい3D cont
 - Pareto
 - selected candidate A/B
 - confidence/uncertainty
+- nominal性能とO90ばらつき耐性を別指標で比較
+
+### ばらつき耐性 / O90
+- 設置誤差axisと範囲
+- local sensitivity
+- sampled envelope
+- 明示distributionがある場合だけpercentile
+- feasible fraction / constraint violation
+- 3D tolerance / aim overlay
+- sampled evidenceと近似envelopeを区別
+- overall robustness scoreは作らない
 
 ### Measure / Validate
 - MeasurementPlan
@@ -697,8 +708,9 @@ UI簡略化のためにdomain authorityを弱めない。
 - plots/cards/tablesをpage layout化
 
 ### UX140 — Optimize
-- Setup / Candidates / Compare / Measure-Validate
+- Setup / Candidates / Compare / ばらつき耐性 / Measure-Validate
 - current monolithic right scroll panelを廃止
+- O90Dではnominal/robust比較、感度、sampled/percentile semantics、feasible fraction、3D tolerance overlayを同workspaceへ統合
 
 ### UX150 — visual / motion / language / perceived-quality polish
 - dark-first appearanceをauthoritativeにfreeze
