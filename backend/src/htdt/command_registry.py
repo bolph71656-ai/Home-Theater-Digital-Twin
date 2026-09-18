@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 import unicodedata
@@ -9,7 +9,7 @@ import unicodedata
 class WorkspaceId(StrEnum):
     OVERVIEW = 'overview'
     ROOM = 'room'
-    MEASUREMENTS = 'measurements'
+    MEASUREMENT = 'measurement'
     OPTIMIZATION = 'optimization'
 
 
@@ -130,16 +130,28 @@ class CommandRegistry:
     ) -> None:
         if definition.command_id in self._commands:
             raise ValueError(f'duplicate command id: {definition.command_id}')
-        if execute is None and definition.deep_link is None:
-            raise ValueError(
-                f'command {definition.command_id} needs an executor or a workspace deep-link'
-            )
         self._commands[definition.command_id] = _RegisteredCommand(
             definition=definition,
             execute=execute,
             availability=availability,
             order=len(self._commands),
         )
+
+    def bind(
+        self,
+        command_id: str,
+        *,
+        execute: CommandExecutor,
+        availability: AvailabilityProvider | None = None,
+    ) -> None:
+        command = self._commands[command_id]
+        command.execute = execute
+        command.availability = availability
+
+    def unbind(self, command_id: str) -> None:
+        command = self._commands[command_id]
+        command.execute = None
+        command.availability = None
 
     def definition(self, command_id: str) -> CommandDefinition:
         return self._commands[command_id].definition
@@ -153,26 +165,36 @@ class CommandRegistry:
             result = command.availability()
             if not result.enabled:
                 return result
-        if command.execute is None and command.definition.deep_link is not None:
-            if self._deep_link_handler is None:
+        if command.execute is None:
+            if command.definition.deep_link is not None:
+                if self._deep_link_handler is not None:
+                    return CommandAvailability.available()
                 return CommandAvailability.unavailable(
                     '画面切替の準備が完了すると利用できます'
                 )
+            return CommandAvailability.unavailable(
+                'この操作は現在の画面では利用できません'
+            )
         return CommandAvailability.available()
 
     def execute(self, command_id: str) -> bool:
         command = self._commands[command_id]
-        availability = self.availability(command_id)
-        if not availability.enabled:
+        if not self.availability(command_id).enabled:
             return False
+
+        deep_link = command.definition.deep_link
+        navigated = False
+        if deep_link is not None and self._deep_link_handler is not None:
+            self._deep_link_handler(deep_link)
+            navigated = True
+            command = self._commands[command_id]
+            if not self.availability(command_id).enabled:
+                return False
+
         if command.execute is not None:
             command.execute()
             return True
-        deep_link = command.definition.deep_link
-        if deep_link is None or self._deep_link_handler is None:
-            return False
-        self._deep_link_handler(deep_link)
-        return True
+        return navigated
 
     def search(
         self,
@@ -278,9 +300,9 @@ def default_command_definitions() -> tuple[CommandDefinition, ...]:
         CommandDefinition(
             command_id='navigation.measurements',
             display_name='測定',
-            contexts=frozenset({CommandContext.GLOBAL, CommandContext.MEASUREMENTS}),
+            contexts=frozenset({CommandContext.GLOBAL, CommandContext.MEASUREMENT}),
             keywords=('measurement', 'REW', '実測'),
-            deep_link=WorkspaceDeepLink(WorkspaceId.MEASUREMENTS),
+            deep_link=WorkspaceDeepLink(WorkspaceId.MEASUREMENT),
             shortcut_behavior=ShortcutBehavior.GLOBAL,
         ),
         CommandDefinition(
@@ -328,14 +350,14 @@ def default_command_definitions() -> tuple[CommandDefinition, ...]:
             display_name='スピーカー追加',
             contexts=frozenset({CommandContext.ROOM}),
             keywords=('スピーカーを追加', 'add speaker', 'speaker'),
-            deep_link=WorkspaceDeepLink(WorkspaceId.ROOM, 'speakers'),
+            deep_link=WorkspaceDeepLink(WorkspaceId.ROOM, 'placement'),
         ),
         CommandDefinition(
             command_id='measurements.import_rew',
             display_name='REW読み込み',
-            contexts=frozenset({CommandContext.MEASUREMENTS}),
+            contexts=frozenset({CommandContext.MEASUREMENT}),
             keywords=('REWを読み込む', 'import REW', '測定取込', '測定読み込み'),
-            deep_link=WorkspaceDeepLink(WorkspaceId.MEASUREMENTS, 'import'),
+            deep_link=WorkspaceDeepLink(WorkspaceId.MEASUREMENT, 'import'),
         ),
         CommandDefinition(
             command_id='prediction.run',
