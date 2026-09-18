@@ -228,6 +228,8 @@ class CadModelValidationRecord(BaseModel):
         expected_recommendation = 'eligible' if not advanced_reasons else 'disabled'
         if self.recommendation_gate != expected_recommendation:
             raise ValueError('recommendation gate does not match O60 evidence gates')
+        if self.gate_reasons != advanced_reasons:
+            raise ValueError('recommendation gate reasons do not match O60 evidence gates')
 
         if self.validation_sha256 != _hash(self.identity_payload()):
             raise ValueError('model validation identity hash mismatch')
