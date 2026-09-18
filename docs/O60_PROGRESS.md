@@ -33,14 +33,16 @@ Base: main after N80c/O50 merge `171f30a25ef322b09046adfee5f8eabe76e8c51b`
 ## Validation status
 
 - Earlier O60 core head `260e7fc67b09c4ebb3d70bf74d505648479e4f93`: CI #411 PASS.
-- Later full-gate / GUI / service changes are still awaiting their latest GitHub Actions run. Do not treat PR #76 as accepted until the current head passes.
+- Full implementation head `cf4711973f3e9d3209ac19febc288fb9ffe881ff`: CI #422 PASS.
+- Final code head `a8898bb1bbd919b95245f6298f7c999164dfab50`: CI #425 / run `35295505049` PASS, including backend tests, launcher checks, acceptance-harness compilation, PowerShell/preflight checks, frontend build and smoke test.
+- Canonical status/docs are being finalized on the same PR; their final head requires the normal CI before merge.
 - RDC usage for O60: 0. Synthetic/algorithm verification does not justify an owned-Windows hardware session.
 - O70 remains disabled. No adaptive recommendation is implemented or enabled from synthetic evidence.
+- No particular acoustic model is declared validated by these CI results. `recommendation_gate=eligible` is persisted only when genuine `owned_room` calibration/holdout/repeatability evidence satisfies all O60 gates.
 
 ## Remaining before PR completion
 
-1. Resolve latest CI failures, if any.
-2. Add only fixes/tests justified by those failures.
-3. Review native validation panel against the Issue #75 display requirements.
-4. Update canonical implementation status after green CI.
-5. Use owned-room data only if genuine repeated/calibration/holdout measurements already exist; do not manufacture an O60 acceptance by synthetic fixtures.
+1. Finalize canonical roadmap/status wording without changing the tested authority semantics.
+2. Require GitHub Actions PASS on the documentation-finalization head.
+3. Merge PR #76 and close Issue #75 as software implementation complete.
+4. Keep O70 disabled until real owned-room evidence produces a persisted eligible ValidationRecord.
