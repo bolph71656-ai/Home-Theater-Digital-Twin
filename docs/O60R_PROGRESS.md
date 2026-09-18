@@ -61,9 +61,10 @@ The PowerShell runner:
 The real command is intentionally not run by CI because it requires the user's
 actual completed owned-room campaign data.
 
-The runner defaults to `main` after PR #85 merge. It still freezes the O60E
-product head and refuses unexpected product-code changes between that authority
-and the audited main head.
+The runner defaults to `main` after PR #85 merge. It freezes the merged O60E
+authority commit `138c3ed532396ee1b2b9b1cedd64be767979e1aa` (PR #82 on main), not the
+pre-merge feature-branch head. It refuses unexpected product-code changes
+between that authority and the audited main head.
 
 `scripts/inventory_o60_owned_room.py` is a read-only operator preflight. It
 uses the same mode=ro SQLite snapshot contract to list campaign ids, readiness,
