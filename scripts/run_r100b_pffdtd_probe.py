@@ -34,7 +34,7 @@ FIXTURE_ID = 'wave-rigid-rectangular-modes-v1'
 PROBE_SCHEMA = 'r100b-platform-probe-artifact-1'
 PROBE_ID = 'pffdtd-python-numba-windows-execution-smoke'
 ADAPTER_ID = 'htdt-r100b-pffdtd-python-smoke'
-ADAPTER_VERSION = '2'
+ADAPTER_VERSION = '3'
 FMAX_HZ = 100.0
 PPW = 7.5
 DURATION_S = 0.03
@@ -93,42 +93,86 @@ def _git_head(upstream_root: Path) -> str:
     ).strip().lower()
 
 
-def _apply_numpy_compatibility_patch(upstream_root: Path) -> dict[str, str]:
-    """Apply the one bounded source shim required by modern NumPy.
+def _apply_compatibility_patches(upstream_root: Path) -> dict[str, object]:
+    """Apply bounded, exact-source-checked runtime compatibility shims.
 
-    The pinned upstream commit predates removal of the deprecated `np.float`
-    alias. Refuse to patch if the exact expected source is not present so that
-    an upstream change can never be modified silently.
+    The pinned PFFDTD commit predates two Python/NumPy runtime changes that
+    otherwise prevent the existing Python/Numba CPU path from executing on the
+    current Windows/Python 3.12 CI image. Refuse to patch if any expected source
+    text differs, and record the complete diff hash.
     """
 
-    relative_path = Path('python/common/myfuncs.py')
-    source_path = upstream_root / relative_path
-    before = 'EPS = np.finfo(np.float).eps'
-    after = 'EPS = np.finfo(float).eps'
-    source = source_path.read_text(encoding='utf-8')
-    if source.count(before) != 1:
-        raise RuntimeError(
-            f'PFFDTD NumPy compatibility patch expected exactly one {before!r} '
-            f'in {relative_path.as_posix()}'
+    patches = (
+        {
+            'patch_id': 'numpy-removed-np-float-alias-v1',
+            'path': 'python/common/myfuncs.py',
+            'before': 'EPS = np.finfo(np.float).eps',
+            'after': 'EPS = np.finfo(float).eps',
+        },
+        {
+            'patch_id': 'python312-shared-memory-exported-view-cleanup-v1',
+            'path': 'python/voxelizer/vox_grid_base.py',
+            'before': (
+                '            #cleanup shared memory\n'
+                '            Ntris_vox_shm.close()\n'
+                '            Ntris_vox_shm.unlink()\n\n'
+                '            N_tribox_tests_shm.close()\n'
+                '            N_tribox_tests_shm.unlink()'
+            ),
+            'after': (
+                '            #cleanup shared memory\n'
+                '            del Ntris_vox\n'
+                '            del N_tribox_tests\n'
+                '            Ntris_vox_shm.close()\n'
+                '            Ntris_vox_shm.unlink()\n\n'
+                '            N_tribox_tests_shm.close()\n'
+                '            N_tribox_tests_shm.unlink()'
+            ),
+        },
+    )
+
+    applied: list[dict[str, str]] = []
+    for patch in patches:
+        relative_path = Path(patch['path'])
+        source_path = upstream_root / relative_path
+        source = source_path.read_text(encoding='utf-8')
+        before = patch['before']
+        after = patch['after']
+        if source.count(before) != 1:
+            raise RuntimeError(
+                f"PFFDTD compatibility patch {patch['patch_id']} expected exactly one "
+                f"{before!r} in {relative_path.as_posix()}"
+            )
+        source_path.write_text(source.replace(before, after, 1), encoding='utf-8')
+        applied.append(
+            {
+                'patch_id': patch['patch_id'],
+                'path': relative_path.as_posix(),
+                'before_sha256': hashlib.sha256(before.encode('utf-8')).hexdigest(),
+                'after_sha256': hashlib.sha256(after.encode('utf-8')).hexdigest(),
+            }
         )
-    source_path.write_text(source.replace(before, after, 1), encoding='utf-8')
 
     diff = subprocess.check_output(
-        ['git', '-C', str(upstream_root), 'diff', '--', relative_path.as_posix()],
+        ['git', '-C', str(upstream_root), 'diff', '--'],
         text=True,
     )
-    changed = subprocess.check_output(
-        ['git', '-C', str(upstream_root), 'diff', '--name-only'],
-        text=True,
-    ).splitlines()
-    if changed != [relative_path.as_posix()]:
-        raise RuntimeError(f'unexpected PFFDTD compatibility patch file set: {changed}')
+    changed = sorted(
+        subprocess.check_output(
+            ['git', '-C', str(upstream_root), 'diff', '--name-only'],
+            text=True,
+        ).splitlines()
+    )
+    expected_changed = sorted(patch['path'] for patch in patches)
+    if changed != expected_changed:
+        raise RuntimeError(
+            f'unexpected PFFDTD compatibility patch file set: {changed}; '
+            f'expected {expected_changed}'
+        )
 
     return {
-        'patch_id': 'numpy-removed-np-float-alias-v1',
-        'path': relative_path.as_posix(),
-        'before': before,
-        'after': after,
+        'patches': applied,
+        'changed_files': changed,
         'diff_sha256': hashlib.sha256(diff.encode('utf-8')).hexdigest(),
     }
 
@@ -281,7 +325,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
             f'PFFDTD checkout mismatch: expected {candidate.source_commit_sha}, got {actual_head}'
         )
 
-    compatibility_patch = _apply_numpy_compatibility_patch(upstream_root)
+    compatibility_patch = _apply_compatibility_patches(upstream_root)
 
     upstream_python = upstream_root / 'python'
     if not (upstream_python / 'sim_setup.py').is_file():
@@ -412,7 +456,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         'diagnostics': [
             'The smoke uses R100A geometry/source/receiver authority but does not evaluate the analytical eigenfrequency observables.',
             'PFFDTD derives its simulation sound speed from temperature/humidity; the computed value is recorded instead of being silently treated as the R100A 343 m/s comparison authority.',
-            'One exact-source-checked NumPy alias compatibility patch is applied and recorded; no numerical algorithm code is changed.',
+            'Two exact-source-checked runtime compatibility patches are applied and recorded; no FDTD or voxel numerical algorithm is changed.',
             'Successful source-checkout execution is not a Windows product packaging PASS and is not a CPU correctness baseline PASS.',
         ],
     }
