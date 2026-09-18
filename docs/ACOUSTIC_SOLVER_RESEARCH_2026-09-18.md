@@ -174,7 +174,7 @@ Every primary candidate must be judged against the same fixture families.
 2. grid/mesh convergence and declared valid upper frequency;
 3. single impedance boundary with known/reference reflection behavior;
 4. L-shaped / concave room;
-5. explicit opening to an adjacent/absorbing region;
+5. explicit Portal to a modeled adjacent region or an explicit BoundaryTermination;
 6. large reflecting obstacle / counter-like geometry;
 7. receiver reciprocity/symmetry cases where the formulation permits them.
 
