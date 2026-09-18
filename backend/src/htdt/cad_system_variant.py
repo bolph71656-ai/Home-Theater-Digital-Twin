@@ -421,6 +421,12 @@ def build_system_variant(
         for item in proposals
         if item.entity.entity_id not in baseline_entities
     )
+    non_speaker_overrides = set(overrides) - set(final_speakers)
+    if non_speaker_overrides:
+        raise ValueError(
+            'lifecycle overrides currently apply to final speaker entities only: '
+            f'{sorted(non_speaker_overrides)}'
+        )
     for entity_id in final_speakers:
         if entity_id in proposal_by_id:
             lifecycle.append(EntityLifecycleBinding(entity_id=entity_id, state='proposed'))
