@@ -63,7 +63,7 @@ UX110 shell preview:
 python -m htdt.native_cad --workflow-shell
 ```
 
-dark-first application theme自体は共通foundationとしてcomposition rootへ適用する。
+dark-first themeはworkflow shell previewのcomposition rootで適用する。accepted legacy launcherのappearanceはUX150/UX160 acceptance前に変更しない。
 
 ## Issue #102
 
