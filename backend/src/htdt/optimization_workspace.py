@@ -42,8 +42,19 @@ from .cad_search_repository import CadSearchRepository
 from .measurement_workspace import _MeasurementScrollArea
 from .cad_measurement_repository import CadMeasurementRepository
 from .cad_model_validation_repository import CadModelValidationRepository
+from .cad_model_validation_service import CadModelValidationService
 from .cad_roomsim_repository import CadRoomSimRepository
 from .cad_measurement_loop import build_measurement_plan, complete_measurement_plan
+from .cad_validation_campaign import (
+    CadValidationCampaignCandidate,
+    CadValidationCampaignRepeatability,
+    CadValidationCampaignSensitivity,
+    CadValidationCampaignSeparation,
+    CadValidationTargetResponse,
+    build_validation_campaign,
+)
+from .cad_validation_campaign_repository import CadValidationCampaignRepository
+from .cad_validation_campaign_service import CadValidationCampaignService
 from .native_editor import ROLE
 from .prediction_workspace import PredictionWorkspaceWindow
 
@@ -118,6 +129,23 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.measurement_repository,
             self.objective_repository,
         )
+        self.validation_service = CadModelValidationService(
+            self.search_repository,
+            self.roomsim_repository,
+            self.measurement_repository,
+            self.objective_repository,
+        )
+        self.campaign_repository = CadValidationCampaignRepository(
+            self.search_repository,
+            self.measurement_repository,
+        )
+        self.campaign_service = CadValidationCampaignService(
+            self.campaign_repository,
+            self.roomsim_repository,
+            self.measurement_repository,
+            self.objective_repository,
+            self.validation_service,
+        )
         self.search_selected_spec_id: str | None = None
         self.search_selected_candidate_id: str | None = None
         self.search_preview_candidate_id: str | None = None
@@ -154,6 +182,17 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.validation_tree: QTreeWidget | None = None
         self.validation_detail_label: QLabel | None = None
         self.validation_refresh_button: QPushButton | None = None
+        self.campaign_assignment_tree: QTreeWidget | None = None
+        self.campaign_tree: QTreeWidget | None = None
+        self.campaign_detail_label: QLabel | None = None
+        self.campaign_model_version_field: QLineEdit | None = None
+        self.campaign_low_field: QDoubleSpinBox | None = None
+        self.campaign_high_field: QDoubleSpinBox | None = None
+        self.campaign_residual_field: QDoubleSpinBox | None = None
+        self.campaign_sensitivity_field: QDoubleSpinBox | None = None
+        self.campaign_sensitivity_error_field: QDoubleSpinBox | None = None
+        self.campaign_separation_field: QDoubleSpinBox | None = None
+        self.campaign_assignments: dict[str, str] = {}
         self._search_actor_names: set[str] = set()
         self._search_tasks: dict[str, tuple[QThread, _SearchTask]] = {}
         self._search_task_spec_ids: dict[str, str] = {}
@@ -324,6 +363,105 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.pareto_tree.setMinimumHeight(180)
         self.pareto_tree.itemSelectionChanged.connect(self._pareto_candidate_selected)
         layout.addWidget(self.pareto_tree)
+
+        campaign_label = QLabel(
+            '実室Validation Campaign · 測定前にcalibration/holdoutと閾値を固定'
+        )
+        campaign_label.setWordWrap(True)
+        layout.addWidget(campaign_label)
+
+        assignment_actions = QHBoxLayout()
+        campaign_calibration = QPushButton('選択候補→calibration')
+        campaign_calibration.clicked.connect(
+            lambda: self.assign_selected_candidate_to_campaign('calibration')
+        )
+        assignment_actions.addWidget(campaign_calibration)
+        campaign_holdout = QPushButton('選択候補→holdout')
+        campaign_holdout.clicked.connect(
+            lambda: self.assign_selected_candidate_to_campaign('holdout')
+        )
+        assignment_actions.addWidget(campaign_holdout)
+        campaign_remove = QPushButton('campaignから外す')
+        campaign_remove.clicked.connect(self.remove_selected_campaign_assignment)
+        assignment_actions.addWidget(campaign_remove)
+        layout.addLayout(assignment_actions)
+
+        self.campaign_assignment_tree = QTreeWidget()
+        self.campaign_assignment_tree.setHeaderLabels(['候補', '役割'])
+        self.campaign_assignment_tree.setMinimumHeight(100)
+        layout.addWidget(self.campaign_assignment_tree)
+
+        campaign_form = QFormLayout()
+        self.campaign_model_version_field = QLineEdit()
+        self.campaign_model_version_field.setPlaceholderText('例: 5.40 Beta 135 API 0.9.8')
+        campaign_form.addRow('model version', self.campaign_model_version_field)
+
+        self.campaign_low_field = QDoubleSpinBox()
+        self.campaign_low_field.setRange(1.0, 20000.0)
+        self.campaign_low_field.setDecimals(1)
+        self.campaign_low_field.setValue(20.0)
+        campaign_form.addRow('検証帯域 low Hz', self.campaign_low_field)
+
+        self.campaign_high_field = QDoubleSpinBox()
+        self.campaign_high_field.setRange(1.0, 20000.0)
+        self.campaign_high_field.setDecimals(1)
+        self.campaign_high_field.setValue(160.0)
+        campaign_form.addRow('検証帯域 high Hz', self.campaign_high_field)
+
+        self.campaign_residual_field = QDoubleSpinBox()
+        self.campaign_residual_field.setRange(0.0, 100.0)
+        self.campaign_residual_field.setDecimals(2)
+        self.campaign_residual_field.setValue(0.0)
+        self.campaign_residual_field.setSpecialValueText('要設定')
+        campaign_form.addRow('holdout RMS上限 dB', self.campaign_residual_field)
+
+        self.campaign_sensitivity_field = QDoubleSpinBox()
+        self.campaign_sensitivity_field.setRange(0.0, 1000.0)
+        self.campaign_sensitivity_field.setDecimals(2)
+        self.campaign_sensitivity_field.setValue(0.0)
+        self.campaign_sensitivity_field.setSpecialValueText('要設定')
+        campaign_form.addRow('感度上限 dB/m', self.campaign_sensitivity_field)
+
+        self.campaign_sensitivity_error_field = QDoubleSpinBox()
+        self.campaign_sensitivity_error_field.setRange(0.0, 1000.0)
+        self.campaign_sensitivity_error_field.setDecimals(2)
+        self.campaign_sensitivity_error_field.setValue(0.0)
+        self.campaign_sensitivity_error_field.setSpecialValueText('要設定')
+        campaign_form.addRow('感度誤差上限 dB/m', self.campaign_sensitivity_error_field)
+
+        self.campaign_separation_field = QDoubleSpinBox()
+        self.campaign_separation_field.setRange(0.0, 100.0)
+        self.campaign_separation_field.setDecimals(2)
+        self.campaign_separation_field.setValue(0.0)
+        self.campaign_separation_field.setSpecialValueText('要設定')
+        campaign_form.addRow('候補差 / repeatability', self.campaign_separation_field)
+        layout.addLayout(campaign_form)
+
+        campaign_save = QPushButton('Campaignを測定前にimmutable保存')
+        campaign_save.setToolTip(
+            'holdoutを実測結果から選び直せないよう、この時点の役割・target・閾値を固定します'
+        )
+        campaign_save.clicked.connect(self.save_validation_campaign)
+        layout.addWidget(campaign_save)
+
+        self.campaign_tree = QTreeWidget()
+        self.campaign_tree.setHeaderLabels(['campaign', 'model', '候補', 'readiness'])
+        self.campaign_tree.setMinimumHeight(130)
+        self.campaign_tree.itemSelectionChanged.connect(self._campaign_selected)
+        layout.addWidget(self.campaign_tree)
+
+        campaign_actions = QHBoxLayout()
+        campaign_refresh = QPushButton('readiness更新')
+        campaign_refresh.clicked.connect(self.refresh_validation_campaigns)
+        campaign_actions.addWidget(campaign_refresh)
+        campaign_materialize = QPushButton('O30 objective evidence生成')
+        campaign_materialize.clicked.connect(self.materialize_selected_campaign_objectives)
+        campaign_actions.addWidget(campaign_materialize)
+        layout.addLayout(campaign_actions)
+
+        self.campaign_detail_label = QLabel('Campaign未選択')
+        self.campaign_detail_label.setWordWrap(True)
+        layout.addWidget(self.campaign_detail_label)
 
         validation_label = QLabel(
             'モデル検証 · residual / trend / sensitivity / repeatabilityを独立表示'
