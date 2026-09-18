@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -57,7 +58,7 @@ class SceneRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 CREATE TABLE IF NOT EXISTS scene_revisions (
@@ -106,7 +107,7 @@ class SceneRepository:
                 )
 
     def latest(self, document_id: str) -> SceneRevision | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM scene_revisions WHERE document_id=? ORDER BY seq DESC LIMIT 1',
                 (document_id,),
@@ -114,7 +115,7 @@ class SceneRepository:
         return self._row_to_revision(row) if row else None
 
     def get(self, revision_id: str) -> SceneRevision | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM scene_revisions WHERE revision_id=?',
                 (revision_id,),
@@ -124,7 +125,7 @@ class SceneRepository:
     def save(self, document: SceneDocument, *, parent_revision_id: str | None) -> SaveResult:
         payload_json = canonical_scene_json(document)
         content_hash = scene_content_hash(document)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
             parent = None
             if parent_revision_id is not None:
@@ -171,7 +172,7 @@ class SceneRepository:
         payload_json = canonical_scene_json(document)
         content_hash = scene_content_hash(document)
         updated_at = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
             if source_revision_id is not None:
                 source = connection.execute(
@@ -210,7 +211,7 @@ class SceneRepository:
         )
 
     def recovery(self, document_id: str) -> RecoverySnapshot | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM scene_recovery_snapshots WHERE document_id=?',
                 (document_id,),
@@ -230,7 +231,7 @@ class SceneRepository:
         )
 
     def clear_recovery(self, document_id: str) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
                 (document_id,),
@@ -252,7 +253,7 @@ class SceneRepository:
         hidden_json = json.dumps(sorted(hidden_ids), separators=(',', ':'))
         locked_json = json.dumps(sorted(locked_ids), separators=(',', ':'))
         updated_at = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 INSERT INTO editor_view_states(
@@ -269,7 +270,7 @@ class SceneRepository:
             )
 
     def view_state(self, document_id: str) -> EditorViewRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM editor_view_states WHERE document_id=?',
                 (document_id,),
