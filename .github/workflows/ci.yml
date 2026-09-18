@@ -35,8 +35,15 @@ jobs:
       - name: Check native CAD launcher CLI
         run: python -m htdt.native_cad --help
 
+      - name: Smoke O60R inventory CLI
+        shell: pwsh
+        run: |
+          $empty = Join-Path $env:RUNNER_TEMP 'o60r-empty'
+          New-Item -ItemType Directory -Force -Path $empty | Out-Null
+          python scripts\inventory_o60_owned_room.py --data-dir $empty --skip-rew
+
       - name: Compile Windows CAD acceptance harnesses
-        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py scripts\validate_n30b_windows.py scripts\validate_n40_windows.py scripts\validate_n40_windows_gate.py scripts\validate_n40_precision_windows.py scripts\validate_n50_windows.py scripts\validate_n60_a12_windows.py scripts\validate_n60_a13_windows.py scripts\validate_n70_windows_base.py scripts\validate_n70_windows.py scripts\benchmark_n70_f5_windows.py scripts\validate_n80_windows.py scripts\validate_n80_o20_roomsim_windows.py scripts\validate_n80c_windows.py scripts\validate_n90_a15_windows.py scripts\audit_o60_owned_room.py
+        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py scripts\validate_n30b_windows.py scripts\validate_n40_windows.py scripts\validate_n40_windows_gate.py scripts\validate_n40_precision_windows.py scripts\validate_n50_windows.py scripts\validate_n60_a12_windows.py scripts\validate_n60_a13_windows.py scripts\validate_n70_windows_base.py scripts\validate_n70_windows.py scripts\benchmark_n70_f5_windows.py scripts\validate_n80_windows.py scripts\validate_n80_o20_roomsim_windows.py scripts\validate_n80c_windows.py scripts\validate_n90_a15_windows.py scripts\audit_o60_owned_room.py scripts\inventory_o60_owned_room.py
 
       - name: Validate PowerShell scripts syntax
         shell: pwsh

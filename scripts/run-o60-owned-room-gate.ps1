@@ -1,6 +1,6 @@
 param(
     [string]$RepoRoot = "",
-    [string]$Branch = "feat/o60-owned-room-gate",
+    [string]$Branch = "main",
     [string]$ExpectedProductHead = "252647a7c4757c420151049a7f729d8157f5243b",
     [string]$DataDir = "",
     [string]$CampaignId = "",
@@ -82,8 +82,10 @@ try {
     $allowedAfterProduct = @(
         ".github/workflows/ci.yml",
         "backend/tests/test_o60r_audit.py",
+        "docs/IMPLEMENTATION_STATUS.md",
         "docs/O60R_PROGRESS.md",
         "scripts/audit_o60_owned_room.py",
+        "scripts/inventory_o60_owned_room.py",
         "scripts/run-o60-owned-room-gate.ps1"
     )
     $changed = @(Invoke-Git @("diff", "--name-only", ($ExpectedProductHead + ".." + $remoteRef)))

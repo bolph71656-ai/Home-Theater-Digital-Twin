@@ -13,9 +13,12 @@ campaign and current eligible ValidationRecord.
 
 ## Software harness
 
-The branch provides:
+The software gate was merged to main by PR #85.
+
+Main provides:
 
 - `scripts/audit_o60_owned_room.py`
+- `scripts/inventory_o60_owned_room.py`
 - `scripts/run-o60-owned-room-gate.ps1`
 
 The Python audit opens the source `cad-scenes.sqlite3` with SQLite
@@ -58,7 +61,17 @@ The PowerShell runner:
 The real command is intentionally not run by CI because it requires the user's
 actual completed owned-room campaign data.
 
-CI only compiles the Python harness, parses all PowerShell scripts, and runs the
+The runner defaults to `main` after PR #85 merge. It still freezes the O60E
+product head and refuses unexpected product-code changes between that authority
+and the audited main head.
+
+`scripts/inventory_o60_owned_room.py` is a read-only operator preflight. It
+uses the same mode=ro SQLite snapshot contract to list campaign ids, readiness,
+candidate evidence and the current O70-entry ValidationRecord, and can query the
+localhost REW API using GET-only endpoints. It does not create validation
+evidence.
+
+CI compiles both Python helpers, parses all PowerShell scripts, and runs the
 runner with `-PreflightOnly`.
 
 ## Physical boundary
