@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **実室でpreregistered O60E campaignを作成し、human-operated配置変更/REW測定でowned-room evidenceを収集する。O70/O80はeligible campaign-backed ValidationRecord成立までdisabled** |
+| 次工程 | **O60R software audit gateはPR #85でmain反映済み。実室でpreregistered O60E campaignを作成し、human-operated配置変更/REW測定でowned-room evidenceを収集する。O70/O80はeligible campaign-backed ValidationRecord + O60R audit PASSまでdisabled** |
 
 ## N90 — stable Windows release / A15 PASS
 
@@ -242,3 +242,15 @@ preregistration authorityとnative workflowを実装した。実室campaignそ�
 - synthetic fixtureはeligibleにならず、O70/O80はgenuine owned-room campaignがO60全gateを通過するまでdisabledを維持する。
 
 N90 stable 0.1.0のacceptanceは完了済みで、O60E software authorityのためにRDC/N90実機gateは再実行していない。
+
+## O60R — real-data audit software gate / main反映済み
+
+Issue #83 / PR #85で、実室campaign完了後に使うread-only監査harnessをmainへ追加した。
+
+- source `cad-scenes.sqlite3`はSQLite `mode=ro` / `query_only=ON`で開く。
+- committed WALを含む一貫snapshotをtemp DBへ作り、full save-time authority replayはsnapshot上だけで実行する。
+- current O70-entry ValidationRecord、campaign ID/SHA、readiness、residual/trend/sensitivity/repeatability/separation/applicabilityを再検証する。
+- clean worktree / exact product-head ancestor / checkout restoreをWindows runnerが保証する。
+- CI preflightはPASS済み。実室PASSはまだ主張しない。
+- `inventory_o60_owned_room.py`でcampaign/readiness/REW read-only状態を1コマンド確認できる。
+- 残る作業は人手のspeaker/setup移動とREW実測を伴うowned-room campaign実行のみ。これを満たすまでO70/O80はdisabled。
