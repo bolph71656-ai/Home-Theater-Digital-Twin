@@ -404,13 +404,16 @@ def _candidate_id(
     aim_yaw_deg: dict[str, float],
     body_yaw_deg: dict[str, float],
 ) -> str:
-    return 'ec-' + _digest({
+    payload = {
         'extended_search_sha256': spec.extended_search_sha256,
         'base_candidate_id': base_candidate_id,
         'positions': positions,
         'aim_yaw_deg': aim_yaw_deg,
-        'body_yaw_deg': body_yaw_deg,
-    })[:20]
+    }
+    # Preserve candidate IDs for pre-O80P aim-only Extended Search specs.
+    if body_yaw_deg:
+        payload['body_yaw_deg'] = body_yaw_deg
+    return 'ec-' + _digest(payload)[:20]
 
 
 def generate_extended_candidates(
