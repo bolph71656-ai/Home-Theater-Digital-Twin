@@ -6,6 +6,7 @@ import pytest
 
 from htdt.cad_adaptive_repository import CadAdaptivePlanRepository
 from htdt.cad_adaptive_service import CadAdaptivePlannerService
+from htdt.cad_adaptive_extended import build_adaptive_extended_observation
 from htdt.cad_adaptive_extended_repository import CadAdaptiveExtendedRepository
 from htdt.cad_adaptive_extended_service import CadAdaptiveExtendedPlannerService
 from htdt.cad_extended_search import generate_extended_candidates
@@ -210,3 +211,91 @@ def test_synthetic_demo_refuses_duplicate_seed_in_same_data_directory(tmp_path):
 
     with pytest.raises(ValueError, match='already exists'):
         seed_synthetic_optimization_demo(scene_repository)
+
+
+def test_adaptive_extended_observation_supersession_excludes_new_measurement(
+    tmp_path,
+):
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    result = seed_synthetic_optimization_demo(scene_repository)
+    (
+        search,
+        _measurements,
+        _roomsim,
+        _objectives,
+        validation_repository,
+        _adaptive_repository,
+        extended_repository,
+        adaptive_extended_repository,
+    ) = _repositories(scene_repository)
+
+    extended_spec = extended_repository.get_spec(result.extended_search_id)
+    assert extended_spec is not None
+    current = adaptive_extended_repository.current_observations(
+        result.extended_search_id
+    )
+    target = next(item for item in current if item.measured_value is None)
+    replacement = build_adaptive_extended_observation(
+        extended_spec=extended_spec,
+        candidate_set_sha256=result.extended_candidate_set_sha256,
+        candidate_id=target.candidate_id,
+        evidence_scope='synthetic_fixture',
+        objective_id=target.objective_id,
+        unit=target.unit,
+        predicted_value=target.predicted_value,
+        prediction_source_kind=target.prediction_source_kind,
+        prediction_source_id=target.prediction_source_id,
+        measured_value=target.predicted_value + 0.05,
+        measurement_source_kind='synthetic_measurement_fixture',
+        measurement_source_id=f'synthetic-later:{target.candidate_id}',
+        supersedes_observation_sha256=target.observation_sha256,
+    )
+    adaptive_extended_repository.save_observation(replacement)
+
+    assert len(
+        adaptive_extended_repository.list_observations(
+            result.extended_search_id
+        )
+    ) == 19
+    heads = adaptive_extended_repository.current_observations(
+        result.extended_search_id
+    )
+    assert len(heads) == 18
+    current_target = next(
+        item
+        for item in heads
+        if item.candidate_id == target.candidate_id
+        and item.objective_id == target.objective_id
+    )
+    assert current_target.observation_sha256 == replacement.observation_sha256
+    assert current_target.measured_value is not None
+
+    service = CadAdaptiveExtendedPlannerService(
+        extended_repository,
+        validation_repository,
+        adaptive_extended_repository,
+    )
+    plan = service.build_and_save(
+        extended_search_id=result.extended_search_id,
+        validation_id=result.validation_id,
+        execution_scope='development_synthetic',
+        length_scale_normalized=0.45,
+        proposal_limit=20,
+    )
+    assert target.candidate_id in plan.excluded_measured_candidate_ids
+    assert target.candidate_id not in {
+        proposal.candidate_id for proposal in plan.proposals
+    }
+
+    repeated = service.build_and_save(
+        extended_search_id=result.extended_search_id,
+        validation_id=result.validation_id,
+        execution_scope='development_synthetic',
+        length_scale_normalized=0.45,
+        proposal_limit=20,
+    )
+    assert repeated.plan_id == plan.plan_id
+    assert (
+        repeated.adaptive_extended_sha256
+        == plan.adaptive_extended_sha256
+    )
