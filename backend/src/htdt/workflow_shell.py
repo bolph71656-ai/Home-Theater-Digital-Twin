@@ -171,6 +171,16 @@ class WorkspaceRouter(QStackedWidget):
         if mount.on_entity_requested is not None:
             mount.on_entity_requested(entity_id)
 
+    def can_dispose_all(self) -> tuple[bool, str | None]:
+        for workspace_id, mount in self._mounts.items():
+            if mount.before_deactivate is None:
+                continue
+            allowed, reason = mount.before_deactivate()
+            if not allowed:
+                label = self._registrations[workspace_id].label
+                return False, reason or f"{label}の作業を完了してから復元してください"
+        return True, None
+
     def dispose_mounts(self) -> None:
         mounts = tuple(self._mounts.values())
         self._mounts.clear()
@@ -459,11 +469,9 @@ class WorkflowShellWindow(QMainWindow):
         self.router.setEnabled(True)
 
     def dispose_data_workspaces(self) -> None:
-        current = self.router.mount(self.router.current_workspace_id) if self.router.current_workspace_id else None
-        if current is not None and current.before_deactivate is not None:
-            allowed, reason = current.before_deactivate()
-            if not allowed:
-                raise RuntimeError(reason or "現在の作業を完了してから復元してください")
+        allowed, reason = self.router.can_dispose_all()
+        if not allowed:
+            raise RuntimeError(reason or "現在の作業を完了してから復元してください")
         self.router.dispose_mounts()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
