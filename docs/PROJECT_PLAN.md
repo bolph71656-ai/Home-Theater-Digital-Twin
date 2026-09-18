@@ -83,7 +83,7 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 
 ## 8. 初期非目標
 
-汎用B-rep CAD、FEM/BEM/FDTD、一般拘束solver、独自スイープ/ASIO/WASAPI engine、マイク校正engine、EQ/YPAO/Dirac/Audyssey相当の補正、未公開.mdat解析、Atmos encoder、常駐AVR制御、マルチユーザー、クラウド、LLM説明機能は初期対象外。
+汎用B-rep CAD、FEM/BEM/FDTD、一般拘束solver、独自スイープ/ASIO/WASAPI engine、マイク校正engine、EQ/YPAO/Dirac/Audyssey相当の補正、未公開.mdat解析、Atmos encoder、常駐AVR制御、マルチユーザー、クラウド、LLM説明機能は**v0.1初期releaseでは対象外**。任意形状wave/FEM/FDTD等はpost-0.1のIssue #101 / R-seriesで後続実装する。
 
 一室・一定天井高・primitive家具から開始し、BIM/STEP/複雑mesh importや複数室は実要件が生じた時に追加する。
 
@@ -91,4 +91,4 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 
 native GUIをWindowsのDPI/mouse/keyboardで確認する。headless CIを操作品質の証拠にしない。仕様上の目標、過去のPoC報告、今回の再検証を分ける。
 
-変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。次の作業は[ロードマップ](IMPLEMENTATION_ROADMAP.md)のN05。採用gateは[受入仕様](CAD_EDITOR_ACCEPTANCE.md)、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
+変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済みで、次の未着手software trackは[ロードマップ](IMPLEMENTATION_ROADMAP.md)のIssue #101 R100Aから始まる。採用gateは各R-series fixture/ADRと[受入仕様](CAD_EDITOR_ACCEPTANCE.md)、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。

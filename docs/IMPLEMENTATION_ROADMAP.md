@@ -90,21 +90,26 @@ R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、そ�
 
 | ID | 先行条件 | 成果 / 完了gate |
 |---|---|---|
-| R100 — solver bakeoff | N70 prediction authority | deterministic FDTD CPU PoC、独立FEM/reference、geometric reference、secondary BEM/PSTD等の評価範囲、version/license/redistribution/Windows package matrix、共通fixture corpus。accuracy・convergence・runtime・RAM/VRAM・CPU/GPU tolerance・geometry/material failure modeを同一benchmarkで測定し、first production stackを選定 |
-| R110 — acoustic authority | R100 interface決定 | immutable AcousticSceneSnapshot、surface/object material、source/directivity、solver/backend provenance。scalar absorptionとcomplex impedanceを区別 |
-| R120 — geometry compiler | R110 | exact SceneRevision→canonical acoustic surfaces→wave grid / ray BVH / optional FEM mesh。non-manifold/open/degenerate/thin unresolvedをfail-closed |
-| R130 — low-band wave | R120 | 20–300 Hzを初期targetにCPU correctness baseline。FR/phase/IR/spatial field、frequency-dependent boundary、分析解＋convergence＋cross-solver gate |
-| R140 — hardware-aware execution | R130 baseline | CPU/GPU検出、RAM/VRAM estimate、candidate/solver二階層scheduler、oversubscription回避、cache/resume/cancel、silent quality downgrade禁止 |
-| R150 — geometric acoustics | R120 | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance |
-| R160 — hybrid broadband | R130/R150 | explicit overlap/crossover、低域coherent wave＋上域geometric result統合。unsupported phase/metricを生成しない |
-| R170 — optimization integration | R140/R160 + O10〜O70 | multi-fidelity candidate prediction→ObjectiveVector→Pareto→MeasurementPlan→N60/O60/O70。geometry/BVH/grid再利用とsemantic cache |
-| R180 — owned-room validation | R170 | target roomでREW/UMIK-1 validation。新solver/model versionごとにO60 applicability/holdout gate。simulationだけでproduction recommendationを開かない |
+| R100A — benchmark authority | N70 prediction authority | solver-neutral fixture contractを先に固定。AcousticRegion、Portal/BoundaryTermination、source/receiver、boundary/material、environment、expected observable、quantity-specific toleranceを定義。hard gateと性能比較を分離 |
+| R100B — solver bakeoff / ADR | R100A | deterministic FDTD CPU PoC、独立FEM/reference、geometric reference、secondary BEM/PSTD等、version/license/redistribution/Windows package matrixを同一fixtureで比較。hard gate通過候補からfirst production stackを選定 |
+| R110 — acoustic authority | R100B interface決定 | immutable AcousticSceneSnapshot、AcousticRegion/Portal/BoundaryTermination、surface/object material capability、source excitation/directivity、receiver/calibration、environment、solver/backend provenance。semantic geometry hashとcompiled representation hashを分離 |
+| R120 — geometry compiler | R110 | exact SceneRevision→canonical acoustic regions/surfaces/portals→wave grid / ray BVH / optional FEM mesh。compiler version/toleranceをprovenanceへ保存し、non-manifold/unintended-open/degenerate/thin unresolvedをfail-closed |
+| R130A — rigid wave core | R120 | 20–300 Hz初期target。CPU correctness baseline、rigid analytical modes、FR/phase/IR/spatial field、convergence＋cross-solver gate |
+| R130B — lossy boundary | R130A | 独立referenceを持つsimple impedance/admittance boundaryを追加し、reflection magnitude/phaseを検証 |
+| R130C — frequency-dependent boundary | R130B | causal frequency-dependent boundary。time-domainではstability/passivity/causalityもacceptance対象 |
+| R140 — hardware-aware execution | R130A以降 | R110/R130のidentity/stale/cancel/provenanceを維持したままCPU/GPU検出、RAM/VRAM estimate、candidate/solver二階層scheduler、oversubscription回避、efficient cache/resume、silent quality downgrade禁止 |
+| R150 — geometric acoustics | R120 | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance。diffractionは独立fixture成立時のみ追加 |
+| R160 — typed hybrid broadband | R130/R150 | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、explicit overlap/crossoverと共有成分のdouble-counting防止を実装。unsupported phase/metricを生成しない |
+| R170 — optimization integration | R140/R160 + O10〜O70 | multi-fidelity candidate prediction→ObjectiveVector→Pareto→MeasurementPlan→N60/O60/O70。geometry/grid/BVH再利用に加えreceiver batching、source-equivalence grouping、reciprocity等を成立条件付きで利用 |
+| R180 — owned-room validation | R170 | target roomでREW/UMIK-1 validation。receiver calibration/environmentをmeasurement authorityへ対応付け、新solver/model versionごとにO60 applicability/holdout gate。simulationだけでproduction recommendationを開かない |
 
-R100では「候補ライブラリを先に製品依存へ固定」しない。FDTDをfirst PoCとするが、staircase/thin-surface/material-boundary精度またはWindows packagingがgate未達なら、MFEM等のFEM pathを同じfixtureで比較して決める。BEM/FMM、DG/high-order FEM、PSTD/k-spaceはsecondary/reference候補とし、初期production dependencyにはしない。
+R100はumbrellaとし、先にR100Aでsolver-neutral fixture authorityを作り、その後R100Bでsolverを比較する。各solver専用の仮geometry/開口/material定義を先に作って比較しない。openingは「壁の穴」だけでは不十分で、explicit adjacent AcousticRegionまたはBoundaryTerminationを持つ。未知の隣接空間を無言でanechoic/absorbingとみなさない。
 
-Deep Research反映後のR100共通fixtureは最低限、rigid rectangular analytical modes、grid/mesh convergence、単一impedance boundary、L字/凹room、明示opening、counter相当のreflecting obstacle、direct path、first reflection、seed repeatability、hybrid overlap continuityを含む。points/elements-per-wavelength等の経験則は初期値に使えてもacceptanceそのものにはせず、backendごとの収束測定からvalid upper frequencyを決める。
+R100Bでは「候補ライブラリを先に製品依存へ固定」しない。FDTDをfirst PoCとするが、staircase/thin-surface/material-boundary精度またはWindows packagingがgate未達なら、MFEM等のFEM pathを同じR100A fixtureで比較して決める。BEM/FMM、DG/high-order FEM、PSTD/k-spaceはsecondary/reference候補とし、初期production dependencyにはしない。
 
-R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU correctness baseline、材料authority分離、immutable provenance、O60 real-data gateである。production wave library、最終crossover、GPU vendor/API、mesh/grid preset、FEM mesher/linear-solver stack、diffraction/late-field方式はbenchmark前に固定しない。研究報告中の一般的GPU speedup値や単一ハードウェア例をHTDTの性能要件へ直接転記しない。
+共通fixtureは最低限、rigid rectangular analytical modes、grid/mesh convergence、単一impedance/reflection boundary、L字/凹room、region-to-region portalまたは明示termination、counter相当のreflecting obstacle、direct path、first reflection、seed repeatability、hybrid overlap continuityを含む。points/elements-per-wavelength等の経験則は初期値に使えてもacceptanceそのものにはせず、backendごとの収束測定からvalid upper frequencyを決める。license/redistribution、Windows再現性、必要physics capability、CPU correctness等のhard gateを通過した候補だけを速度・memory・実装複雑度で比較する。
+
+R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU correctness baseline、材料authority分離、receiver/environment authority、immutable provenance、O60 real-data gateである。production wave library、最終crossover、GPU vendor/API、mesh/grid preset、FEM mesher/linear-solver stack、diffraction/late-field方式はbenchmark前に固定しない。研究報告中の一般的GPU speedup値や単一ハードウェア例をHTDTの性能要件へ直接転記しない。
 
 ### N05 / N10の実装slice
 
