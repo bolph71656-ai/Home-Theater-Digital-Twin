@@ -121,17 +121,22 @@ def rew_inventory() -> dict[str, object]:
     client = RewApiClient()
     try:
         measurements = client.list_measurements()
-        audio = client.get_audio_preflight()
-        return {
-            'available': True,
-            'measurement_count': len(measurements),
-            'audio': audio,
-        }
     except RewApiError as exc:
         return {
             'available': False,
             'error': f'{type(exc).__name__}: {exc}',
         }
+
+    result: dict[str, object] = {
+        'available': True,
+        'measurement_count': len(measurements),
+    }
+    try:
+        result['audio'] = client.get_audio_preflight()
+    except RewApiError as exc:
+        result['audio'] = None
+        result['audio_error'] = f'{type(exc).__name__}: {exc}'
+    return result
 
 
 def main() -> int:
