@@ -295,6 +295,7 @@ def test_full_validation_repository_recomputes_cross_evidence_authority(tmp_path
 
     assert record.recommendation_gate == 'eligible'
     assert repository.get(record.validation_id) == record
+    assert repository.latest_eligible_for_search_spec(record.search_spec_id) == record
 
 
 def test_owned_room_validation_rejects_unclassified_or_synthetic_measurement(tmp_path):
