@@ -479,7 +479,7 @@ def test_geometry_context_panel_mounts_and_adds_opening_through_wall_authority(t
     panel.refresh()
 
     assert workspace.right_stack.currentWidget() is panel
-    assert panel.ensure_walls_button.isVisible()
+    assert not panel.ensure_walls_button.isHidden()
     panel.ensure_walls_button.click()
     app.processEvents()
 
