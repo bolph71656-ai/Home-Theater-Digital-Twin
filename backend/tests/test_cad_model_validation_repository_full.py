@@ -48,7 +48,6 @@ class _RoomSimEvidence:
         self.path = path
         self.spec = spec
         self.candidate_set_sha256 = candidate_set_sha256
-        self.campaign_id = campaign_id
         self.candidates = {candidate.candidate_id: candidate for candidate in candidates}
 
     def get_attempt(self, attempt_id):
@@ -90,6 +89,7 @@ class _MeasurementEvidence:
         self.path = path
         self.document_id = document_id
         self.candidate_set_sha256 = candidate_set_sha256
+        self.campaign_id = campaign_id
         self.records = {}
         self.datasets = {}
         self.plans = []
