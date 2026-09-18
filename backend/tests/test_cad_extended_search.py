@@ -216,6 +216,42 @@ def test_extended_preview_and_apply_change_position_and_aim_in_one_undo(tmp_path
     ) == pytest.approx(0.0)
 
 
+def test_extended_apply_rejects_position_tampering_even_with_base_candidate_id(tmp_path):
+    (
+        scene_repository,
+        revision,
+        constraints,
+        base_spec,
+        _base_page,
+        _capability,
+        _repository,
+        spec,
+    ) = _fixture(tmp_path)
+    page = generate_extended_candidates(scene_repository, base_spec, spec, limit=20)
+    candidate = page.candidates[-1]
+    tampered_positions = {
+        entity_id: dict(position)
+        for entity_id, position in candidate.positions.items()
+    }
+    tampered_positions['fl']['x_m'] = 1.1
+    tampered = candidate.model_copy(update={'positions': tampered_positions})
+    working = WorkingDocument(
+        revision.document,
+        source_revision_id=revision.revision_id,
+        saved_content_hash=revision.content_hash,
+    )
+
+    with pytest.raises(ValueError, match='identity mismatch'):
+        apply_extended_candidate(
+            working,
+            tampered,
+            extended_spec=spec,
+            base_spec=base_spec,
+            current_constraint_set=constraints,
+            current_document_id=DOCUMENT_ID,
+        )
+
+
 def test_rew_roomsim_cannot_claim_toe_in_capability():
     with pytest.raises(ValueError, match='does not model speaker aim'):
         build_extended_model_capability(
