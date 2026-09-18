@@ -7,6 +7,7 @@ from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, make_f1_scene
 from htdt.native_backup import create_backup, validate_backup
 import htdt.native_cad as native_cad
+from htdt.cad_synthetic_demo import SYNTHETIC_DEMO_DOCUMENT_ID
 
 
 def _seed(data_dir: Path):
@@ -60,3 +61,18 @@ def test_restore_cli_runs_before_qapplication_and_restores_revision(tmp_path: Pa
     restored = SceneRepository(data_dir / 'cad-scenes.sqlite3').latest(first.document_id)
     assert restored is not None
     assert restored.revision_id == first.revision_id
+
+
+def test_synthetic_demo_cli_runs_before_qapplication(tmp_path: Path, monkeypatch):
+    data_dir = tmp_path / 'data'
+    monkeypatch.setattr(native_cad, 'QApplication', _forbid_qapplication)
+
+    assert native_cad.main([
+        '--data-dir', str(data_dir),
+        '--seed-synthetic-demo',
+    ]) == 0
+
+    seeded = SceneRepository(data_dir / 'cad-scenes.sqlite3').latest(
+        SYNTHETIC_DEMO_DOCUMENT_ID
+    )
+    assert seeded is not None

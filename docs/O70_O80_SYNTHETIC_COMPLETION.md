@@ -1,0 +1,125 @@
+# O70/O80 Synthetic Software Completion Lane
+
+Tracking: Issue #90
+
+## Purpose
+
+Physical owned-room measurement is not required to finish the software implementation.
+HTDT therefore has an explicit synthetic development lane for O60/O70/O80.
+
+This lane is **not** a substitute for real validation. Synthetic records remain
+`synthetic_fixture`, never acquire an owned-room campaign ID, and never make
+`production_owned_room` recommendation eligible.
+
+## O70 Adaptive Planner
+
+O70 persists an immutable Adaptive Plan bound to:
+
+- exact SearchSpec ID/SHA;
+- exact candidate-set SHA;
+- exact O60 ValidationRecord ID/SHA;
+- model ID/version;
+- calibration candidate IDs;
+- measured/excluded candidate IDs;
+- objective IDs;
+- GP length scale;
+- acquisition function and algorithm version;
+- every proposal and its corrected objective estimate / residual uncertainty.
+
+Two scopes are intentionally separate:
+
+- `development_synthetic`: accepts only a synthetic O60 record for which every
+  technical gate passes and the **only** stop reason is missing owned-room
+  evidence.
+- `production_owned_room`: accepts only the current persisted campaign-backed
+  `eligible` O60 record.
+
+O70 uses per-objective residual correction and uncertainty. It does not collapse
+independent objectives into a single sound-quality score.
+
+## O80 Extended Search
+
+The existing O10 SearchSpec already supports multiple entities and X/Y/Z axes,
+including speaker/listener height. O80 therefore does not duplicate that engine.
+
+O80 layers additional model-dependent parameters on the already feasible O10
+candidate set. The first implemented parameter is speaker horizontal aim
+(`aim_yaw_deg`, i.e. toe-in).
+
+An extended candidate contains:
+
+- immutable base SearchSpec ID/SHA;
+- immutable base candidate-set SHA;
+- exact base candidate ID and XYZ payload;
+- explicit extended model-capability ID/SHA;
+- exact toe-in values;
+- deterministic extended candidate ID and set SHA.
+
+Preview does not alter Scene/Undo history. Explicit apply updates position and
+aim in one command, so one Undo restores both.
+
+### Model capability gate
+
+Extended parameters are unavailable unless a persisted model capability explicitly
+declares support.
+
+REW Room Simulator is rectangular position-based and does not model speaker
+direction/toe-in. HTDT therefore rejects any attempt to declare
+`aim_yaw_deg` support for REW Room Simulator.
+
+The synthetic software lane uses
+`synthetic-directional-fixture/1`. It exists only to exercise the full software
+path. A future owned-room directional model must have its own O60 evidence and
+eligible ValidationRecord before a production extended capability can be saved.
+
+## Real-repository synthetic demo
+
+The demo is deliberately stored through normal product repositories rather than
+through fake test repositories.
+
+Run:
+
+```powershell
+python -m htdt.native_cad --data-dir <demo-data-dir> --seed-synthetic-demo
+```
+
+The command exits before QApplication creation and persists a separate document:
+
+`htdt-synthetic-o70-o80-demo-v1`
+
+It writes:
+
+1. SceneRevision;
+2. O10 SearchSpec and deterministic candidate set;
+3. O20-style synthetic prediction batch/attempts;
+4. candidate-applied SceneRevisions and O50 Measurement Plans;
+5. N60 measurement records explicitly marked `synthetic_fixture` and
+   `physical_measurement=false`;
+6. predicted/measured O30 objective evaluations;
+7. a full O60 ValidationRecord whose residual/trend/sensitivity/repeatability/
+   separation/applicability gates pass, while recommendation remains disabled
+   solely because evidence is not owned-room;
+8. an O70 `development_synthetic` Adaptive Plan;
+9. an O80 synthetic directional capability and toe-in Extended SearchSpec.
+
+The demo refuses a duplicate seed in the same data directory.
+
+To inspect it in the native application, launch that same data directory with:
+
+```powershell
+python -m htdt.native_cad --data-dir <demo-data-dir> --document-id htdt-synthetic-o70-o80-demo-v1
+```
+
+## Production boundary
+
+None of the following is permitted:
+
+- relabel synthetic measurement as owned-room;
+- attach a synthetic Validation Campaign;
+- use a synthetic O60 record for `production_owned_room`;
+- declare REW Room Simulator to support toe-in;
+- use synthetic O80 capability as owned-room model evidence.
+
+The later physical campaign still uses O60E preregistration and O60R audit. The
+real O60R runner freezes the final measured software authority only when the
+physical campaign is actually performed.

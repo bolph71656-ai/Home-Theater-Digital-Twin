@@ -10,6 +10,7 @@ from . import __version__
 from .cad_composition import CadEditorWindow
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID
+from .cad_synthetic_demo import seed_synthetic_optimization_demo
 from .constraint_editor import ConstraintEditorWindow
 from .measurement_editor import MeasurementEditorWindow
 from .measurement_workspace import MeasurementWorkspaceWindow
@@ -53,6 +54,11 @@ def main(argv: list[str] | None = None) -> int:
         metavar='ARCHIVE',
         help='restore a validated .htdt-backup archive and exit',
     )
+    maintenance.add_argument(
+        '--seed-synthetic-demo',
+        action='store_true',
+        help='seed an explicitly synthetic O10-O80 development demo and exit',
+    )
     parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     args = parser.parse_args(argv)
 
@@ -70,6 +76,19 @@ def main(argv: list[str] | None = None) -> int:
             f'backup restored: {args.restore} '
             f'(schema={manifest.schema_version}, files={len(manifest.files)}){suffix}'
         )
+        return 0
+    if args.seed_synthetic_demo:
+        repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
+        result = seed_synthetic_optimization_demo(repository)
+        print(
+            'synthetic demo seeded: '
+            f'document={result.document_id} '
+            f'search={result.search_spec_id} '
+            f'validation={result.validation_id} '
+            f'adaptive={result.adaptive_plan_id} '
+            f'extended={result.extended_search_id}'
+        )
+        print('synthetic demo is development-only and does not unlock owned-room recommendation')
         return 0
 
     app = QApplication([sys.argv[0]])

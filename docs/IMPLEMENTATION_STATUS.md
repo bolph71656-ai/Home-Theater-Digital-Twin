@@ -266,4 +266,19 @@ Issue #90で、実測待ちをソフトウェア完成のblockerにしないdeve
 - SearchSpec SHA、candidate-set SHA、ValidationRecord SHA、algorithm/version、length scale、training/measured candidate、全proposalをimmutable保存する。
 - synthetic planはproduction recommendationを開かず、実室妥当性の主張に使わない。
 - native最適化dockにAdaptive Planner UIを統合し、ValidationRecord選択→scope/length scale/proposal上限→immutable plan保存→proposalの補正値/不確実性表示→candidate選択同期まで接続した。
+## O80 — Extended Search / synthetic software completion
+
+Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended-search layerを実装した。
+
+- 既存O10のmultiple entity XYZ探索（高さを含む）を再実装しない。
+- base SearchSpec / candidate-setをimmutable authorityとして再生成し、そのfeasible候補へ追加parameterを直積展開する。
+- 最初のparameterはspeaker `aim_yaw_deg`（toe-in）。exact XYZとaimをextended candidate IDへbindingする。
+- model capabilityをimmutable保存し、parameterを明示サポートしないmodelではExtended SearchSpecを保存できない。
+- REW Room Simulatorはspeaker指向性/toe-inを扱わないため、`aim_yaw_deg` capability宣言をhard rejectする。
+- synthetic directional fixtureはsoftware acceptance専用で、owned-room model evidenceへ昇格しない。
+- native最適化dockへcapability作成/選択、toe-in axis、非同期candidate生成、3D aim preview、1-command apply/1 Undoを統合した。
+- `--seed-synthetic-demo` は通常repositoryを通してScene→O10→O20-style prediction→O50/N60 synthetic measurement→O30→O60→O70→O80を永続化する。measurement provenanceは `synthetic_fixture` / `physical_measurement=false` のまま。
+- production O70/O80は引き続きowned-room eligible ValidationRecordを必須とする。
+
+詳細: [O70/O80 Synthetic Software Completion](O70_O80_SYNTHETIC_COMPLETION.md)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from pathlib import Path
 
 import numpy as np
@@ -58,6 +59,29 @@ class _RewTask(QObject):
             self.completed.emit(self.key, None, str(exc))
         else:
             self.completed.emit(self.key, result, None)
+
+
+def measurement_is_synthetic(record: CadMeasurementRecord) -> bool:
+    try:
+        provenance = json.loads(record.provenance_json)
+    except (TypeError, json.JSONDecodeError):
+        provenance = {}
+    return bool(
+        provenance.get('validation_scope') == 'synthetic_fixture'
+        or provenance.get('synthetic_fixture') is True
+        or record.quality_status == 'synthetic_fixture'
+    )
+
+
+def measurement_evidence_label(record: CadMeasurementRecord) -> str:
+    if measurement_is_synthetic(record):
+        return 'Synthetic'
+    return {
+        'measured': '実測',
+        'derived': '派生',
+        'predicted': '予測',
+        'unknown': '不明',
+    }.get(record.evidence_type, record.evidence_type)
 
 
 class MeasurementEditorWindow(ConstraintEditorWindow):
@@ -273,10 +297,11 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
         records = self.measurement_repository.list_measurements(self.document_id)
         self.measurement_tree.clear()
         for record in records:
-            evidence = {
-                'measured': '実測', 'derived': '派生', 'predicted': '予測', 'unknown': '不明'
-            }.get(record.evidence_type, record.evidence_type)
-            item = QTreeWidgetItem([f'{record.channel_role} · {evidence}', record.scene_revision_id[:8]])
+            evidence = measurement_evidence_label(record)
+            item = QTreeWidgetItem([
+                f'{record.channel_role} · {evidence}',
+                record.scene_revision_id[:8],
+            ])
             item.setData(0, ROLE, record.measurement_id)
             self.measurement_tree.addTopLevelItem(item)
             if record.measurement_id == self.measurement_selected_id:
@@ -332,10 +357,19 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
             f'{state}\nrevision {record.scene_revision_id[:8]} · point {record.measurement_entity_id}'
         )
         captured = record.captured_at or '不明'
+        synthetic = measurement_is_synthetic(record)
+        scope = (
+            'Synthetic fixture · 非物理測定'
+            if synthetic
+            else measurement_evidence_label(record)
+        )
         self.measurement_detail_label.setText(
-            f'証拠: {record.evidence_type} · 入力: {record.channel_role} · source: {record.source_kind}\n'
+            f'証拠: {scope} ({record.evidence_type}) · '
+            f'入力: {record.channel_role} · source: {record.source_kind}\n'
             f'取得時刻: {captured} · quality: {record.quality_status}\n'
-            f'位置: X {record.measurement_position.x_m:.3f} / Y {record.measurement_position.y_m:.3f} / Z {record.measurement_position.z_m:.3f} m'
+            f'位置: X {record.measurement_position.x_m:.3f} / '
+            f'Y {record.measurement_position.y_m:.3f} / '
+            f'Z {record.measurement_position.z_m:.3f} m'
         )
 
     def _plot_selected_measurement(self) -> None:
@@ -387,8 +421,9 @@ class MeasurementEditorWindow(ConstraintEditorWindow):
                 render=False,
             )
             actor.SetPickable(False)
+        ghost_label = 'Synthetic配置' if measurement_is_synthetic(record) else '測定時配置'
         self.viewport.add_text(
-            f'測定時配置 · {record.scene_revision_id[:8]}',
+            f'{ghost_label} · {record.scene_revision_id[:8]}',
             position='upper_left',
             font_size=9,
             name='measurement-ghost-label',

@@ -84,7 +84,7 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 | O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | **ソフトウェア実装・owned-Windows受入済み**。candidate→exact applied SceneRevision→Measurement Plan→N60 measured evidenceをappend-only追跡 |
 | O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。実室ではmeasurement前のValidation Campaign preregistrationを必須とし、calibration/holdout、共通target response、objective条件、sensitivity、repeatability、candidate separation、applicabilityを固定する。post-hoc splitやcampaign以前のmeasurementでは推薦gateを開かない |
 | O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **software実装中 / synthetic development lane有効**。O60 calibration残差のobjective別GP補正と不確実性から次測定候補を決定し、SearchSpec/candidate-set/ValidationRecordへimmutable保存する。`development_synthetic`は完全PASS synthetic fixtureを許可するがproduction gateを開かない。`production_owned_room`はcurrent campaign-backed eligible ValidationRecordを必須とする |
-| O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | **gate待ち**。各追加変数を扱うモデルと独立検証が成立したものだけ有効化する |
+| O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | **software実装中 / synthetic toe-in lane実装済み**。既存O10が扱う複数entity XYZ/高さは再実装せず、feasible base candidateへmodel-dependent parameterを追加する。最初は`aim_yaw_deg`。明示capabilityが必須で、REW Room Simulatorへtoe-in capabilityを付与することは拒否する。synthetic directional fixtureでUI/保存/apply/Undoまで受入し、owned-room有効化は方向性modelの独立O60 gate後だけ |
 
 O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。
 
@@ -175,6 +175,8 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 - 次候補を選んだ取得関数、seed、算法版を保存する。
 - 単純な格子/ランダム/粗探索基準と比較し、測定回数削減の効果を検証する。
 - データが少ない場合や外挿領域では強い推薦を出さない。
+詳細なsynthetic completion契約とdemo手順は [O70/O80 Synthetic Software Completion](O70_O80_SYNTHETIC_COMPLETION.md) を参照する。
+
 ## 10. 保存契約
 
 探索機能は少なくとも次の概念を不変版として保存できるようにする。実装上のテーブル名は別途データ設計で決める。

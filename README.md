@@ -179,3 +179,14 @@ native stable releaseのcorrectnessはfrontend buildへ依存しません。
 Windows実機確認が必要な場合のlocal worktreeは `C:\Users\ka092\Desktop\HTDT\repo` です。
 
 ただし、**計画、設計判断、実装記録、検証結果、進捗、成果物の正本はGitHubに残します**。GitHub Actionsで検証できる事項はActionsを優先し、RDCは実機GPU/UI/installer等でしか確認できないgateへ限定します。
+
+### Synthetic O70/O80 development demo
+
+物理測定を待たず最適化software pathを確認する場合は、通常データと分けたdata directoryへ明示的なsynthetic fixtureを作成できます。
+
+```powershell
+python -m htdt.native_cad --data-dir .\\demo-data --seed-synthetic-demo
+python -m htdt.native_cad --data-dir .\\demo-data --document-id htdt-synthetic-o70-o80-demo-v1
+```
+
+このfixtureは実測ではなく、owned-room recommendation gateを開きません。詳細は [docs/O70_O80_SYNTHETIC_COMPLETION.md](docs/O70_O80_SYNTHETIC_COMPLETION.md)。
