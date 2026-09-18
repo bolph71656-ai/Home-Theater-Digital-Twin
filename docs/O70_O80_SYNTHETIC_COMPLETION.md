@@ -35,10 +35,15 @@ Two scopes are intentionally separate:
   `eligible` O60 record.
 
 O70 uses per-objective residual correction and uncertainty. It does not collapse
-independent objectives into a single sound-quality score. The current GP feature
-vector is the base O10 SearchSpec XYZ axes only; O80 extended parameters such as
-`aim_yaw_deg` are not currently part of O70 adaptive acquisition. Therefore
-“O70 complete” and “O80 complete” do not imply an Adaptive Extended Search loop.
+independent objectives into a single sound-quality score.
+
+O80A adds a separate immutable **Adaptive Extended Plan** rather than changing
+the accepted O70 plan schema. Its feature vector combines base O10 XYZ axes and
+the exact O80 extended axes. Each feature is normalized by its immutable axis
+span before the GP kernel is evaluated, so metres and degrees are never treated
+as the same raw unit. The plan binds the exact Extended SearchSpec/capability/
+candidate-set SHA and excludes extended candidates whose current observation
+contains measured evidence.
 
 ## O80 Extended Search
 
@@ -115,7 +120,9 @@ It writes:
    separation/applicability gates pass, while recommendation remains disabled
    solely because evidence is not owned-room;
 8. an O70 `development_synthetic` Adaptive Plan;
-9. an O80 synthetic directional capability and toe-in Extended SearchSpec.
+9. an O80 synthetic directional capability and Extended SearchSpec;
+10. immutable extended-candidate objective observations and an O80A
+    `development_synthetic` Adaptive Extended Plan over base X + acoustic aim yaw.
 
 The demo refuses a duplicate seed in the same data directory.
 
@@ -150,7 +157,9 @@ None of the following is permitted:
 - attach a synthetic Validation Campaign;
 - use a synthetic O60 record for `production_owned_room`;
 - declare REW Room Simulator to support toe-in;
-- use synthetic O80 capability as owned-room model evidence.
+- use synthetic O80 capability as owned-room model evidence;
+- use synthetic Adaptive Extended observations or plans to unlock
+  `production_owned_room`.
 
 The later physical campaign still uses O60E preregistration and O60R audit. The
 real O60R runner freezes the final measured software authority only when the
