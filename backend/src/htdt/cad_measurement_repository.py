@@ -433,6 +433,19 @@ class CadMeasurementRepository:
         revision = self.scene_repository.get(plan.applied_scene_revision_id)
         if revision is None or revision.document_id != plan.document_id or revision.content_hash != plan.applied_scene_content_hash:
             raise ValueError('measurement plan applied revision binding mismatch')
+        if plan.status == 'measured':
+            for measurement_id in plan.measurement_ids:
+                record = self.get_measurement(measurement_id)
+                if record is None:
+                    raise ValueError(f'measurement plan references unknown measurement: {measurement_id}')
+                if (
+                    record.document_id != plan.document_id
+                    or record.scene_revision_id != plan.applied_scene_revision_id
+                    or record.scene_content_hash != plan.applied_scene_content_hash
+                ):
+                    raise ValueError('measurement plan evidence binding mismatch')
+                if record.evidence_type != 'measured':
+                    raise ValueError('measurement plan may only contain measured evidence')
         with self._connect() as connection:
             connection.execute(
                 '''INSERT INTO cad_measurement_plans(
@@ -451,3 +464,13 @@ class CadMeasurementRepository:
                 (search_spec_id,),
             ).fetchall()
         return tuple(CadMeasurementPlan.model_validate_json(row['payload_json']) for row in rows)
+
+    def latest_measurement_plans(self, search_spec_id: str):
+        history = self.list_measurement_plans(search_spec_id)
+        order: list[str] = []
+        latest = {}
+        for plan in history:
+            if plan.plan_id not in latest:
+                order.append(plan.plan_id)
+            latest[plan.plan_id] = plan
+        return tuple(latest[plan_id] for plan_id in order)
