@@ -14,6 +14,7 @@ from .command_registry import (
     DeepLinkHandler,
     register_default_commands,
 )
+from .workflow_navigation import WorkspaceId
 
 
 def _action_availability(
@@ -150,6 +151,88 @@ def build_native_command_registry(
     }
     register_default_commands(registry, bindings=bindings)
     return registry
+
+
+def bind_active_editor_commands(registry: CommandRegistry, window: Any) -> None:
+    """Bind global edit commands to the currently active legacy editor only."""
+
+    registry.bind(
+        'project.save',
+        execute=window.save,
+        availability=lambda: _action_availability(
+            window,
+            'save_action',
+            disabled_reason='保存できる変更がないか、編集中の操作があります',
+        ),
+    )
+    registry.bind(
+        'edit.undo',
+        execute=window.undo,
+        availability=lambda: _action_availability(
+            window,
+            'undo_action',
+            disabled_reason='元に戻せる操作はありません',
+        ),
+    )
+    registry.bind(
+        'edit.redo',
+        execute=window.redo,
+        availability=lambda: _action_availability(
+            window,
+            'redo_action',
+            disabled_reason='やり直せる操作はありません',
+        ),
+    )
+
+
+def unbind_active_editor_commands(registry: CommandRegistry) -> None:
+    for command_id in ('project.save', 'edit.undo', 'edit.redo'):
+        registry.unbind(command_id)
+
+
+def bind_native_workspace_commands(
+    registry: CommandRegistry,
+    window: Any,
+    workspace: WorkspaceId,
+) -> None:
+    """Bind task commands to the legacy workspace that still owns their authority."""
+
+    if workspace is WorkspaceId.ROOM:
+        registry.bind(
+            'room.draw',
+            execute=window.start_room_sketch,
+            availability=lambda: _action_availability(
+                window,
+                'draw_room_action',
+                disabled_reason='部屋の編集中または復旧確認中は新しい作図を開始できません',
+            ),
+        )
+        registry.bind(
+            'room.add_speaker',
+            execute=lambda: window.add_object('speaker'),
+            availability=lambda: _callable_availability(
+                window,
+                '_object_edit_available',
+                disabled_reason='部屋を作成し、部屋・壁編集を完了してから追加してください',
+            ),
+        )
+        registry.bind(
+            'prediction.run',
+            execute=window.run_rectangular_geometry_prediction_async,
+            availability=lambda: _prediction_availability(window),
+        )
+    elif workspace is WorkspaceId.MEASUREMENT:
+        registry.bind(
+            'measurements.import_rew',
+            execute=window.import_rew_text_dialog,
+            availability=lambda: _measurement_import_availability(window),
+        )
+    elif workspace is WorkspaceId.OPTIMIZATION:
+        registry.bind(
+            'optimization.compare_candidates',
+            execute=window.refresh_pareto_comparison,
+            availability=lambda: _candidate_compare_availability(window),
+        )
 
 
 def install_native_command_palette(
