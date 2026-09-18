@@ -164,18 +164,19 @@ def audit(
             )
             if record.campaign_id == campaign_id
         )
-        if validation_id is None:
-            eligible = tuple(
-                record
-                for record in validations
-                if record.recommendation_gate == 'eligible'
+        latest = validation_repository.latest_eligible_for_search_spec(
+            campaign.search_spec_id
+        )
+        if latest is None:
+            raise AssertionError('SearchSpec has no eligible owned-room ValidationRecord')
+        if latest.campaign_id != campaign_id:
+            raise AssertionError(
+                'current O70 entry belongs to another campaign: '
+                f'{latest.campaign_id} != {campaign_id}'
             )
-            if len(eligible) != 1:
-                raise AssertionError(
-                    'campaign audit requires exactly one eligible ValidationRecord '
-                    f'when --validation-id is omitted; found {len(eligible)}'
-                )
-            record = eligible[0]
+
+        if validation_id is None:
+            record = latest
         else:
             record = next(
                 (item for item in validations if item.validation_id == validation_id),
@@ -185,20 +186,14 @@ def audit(
                 raise AssertionError(
                     f'ValidationRecord does not exist in campaign: {validation_id}'
                 )
+            if latest.validation_id != record.validation_id:
+                raise AssertionError(
+                    'selected ValidationRecord is not the current O70 entry record: '
+                    f'{record.validation_id} != {latest.validation_id}'
+                )
 
         if record.campaign_sha256 != campaign.campaign_sha256:
             raise AssertionError('ValidationRecord campaign SHA does not match campaign')
-
-        latest = validation_repository.latest_eligible_for_search_spec(
-            campaign.search_spec_id
-        )
-        if latest is None:
-            raise AssertionError('SearchSpec has no eligible owned-room ValidationRecord')
-        if latest.validation_id != record.validation_id:
-            raise AssertionError(
-                'selected ValidationRecord is not the current O70 entry record: '
-                f'{record.validation_id} != {latest.validation_id}'
-            )
 
         # Full save-time validation is intentionally re-run on the temporary snapshot.
         # Deleting/reinserting here cannot mutate the source DB, which was opened mode=ro.
