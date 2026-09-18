@@ -43,6 +43,7 @@ from .optimization_workflow_workspace import build_optimization_workspace_mount
 from .overview_readiness import OverviewReadinessService
 from .overview_workspace import OverviewWorkspace
 from .room_geometry_input import RoomGeometryInputController
+from .room_prediction import RoomPredictionController, RoomPredictionPanel
 from .room_transform_input import RoomEntityTransformController
 from .room_viewport import RoomViewport3D
 from .room_workspace import RoomWorkspace
@@ -186,6 +187,14 @@ class WorkflowApplicationComposition:
         workspace.attach_geometry_input(geometry_input)
         transform_input = RoomEntityTransformController(workspace, workspace.viewport)
         workspace.attach_transform_input(transform_input)
+        prediction = RoomPredictionController(
+            self.repository,
+            workspace.controller,
+            parent=workspace,
+        )
+        prediction_panel = RoomPredictionPanel(prediction)
+        workspace.attach_acoustics_panel(prediction_panel)
+        prediction.runSelected.connect(workspace.set_prediction_results)
 
         cad_input = CadInputController(
             shortcut_parent=workspace,
@@ -305,14 +314,13 @@ class WorkflowApplicationComposition:
                     "部屋を作成し、編集中の操作を完了してからスピーカーを追加してください",
                 ),
             )
-            # N70 prediction execution is still owned by the legacy prediction window.
-            # Keep the command explicitly unavailable rather than silently treating a
-            # deep-link-only navigation as a successful prediction run.
             self.registry.bind(
                 "prediction.run",
-                execute=lambda: None,
-                availability=lambda: CommandAvailability.unavailable(
-                    "新しい部屋画面への予測実行接続は後続統合です"
+                execute=prediction_panel.run_prediction,
+                availability=lambda: self._room_prediction_availability(
+                    workspace,
+                    prediction,
+                    prediction_panel,
                 ),
             )
             bind_cad_input_commands(self.registry, bindings)
@@ -321,6 +329,8 @@ class WorkflowApplicationComposition:
         def activate() -> None:
             self._unbind_workspace_commands()
             workspace.activate()
+            prediction_panel.refresh()
+            workspace.set_prediction_results(prediction.refresh_selection())
             bind_room_commands()
 
         def deactivate() -> None:
@@ -338,6 +348,7 @@ class WorkflowApplicationComposition:
         def close() -> None:
             deactivate()
             cad_input.dispose()
+            prediction.dispose()
             # RoomWorkspace owns the geometry/transform controller lifetime.
             workspace.close()
 
@@ -348,11 +359,17 @@ class WorkflowApplicationComposition:
             )
         )
 
+        def before_deactivate() -> tuple[bool, str | None]:
+            allowed, reason = prediction.before_deactivate()
+            if not allowed:
+                return allowed, reason
+            return workspace.before_deactivate()
+
         return WorkspaceMount(
             widget=workspace,
             on_activate=activate,
             on_deactivate=deactivate,
-            before_deactivate=workspace.before_deactivate,
+            before_deactivate=before_deactivate,
             on_context_changed=workspace.set_context,
             on_entity_requested=workspace.select_entity,
             on_close=close,
@@ -385,6 +402,26 @@ class WorkflowApplicationComposition:
                 lambda checked=False, target=command_id: self.registry.execute(target)
             )
         menu.exec(global_position.toPoint())
+
+    @staticmethod
+    def _room_prediction_availability(
+        workspace: RoomWorkspace,
+        prediction: RoomPredictionController,
+        panel: RoomPredictionPanel,
+    ) -> CommandAvailability:
+        if prediction.is_busy:
+            return CommandAvailability.unavailable("予測を実行中です")
+        if workspace.controller.working.has_preview:
+            return CommandAvailability.unavailable(
+                "編集中の操作を確定またはキャンセルしてください"
+            )
+        if workspace.controller.is_dirty:
+            return CommandAvailability.unavailable(
+                "予測の前に現在の配置を保存してください"
+            )
+        if panel.receiver.currentData() is None:
+            return CommandAvailability.unavailable("受音点を選択してください")
+        return CommandAvailability.available()
 
     def _make_measurement(self) -> WorkspaceMount:
         controller = MeasurementWorkflowController(self.repository, self.document_id)
