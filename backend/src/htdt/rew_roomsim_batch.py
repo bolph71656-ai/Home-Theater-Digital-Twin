@@ -17,6 +17,7 @@ from .rew_api import (
     RewRoomSimFrequencyResponse,
     RewRoomSimSnapshot,
     htdt_position_to_roomsim,
+    roomsim_position_to_htdt,
 )
 
 
@@ -188,23 +189,36 @@ def _expected_applied_snapshot(
     payload = deepcopy(roomsim_state_payload(before))
     room_depth = float(before.room_size['length'])
     head_htdt = _position(request.head_position_htdt)
-    payload['head_position_htdt'] = head_htdt
-    payload['head_position_rew'] = htdt_position_to_roomsim(room_depth, head_htdt)
+    head_rew = htdt_position_to_roomsim(room_depth, head_htdt)
+    payload['head_position_rew'] = head_rew
+    payload['head_position_htdt'] = roomsim_position_to_htdt(room_depth, head_rew)
 
     for source_name, position in request.source_positions_htdt.items():
         if source_name not in before.active_sources:
             raise RewRoomSimBatchError(f'Room Simulator source is not active: {source_name}')
         source_htdt = _position(position)
-        payload['sources'][source_name]['position_htdt'] = source_htdt
-        payload['sources'][source_name]['position_rew'] = htdt_position_to_roomsim(
+        source_rew = htdt_position_to_roomsim(room_depth, source_htdt)
+        payload['sources'][source_name]['position_rew'] = source_rew
+        payload['sources'][source_name]['position_htdt'] = roomsim_position_to_htdt(
             room_depth,
-            source_htdt,
+            source_rew,
         )
     return RewRoomSimSnapshot(**payload)
 
 
 def _same_position(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     return _canonical_json(dict(left)) == _canonical_json(dict(right))
+
+
+def _non_position_state_sha256(snapshot: RewRoomSimSnapshot) -> str:
+    payload = deepcopy(roomsim_state_payload(snapshot))
+    payload.pop('head_position_rew', None)
+    payload.pop('head_position_htdt', None)
+    for detail in payload.get('sources', {}).values():
+        if isinstance(detail, dict):
+            detail.pop('position_rew', None)
+            detail.pop('position_htdt', None)
+    return sha256(_canonical_json(payload).encode('utf-8')).hexdigest()
 
 
 def _safe_restore(
@@ -253,10 +267,12 @@ def _safe_restore(
             'Room Simulator state changed externally during transaction: ' + ', '.join(conflicts)
         )
     if roomsim_state_sha256(final) != roomsim_state_sha256(before):
-        raise RewRoomSimConcurrentChange(
-            'Room Simulator non-position state changed during transaction; '
-            'position changes were restored without overwriting that external state'
-        )
+        if _non_position_state_sha256(final) != _non_position_state_sha256(before):
+            raise RewRoomSimConcurrentChange(
+                'Room Simulator non-position state changed during transaction; '
+                'position changes were restored without overwriting that external state'
+            )
+        raise RewRoomSimRestoreError('Room Simulator position state did not restore exactly')
 
 def run_roomsim_position_batch(
     control: RoomSimPositionControl,
