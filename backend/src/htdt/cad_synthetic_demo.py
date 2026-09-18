@@ -8,6 +8,9 @@ from uuid import uuid4
 
 from .cad_adaptive_repository import CadAdaptivePlanRepository
 from .cad_adaptive_service import CadAdaptivePlannerService
+from .cad_adaptive_extended import build_adaptive_extended_observation
+from .cad_adaptive_extended_repository import CadAdaptiveExtendedRepository
+from .cad_adaptive_extended_service import CadAdaptiveExtendedPlannerService
 from .cad_constraint_models import CadConstraintSet
 from .cad_extended_search import (
     CadExtendedSearchAxis,
@@ -83,6 +86,8 @@ class SyntheticDemoResult:
     adaptive_selected_candidate_id: str
     extended_search_id: str
     extended_candidate_set_sha256: str
+    adaptive_extended_plan_id: str
+    adaptive_extended_selected_candidate_id: str
 
 
 def _now() -> str:
@@ -635,6 +640,63 @@ def seed_synthetic_optimization_demo(
         limit=50,
     )
 
+    adaptive_extended_repository = CadAdaptiveExtendedRepository(
+        extended_repository,
+        validation_repository,
+    )
+    for index, candidate in enumerate(extended_page.candidates):
+        base_x = float(candidate.positions['synthetic-fl']['x_m'])
+        aim_yaw = float(candidate.aim_yaw_deg['synthetic-fl'])
+        predicted = 2.0 + abs(base_x - 1.7) * 1.5 + abs(aim_yaw) / 30.0
+        measured = (
+            predicted + 0.08 + 0.02 * (aim_yaw / 15.0)
+            if index in {0, 4, 8, 12}
+            else None
+        )
+        observation = build_adaptive_extended_observation(
+            extended_spec=extended_spec,
+            candidate_set_sha256=extended_page.candidate_set_sha256,
+            candidate_id=candidate.candidate_id,
+            evidence_scope='synthetic_fixture',
+            objective_id='response.shape_rms_db',
+            unit='dB',
+            predicted_value=predicted,
+            prediction_source_kind='synthetic_directional_fixture',
+            prediction_source_id=f'synthetic-ext-pred:{candidate.candidate_id}',
+            measured_value=measured,
+            measurement_source_kind=(
+                'synthetic_measurement_fixture'
+                if measured is not None
+                else None
+            ),
+            measurement_source_id=(
+                f'synthetic-ext-meas:{candidate.candidate_id}'
+                if measured is not None
+                else None
+            ),
+            created_at_utc=_now(),
+        )
+        adaptive_extended_repository.save_observation(observation)
+
+    adaptive_extended_service = CadAdaptiveExtendedPlannerService(
+        extended_repository,
+        validation_repository,
+        adaptive_extended_repository,
+    )
+    adaptive_extended_plan = adaptive_extended_service.build_and_save(
+        extended_search_id=extended_spec.extended_search_id,
+        validation_id=validation.validation_id,
+        execution_scope='development_synthetic',
+        length_scale_normalized=0.45,
+        proposal_limit=20,
+    )
+    if adaptive_extended_plan.source_evidence_scope != 'synthetic_fixture':
+        raise RuntimeError('adaptive extended synthetic plan crossed evidence scope')
+    if set(adaptive_extended_plan.excluded_measured_candidate_ids) & {
+        proposal.candidate_id for proposal in adaptive_extended_plan.proposals
+    }:
+        raise RuntimeError('adaptive extended plan proposed a measured candidate')
+
     return SyntheticDemoResult(
         document_id=SYNTHETIC_DEMO_DOCUMENT_ID,
         source_revision_id=source.revision_id,
@@ -645,4 +707,8 @@ def seed_synthetic_optimization_demo(
         adaptive_selected_candidate_id=adaptive_plan.selected_candidate_id,
         extended_search_id=extended_spec.extended_search_id,
         extended_candidate_set_sha256=extended_page.candidate_set_sha256,
+        adaptive_extended_plan_id=adaptive_extended_plan.plan_id,
+        adaptive_extended_selected_candidate_id=(
+            adaptive_extended_plan.selected_candidate_id
+        ),
     )
