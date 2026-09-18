@@ -21,6 +21,7 @@ from .cad_walls import (
 )
 from .room_viewport import RoomViewport3D
 from .room_workspace import RoomWorkspace
+from .ui_theme import DARK_THEME
 
 
 class RoomGeometryInputController(QObject):
@@ -51,6 +52,7 @@ class RoomGeometryInputController(QObject):
         self._wall_drag_preview_topology: WallTopology | None = None
         self.selected_vertex_id: str | None = None
         self.selected_edge_index: int | None = None
+        self._opening_actor_names: set[str] = set()
         viewport.interactor.installEventFilter(self)
 
     @property
@@ -768,8 +770,12 @@ class RoomGeometryInputController(QObject):
             "ux120-room-edit-points",
             "ux120-room-edit-midpoints",
             "ux120-room-edit-selection",
+            "ux120-room-edit-selected-wall",
         ):
             self.viewport.plotter.remove_actor(name, reset_camera=False, render=False)
+        for name in tuple(self._opening_actor_names):
+            self.viewport.plotter.remove_actor(name, reset_camera=False, render=False)
+        self._opening_actor_names.clear()
         self.viewport.plotter.render()
 
     def _render_sketch(self) -> None:
@@ -878,11 +884,78 @@ class RoomGeometryInputController(QObject):
         if selected_point is not None:
             self.viewport.plotter.add_mesh(
                 pv.Sphere(radius=0.07, center=selected_point),
+                color=DARK_THEME.viewport.selection_outline.hex,
                 render_points_as_spheres=True,
                 pickable=False,
                 name="ux120-room-edit-selection",
                 render=False,
             )
+
+        if self.selected_edge_index is not None and values:
+            index = self.selected_edge_index % len(values)
+            start = values[index]
+            end = values[(index + 1) % len(values)]
+            self.viewport.plotter.add_mesh(
+                pv.Line(
+                    (start.x_m, -start.y_m, 0.015),
+                    (end.x_m, -end.y_m, 0.015),
+                ),
+                color=DARK_THEME.viewport.selection_outline.hex,
+                line_width=5,
+                pickable=False,
+                name="ux120-room-edit-selected-wall",
+                render=False,
+            )
+            topology = self._wall_drag_preview_topology or self.topology
+            if topology is not None:
+                try:
+                    wall = self._wall_for_edge(
+                        make_polygon_room(
+                            values,
+                            height_m=room.height_m,
+                            room_id=room.room_id,
+                        ),
+                        topology,
+                        index,
+                    )
+                except (ValueError, WallTopologyError):
+                    wall = None
+                if wall is not None:
+                    dx = end.x_m - start.x_m
+                    dy = end.y_m - start.y_m
+                    length = hypot(dx, dy)
+                    if length > 1e-12:
+                        ux, uy = dx / length, dy / length
+                        for opening in topology.openings:
+                            if opening.wall_id != wall.wall_id:
+                                continue
+                            x0 = start.x_m + ux * opening.offset_m
+                            y0 = start.y_m + uy * opening.offset_m
+                            x1 = start.x_m + ux * (opening.offset_m + opening.width_m)
+                            y1 = start.y_m + uy * (opening.offset_m + opening.width_m)
+                            z0 = opening.sill_m
+                            z1 = opening.sill_m + opening.height_m
+                            points = np.asarray(
+                                [
+                                    (x0, -y0, z0),
+                                    (x1, -y1, z0),
+                                    (x1, -y1, z1),
+                                    (x0, -y0, z1),
+                                    (x0, -y0, z0),
+                                ],
+                                dtype=float,
+                            )
+                            name = f"ux120-room-opening-{opening.opening_id}"
+                            self._opening_actor_names.add(name)
+                            self.viewport.plotter.add_mesh(
+                                pv.lines_from_points(points, close=False),
+                                color=DARK_THEME.viewport.selection_outline.hex,
+                                line_width=3,
+                                opacity=0.82,
+                                pickable=False,
+                                name=name,
+                                render=False,
+                            )
         self.viewport.plotter.render()
 
 
