@@ -937,6 +937,11 @@ class MeasurementPageWorkspace(QWidget):
         self.notice.setVisible(bool(message))
         set_semantic_state(self.notice, state)
 
+    def before_deactivate(self) -> tuple[bool, str | None]:
+        if any(job.isRunning() for job in self._jobs):
+            return False, "REWの読み込み処理が完了してから画面を切り替えてください"
+        return True, None
+
     def closeEvent(self, event) -> None:  # type: ignore[override]
         for job in tuple(self._jobs):
             job.requestInterruption()
@@ -955,6 +960,7 @@ def build_measurement_workspace_mount(
     return WorkspaceMount.from_widget(
         workspace,
         on_activate=workspace.refresh,
+        before_deactivate=workspace.before_deactivate,
         on_context_changed=workspace.set_context,
         on_entity_requested=workspace.focus_entity,
     )
