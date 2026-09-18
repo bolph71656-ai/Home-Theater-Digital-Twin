@@ -202,3 +202,48 @@ algorithm versionは `pareto-front-1`。
 - dominated candidateについては、どのcandidateに支配されたかを保存可能な形で返す。
 
 このcoreだけではO40全体完了とはしない。粗探索→局所探索、候補多様性、native persistence/UI、measurement loopは後続sliceで実装する。
+
+
+## 12. O20 REW Room Simulator transactional batch contract
+
+N80bの最初の実prediction backendは、既にS01相当のread-only/実機probeを持つREW Room Simulatorを、**位置変更だけのtransaction**として接続する。
+
+model IDは `rew-room-simulator`、初期batch adapter versionは `rew-roomsim-position-batch-1`。
+
+### Model applicability
+
+- exact modelとして使えるのはaxis-aligned rectangular roomだけ。
+- native polygon rectangleがshifted originを持つ場合は、exact rectangle frameの `origin_x_m / origin_y_m` を引いてREW room-local座標へ変換する。
+- L字等の非矩形roomを外接矩形へ暗黙変換しない。
+- REWのroom width/length/heightがnative exact rectangle dimensionsと一致しなければwrite前に拒否する。
+- speaker source positionはphysical body centreではなく、明示`acoustic_reference_offset_m`から解決したacoustic referenceだけを使う。reference不明speakerは拒否する。
+- receiverはmeasurement pointまたは明示acoustic referenceを使う。
+- candidateが移動するspeakerは必ずexplicit native entity -> REW source bindingを持つ。
+- combined FRではREWのactive source全てにexact mappingが必要。余分なactive sourceがある状態を黙ってcombined predictionへ混ぜない。
+- source-specific FRでは指定REW sourceがnative mappingに含まれることを要求する。
+
+### Transaction
+
+production GET-only `RewApiClient`の通常契約は維持し、writeはO20用`RewRoomSimControlClient`だけで明示的に行う。
+
+1. full Room Simulator snapshotを取得しcanonical SHA-256を固定する。
+2. write直前にもう一度full snapshot hashを確認する。
+3. source/head positionだけをPOSTで変更する。room dimensions、absorption、options、source configurationは変更しない。
+4. 各write直後の実snapshotをtransaction-owned stateとして保持する。左右連動等で指定外source positionへ副作用が出ても追跡する。
+5. 全write後のfull stateがnative candidateから構築したexact intended stateと一致しなければFRを採用しない。
+6. FR取得後もfull state hashが変化していないことを確認する。
+7. 成否にかかわらずrestoreを実行する。owned stateから変わっていないpositionだけを元へ戻し、ユーザーが途中変更したfieldを上書きしない。
+8. full stateがpre-stateへexact restoreされた場合だけbatch resultを返す。
+9. external change、partial apply、restore mismatchはhard error。FRはobjective evidenceへ昇格しない。
+
+REWにはHTDT用CAS/transaction APIがないため、競合を「防止した」とは扱わない。複数snapshotとfail-closed restoreで検出可能な範囲を明示し、real-machine acceptanceではREW UI途中変更も検証対象にする。
+
+### Native adapter
+
+`SceneRevision + CadSearchSpec + CadCandidate + CadRoomSimBinding`からbatch requestを作る。
+
+- SearchSpecのdocument/revision/content hashを再検証する。
+- candidate preview documentでacoustic reference world positionを解決する。
+- exact rectangular frameへlocalizeする。
+- legacy Contextを保存authorityとして使わない。
+- O20結果を後段で保存する際はSceneRevision/SearchSpec/candidate/model version/pre-state hashをimmutable provenanceとして持たせる。

@@ -120,3 +120,31 @@ The first persistence CI exposed only a test-fixture defect: the new physical sp
 CI #335 / run `35288664125` passed completely on `911b44c647c65c53c94febf6033432dc1b0927ae`, including backend tests, native launcher checks, Windows acceptance-harness compile, N60/N70/N80 gate preflights, frontend build and smoke test.
 
 This slice is algorithm/persistence only. It does not require a new real-Windows interaction gate and does not close Issue #65. O20 batch prediction and later native Pareto UI/measurement loop remain separate work.
+
+
+## 2026-09-18 — O20 transactional REW Room Simulator batch (PR #71)
+
+PR #70 merged to main as `b4381f4b01683bba65b3857514ea583160f0eb7b`. Issue #65 remains open.
+
+Branch `feat/n80-o20-rew-roomsim-batch` / draft PR #71 starts O20 using the already validated REW Room Simulator contract rather than inventing a new predictor.
+
+Implemented so far:
+
+- `rew_roomsim_batch.py`: explicit write-capable control subclass separated from the ordinary GET-only adapter;
+- documented Room Simulator POST routes for head/source position only;
+- full-state pre/apply/post-response/restore hashing;
+- exact native room dimension and active-source coverage checks before prediction;
+- fail-closed handling for concurrent REW/user state changes;
+- restore of write-induced position side effects such as coupled source movement;
+- no result return unless restore is exact;
+- exact REW version and batch adapter version in the returned model provenance;
+- `cad_roomsim.py`: native SceneRevision/SearchSpec/Candidate -> Room Simulator request adapter;
+- exact shifted-rectangle local-coordinate conversion;
+- explicit acoustic-reference semantics;
+- rejection of non-rectangular rooms, unbound moved speakers and speakers with unknown acoustic reference.
+
+The product does not modify Room Simulator room dimensions, absorptions, options or source configuration in this slice.
+
+Focused tests use fake transport/state and cover success, dimension/source mismatch, documented POST routes, external change, restore failure, coupled-source side effects, shifted rectangles, acoustic-reference offsets and L-room rejection.
+
+The existing 2026-09-16 owned-PC probe already established that beta135 can change the head by 1 cm, produce a changed FR, then restore state and raw FR exactly. PR #71 first converts that observation into a fail-closed production transaction contract. A new RDC write gate will be deferred until CI and the later native batch/persistence integration are complete, so real-machine calls stay minimal.
