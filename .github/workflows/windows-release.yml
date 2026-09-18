@@ -37,9 +37,52 @@ jobs:
         run: |
           $exe = Join-Path $env:RUNNER_TEMP "htdt-package\HTDT\HTDT.exe"
           if (-not (Test-Path $exe)) { throw "Missing packaged executable: $exe" }
-          $process = Start-Process -FilePath $exe -ArgumentList @("--version") -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Packaged --version failed with exit code $($process.ExitCode)"
+          $version = Start-Process -FilePath $exe -ArgumentList @("--version") -Wait -PassThru
+          if ($version.ExitCode -ne 0) {
+            throw "Packaged --version failed with exit code $($version.ExitCode)"
+          }
+
+          $dataRoot = Join-Path $env:RUNNER_TEMP "htdt-maintenance-data"
+          $database = Join-Path $dataRoot "cad-scenes.sqlite3"
+          $backup = Join-Path $env:RUNNER_TEMP "htdt-maintenance.htdt-backup"
+          New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
+          @'
+import sqlite3, sys
+path = sys.argv[1]
+with sqlite3.connect(path) as connection:
+    connection.execute("CREATE TABLE ci_marker(value TEXT NOT NULL)")
+    connection.execute("INSERT INTO ci_marker(value) VALUES ('baseline')")
+'@ | python - $database
+
+          $backupProcess = Start-Process -FilePath $exe -ArgumentList @(
+            "--data-dir", $dataRoot,
+            "--backup", $backup
+          ) -Wait -PassThru
+          if ($backupProcess.ExitCode -ne 0 -or -not (Test-Path $backup)) {
+            throw "Packaged backup failed with exit code $($backupProcess.ExitCode)"
+          }
+
+          @'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as connection:
+    connection.execute("UPDATE ci_marker SET value='modified'")
+'@ | python - $database
+
+          $restoreProcess = Start-Process -FilePath $exe -ArgumentList @(
+            "--data-dir", $dataRoot,
+            "--restore", $backup
+          ) -Wait -PassThru
+          if ($restoreProcess.ExitCode -ne 0) {
+            throw "Packaged restore failed with exit code $($restoreProcess.ExitCode)"
+          }
+
+          $restored = @'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as connection:
+    print(connection.execute("SELECT value FROM ci_marker").fetchone()[0])
+'@ | python - $database
+          if ($restored.Trim() -ne "baseline") {
+            throw "Packaged restore did not recover the baseline database"
           }
 
       - name: Install pinned Inno Setup
