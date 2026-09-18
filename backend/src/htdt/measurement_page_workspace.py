@@ -95,12 +95,18 @@ def _format_band(band: tuple[float, float] | None) -> str:
 def _set_plot_appearance(plot: pg.PlotWidget) -> None:
     tokens = DARK_THEME
     plot.setBackground(tokens.surfaces.canvas.hex)
-    plot.showGrid(x=True, y=True, alpha=0.25)
+    plot.showGrid(x=True, y=True, alpha=0.18)
     plot.setLogMode(x=True, y=False)
+    item = plot.getPlotItem()
+    item.setContentsMargins(10, 8, 10, 10)
+    item.setDownsampling(auto=True, mode="peak")
+    item.setClipToView(True)
+    item.getViewBox().setDefaultPadding(0.03)
     for axis_name in ("bottom", "left"):
         axis = plot.getAxis(axis_name)
         axis.setPen(tokens.surfaces.border_strong.hex)
         axis.setTextPen(tokens.text.secondary.hex)
+        axis.setStyle(tickTextOffset=8, autoExpandTextSpace=True)
 
 
 def _card(title: str, parent: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
@@ -124,7 +130,7 @@ def _page(title: str, subtitle: str) -> tuple[QScrollArea, QWidget, QVBoxLayout]
     host = QWidget()
     set_surface_role(host, SurfaceRole.BASE)
     layout = QVBoxLayout(host)
-    layout.setContentsMargins(32, 28, 32, 32)
+    layout.setContentsMargins(24, 22, 24, 28)
     layout.setSpacing(16)
 
     heading = QLabel(title, host)
@@ -183,7 +189,7 @@ class MeasurementPageWorkspace(QWidget):
         self.notice.setObjectName("measurementWorkspaceNotice")
         self.notice.setWordWrap(True)
         self.notice.setVisible(False)
-        self.notice.setContentsMargins(32, 8, 32, 8)
+        self.notice.setContentsMargins(24, 8, 24, 8)
         root.addWidget(self.notice)
 
         self.pages = QStackedWidget(self)

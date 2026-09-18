@@ -78,11 +78,11 @@ from .optimization_task import _SearchTask
 class MeasurementPlanControllerMixin:
     def create_measurement_plan_for_selected_candidate(self) -> None:
         if self.search_selected_spec_id is None or self.search_selected_candidate_id is None:
-            self.statusBar().showMessage('探索仕様と候補を選択してください')
+            self.statusBar().showMessage('探索設定と候補を選択してください')
             return
         latest = self.repository.latest(self.document_id)
         if latest is None or self.working is None or self.working.is_dirty:
-            self.statusBar().showMessage('候補適用後のSceneを保存してから実測候補を記録してください')
+            self.statusBar().showMessage('候補を適用した部屋を保存してから実測候補を記録してください')
             return
         try:
             plan = build_measurement_plan(
@@ -97,10 +97,10 @@ class MeasurementPlanControllerMixin:
             return
         if self.measurement_plan_label is not None:
             self.measurement_plan_label.setText(
-                f'planned · {plan.candidate_id[:12]} · Scene {plan.applied_scene_revision_id[:8]}'
+                '実測候補を記録しました · 対応する保存状態を固定しています'
             )
         self.refresh_measurement_plans()
-        self.statusBar().showMessage('実測候補をimmutable保存しました · 実際の配置変更と測定は人が行います')
+        self.statusBar().showMessage('実測候補を保存しました · 実際の配置変更と測定は人が行います')
 
     def refresh_measurement_plans(self) -> None:
         tree = self.measurement_plan_tree
@@ -113,11 +113,12 @@ class MeasurementPlanControllerMixin:
                 self.measurement_match_list.clear()
             return
         plans = self.measurement_repository.latest_measurement_plans(spec_id)
-        for plan in plans:
+        for index, plan in enumerate(plans, start=1):
+            status_text = '測定済み' if plan.status == 'measured' else '測定待ち'
             item = QTreeWidgetItem([
-                plan.candidate_id[:12],
-                plan.status,
-                plan.applied_scene_revision_id[:8],
+                f'実測候補 {index}',
+                status_text,
+                '固定済み',
                 str(len(plan.measurement_ids)),
             ])
             item.setData(0, ROLE, plan.plan_id)
@@ -126,7 +127,7 @@ class MeasurementPlanControllerMixin:
             planned = sum(plan.status == 'planned' for plan in plans)
             measured = sum(plan.status == 'measured' for plan in plans)
             self.measurement_plan_label.setText(
-                f'実測キュー {len(plans)} · planned {planned} · measured {measured}'
+                f'実測候補 {len(plans)}件 · 測定待ち {planned} · 測定済み {measured}'
             )
 
     def _selected_measurement_plan(self):
@@ -157,6 +158,7 @@ class MeasurementPlanControllerMixin:
                 self.measurement_complete_button.setEnabled(False)
             return
         records = self.measurement_repository.list_measurements(plan.document_id)
+        visible_index = 0
         for record in records:
             if (
                 record.scene_revision_id != plan.applied_scene_revision_id
@@ -164,8 +166,15 @@ class MeasurementPlanControllerMixin:
                 or record.evidence_type != 'measured'
             ):
                 continue
+            visible_index += 1
+            source_label = {
+                'rew_text': 'REWテキスト',
+                'rew_api': 'REW',
+                'unknown': '取込データ',
+            }.get(record.source_kind, '取込データ')
+            role_label = record.channel_role or '役割未設定'
             item = QListWidgetItem(
-                f'{record.measurement_id[:12]} · {record.channel_role} · {record.source_kind}'
+                f'実測 {visible_index} · {role_label} · {source_label}'
             )
             item.setData(Qt.ItemDataRole.UserRole, record.measurement_id)
             matches.addItem(item)
@@ -184,7 +193,7 @@ class MeasurementPlanControllerMixin:
             for item in matches.selectedItems()
         )
         if not measurement_ids:
-            self.statusBar().showMessage('関連付けるN60実測を選択してください')
+            self.statusBar().showMessage('関連付ける実測を選択してください')
             return
         try:
             completed = complete_measurement_plan(

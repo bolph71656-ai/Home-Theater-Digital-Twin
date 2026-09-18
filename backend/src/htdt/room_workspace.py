@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -416,7 +417,8 @@ class ObjectPalette(QFrame):
         super().__init__(parent)
         self.setObjectName("roomObjectPalette")
         set_surface_role(self, SurfaceRole.RAISED)
-        self.setFixedWidth(172)
+        self.setMinimumWidth(140)
+        self.setMaximumWidth(176)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
@@ -452,7 +454,8 @@ class SelectionInspector(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("roomSelectionInspector")
-        self.setFixedWidth(292)
+        self.setMinimumWidth(248)
+        self.setMaximumWidth(320)
         set_surface_role(self, SurfaceRole.RAISED)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -612,9 +615,10 @@ class OverlayControls(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         set_surface_role(self, SurfaceRole.OVERLAY)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(10)
+        self._compact = False
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(10, 6, 10, 6)
+        self._layout.setSpacing(10)
         self.grid = QCheckBox("グリッド")
         self.labels = QCheckBox("ラベル")
         self.acoustics = QCheckBox("音響")
@@ -622,8 +626,43 @@ class OverlayControls(QFrame):
         self.grid.setChecked(True)
         for toggle in (self.grid, self.labels, self.acoustics, self.focus):
             toggle.toggled.connect(lambda checked=False: self.changed.emit())
-            layout.addWidget(toggle)
-        layout.addStretch(1)
+            self._layout.addWidget(toggle)
+
+        self.more_button = QPushButton("表示…")
+        set_control_size(self.more_button, ControlSize.COMPACT)
+        self.more_menu = QMenu(self.more_button)
+        self.labels_action = self.more_menu.addAction("ラベル")
+        self.labels_action.setCheckable(True)
+        self.focus_action = self.more_menu.addAction("選択に集中")
+        self.focus_action.setCheckable(True)
+        self.labels_action.toggled.connect(self.labels.setChecked)
+        self.focus_action.toggled.connect(self.focus.setChecked)
+        self.labels.toggled.connect(self.labels_action.setChecked)
+        self.focus.toggled.connect(self.focus_action.setChecked)
+        self.more_button.setMenu(self.more_menu)
+        self.more_button.hide()
+        self._layout.addWidget(self.more_button)
+        self._layout.addStretch(1)
+
+    @property
+    def is_compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, compact: bool) -> None:
+        compact = bool(compact)
+        if self._compact == compact:
+            return
+        self._compact = compact
+        self.labels.setVisible(not compact)
+        self.focus.setVisible(not compact)
+        self.more_button.setVisible(compact)
+        self._layout.setContentsMargins(
+            6 if compact else 10,
+            4 if compact else 6,
+            6 if compact else 10,
+            4 if compact else 6,
+        )
+        self._layout.setSpacing(4 if compact else 10)
 
     def state(self) -> RoomOverlayState:
         return RoomOverlayState(
@@ -680,6 +719,8 @@ class RoomWorkspace(QWidget):
         self.geometry_panel: QWidget | None = None
         self.acoustics_panel: QWidget | None = None
         self.prediction_results: tuple = ()
+        self._responsive_compact = False
+        self._palette_user_open = False
         self._viewport_factory = viewport_factory or (lambda owner: RoomViewport3D(owner))
 
         root = QVBoxLayout(self)
@@ -723,6 +764,8 @@ class RoomWorkspace(QWidget):
         self.inspector = SelectionInspector()
         self.inspector.editCommitted.connect(self._commit_inspector)
         self.right_stack = QStackedWidget()
+        self.right_stack.setMinimumWidth(248)
+        self.right_stack.setMaximumWidth(320)
         self.right_stack.addWidget(self.inspector)
         self.right_stack.setCurrentWidget(self.inspector)
         content.addWidget(self.right_stack)
@@ -868,7 +911,8 @@ class RoomWorkspace(QWidget):
             raise ValueError(f"unknown Room context: {context_id}")
         self.current_context = context_id
         self.tools.set_context(context_id)
-        self.object_palette.setVisible(context_id in {"objects", "placement"})
+        self._palette_user_open = False
+        self._update_responsive_layout()
         if context_id == "geometry" and self.geometry_panel is not None:
             self.right_stack.setCurrentWidget(self.geometry_panel)
             refresh = getattr(self.geometry_panel, "refresh", None)
@@ -920,9 +964,33 @@ class RoomWorkspace(QWidget):
             self._set_status("やり直しました")
         return changed
 
+    def _update_responsive_layout(self) -> None:
+        width = self.width()
+        compact = width < 900
+        ultra_compact = width < 720
+        self._responsive_compact = compact
+        if ultra_compact:
+            self._palette_user_open = False
+        right_width = 260 if ultra_compact else (280 if compact else 300)
+        self.right_stack.setFixedWidth(right_width)
+        self.overlay_controls.set_compact(compact)
+        show_palette = (
+            self.current_context in {"objects", "placement"}
+            and (not compact or self._palette_user_open)
+        )
+        self.object_palette.setVisible(show_palette)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
     def _tool_requested(self, tool_id: str) -> None:
         if tool_id == "show-palette":
-            self.object_palette.setVisible(True)
+            if self._responsive_compact:
+                self._palette_user_open = not self.object_palette.isVisible()
+                self._update_responsive_layout()
+            else:
+                self.object_palette.setVisible(True)
             return
         if tool_id == "focus-selection":
             if self.controller.selected_id is not None:

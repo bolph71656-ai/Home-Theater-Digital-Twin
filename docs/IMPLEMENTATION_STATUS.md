@@ -410,3 +410,19 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - workflow shell mountから `workflow_legacy_bridge` を除去。
 - 詳細: [UX140 controller/window separation](ISSUE_118_UX140_CONTROLLER_SEPARATION.md)
 - RDC未使用。
+
+
+### UX150 software visual / interaction / language polish — 2026-09-19
+
+- 共通dark themeのsurface border/radius、control height、rail/context、splitter、status、interaction stateを調整。
+- workflow shellへlogical widthベースのcompact rail/context modeを追加。
+- Roomで高DPI時にobject paletteをprogressive disclosureし、right contextual panelを縮退。
+- Room 3Dへneutral floor、major/minor grid、soft lightingを追加。presentation onlyでScene/solver authorityは不変。
+- Measurement plotへaxis spacing、clip-to-view、peak-preserving downsampling等のscientific readability設定を追加。
+- Optimize Candidates side panelを縮退可能にし、日本語first copyを整理。
+- 1280×800 / 1440×900 × 100/150/200%をlogical client sizeへ変換したoffscreen Qt layout gateを追加。
+- 詳細: [UX150 software polish](ISSUE_118_UX150_SOFTWARE_POLISH.md)
+- UX160 owned-Windows visual/first-use acceptanceは別gateとして残す。
+- RDC未使用。
+
+- UX150追加監査: Optimize/REWの標準表示から内部ID/英語内部語を退避し、Qt UserRole/repository authorityは維持。

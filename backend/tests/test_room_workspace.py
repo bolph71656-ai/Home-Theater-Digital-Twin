@@ -10,14 +10,14 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QDockWidget, QFrame
 
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex
+from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex, make_f1_scene
 from htdt.cad_wall_models import WallOpening
 from htdt.cad_walls import add_opening
 from htdt.cad_input import CadAxis
 from htdt.room_geometry_input import RoomGeometryInputController
 from htdt.room_geometry_panel import RoomGeometryPanel
 from htdt.room_transform_input import RoomEntityTransformController
-from htdt.room_viewport import RoomOverlayState
+from htdt.room_viewport import RoomOverlayState, _grid_mesh, _room_floor_mesh
 from htdt.room_workspace import (
     RoomWorkspace,
     RoomWorkspaceController,
@@ -184,6 +184,9 @@ def test_room_workspace_is_component_composition_and_contextual(tmp_path) -> Non
         F1_DOCUMENT_ID,
         viewport_factory=lambda parent: FakeRoomViewport(parent),
     )
+    workspace.resize(1100, 700)
+    workspace.show()
+    app.processEvents()
     viewport = workspace.viewport
 
     assert workspace.findChildren(QDockWidget) == []
@@ -502,3 +505,64 @@ def test_geometry_context_panel_mounts_and_adds_opening_through_wall_authority(t
     workspace.close()
     workspace.deleteLater()
     app.processEvents()
+
+
+
+def test_room_workspace_compact_layout_prioritizes_viewport_and_toggles_palette(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: FakeRoomViewport(parent),
+    )
+    workspace.resize(1100, 700)
+    workspace.show()
+    workspace.set_context("objects")
+    app.processEvents()
+
+    assert not workspace.object_palette.isHidden()
+    assert workspace.right_stack.width() == 300
+
+    workspace.resize(820, 600)
+    app.processEvents()
+    assert workspace._responsive_compact
+    assert workspace.object_palette.isHidden()
+    assert workspace.right_stack.width() == 280
+    assert workspace.overlay_controls.is_compact
+    assert workspace.overlay_controls.labels.isHidden()
+    assert workspace.overlay_controls.focus.isHidden()
+    assert not workspace.overlay_controls.more_button.isHidden()
+
+    workspace.tools.toolRequested.emit("show-palette")
+    app.processEvents()
+    assert not workspace.object_palette.isHidden()
+
+    workspace.resize(680, 520)
+    app.processEvents()
+    assert workspace.width() < 720
+    assert workspace.object_palette.isHidden()
+    assert workspace.right_stack.width() == 260
+
+    workspace.set_context("geometry")
+    app.processEvents()
+    assert workspace.object_palette.isHidden()
+
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+
+def test_room_viewport_visual_foundation_has_floor_and_major_minor_grid() -> None:
+    document = make_f1_scene()
+    floor = _room_floor_mesh(document)
+    minor = _grid_mesh(document, step_m=0.5)
+    major = _grid_mesh(document, step_m=2.0, z_m=0.004)
+
+    assert floor is not None
+    assert floor.n_cells >= 2
+    assert minor is not None and major is not None
+    assert minor.n_lines > major.n_lines
+    assert minor.bounds[4] == pytest.approx(0.003)
+    assert major.bounds[4] == pytest.approx(0.004)

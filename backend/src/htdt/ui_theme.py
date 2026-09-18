@@ -101,16 +101,16 @@ class SpacingTokens:
 
 @dataclass(frozen=True, slots=True)
 class RadiusTokens:
-    small: int = 4
-    standard: int = 8
-    large: int = 12
+    small: int = 6
+    standard: int = 10
+    large: int = 14
 
 
 @dataclass(frozen=True, slots=True)
 class ControlHeightTokens:
-    compact: int = 28
-    standard: int = 34
-    prominent: int = 40
+    compact: int = 30
+    standard: int = 36
+    prominent: int = 42
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,6 +303,9 @@ QToolBar, QDockWidget, QMenuBar, QStatusBar {{
     background-color: {s.raised.hex};
     border: 0;
 }}
+QStatusBar {{
+    border-top: 1px solid {s.separator.hex};
+}}
 QToolBar {{
     spacing: {spacing.xs}px;
     padding: {spacing.xxs}px {spacing.xs}px;
@@ -467,11 +470,59 @@ QScrollBar::add-line, QScrollBar::sub-line {{
     height: 0;
 }}
 
+QScrollArea {{
+    border: 0;
+    background: transparent;
+}}
+QSplitter::handle {{
+    background-color: {s.separator.hex};
+    margin: {spacing.xs}px 0;
+    border-radius: 1px;
+}}
+QSplitter::handle:hover {{
+    background-color: {s.border_strong.hex};
+}}
+QCheckBox {{
+    spacing: {spacing.xs}px;
+    color: {t.secondary.hex};
+}}
+QComboBox::drop-down {{
+    border: 0;
+    width: {controls.compact}px;
+}}
+
 QWidget[surfaceRole="canvas"] {{ background-color: {s.canvas.hex}; }}
 QWidget[surfaceRole="base"] {{ background-color: {s.base.hex}; }}
 QWidget[surfaceRole="raised"] {{ background-color: {s.raised.hex}; }}
 QWidget[surfaceRole="overlay"] {{ background-color: {s.overlay.hex}; }}
 QWidget[surfaceRole="modal"] {{ background-color: {s.modal.hex}; }}
+
+QFrame[surfaceRole="raised"] {{
+    border: 1px solid {s.separator.hex};
+    border-radius: {radius.standard}px;
+}}
+QFrame#workflowRail {{
+    border: 0;
+    border-right: 1px solid {s.separator.hex};
+    border-radius: 0;
+}}
+QFrame#workflowContextBar {{
+    border: 0;
+    border-bottom: 1px solid {s.separator.hex};
+    border-radius: 0;
+}}
+QPushButton[workspaceId] {{
+    text-align: left;
+    padding-left: {spacing.sm}px;
+}}
+QPushButton[workspaceId]:checked {{
+    background-color: {a.selection_fill.hex};
+    border-color: {a.primary.hex};
+}}
+QPushButton#workflowSettingsButton {{
+    text-align: left;
+    padding-left: {spacing.sm}px;
+}}
 
 QWidget[semanticState="success"] {{ color: {sem.success.hex}; }}
 QWidget[semanticState="warning"] {{ color: {sem.warning.hex}; }}

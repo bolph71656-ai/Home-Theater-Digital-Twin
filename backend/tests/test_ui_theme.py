@@ -63,8 +63,18 @@ def test_common_stylesheet_covers_required_interaction_states() -> None:
 
     for selector in (':hover', ':pressed', ':focus', ':disabled', ':checked', '::item:selected'):
         assert selector in stylesheet
+    for selector in (
+        'QFrame[surfaceRole="raised"]',
+        'QFrame#workflowRail',
+        'QFrame#workflowContextBar',
+        'QSplitter::handle',
+    ):
+        assert selector in stylesheet
     for semantic_state in ('warning', 'error', 'stale', 'selected', 'unsupported'):
         assert f'semanticState="{semantic_state}"' in stylesheet
+
+    assert DARK_THEME.controls.compact < DARK_THEME.controls.standard < DARK_THEME.controls.prominent
+    assert DARK_THEME.radius.small < DARK_THEME.radius.standard < DARK_THEME.radius.large
 
 
 def test_apply_dark_theme_installs_palette_and_application_marker() -> None:
