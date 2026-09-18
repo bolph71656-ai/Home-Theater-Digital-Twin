@@ -176,17 +176,19 @@ class CommandPalette(QDialog):
             return
         definition = self.registry.definition(command_id)
         availability = self.registry.availability(command_id)
-        contexts = ' / '.join(context.value for context in definition.contexts)
-        deep_link = (
-            ''
-            if definition.deep_link is None
-            else f' · {definition.deep_link.as_uri()}'
-        )
+        context_labels = {
+            CommandContext.GLOBAL: '共通',
+            CommandContext.OVERVIEW: '概要',
+            CommandContext.ROOM: '部屋',
+            CommandContext.MEASUREMENTS: '測定',
+            CommandContext.OPTIMIZATION: '最適化',
+        }
+        contexts = ' / '.join(context_labels[context] for context in definition.contexts)
         if availability.enabled:
-            self.detail_label.setText(f'{contexts}{deep_link}')
+            self.detail_label.setText(f'利用場所 · {contexts}')
         else:
             self.detail_label.setText(
-                f'{availability.disabled_reason} · {contexts}{deep_link}'
+                f'{availability.disabled_reason} · 利用場所 · {contexts}'
             )
 
     def activate_current(self) -> None:
