@@ -1,7 +1,7 @@
 # Arbitrary-room acoustics research and implementation decision — 2026-09-18
 
 Tracking: Issue #101  
-Status: planning/research only. The scope of R100A and R100B is defined; the executable fixture contract, tolerance manifest and benchmark evidence are not yet delivered. Production backend, crossover and shipping dependencies remain benchmark-gated.
+Status: R100A executable fixture/tolerance authority is merged in PR #110. R100B bakeoff authority/candidate pinning is being implemented on `feat/issue-101-r100b-bakeoff`; numerical candidate evidence and the solver-selection ADR are not yet complete. Production backend, crossover and shipping dependencies remain benchmark-gated.
 
 ## 1. Decision summary
 

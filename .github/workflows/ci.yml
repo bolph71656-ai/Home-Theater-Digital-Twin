@@ -29,6 +29,9 @@ jobs:
       - name: Test backend
         run: python -m pytest backend\tests
 
+      - name: Preflight R100B acoustic bakeoff authority
+        run: python -m htdt.acoustic_bakeoff preflight --manifest benchmarks\acoustics\r100a_manifest.json --candidates benchmarks\acoustics\r100b_candidates.json
+
       - name: Check backend launcher CLI
         run: python -m htdt --help
 
