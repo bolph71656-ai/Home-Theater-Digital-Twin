@@ -1,7 +1,7 @@
 # Arbitrary-room acoustics research and implementation decision — 2026-09-18
 
 Tracking: Issue #101  
-Status: architecture research is complete enough to define implementation gates; the production solver backend remains benchmark-gated.
+Status: architecture research plus 2026-09-18 Deep Research refinement is complete enough to freeze the R100 evaluation scope; the production solver backend, crossover and shipping dependency set remain benchmark-gated.
 
 ## 1. Decision summary
 
@@ -94,6 +94,118 @@ The research used project/official documentation current on 2026-09-18. Examples
   - https://github.com/bempp/bempp-cl
 
 Exact third-party version pins and redistribution obligations are **not** frozen by this document. They are part of the R100 license/package gate and must be rechecked at the commit/version actually selected.
+
+## 4A. Deep Research refinement: method scope and corrections
+
+The follow-up Deep Research broadens the R100 comparison without changing the core architecture. The important outcome is **not** that one solver has already won; it is that the bakeoff must compare methods on the same physical fixtures and desktop-product constraints.
+
+### Low-band method scope
+
+R100 must consider the following method families explicitly:
+
+| Method family | R100 role | Why it matters | Primary risks / reasons not to preselect |
+|---|---|---|---|
+| Structured-grid FDTD / related time-domain finite differences | **Primary PoC** | Broadband IR in one run, simple data-parallel update, natural GPU mapping, repeatable grid compilation | numerical dispersion, staircase geometry, thin-surface loss, impedance-filter stability, memory/time-step cost |
+| Frequency-domain FEM | **Primary independent reference / production alternative** | irregular geometry and impedance boundaries fit naturally; strong reference value for convergence studies | repeated-frequency sparse solves, meshing cost, preconditioner/packaging complexity |
+| Higher-order / DG / spectral-element variants | **Research/secondary bakeoff** | may reduce dispersion per DOF and improve complex-geometry fidelity | implementation and dependency complexity may outweigh benefit for a Windows personal application |
+| BEM / FMM-BEM | **Secondary reference** | attractive for boundary/radiation/opening problems and independent cross-checks | dense/hierarchical operators, interior resonance handling, packaging/performance complexity |
+| PSTD / k-space approaches | **Algorithm/performance reference** | very low dispersion in suitable domains and useful as a numerical reference | global transforms / regular-domain assumptions and desktop integration constraints |
+| Modal/eigenmode methods | **Verification / acceleration candidate** | excellent for analytical box checks, low-mode inspection and possible reduced-order acceleration | not a general replacement for arbitrary geometry/material broadband prediction |
+| Digital waveguide mesh / generic finite-volume acoustics | **Background only unless a concrete implementation proves an advantage** | related time-domain formulations can illuminate dispersion/stability trade-offs | no current evidence that they should displace the primary FDTD/FEM bakeoff |
+
+No universal “N points/elements per wavelength” rule is accepted as the production validity criterion. Such rules can seed a starting resolution, but the declared valid band must come from **backend-specific convergence measurements**.
+
+### Geometrical-acoustics scope
+
+R150 should separate transport mechanisms rather than treating “ray tracing” as one authority:
+
+- deterministic direct path and image-source/specular paths where geometry permits;
+- general-polyhedral stochastic ray tracing for higher-order transport;
+- explicit scattering/roughness energy models;
+- diffraction only when an implemented method has a stated validity range and verification fixture;
+- late reverberant energy as an energy-domain result unless a method explicitly provides a defensible coherent phase model.
+
+Beam/cone/pyramid tracing, edge-diffraction methods such as UTD/BTM, phonon/particle mapping and other advanced transport techniques remain candidates for later bakeoff if direct/specular + ray transport cannot meet the acceptance fixtures.
+
+### Hybrid implication
+
+The crossover must be an **overlap contract**, not a hard-coded 300 Hz switch. R160 must retain per-band solver provenance and measure the overlap for:
+
+- magnitude/energy continuity;
+- arrival-time continuity;
+- decay consistency;
+- phase validity only where both inputs actually contain coherent phase.
+
+The room's modal/transition context, wave-solver convergence ceiling, source-data validity and geometric-method validity all constrain the overlap.
+
+## 4B. R100 concrete software shortlist
+
+The first bakeoff should stay deliberately small enough to finish, while keeping independent references:
+
+| Layer | First-line shortlist | Secondary/reference | Explicit non-role |
+|---|---|---|---|
+| Wave time-domain | small HTDT CPU prototype; PFFDTD as implementation/algorithm reference | k-Wave executables where useful for comparison | do not adopt CUDA-only correctness |
+| FEM | MFEM-based acoustic prototype, with Gmsh or another controlled mesh path if needed | FEniCSx / PETSc / SLEPc as research or solver-infrastructure references | do not make a heavy HPC stack a desktop dependency before packaging evidence |
+| BEM | none as first shipping path | Bempp-cl / FMM-BEM research fixtures | do not block R130 on BEM |
+| Geometric | pyroomacoustics for general-polyhedral RIR/reference cases; Embree as CPU intersection-kernel candidate | Steam Audio / Wayverb as architecture/behavior references | do not treat game-audio or GA output as low-band full-wave authority |
+| Commercial | none as dependency | COMSOL/ANSYS/Actran/VA One for independent numerical comparison when available; ODEON/CATT/EASE/Treble for workflow/GA comparison | do not copy closed implementation assumptions into HTDT authority |
+
+R100 must record exact version/commit, license, redistribution implications, Windows build/install path and backend availability for every candidate actually executed. A project name in a research matrix is not enough to approve a dependency.
+
+### Deep Research claims intentionally not promoted to architecture facts
+
+The follow-up report contained several broad ecosystem summaries. The roadmap must **not** turn those into requirements without direct verification. In particular:
+
+- do not classify a package as FEM/BEM/FDTD merely because it appears in an acoustics ecosystem list;
+- do not equate a partitioner or mesher feature with GPU solver support;
+- do not assume a published GPU speedup transfers to HTDT's room sizes, boundary models or consumer hardware;
+- do not use a fixed calendar/Gantt date from a research report as the implementation schedule;
+- do not use a single elements-per-wavelength heuristic as an acceptance gate.
+
+These remain R100 measurements or source-verification tasks.
+
+## 4C. R100 benchmark and decision matrix
+
+Every primary candidate must be judged against the same fixture families.
+
+**Physics / accuracy**
+
+1. rigid rectangular analytical modal frequencies;
+2. grid/mesh convergence and declared valid upper frequency;
+3. single impedance boundary with known/reference reflection behavior;
+4. L-shaped / concave room;
+5. explicit opening to an adjacent/absorbing region;
+6. large reflecting obstacle / counter-like geometry;
+7. receiver reciprocity/symmetry cases where the formulation permits them.
+
+**Geometry / materials**
+
+- self-intersection/non-manifold/open-boundary diagnostics;
+- thin-surface disappearance at coarse resolution;
+- material-only change must alter semantic cache identity and prediction;
+- no scalar absorption -> unique complex impedance conversion without an explicit model.
+
+**Geometric acoustics**
+
+- direct-path delay;
+- first-order reflection point/path length;
+- occlusion;
+- seeded stochastic repeatability;
+- energy-decay behavior;
+- diffraction/scattering only when an implemented model can be independently checked.
+
+**Product / execution**
+
+- clean Windows setup or build reproducibility;
+- license and redistribution review;
+- CPU-only execution;
+- CPU thread scaling and oversubscription behavior;
+- GPU result within declared numerical tolerance when a GPU backend exists;
+- RAM/VRAM estimate versus measured peak;
+- cancellation/stale-result behavior;
+- cache/resume identity and no duplicate completed candidate work.
+
+R100 produces a decision record with at least: accuracy, runtime, peak RAM/VRAM, setup/build complexity, license, failure modes, valid band and unresolved risks. Production selection is made from this evidence, not from theoretical elegance alone.
 
 ## 5. Acoustic data model
 
@@ -358,15 +470,19 @@ UMIK-1/REW evidence remains the final owned-room validation path.
 
 Deliver:
 
-- this research note;
-- third-party license/package matrix;
-- common solver interface;
-- benchmark harness design;
-- small FDTD CPU prototype;
+- this research note plus the Deep Research refinement;
+- third-party version/license/redistribution/Windows-package matrix;
+- common solver interface and provenance contract;
+- one shared benchmark harness and fixture corpus;
+- small deterministic FDTD CPU prototype;
 - one independent FEM/reference prototype;
-- simple geometric-acoustics prototype/reference.
+- simple geometric-acoustics prototype/reference;
+- measured CPU scaling and, when available, GPU-vs-CPU tolerance/resource evidence;
+- an explicit R100 decision record naming the selected first production stack and rejected/secondary alternatives with reasons.
 
-Exit only after measured Windows/CI evidence selects the first production stack.
+Minimum shared fixtures are the analytical rigid box, impedance boundary, concave/L-room, opening, reflecting obstacle, direct/first reflection geometric cases and overlap-stitch checks.
+
+Exit only after measured Windows/CI evidence selects the first production stack. R100 does **not** freeze the final crossover frequency, GPU vendor/backend, universal mesh density or the long-term BEM/DG/PSTD role.
 
 ### R110 — acoustic scene/material/source authority
 
@@ -468,9 +584,9 @@ Do not:
 - auto-calibrate materials on holdout measurements and then call the same data validation;
 - hide resolution downgrade or geometry simplification.
 
-## 14. Immediate next implementation
+## 14. Next implementation gate (not started)
 
-The first coding slice after this plan is accepted should be **R100 PoC**, not the full solver.
+Implementation remains intentionally not started by this planning update. When coding resumes, the first slice should be **R100 PoC**, not the full solver.
 
 It should produce one repeatable benchmark command that runs:
 
@@ -482,3 +598,31 @@ It should produce one repeatable benchmark command that runs:
 6. runtime/memory report.
 
 This is the smallest slice that can falsify the architecture before HTDT commits to a large dependency or GPU implementation.
+
+## 15. What is frozen now vs. what remains benchmark-gated
+
+### Safe to freeze now
+
+- arbitrary-room support uses a hybrid/multi-fidelity architecture rather than silent rectangular approximation;
+- 20–300 Hz is the initial low-band wave target, not a promise that 300 Hz is the final crossover;
+- FDTD is the first time-domain PoC and FEM is the primary independent reference/alternative;
+- BEM/FMM, DG/high-order FEM and PSTD/k-space remain secondary/reference candidates unless R100 evidence promotes them;
+- geometric direct/early paths and stochastic late energy have different semantics;
+- scalar absorption, scattering and complex impedance/admittance are distinct authorities;
+- CPU correctness/fallback is mandatory and GPU is optional acceleration;
+- exact geometry/material/source/solver/backend/resolution provenance is immutable;
+- owned-room production recommendation remains gated by O60/Issue #83-style measured validation.
+
+### Must remain open until R100 or later
+
+- production wave solver library/framework;
+- exact spatial discretization and per-band resolution presets;
+- final crossover/overlap frequency range;
+- GPU API/vendor and whether a GPU backend ships in the first production release;
+- exact FEM mesher/linear-solver stack;
+- whether BEM, DG/high-order FEM, PSTD/k-space or reduced-order methods graduate from reference to product code;
+- diffraction model and late-field synthesis method;
+- third-party redistribution/version pins;
+- numeric CPU/GPU acceptance tolerances and performance budgets.
+
+This split is deliberate: architecture and evidence semantics are stable enough to implement against, while numerical-backend choices remain falsifiable by the R100 bakeoff.
