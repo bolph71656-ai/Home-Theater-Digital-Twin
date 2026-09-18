@@ -47,12 +47,12 @@ jobs:
           $backup = Join-Path $env:RUNNER_TEMP "htdt-maintenance.htdt-backup"
           New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
           @'
-import sqlite3, sys
-path = sys.argv[1]
-with sqlite3.connect(path) as connection:
-    connection.execute("CREATE TABLE ci_marker(value TEXT NOT NULL)")
-    connection.execute("INSERT INTO ci_marker(value) VALUES ('baseline')")
-'@ | python - $database
+          import sqlite3, sys
+          path = sys.argv[1]
+          with sqlite3.connect(path) as connection:
+              connection.execute("CREATE TABLE ci_marker(value TEXT NOT NULL)")
+              connection.execute("INSERT INTO ci_marker(value) VALUES ('baseline')")
+          '@ | python - $database
 
           $backupProcess = Start-Process -FilePath $exe -ArgumentList @(
             "--data-dir", $dataRoot,
@@ -63,10 +63,10 @@ with sqlite3.connect(path) as connection:
           }
 
           @'
-import sqlite3, sys
-with sqlite3.connect(sys.argv[1]) as connection:
-    connection.execute("UPDATE ci_marker SET value='modified'")
-'@ | python - $database
+          import sqlite3, sys
+          with sqlite3.connect(sys.argv[1]) as connection:
+              connection.execute("UPDATE ci_marker SET value='modified'")
+          '@ | python - $database
 
           $restoreProcess = Start-Process -FilePath $exe -ArgumentList @(
             "--data-dir", $dataRoot,
@@ -77,10 +77,10 @@ with sqlite3.connect(sys.argv[1]) as connection:
           }
 
           $restored = @'
-import sqlite3, sys
-with sqlite3.connect(sys.argv[1]) as connection:
-    print(connection.execute("SELECT value FROM ci_marker").fetchone()[0])
-'@ | python - $database
+          import sqlite3, sys
+          with sqlite3.connect(sys.argv[1]) as connection:
+              print(connection.execute("SELECT value FROM ci_marker").fetchone()[0])
+          '@ | python - $database
           if ($restored.Trim() -ne "baseline") {
             throw "Packaged restore did not recover the baseline database"
           }
