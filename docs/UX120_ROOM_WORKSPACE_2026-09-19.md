@@ -71,7 +71,7 @@ native_cad.py and workflow_shell.py are intentionally unchanged in this PR, per 
 
 This PR does not implement the Agent B CAD shortcut/navigation controller.
 
-RoomViewport3D exposes its Qt/VTK interactor through the public interactor attribute so Agent B can attach MMB pan, Shift+MMB orbit, wheel zoom, RMB context and keyboard command handling without moving scene authority into the viewport.
+RoomViewport3D exposes its Qt/VTK interactor through the public interactor attribute and structurally implements Agent B PR #129's CadViewportInputPort (`begin_pan` / `pan_by` / `end_pan`, orbit equivalents, `zoom_by`, `open_context_menu`). Camera mutation stays renderer-local; the RMB menu request is emitted outward so command content remains owned by the Room workspace / central registry.
 
 RoomWorkspace also emits toolRequested for geometry tools that require CAD input state:
 
@@ -127,7 +127,7 @@ backend/tests/test_room_workspace.py covers:
 
 ## Remaining work
 
-1. Agent B: attach the canonical CAD mouse/keyboard input controller to RoomViewport3D.interactor and consume geometry toolRequested signals.
+1. Agent B integration after PR #129 lands: construct CadInputController with `viewport=RoomViewport3D.interactor` and `viewport_port=RoomViewport3D`, then bind Room-owned edit callbacks. Geometry `toolRequested` signals remain the handoff for draw/edit-room interaction state.
 2. Shell integration: replace the temporary legacy Room factory in native_cad.py with build_room_workspace_mount after this PR is accepted. This PR does not change native_cad.py by requirement.
 3. Command adapter integration: bind existing save/undo/redo/add-object commands to RoomWorkspace methods when the shell switches to the new mount. Command authority remains in the existing registry.
 4. Geometry authoring UI: draw/edit-room interaction state remains Agent B territory; this PR only provides the viewport and component boundary.
