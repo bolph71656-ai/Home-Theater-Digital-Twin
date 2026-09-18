@@ -144,3 +144,19 @@ def test_validation_repository_rejects_measurement_not_linked_to_candidate_plan(
 
     with pytest.raises(ValueError, match='not linked'):
         repository.save(_record(spec, candidate_set_sha256))
+
+
+def test_validation_repository_rejects_tampered_identity_hash(tmp_path):
+    scene_repo, search_repo, spec = _search(tmp_path)
+    candidate_set_sha256 = 'c' * 64
+    repository = CadModelValidationRepository(
+        search_repo,
+        _RoomSimEvidence(scene_repo.path, spec, candidate_set_sha256),
+        _MeasurementEvidence(scene_repo.path, candidate_set_sha256),
+    )
+    tampered = _record(spec, candidate_set_sha256).model_copy(
+        update={'validation_sha256': '0' * 64}
+    )
+
+    with pytest.raises(ValueError, match='identity hash mismatch'):
+        repository.save(tampered)
