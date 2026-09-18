@@ -71,8 +71,11 @@ def derive_multidimensional_robustness_spec(
 
     if base_spec.sampling_strategy != 'deterministic_local_stencil':
         raise ValueError('O90B derivation requires an O90A local robustness spec')
-    if sample_count < 2:
-        raise ValueError('multidimensional robustness requires at least two samples')
+    if sample_count < 3:
+        raise ValueError(
+            'multidimensional robustness requires at least three samples '
+            '(nominal, negative corner, positive corner)'
+        )
 
     ordered_groups = tuple(sorted(linked_groups, key=lambda item: item.group_id))
     identity = base_spec.identity_payload()
