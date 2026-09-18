@@ -52,7 +52,8 @@ The validator rejects:
 - execution of a fixture whose required capability is outside the candidate's authorized probe capability set;
 - duplicate fixture/gate evidence;
 - a passing fixture without all required observable records;
-- missing resource measurements for a passing fixture;
+- a PASS observable whose reported error exceeds the R100A quantity-specific tolerance;
+- a PASS fixture with missing or over-budget compile/solve/postprocess/RAM/output/thread evidence;
 - missing required hard-gate evidence;
 - `not_applicable` for a hard gate that applies to the candidate;
 - selecting a reference-only candidate for the production stack;
