@@ -11,6 +11,8 @@ from .cad_measurement_repository import CadMeasurementRepository
 from .cad_objective_models import CadObjectiveInputRef
 from .cad_repository import SceneRepository
 from .cad_search_repository import CadSearchRepository
+from .cad_search import candidate_preview_document, generate_cad_candidates
+from .cad_scene import scene_content_hash
 
 
 class CadMeasurementPlan(BaseModel):
@@ -61,20 +63,48 @@ def _hash(value: object) -> str:
     return sha256(raw).hexdigest()
 
 
+def _resolve_candidate(scene_repository: SceneRepository, spec, candidate_id: str):
+    offset = 0
+    page_limit = min(1000, spec.candidate_limit)
+    candidate_set_sha256 = None
+    while True:
+        page = generate_cad_candidates(scene_repository, spec, offset=offset, limit=page_limit)
+        if candidate_set_sha256 is None:
+            candidate_set_sha256 = page.candidate_set_sha256
+        elif candidate_set_sha256 != page.candidate_set_sha256:
+            raise ValueError('candidate-set identity changed while resolving measurement plan')
+        for candidate in page.candidates:
+            if candidate.candidate_id == candidate_id:
+                return candidate, page.candidate_set_sha256
+        offset += len(page.candidates)
+        if not page.candidates or offset >= page.feasible_candidate_count:
+            break
+    raise ValueError('candidate does not belong to SearchSpec candidate set')
+
+
 def build_measurement_plan(scene_repository: SceneRepository, search_repository: CadSearchRepository, *,
     search_spec_id: str, candidate_id: str, applied_scene_revision_id: str) -> CadMeasurementPlan:
     spec = search_repository.get(search_spec_id)
     if spec is None:
         raise ValueError('SearchSpec does not exist')
+    source = scene_repository.get(spec.scene_revision_id)
+    if source is None or source.document_id != spec.document_id or source.content_hash != spec.scene_content_hash:
+        raise ValueError('SearchSpec source revision authority is unavailable or changed')
+    candidate, candidate_set_sha256 = _resolve_candidate(scene_repository, spec, candidate_id)
     revision = scene_repository.get(applied_scene_revision_id)
     if revision is None:
         raise ValueError('applied SceneRevision does not exist')
     if revision.document_id != spec.document_id:
         raise ValueError('applied SceneRevision belongs to another document')
+    if revision.parent_revision_id != source.revision_id:
+        raise ValueError('applied SceneRevision must directly descend from the SearchSpec source revision')
+    expected = candidate_preview_document(source.document, candidate)
+    if scene_content_hash(expected) != revision.content_hash:
+        raise ValueError('applied SceneRevision does not exactly match the selected candidate placement')
     payload = {
         'document_id': spec.document_id, 'search_spec_id': spec.search_spec_id,
         'search_spec_sha256': spec.search_spec_sha256, 'candidate_id': candidate_id,
-        'candidate_set_sha256': spec.candidate_set_sha256,
+        'candidate_set_sha256': candidate_set_sha256,
         'applied_scene_revision_id': revision.revision_id,
         'applied_scene_content_hash': revision.content_hash, 'status': 'planned', 'measurement_ids': [],
     }
