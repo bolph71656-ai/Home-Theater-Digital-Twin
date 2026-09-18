@@ -102,3 +102,21 @@ capture the printed ids/hashes/check results, and restore the original checkout.
 
 The resulting acceptance record will be committed to GitHub before O70 work is
 allowed to start.
+## Windows SQLite handle closure
+
+The first real read-only inventory preflight on the owned Windows machine exposed
+a Windows-specific cleanup failure: repository methods using the sqlite3
+connection context manager committed or rolled back transactions but did not
+explicitly close the connection before the temporary snapshot directory was
+removed. Windows therefore reported `WinError 32` for the snapshot database.
+
+The O60R follow-up makes Search / RoomSim / Objective / ModelValidation
+repository connections deterministic with `contextlib.closing`. A regression
+test now runs the inventory CLI against an existing database so the Windows CI
+exercises snapshot creation, repository initialization, and temporary-directory
+cleanup rather than only the no-database fast path.
+
+This changes SQLite connection lifetime only. It does not alter campaign,
+prediction, validation, or recommendation semantics, and the source owned-room
+database remains read-only during O60R inventory/audit.
+
