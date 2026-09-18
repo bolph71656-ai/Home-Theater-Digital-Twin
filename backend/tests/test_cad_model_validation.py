@@ -13,6 +13,7 @@ def test_validation_requires_holdout_before_recommendation_eligibility():
         samples=(('a','calibration','p:a','m:a',_fr(0),_fr(.5)),),
         low_hz=20, high_hz=160, max_holdout_rms_db=3)
     assert record.recommendation_gate == 'disabled'
+    assert record.residual_gate == 'insufficient'
     assert record.holdout_rms_db is None
 
 
@@ -24,4 +25,5 @@ def test_validation_gate_uses_holdout_not_calibration_fit():
         ), low_hz=20, high_hz=160, max_holdout_rms_db=3)
     assert record.calibration_rms_db == 0
     assert record.holdout_rms_db >= 5
+    assert record.residual_gate == 'fail'
     assert record.recommendation_gate == 'disabled'
