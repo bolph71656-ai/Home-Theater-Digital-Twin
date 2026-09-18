@@ -274,7 +274,8 @@ class RoomGeometryPanel(QFrame):
         if wall is None or topology is None:
             return
 
-        self.wall_id.setText(wall.wall_id)
+        wall_index = topology.walls.index(wall)
+        self.wall_id.setText(f"壁 {wall_index + 1}")
         self.wall_length.setText(f"{wall_length(room, wall):.3f} m")
         with QSignalBlocker(self.wall_thickness):
             self.wall_thickness.setValue(wall.thickness_m)
