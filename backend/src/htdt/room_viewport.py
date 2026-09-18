@@ -105,6 +105,7 @@ def _grid_mesh(
     mesh.lines = np.asarray(lines, dtype=np.int64)
     return mesh
 
+
 def _entity_mesh(entity: SceneEntity) -> pv.PolyData:
     if entity.size_m is None:
         mesh = pv.Sphere(radius=0.08)
