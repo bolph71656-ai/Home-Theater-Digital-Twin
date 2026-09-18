@@ -99,7 +99,8 @@ class RoomGeometryInputController(QObject):
         return True
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if watched is not self.viewport.interactor or self.mode == "idle":
+        viewport = getattr(self, "viewport", None)
+        if viewport is None or watched is not viewport.interactor or self.mode == "idle":
             return False
         event_type = event.type()
         if event_type == QEvent.Type.MouseButtonPress:
