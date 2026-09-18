@@ -149,3 +149,34 @@ def test_failed_restore_leaves_current_native_data_unchanged(tmp_path: Path):
 
     reopened = SceneRepository(data_dir / 'cad-scenes.sqlite3')
     assert reopened.latest(first.document_id).revision_id == second.revision_id
+
+
+def test_backup_normalizes_existing_windows_asset_relative_paths(tmp_path: Path):
+    data_dir = tmp_path / 'data'
+    repository = SceneRepository(data_dir / 'cad-scenes.sqlite3')
+    repository.save(make_f1_scene(), parent_revision_id=None)
+    CadMeasurementRepository(repository)
+
+    raw = b'windows-separator-fixture'
+    digest = sha256(raw).hexdigest()
+    asset = data_dir / 'measurement-assets' / digest
+    asset.parent.mkdir(parents=True, exist_ok=True)
+    asset.write_bytes(raw)
+    with sqlite3.connect(repository.path) as connection:
+        connection.execute(
+            '''INSERT INTO cad_measurement_assets(
+                sha256, filename, relative_path, size_bytes
+            ) VALUES (?, ?, ?, ?)''',
+            (
+                digest,
+                'fixture.txt',
+                f'measurement-assets\\\\{digest}',
+                len(raw),
+            ),
+        )
+
+    archive = tmp_path / 'windows-path.htdt-backup'
+    manifest = create_backup(data_dir, archive)
+
+    assert f'measurement-assets/{digest}' in {entry.path for entry in manifest.files}
+    validate_backup(archive)
