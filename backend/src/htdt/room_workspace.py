@@ -964,9 +964,13 @@ class RoomWorkspace(QWidget):
         return changed
 
     def _update_responsive_layout(self) -> None:
-        compact = self.width() < 900
+        width = self.width()
+        compact = width < 900
+        ultra_compact = width < 720
         self._responsive_compact = compact
-        right_width = 260 if self.width() < 720 else (280 if compact else 300)
+        if ultra_compact:
+            self._palette_user_open = False
+        right_width = 260 if ultra_compact else (280 if compact else 300)
         self.right_stack.setFixedWidth(right_width)
         self.overlay_controls.set_compact(compact)
         show_palette = (
