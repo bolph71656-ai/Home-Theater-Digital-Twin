@@ -178,6 +178,9 @@ class BakeoffFixtureEvidence(BaseModel):
                 raise ValueError('passing fixture cannot contain non-passing observables')
         if self.status in {'blocked', 'unsupported', 'not_run'} and self.observables:
             raise ValueError('non-executed fixture must not contain observable evidence')
+        observable_ids = [item.observable_id for item in self.observables]
+        if len(observable_ids) != len(set(observable_ids)):
+            raise ValueError('fixture observable evidence ids must be unique')
         return self
 
 
@@ -303,6 +306,60 @@ def _required_gate_categories(
     }
 
 
+def _validate_observable_tolerance(expected, evidence: BakeoffObservableEvidence) -> None:
+    if evidence.status != 'pass':
+        return
+
+    tolerance = expected.tolerance
+
+    def require_and_bound(name: str, value: float | None, limit: float | None) -> None:
+        if limit is None:
+            return
+        if value is None:
+            raise ValueError(
+                f'passing observable {expected.observable_id} is missing {name} evidence'
+            )
+        if value > limit:
+            raise ValueError(
+                f'passing observable {expected.observable_id} exceeds {name} tolerance: '
+                f'{value} > {limit}'
+            )
+
+    if expected.acceptance_relation == 'must_differ_from_peer':
+        minimum = tolerance.minimum_difference
+        if minimum is None:
+            raise ValueError('must-differ observable authority is missing minimum_difference')
+        if evidence.difference_from_peer is None:
+            raise ValueError(
+                f'passing observable {expected.observable_id} is missing difference_from_peer'
+            )
+        if evidence.difference_from_peer < minimum:
+            raise ValueError(
+                f'passing observable {expected.observable_id} does not meet minimum difference: '
+                f'{evidence.difference_from_peer} < {minimum}'
+            )
+        return
+
+    if expected.kind == 'transfer_phase_deg':
+        require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
+    elif expected.kind == 'complex_reflection_coefficient':
+        require_and_bound('absolute_error', evidence.absolute_error, tolerance.absolute)
+        require_and_bound('relative_error', evidence.relative_error, tolerance.relative)
+        require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
+    else:
+        require_and_bound('absolute_error', evidence.absolute_error, tolerance.absolute)
+        require_and_bound('relative_error', evidence.relative_error, tolerance.relative)
+        if tolerance.phase_deg is not None:
+            require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
+
+    if tolerance.statistical_stddev_max is not None:
+        require_and_bound(
+            'statistical_stddev',
+            evidence.statistical_stddev,
+            tolerance.statistical_stddev_max,
+        )
+
+
 def validate_bakeoff_run(
     benchmark: AcousticBenchmarkManifest,
     candidates: BakeoffCandidateManifest,
@@ -340,6 +397,12 @@ def validate_bakeoff_run(
                 raise ValueError(
                     f'passing fixture {evidence.fixture_id} must report every required observable'
                 )
+            expected_by_id = {item.observable_id: item for item in fixture.observables}
+            for observable_evidence in evidence.observables:
+                _validate_observable_tolerance(
+                    expected_by_id[observable_evidence.observable_id],
+                    observable_evidence,
+                )
 
         budget = fixture.resource_budget
         resource_checks = (
@@ -354,6 +417,19 @@ def validate_bakeoff_run(
             if missing:
                 raise ValueError(
                     f'passing fixture {evidence.fixture_id} is missing resource evidence: {missing}'
+                )
+            exceeded = [
+                f'{name}={value} > {limit}'
+                for name, value, limit in resource_checks
+                if value is not None and value > limit
+            ]
+            if run.platform.thread_budget > budget.cpu_thread_budget:
+                exceeded.append(
+                    f'thread_budget={run.platform.thread_budget} > {budget.cpu_thread_budget}'
+                )
+            if exceeded:
+                raise ValueError(
+                    f'passing fixture {evidence.fixture_id} exceeds resource budget: {exceeded}'
                 )
 
     required_gates = _required_gate_categories(benchmark, candidate)
