@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 MIB = 1024 * 1024
+GIB = 1024 * MIB
 
 # The browser API currently transports binary inputs as Base64 JSON. These
 # limits are deliberately generous for a personal REW workflow while keeping
@@ -10,6 +11,16 @@ MAX_REW_TEXT_BYTES = 32 * MIB
 MAX_ATTACHMENT_BYTES = 256 * MIB
 MAX_BACKUP_ARCHIVE_BYTES = 512 * MIB
 MAX_SMALL_JSON_BODY_BYTES = 2 * MIB
+
+# Native .htdt-backup files are local filesystem artifacts rather than browser
+# request bodies. Keep the limits generous for REW/measurement assets while
+# still bounding malicious/corrupt ZIP expansion and member fan-out.
+MAX_NATIVE_BACKUP_ARCHIVE_BYTES = 8 * GIB
+MAX_NATIVE_BACKUP_EXPANDED_BYTES = 16 * GIB
+MAX_NATIVE_BACKUP_MEMBER_BYTES = 4 * GIB
+MAX_NATIVE_BACKUP_MANIFEST_BYTES = 2 * MIB
+MAX_NATIVE_BACKUP_MEMBERS = 4096
+MAX_NATIVE_BACKUP_COMPRESSION_RATIO = 1000.0
 
 
 def max_base64_chars(decoded_bytes: int) -> int:
