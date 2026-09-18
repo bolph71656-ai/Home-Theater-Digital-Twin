@@ -43,6 +43,7 @@ from .optimization_workflow_workspace import build_optimization_workspace_mount
 from .overview_readiness import OverviewReadinessService
 from .overview_workspace import OverviewWorkspace
 from .room_geometry_input import RoomGeometryInputController
+from .room_transform_input import RoomEntityTransformController
 from .room_viewport import RoomViewport3D
 from .room_workspace import RoomWorkspace
 from .workflow_navigation import WorkspaceDeepLink, WorkspaceId
@@ -183,6 +184,8 @@ class WorkflowApplicationComposition:
 
         geometry_input = RoomGeometryInputController(workspace, workspace.viewport)
         workspace.attach_geometry_input(geometry_input)
+        transform_input = RoomEntityTransformController(workspace, workspace.viewport)
+        workspace.attach_transform_input(transform_input)
 
         cad_input = CadInputController(
             shortcut_parent=workspace,
@@ -193,8 +196,8 @@ class WorkflowApplicationComposition:
         workspace.cad_input_controller = cad_input  # type: ignore[attr-defined]
 
         bindings = CadCommandBindings(
-            move=lambda: workspace.set_transform_mode("move"),
-            rotate=lambda: workspace.set_transform_mode("rotate"),
+            move=transform_input.arm_move,
+            rotate=transform_input.arm_rotate,
             fit_selection=workspace.fit_selection,
             fit_all=workspace.fit_all,
             cancel=workspace.cancel_active_operation,
@@ -204,12 +207,14 @@ class WorkflowApplicationComposition:
             availability={
                 "room.transform.move": lambda: _available(
                     workspace.controller.selected_id is not None
-                    and workspace.controller.can_edit,
+                    and workspace.controller.can_edit
+                    and not geometry_input.is_active,
                     "編集できる項目を選択してください",
                 ),
                 "room.transform.rotate": lambda: _available(
                     workspace.controller.selected_id is not None
-                    and workspace.controller.can_edit,
+                    and workspace.controller.can_edit
+                    and not geometry_input.is_active,
                     "編集できる項目を選択してください",
                 ),
                 "room.view.fit_selection": lambda: _available(
@@ -218,12 +223,14 @@ class WorkflowApplicationComposition:
                 ),
                 "room.view.fit_all": lambda: CommandAvailability.available(),
                 "room.edit.cancel": lambda: _available(
-                    geometry_input.is_active
+                    transform_input.is_active
+                    or geometry_input.is_active
                     or workspace.controller.working.has_preview,
                     "キャンセルする操作はありません",
                 ),
                 "room.edit.commit": lambda: _available(
-                    geometry_input.is_active
+                    transform_input.is_active
+                    or geometry_input.is_active
                     or workspace.controller.working.has_preview,
                     "確定する操作はありません",
                 ),
@@ -326,6 +333,8 @@ class WorkflowApplicationComposition:
         def close() -> None:
             deactivate()
             cad_input.dispose()
+            transform_input.dispose()
+            geometry_input.dispose()
             workspace.close()
 
         workspace.viewport.contextMenuRequested.connect(
