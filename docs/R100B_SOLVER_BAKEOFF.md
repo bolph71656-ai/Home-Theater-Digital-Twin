@@ -128,9 +128,9 @@ The accepted platform smoke records three exact-source-checked runtime shims req
 
 No FDTD stencil, voxel-intersection, material or source algorithm is modified. The accepted smoke completed geometry -> voxelization -> HDF5 setup -> CPU FDTD -> `sim_outs.h5` -> upstream-equivalent receiver interpolation on Windows. This is platform/reuse evidence only: the R100A eigenfrequencies were deliberately not scored, and Windows product packaging remains a separate gate.
 
-## Current PFFDTD rigid-mode physics slice
+## Accepted PFFDTD rigid-mode physics evidence
 
-The current `feat/issue-101-r100b-pffdtd-modes` branch turns the platform-smoke adapter into reusable authority and evaluates `wave-rigid-rectangular-modes-v1`.
+PR #115 numerical run `35349358027` passes `wave-rigid-rectangular-modes-v1` on the current branch. The durable summary is `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json`; raw traces remain bound by the recorded Actions artifact/hash.
 
 - `backend/src/htdt/acoustic_pffdtd_adapter.py` centralizes the three source-checked compatibility shims, rigid R100A geometry compiler and upstream receiver interpolation contract.
 - R100B fixture evidence now requires generated disk usage and enforces `disk_budget_mb` in addition to compile/solve/postprocess/RAM/output/thread limits.
@@ -141,14 +141,35 @@ The current `feat/issue-101-r100b-pffdtd-modes` branch turns the platform-smoke 
 - the 0.5 -> 0.25 -> 0.125 m sequence must show decreasing refinement deltas;
 - the final sample passed to the central R100A evaluator is a declared second-order Richardson extrapolation from the 0.25 and 0.125 m results.
 
-PFFDTD internally derives 343.2 m/s at 20 deg C while the R100A fixture authority is exactly 343.0 m/s. The adapter records that difference instead of silently rewriting either authority. The actual R100A PASS/FAIL decision is made only from the GitHub Actions numerical evidence.
+PFFDTD internally derives 343.2 m/s at 20 deg C while the R100A fixture authority is exactly 343.0 m/s. The adapter records that difference instead of silently rewriting either authority.
+
+Accepted results:
+
+| Observable | h=0.5 m | h=0.25 m | h=0.125 m | p=2 extrapolated | R100A abs error | Result |
+|---|---:|---:|---:|---:|---:|---|
+| m010 | 34.218337 | 34.287349 | 34.304913 | 34.310768 | 0.010768 Hz | PASS |
+| m100 | 42.715319 | 42.856153 | 42.890952 | 42.902552 | 0.027552 Hz | PASS |
+| m110 | 54.827426 | 54.910278 | 54.931240 | 54.938228 | 0.031438 Hz | PASS |
+| m001 | 67.877782 | 68.453956 | 68.593824 | 68.640446 | 0.040446 Hz | PASS |
+
+The coarse-to-medium / medium-to-fine delta ratios are 3.93–4.12, consistent with the declared second-order refinement model. The total evidence uses 6.014 s compile/setup/JIT, 0.586 s solve, 0.066 s postprocess, 202.66 MiB peak RSS, 1.238 MiB generated disk and 0.387 MiB raw output, all within the fixture budget.
+
+Evidence authority:
+
+- workflow run: `35349358027`;
+- Actions artifact: `10549576187`;
+- artifact digest: `sha256:0f97ada6fd1555e89de24168316526b20b7a6a874a0281b4f1f0ac22aa96632e`;
+- raw signal archive SHA-256: `019766f208fa4e6a4bee93bb26d56700c095e5ff2f0b6b76289db4ae5b9c6b85`;
+- BakeoffRun semantic hash: `c54f7ec2758f94e5ed4b433a002b0cc30ccfe0a841d42ad2fbe0bf35470855f9`.
+
+This is a fixture-level physics PASS, not a candidate-wide solver acceptance.
 
 ## Next R100B implementation slices
 
 The numerical bakeoff proceeds in this order:
 
-1. complete PFFDTD rigid rectangular modal validation and record the real R100A PASS/FAIL evidence;
-2. add the PFFDTD grid/mesh convergence and complex-impedance fixtures only if the modal gate justifies continuing;
+1. add the PFFDTD rectangular transfer/grid convergence fixture now that the rigid-modal gate has passed;
+2. evaluate the explicit complex-impedance reflection fixture without deriving impedance from scalar absorption;
 3. implement the minimal MFEM acoustic reference prototype for rigid rectangular/concave fixtures and then the explicit impedance fixture;
 4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls;
 5. record exact compile/solve/postprocess/RAM/disk/output evidence under the R100A resource budgets;
@@ -161,7 +182,7 @@ If no shipping candidate clears the gates, R100B exits with a no-go ADR and a bo
 This slice does not:
 
 - select PFFDTD, MFEM or pyroomacoustics for production;
-- claim numerical accuracy for any candidate;
+- claim candidate-wide numerical accuracy from the single accepted PFFDTD rigid-modal fixture;
 - claim Windows packaging for PFFDTD;
 - claim that an upstream capability maps exactly to HTDT Portal/BoundaryTermination/object semantics;
 - validate the owned room;
