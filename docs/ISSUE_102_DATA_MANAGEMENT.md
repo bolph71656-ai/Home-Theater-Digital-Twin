@@ -55,7 +55,7 @@ Read-only presentation data derived only from `BackupManifest` and the selected 
 - managed file count / bytes
 - manifest SHA-256
 
-No DB query or new metadata store is introduced for GUI display.
+The hash is retained for provenance/stale-preview diagnostics; the normal Settings UI should not show it unless a diagnostic/detail view explicitly needs it. No DB query or new metadata store is introduced for GUI display.
 
 ### `DataManagementController`
 
