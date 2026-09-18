@@ -1,6 +1,6 @@
 # O90 — Robust / Tolerance-aware Optimization
 
-> Status: **planned / not implemented**
+> Status: **planned / not implemented** — tracking: [Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140)
 >
 > This document is the detailed authority for O90. Implementation order remains `docs/IMPLEMENTATION_ROADMAP.md`.
 >
