@@ -5,11 +5,14 @@ from htdt.cad_walls import (
     WallOpening,
     WallTopologyError,
     add_opening,
+    delete_opening,
     delete_wall,
     make_wall_topology,
     merge_walls,
     move_wall,
     split_wall,
+    update_opening,
+    update_wall_thickness,
     validate_wall_topology,
 )
 
@@ -302,3 +305,53 @@ def test_delete_wall_rejects_referenced_opening_in_affected_pair() -> None:
             'wall:a->b',
             replacement_wall_id='wall:a->c',
         )
+
+
+def test_update_wall_thickness_reuses_topology_validation() -> None:
+    room = _rect_room()
+    topology = make_wall_topology(room)
+
+    changed = update_wall_thickness(
+        room,
+        topology,
+        "wall:a->b",
+        thickness_m=0.18,
+    )
+
+    assert changed.walls[0].thickness_m == pytest.approx(0.18)
+    assert changed.walls[1:] == topology.walls[1:]
+    assert validate_wall_topology(room, changed) == changed
+
+
+def test_update_and_delete_opening_preserve_wall_topology_authority() -> None:
+    room = _rect_room()
+    topology = add_opening(
+        room,
+        make_wall_topology(room),
+        WallOpening(
+            opening_id="door-1",
+            wall_id="wall:a->b",
+            offset_m=1.0,
+            width_m=0.9,
+            height_m=2.0,
+        ),
+    )
+    replacement = topology.openings[0].model_copy(
+        update={
+            "offset_m": 1.5,
+            "width_m": 1.1,
+            "kind": "passage",
+            "is_open": True,
+        }
+    )
+
+    changed = update_opening(room, topology, replacement)
+    assert changed.openings == (replacement,)
+    assert changed.walls == topology.walls
+
+    deleted = delete_opening(room, changed, "door-1")
+    assert deleted.openings == ()
+    assert deleted.walls == topology.walls
+
+    with pytest.raises(WallTopologyError, match="unknown opening"):
+        delete_opening(room, deleted, "door-1")

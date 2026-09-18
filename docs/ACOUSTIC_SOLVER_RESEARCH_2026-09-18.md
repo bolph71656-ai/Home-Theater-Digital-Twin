@@ -1,7 +1,7 @@
 # Arbitrary-room acoustics research and implementation decision — 2026-09-18
 
 Tracking: Issue #101  
-Status: R100A executable fixture/tolerance authority is merged in PR #110. R100B authority is merged in PR #111; pyroomacoustics direct/first-reflection reference evidence is merged in PR #112; PFFDTD pinned Python/Numba Windows platform feasibility is merged in PR #113. PR #115 run `35349358027` passes the R100A rigid rectangular eigenfrequency fixture with three-level grid refinement; the durable summary is `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json`. Transfer convergence, complex impedance, concave-room independent reference, packaging and the solver-selection ADR remain open, so the production backend/crossover/shipping dependencies remain benchmark-gated.
+Status: R100A executable fixture/tolerance authority is merged in PR #110. R100B authority is merged in PR #111; pyroomacoustics direct/first-reflection reference evidence is merged in PR #112; PFFDTD pinned Python/Numba Windows platform feasibility is merged in PR #113. PR #115 run `35349358027` passes the R100A rigid rectangular eigenfrequency fixture with three-level grid refinement, and PR #114 provides an independent MFEM v4.10 rigid-room eigenmode reference PASS. Transfer-response convergence, complex impedance, concave/portal evidence, external measured validation, packaging and the solver-selection ADR remain open, so the production backend/crossover/shipping dependencies remain benchmark-gated.
 
 ## 1. Decision summary
 
@@ -250,6 +250,20 @@ Run FDTD, independent FEM/reference and geometric reference candidates against t
 
 This ordering prevents the FDTD and FEM prototypes from each inventing incompatible geometry, opening or material semantics before the production AcousticSceneSnapshot exists.
 
+### External empirical benchmark lane
+
+Analytical solutions and independent numerical references remain the primary correctness gates, but HTDT should also maintain an **external measured benchmark lane**. BRAS (Benchmark for Room Acoustical Simulation; Brinkmann et al., Applied Acoustics 176 (2021) 107867, DOI 10.1016/j.apacoust.2020.107867) is the first reference dataset to evaluate because it was designed to compare room-acoustics simulations against documented measured transfer functions and includes cases isolating reflection, scattering and diffraction behavior.
+
+Use this lane with the following scope:
+
+- R100B may use reproducibly pinned BRAS scenes as additional candidate-comparison evidence when the candidate role and available benchmark inputs match. Failure to map a BRAS scene without inventing missing physics is reported as unsupported, not bypassed by retuning the benchmark.
+- R130/R150 capability acceptance should include at least one external measured case relevant to the shipped claim before that capability is treated as production-validated. Analytical and cross-solver fixtures are not replaced by measurement.
+- Persist benchmark dataset/version/hash, imported physical assumptions, measurement uncertainty and any preprocessing in the evidence record.
+- Do not tune a backend-specific material/source parameter against the same benchmark trace and then report that trace as independent validation. Calibration and validation evidence remain separate.
+- Owned-room R180 evidence is still required. External benchmarks validate the method; the owned-room campaign validates applicability to the user's actual room and measurement chain.
+
+This yields four distinct validation layers: **analytical/reference → independent solver → external measured benchmark → owned-room measured holdout**.
+
 ### Numerical observable contract and staged gates
 
 R100A must fix units and conventions before solver comparison: source quantity and normalization (for example volume velocity and pressure transfer), density/sound speed, Fourier/phase sign, time zero, peak/RMS convention, boundary-normal direction, and the physical source/receiver coordinates. Each adapter records injection/sampling interpolation and coordinate error; moving probes to convenient grid nodes silently is prohibited.
@@ -381,6 +395,28 @@ A scalar absorption coefficient alone is insufficient to reconstruct unique low-
 
 Material presets must store source, version, applicable frequency range and uncertainty/assumption status. User-measured/custom materials are separate records.
 
+#### Material measurement semantics
+
+A coefficient value is not sufficient authority by itself. Material records must preserve what physical quantity was measured or inferred and under what test conditions. At minimum distinguish:
+
+- normal-incidence absorption and complex impedance/admittance such as ISO 10534-2-type data;
+- reverberation-room/statistical absorption such as ISO 354-type data;
+- equivalent absorption area for discrete furniture/occupants when that is the reported quantity;
+- random-incidence scattering coefficient such as ISO 17497-1-type data;
+- directional diffusion metrics such as ISO 17497-2-type data;
+- inferred/model-generated impedance or admittance.
+
+Store test method/standard and revision when known, mounting/backing/air gap/thickness/sample dimensions, incidence/angular applicability, supported frequency range/interpolation policy, source/laboratory/report provenance, license and uncertainty/confidence.
+
+These quantities are **not interchangeable**. In particular:
+
+- do not silently reinterpret reverberation-room absorption as complex impedance;
+- do not silently reinterpret a diffusion coefficient as the ray-scattering coefficient expected by a particular geometrical-acoustics model;
+- do not silently convert equivalent absorption area for a sofa/person into a surface absorption coefficient;
+- do not label impedance inferred from scalar absorption as measured impedance.
+
+If HTDT derives phase-bearing impedance from absorption using a porous/material prior, the output is an explicit inferred boundary model with model family, parameters/prior, uncertainty and provenance. The inverse mapping is non-unique, so one fitted value is not physical ground truth merely because it reduces residual error.
+
 Wave-domain material capability must be explicit. At minimum distinguish:
 
 - `measured_complex_impedance`;
@@ -412,6 +448,14 @@ Internal source authority should support:
 
 Do not hard-code a particular commercial loudspeaker format into the domain model. Define an internal DirectivityDataset, then add import adapters where licensing/specification allows.
 
+Directivity capability is tiered rather than a yes/no flag:
+
+1. **complex directional TF/IR**: magnitude and phase/time information with coordinate frame, reference distance/normalization, angular sampling, valid band and provenance;
+2. **magnitude-only directional data**: suitable for declared energy/directivity uses but does not authorize coherent phase-bearing transfer synthesis;
+3. **summary/analytic prior**: CEA-2034-style summaries, simplified polars or analytic source models remain approximations/hypotheses rather than measured 3D source truth.
+
+Interpolation, angular coverage gaps, extrapolation policy and uncertainty are part of the DirectivityDataset authority. SOFA/AES69-compatible source-directivity semantics are a preferred interchange target where the concrete convention fits; generic polar import remains necessary.
+
 Receiver authority is separate from the source and should support:
 
 - receiver acoustic point / microphone capsule position;
@@ -420,6 +464,8 @@ Receiver authority is separate from the source and should support:
 - absolute/relative level reference;
 - timing reference and phase-validity state;
 - provenance linking to the existing MicrophoneProfile/AcquisitionContext authority when comparing against REW measurements.
+
+Measurement evidence must also declare what comparisons it can support. At minimum distinguish magnitude-valid, relative-phase-valid, common-time-reference/arrival-time-valid, polarity/reference-chain-known and microphone-correction capability. A magnitude-only capture may validate FR magnitude but must not open IR-arrival, coherent-phase or hybrid timing gates. Acoustic timing references are stored with their reference source/path and electronic delay semantics rather than treated as absolute solver emission time.
 
 Environment authority must record the state/model used by the prediction, including temperature and the resulting sound-speed model at minimum; humidity/pressure/air attenuation are added when the selected valid band/model uses them. Measurement validation compares predictions against the environment known or assumed for that campaign rather than silently using a universal 343 m/s constant.
 
@@ -475,7 +521,7 @@ Crossover is not hard-coded globally to exactly 300 Hz. The default target can s
 - geometric solver validity;
 - source/material data validity.
 
-If a metric is not valid for a band/result type, the UI disables it instead of extrapolating.
+If a metric is not valid for a band/result type, the UI disables it instead of extrapolating. Crossover validity is **observable-specific**: magnitude/energy, coherent phase, deterministic arrival timing and late decay may have different usable overlap ranges. A single global transition frequency must not silently authorize all result types.
 
 A usable overlap is not guaranteed. If wave convergence ends below the geometric method's validated lower limit (including occlusion/diffraction applicability), preserve separate band-limited outputs and mark the gap unsupported. R160 may proceed only after extending verified wave coverage, adding a verified bridging method, or explicitly narrowing the requested output. Smoothing across a gap or quoting a Schroeder estimate is not evidence of valid overlap. Add both valid-overlap and no-overlap fixtures.
 
@@ -557,6 +603,21 @@ Coarse fidelity is an explicitly validated model/resolution, not merely a faster
 
 Screening uses hard geometric constraints for definitive feasibility rejection. Acoustic coarse screening needs documented discrepancy/uncertainty criteria against finer runs, an audit sample of discarded candidates and recovery when ranking reversals are observed. Without a validated error bound it is heuristic shortlisting, not proof that the global Pareto set was retained. Before reporting a final simulated Pareto comparison, recompute retained candidates with a common validated fidelity, band, source/reference and objective spec; mixed-fidelity scores cannot silently establish dominance. Include a coarse/fine ranking-reversal fixture. If the budget cannot support refinement, label the result preliminary and keep the production recommendation gate closed.
 
+### Future reduced-order and adjoint acceleration
+
+After the full-order path has passed its numerical gates, HTDT may evaluate reduced-order and gradient-based acceleration as a **non-blocking research track**.
+
+Evaluate in this order:
+
+1. exact structural reuse from the governing operator: receiver batching, reciprocity where valid, reusable grid/BVH/matrix/factorization and source-equivalence grouping;
+2. modal/Green-function or reduced-basis/model-order-reduction methods over an explicitly bounded parameter domain;
+3. adjoint gradients for high-dimensional calibration or optimization after the forward and boundary models are validated;
+4. generic statistical surrogates/residual models only with explicit training/holdout authority and uncertainty.
+
+CRUNA/Adjointsound (TU Berlin) is a useful research reference for FDTD plus adjoint acoustic optimization/calibration, and open DG room-acoustics projects are useful references for high-order wave propagation. Relevance as research code does not make them product dependencies.
+
+Any reduced model must bind to the high-fidelity training authority/hash, parameter-domain applicability, independent validation or error estimator and invalidation rules. Geometry/material/source changes outside that domain invalidate the reduced model. Published research speedups are not HTDT performance requirements.
+
 ## 11. Validation ladder
 
 ### L0 — deterministic math/unit references
@@ -609,14 +670,25 @@ Agreement tolerance is defined from convergence error and the quantity being com
 - ray-count/receiver-estimator/time-bin convergence and variation across independent seeds;
 - energy decay sanity cases.
 
-### L5 — hybrid stitch
+### L5 — external measured benchmark
+
+Use BRAS-class externally measured data for the observables the candidate claims to support:
+
+- preserve dataset/version/hash, geometry/source/receiver/material mapping, uncertainty and preprocessing;
+- compare transfer/path/decay observables only where the benchmark defines them;
+- keep fitted/calibration scenes separate from independent validation scenes;
+- report unsupported input semantics instead of inventing a mapping.
+
+External measurement complements analytical/cross-solver validation; it does not replace owned-room applicability evidence.
+
+### L6 — hybrid stitch
 
 - direct-arrival timing preserved;
 - no artificial level discontinuity through overlap;
 - energy decay continuity;
 - no unsupported high-band phase claim.
 
-### L6 — owned room
+### L7 — owned room
 
 Reuse the O60 campaign invariants through an explicit new-result adapter, not by pretending its current service already accepts arbitrary solver outputs:
 
@@ -757,9 +829,11 @@ After R170A, R140 and R160 (plus the applicable R120A/B geometry gate), add hybr
 
 After R170A and applicable numerical/reference gates, run the preregistered low-band campaign. Validate actual material/source/measurement assumptions early, before investing in the full broadband stack. Unsupported unknowns keep recommendation closed, but do not require R150/R160 to start this campaign. This lane does not certify phase, decay, broadband or directional behavior by passing FR objectives.
 
+Calibration acceptance separates **predictive fit** from **physical identifiability**. Pre-register fitted parameter families/bounds and fixed quantities, report sensitivity/correlation/non-identifiable groups, and allow a valid state such as “predictive model acceptable for this observable, physical material parameters not uniquely identified.” A low residual alone does not certify a fitted wall/material/source parameter. Timing/phase claims require the corresponding measurement-evidence capability. External measured benchmark evidence and owned-room holdout remain distinct.
+
 #### R180B — additional capability validation
 
-After R170B and its numerical gates, validate each additional claimed observable/band/directional capability. Neither an old RoomSim approval nor R180A grants approval to a new hybrid model.
+After R170B and its numerical gates, validate each additional claimed observable/band/directional capability. Neither an old RoomSim approval nor R180A grants approval to a new hybrid model. Phase/IR/arrival-time, directional and decay claims require matching measurement capability and independent holdout; identifiability is reported separately from fit quality when calibration is used.
 
 Both lanes preserve O60/Issue #83 evidence rules, the model-freeze/holdout policy in §11, and synthetic-versus-owned-room separation. R170/R180 remain umbrella IDs; their A/B slices are not independently renamed completed features.
 
@@ -795,7 +869,9 @@ After R100A is accepted, R100B delivers one repeatable benchmark command coverin
 - scalar absorption, scattering and complex impedance/admittance are distinct authorities;
 - CPU correctness/fallback is mandatory and GPU is optional acceleration;
 - exact geometry/material/source/solver/backend/resolution provenance is immutable;
-- owned-room production recommendation remains gated by O60/Issue #83-style measured validation.
+- validation is layered: analytical/reference, independent solver, external measured benchmark and owned-room holdout have distinct roles and provenance;
+- owned-room production recommendation remains gated by O60/Issue #83-style measured validation;
+- good predictive fit does not imply unique physical parameter identification.
 
 ### Must remain open until R100 or later
 
@@ -804,7 +880,7 @@ After R100A is accepted, R100B delivers one repeatable benchmark command coverin
 - final crossover/overlap frequency range;
 - GPU API/vendor and whether a GPU backend ships in the first production release;
 - exact FEM mesher/linear-solver stack;
-- whether BEM, DG/high-order FEM, PSTD/k-space or reduced-order methods graduate from reference to product code;
+- whether BEM, DG/high-order FEM, PSTD/k-space, reduced-order or adjoint methods graduate from reference/research to product code;
 - diffraction model and late-field synthesis method;
 - third-party redistribution/version pins;
 - numeric CPU/GPU acceptance tolerances and performance budgets.

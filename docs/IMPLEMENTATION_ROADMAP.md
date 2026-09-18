@@ -1,12 +1,12 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 Deep Research bakeoff計画反映
+> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization＋O100 system expansion計画＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
 ## 0. 決定と文書の関係
 
-HTDTの中心を、mouseで部屋・スピーカー・座席・スクリーン・家具を直接構築し、測定・予測・配置候補を同じ空間で確認する3D CAD型editorにする。旧GUI、API、DB、ファイル形式の互換性は要件にしない。言語や過去の実装量より、操作品質と将来の実装・保守効率を優先する。
+HTDTの中心を、mouseで部屋・スピーカー・座席・スクリーン・家具を直接構築し、測定・予測・配置候補を同じdigital twinへ結び付けるnative applicationにする。Room/Placementでは3D CAD型viewportを主役にする一方、Measurements/Optimizeまで全てを同じdock shellへ押し込まない。旧GUI、API、DB、ファイル形式の互換性は要件にしない。言語や過去の実装量より、操作品質と将来の実装・保守効率を優先する。
 
 PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持する。ただし、標準widgetでCAD操作が完成すると仮定しない。N05/N20の操作・配布gateを通過してから範囲を拡大する。根拠は[OSS調査](CAD_EDITOR_OSS_RESEARCH.md)、決定は[ADR-0001](adr/0001-native-cad-editor-stack.md)。
 
@@ -21,6 +21,8 @@ PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持�
 | [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) | main、branch、報告済みPoC、未検証の区別 |
 | [DATA_AND_ANALYSIS](DATA_AND_ANALYSIS.md) / [MEASUREMENT_WORKFLOW](MEASUREMENT_WORKFLOW.md) | 不変測定・比較・REW連携契約 |
 | [PLACEMENT_OPTIMIZATION_ROADMAP](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 予測・最適化の算法詳細。作業順は本書に従う |
+| [O90_ROBUST_OPTIMIZATION](O90_ROBUST_OPTIMIZATION.md) | O90設置誤差・入力不確かさ・robust Paretoのauthority / acceptance |
+| [O100_SYSTEM_EXPANSION_OPTIMIZATION](O100_SYSTEM_EXPANSION_OPTIMIZATION.md) | O100仮想speaker/channel追加・system topology/equipment/placement比較のauthority / acceptance |
 | [ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101の数値手法/OSS調査、hybrid solver方針、R100〜R180の技術根拠 |
 | [PLAN_REVIEW](PLAN_REVIEW.md) | 指摘・修正・検証記録 |
 
@@ -84,6 +86,54 @@ N番号は既存PRとの追跡用に維持する。N05を追加し、N20/N30を�
 
 N30aの単純頂点操作にN20b全機能は不要。N50とN60はN40後に独立して進められる。保存と配布の重大リスクはN90まで待たずN05/N10で確認する。
 
+### Post-0.1 / UX-series — native UI/UX overhaul (Issue #118)
+
+現行N/O-series機能を削除せず、window compositionとnavigationをworkflow-firstへ再構成する。HTMはUX benchmarkとして参照するが、asset/code/UIをコピーしない。詳細は[UI_DESIGN](UI_DESIGN.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| UX100 — information architecture | 現行main | current task/control inventory、概要/部屋/測定/最適化、sub-context、deep-link schema、primary/contextual/advanced分類を固定。user-facing日本語用語集とCAD shortcut mapを作成し、現行UI screenshot/layout failureを記録 |
+| UX110 — new shell | UX100 | left rail、Overview、workspace router、context bar、Ctrl+K command palette、dark-first design token foundation。semantic surface/accent/typography/focusを共通化し、global toolbar/dock増殖を止める |
+| UX120 — Room workspace | UX110 | dark 3D viewport中心の部屋workspace、contextual tools、selection Inspector、object palette。CAD defaultとしてMMB pan / Shift+MMB orbit / wheel zoom / RMB context、M move / R rotate / F fit等を実装。neutral lighting、low-contrast grid、selection outline、overlay layer/focus modeを含め、形状/物体/スピーカー/音響を分離してpermanent toolbar/dockを削減 |
+| UX130 — Measurements workspace | UX110 | import→assignment→quality/capability→predicted-vs-measuredをpage化。現行measurement dockをtask pageへ移す |
+| UX140 — Optimize workspace | UX110 + current O-series | Setup/Candidates/Compare/Measure-Validateへ分割。現行monolithic optimization scroll panelを廃止し、Pareto/candidate comparisonを主表示へ |
+| UX150 — visual / interaction / language quality | UX120〜UX140 | dark-first appearanceとJapanese-first user-facing copyをfreeze。surface/accent/typography/spacing/control rhythm、3D lighting/grid/material/overlay、hover/pressed/focus/disabled/selected state、purposeful motion、scientific plot readability、日本語tooltip/menu/message、1280×800/1440×900、100/150/200% DPI、clipping/overlap解消 |
+| UX160 — first-use / visual acceptance | UX150 | 「概要」から主要taskを発見できるfirst-use確認、command search、CAD shortcut discoverability、Japanese copy、navigation、dark 3D readability、motion/feedback、layout screenshot、state consistency。Windows実機visual acceptanceを一度にまとめる |
+
+R100BはUI非依存なのでUX-seriesと並行可能。ただし **R110以降のmaterial/source/receiver/acoustic input UIを現行dock architectureへ追加しない**。R110のdomain/schema設計は進められるが、user-facing inputはUX110〜UX130のnew shell/workspaceへ統合する。
+
+UX-seriesでdomain/service/SceneRevision/evidence semanticsを簡略化しない。GUI compositionだけを置き換え、既存service/modelを再利用する。
+
+### Post-0.1 / O90 — robust / tolerance-aware optimization ([Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140))
+
+O90は完成済みO10〜O80のnominal探索authorityを置き換えず、**現実的な設置誤差・入力不確かさに対する性能の安定性**を追加評価する。詳細は[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| O90A — authority / local sensitivity | O30/O40/O80 | immutable RobustnessSpec / UncertaintyAxis / PerturbationSample / RobustnessEvaluation。position/seat/aim等の±local stencil、G10/O80 constraint再評価、exact provenance |
+| O90B — multidimensional robust Pareto | O90A | bounded/distribution/empirical/discrete uncertainty、明示correlation、sampled envelope、distribution時のみpercentile、feasible fraction、O40 Pareto統合。有限sampleをworst-caseと誤表示しない |
+| O90C — multi-fidelity robustness | O90B + 使用prediction capability | nominal Pareto→local sensitivity→coarse sampling→shortlist→common-fidelity refinement。R140 cache/schedulerを利用可能だがR175はcorrectness依存にしない |
+| O90D — UX140 integration | O90B + UX140 | 「最適化 > ばらつき耐性」。nominal/robust比較、感度、性能分布、3D tolerance/aim envelope、infeasible feedback、Advanced provenance |
+| O90E — owned-room robust validation | O90B + eligible O60/R180 evidence | preregistered perturbation validation、O60 sensitivity evidence再利用。対象model/observable/perturbation domainがvalidation scope外ならproduction robustness recommendationをfail-closed |
+
+初期O90のfirst-line uncertaintyはspeaker/seat XYZ、acoustic aim、physical cabinet yawとする。material/directivity/environment uncertaintyは対応R110+ authority成立後のみ解禁する。± toleranceを確率分布として扱わず、probability/percentileは明示distributionがある場合だけ表示する。
+
+### Post-0.1 / O100 — system expansion / virtual channel topology optimization ([Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142))
+
+O100は既存speakerの位置最適化だけでなく、**現在存在しないSL/SR等をProposed entityとしてDigital Twinへ追加し、channel topology・equipment/source・配置可能領域・aim/toe-inを含むsystem expansion候補を比較する**。詳細は[O100 System Expansion Optimization](O100_SYSTEM_EXPANSION_OPTIMIZATION.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| O100A — SystemVariant / proposed lifecycle | N40 + SceneRevision authority | immutable SystemVariant / ProposedEntitySpec / ChannelRoleBinding。current/proposed/as-built/measuredを分離し、baselineを変更せず3.0.2→5.0.2等のvariantを作成。選択variantは新SceneRevisionとしてapply |
+| O100B — topology + virtual placement search | O100A + G10/O10/O80 | TopologySearchSpec、add/remove/replaceの明示操作、role別allowed/exclusion、高さ、pair/link、aim/toe-in。SL/SR等をdeterministic candidateとして生成 |
+| O100C — EquipmentDefinition / source capability | O100A + R110 source authority interface | cabinet/acoustic reference/directivity/sensitivity/SPL等のcapability/provenanceを保持。unknown/magnitude-only/complex/analyticを区別し、missing dataを捏造しない |
+| O100D — capability-gated system objectives | O100B/C + O30/O40 + 使用prediction capability | layout/profile、coverage、worst-seat/seat spread、SPL/headroom、FR/reflection、installation complexityを独立objectiveとしてPareto比較。unsupported objectiveはdisabled |
+| O100E — multi-fidelity topology search | O100D + 使用R-series capability | topology→geometry/profile→coverage→acousticの段階screeningとcommon-fidelity final comparison。approximate pruningはaudit可能にする |
+| O100F — robust expansion | O100D + O90 | exact proposed candidateをO90へ渡し、位置/aim/seat等の設置誤差耐性を比較。O90 semanticsを再実装しない |
+| O100G — UX / as-built / measurement loop | O100B〜F + UX120/UX140 | Roomで仮想speaker追加・配置範囲作図、Optimizeで構成比較、proposed ghost表示、選択案→As-built→MeasurementPlan→REW実測のlineage。proposedにfake measured evidenceを付けない |
+
+O100はO80/O90を置換しない。O80はexact topology内のextended placement parameter、O90はexact candidateのtolerance robustnessを担当する。O100のproduction claimも対象observable/modelのO60/R180 gateを迂回しない。channel topologyが違う候補のmulti-channel比較では、per-channel transferと明示excitation/routing scenarioを分離し、未定義のcoherent sumを生成しない。
+
 ### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
 
 R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、その上に任意形状音響predictionを追加する。研究根拠と採否条件は[Arbitrary-room acoustics research](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md)を正本とする。
@@ -91,28 +141,29 @@ R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、そ�
 | ID | 先行条件 | 成果 / 完了gate |
 |---|---|---|
 | R100A — benchmark authority | N70 prediction authority | solver-neutral fixture contractを先に固定。AcousticRegion、Portal/BoundaryTermination、source/receiver、boundary/material、environment、expected observable、quantity-specific toleranceを定義。hard gateと性能比較を分離 |
-| R100B — solver bakeoff / ADR | R100A | OSS既存FDTD CPU engine/adapterを優先評価し、独立FEM/reference・geometric referenceとrole別共通fixtureで比較。secondary候補の全実装は必須にしない。version/license/Windows/resource evidenceから採用またはno-go/次実験をADR化。新kernelは再利用不可の根拠がある場合のみ |
-| R110 — acoustic authority / 入力・保存 | R100Bの採用gate通過・interface決定 | immutable AcousticSceneSnapshotとexact SceneRevisionに結ぶacoustic configuration。material/source/receiver/environment、隣接region・portal/terminationの入力と保存、Undo/Redo、既存Sceneの未設定状態を実装。semantic geometry hashとcompiled representation hashを分離 |
+| R100B — solver bakeoff / ADR | R100A | OSS既存FDTD CPU engine/adapterを優先評価し、独立FEM/reference・geometric referenceとrole別共通fixtureで比較。可能な候補にはBRAS等の外部実測benchmarkを追加evidenceとして使い、入力をbackend都合で再調整しない。secondary候補の全実装は必須にしない。version/license/Windows/resource evidenceから採用またはno-go/次実験をADR化。新kernelは再利用不可の根拠がある場合のみ |
+| R110 — acoustic authority / 入力・保存 | R100Bの採用gate通過・interface決定 | immutable AcousticSceneSnapshotとexact SceneRevisionに結ぶacoustic configuration。materialは物理量種別・測定法/standard・mounting/incidence・uncertaintyとmeasured/inferredを保持し、source directivityはcomplex / magnitude-only / analytic-prior capabilityを分離。receiver/measurementはmagnitude/relative-phase/common-time-reference等のevidence capabilityを保持。隣接region・portal/termination、environment、Undo/Redo、既存Sceneの未設定状態を実装。semantic geometry hashとcompiled representation hashを分離 |
 | R120A — prism geometry / selected backend | R110 | exact SceneRevision→canonical regions/surfaces/portals→採用backendの必須representation。FDTDはgrid、FEMはvolume mesh/element/boundary mapping。未使用gridは不要。R150でray BVHを追加。compiler tolerance/provenance、geometry診断を保持 |
 | R120B — general-3D geometry | R110/R120A | 向き付きpolyhedral surface/air volumeの編集または明示import→SceneRevision保存。段差/傾斜天井・曲面の許容誤差付き面分割を含み、material ID、volume/topology、表示診断を検証。対応R130/R150数値gateへ接続 |
-| R130A — rigid wave core | 使用形状のR120A/B | 20–300 Hz初期target。CPU correctness baseline、rigid analytical modes、FR/phase/IR/spatial field、convergence＋cross-solver gate |
+| R130A — rigid wave core | 使用形状のR120A/B | 20–300 Hz初期target。CPU correctness baseline、rigid analytical modes、FR/phase/IR/spatial field、modal frequency/damping/decay等の成立するobservable、convergence＋cross-solver gate。該当claimは外部実測benchmarkでも検証し、RT60単独を低域correctness gateにしない |
 | R130B — lossy boundary | R130A | 独立referenceを持つsimple impedance/admittance boundaryを追加し、reflection magnitude/phaseを検証 |
 | R130C — frequency-dependent boundary | R130B | causal frequency-dependent boundary。time-domainではstability/passivity/causalityもacceptance対象 |
 | R140 — hardware-aware execution | R130A以降 | R110/R130のidentity/stale/cancel/provenanceを維持したままCPU/GPU検出、RAM/VRAM estimate、candidate/solver二階層scheduler、oversubscription回避、efficient cache/resume、silent quality downgrade禁止 |
-| R150 — geometric acoustics | 使用形状のR120A/B | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance。diffractionは独立fixture成立時のみ追加 |
-| R160 — typed hybrid broadband | 使用する境界capabilityのR130A/B/C gate + R150 + 有効overlap | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、explicit overlap/crossoverと共有成分のdouble-counting防止を実装。unsupported phase/metricを生成しない |
+| R150 — geometric acoustics | 使用形状のR120A/B | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance。direct/reflection/scattering/diffraction等はBRAS等の外部実測sceneを利用できる場合は独立benchmark gateを追加。diffractionは独立fixture成立時のみ追加 |
+| R160 — typed hybrid broadband | 使用する境界capabilityのR130A/B/C gate + R150 + 有効overlap | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、explicit overlap/crossoverと共有成分のdouble-counting防止を実装。crossoverはbackend/sceneだけでなくobservableごとにvalidityを持ち、magnitude/energy・coherent phase・arrival timing・late decayを一つの固定周波数で一括解禁しない。unsupported phase/metricを生成しない |
 | R170A — low-band integration | R110/R120A + 使用境界capabilityのR130 gate + 既存O-series | typed result provider→N70表示→bounded CPU batch→O30/O40→O50→N60/O60。基本cancel/cache/resumeとO70 authority bindingを維持。R140/R150/R160や適応探索完成を前提にしない |
-| R180A — low-band validation | R170A + 対象数値gate | source/playback/receiver/time referenceを揃えた低域campaign。calibration後のmodel/config hashを固定し独立holdoutでFR目的を検証。合格しても未検証phase/IR/広帯域/aimへ拡張しない |
+| R180A — low-band validation | R170A + 対象数値gate | source/playback/receiver/time referenceを揃えた低域campaign。measurement capabilityに応じてmagnitude/phase/arrival-time claimを制限する。calibration後のmodel/config hashを固定し独立holdoutで対象observableを検証し、fit品質とphysical identifiabilityを分離して感度/相関/非一意性を記録。合格しても未検証phase/IR/広帯域/aimへ拡張しない |
 | R170B — hybrid / extended integration | R170A + R140/R160 + 使用形状のR120A/B + 使用O70/O80 capability | multi-fidelity・hybrid batch、O70残差/適応、O80多席/多音源/aimを追加。R120Bでは実3D volumeと筐体envelopeの包含/衝突判定を接続し、XY内でも天井超過等は拒否。reuse・screening gateを適用 |
-| R180B — additional validation | R170B + 対象数値gate | hybrid/decay/phase/directional等の追加claimごとに測定adapter・許容差・独立holdoutを検証。旧RoomSim/R180A合格を流用しない |
+| R175 — advanced acceleration research（non-blocking） | R130A + R170A。adjoint calibrationは対象boundary/calibration authority成立後 | receiver batching/reciprocity/grid・BVH・matrix reuseを先に使い、その後modal/Green/reduced-basis/ROM、adjoint gradientを限定benchmarkで評価。full-order authority hash・適用parameter domain・独立error validation・invalidation ruleを必須とし、R180やproduction correctnessの依存にはしない |
+| R180B — additional validation | R170B + 対象数値gate | hybrid/decay/phase/directional等の追加claimごとに測定adapter・measurement capability・許容差・独立holdoutを検証。calibrationを使う場合はfit品質とidentifiabilityを分離。旧RoomSim/R180A合格を流用しない |
 
 R100はumbrellaとし、先にR100Aでsolver-neutral fixture authorityを作り、その後R100Bでsolverを比較する。各solver専用の仮geometry/開口/material定義を先に作って比較しない。openingは「壁の穴」だけでは不十分で、explicit adjacent AcousticRegionまたはBoundaryTerminationを持つ。未知の隣接空間を無言でanechoic/absorbingとみなさない。
 
 R100Bでは「候補ライブラリを先に製品依存へ固定」しない。FDTD-firstは評価順であり自作kernel必須ではない。既存engine→adapter/port→不足部分の自作を比較するが、staircase/thin-surface/material-boundary精度またはWindows packagingがgate未達なら、MFEM等のFEM pathを同じR100A fixtureで比較して決める。BEM/FMM、DG/high-order FEM、PSTD/k-spaceはsecondary/reference候補とし、初期production dependencyにはしない。
 
-共通fixtureは最低限、rigid rectangular analytical modes、grid/mesh convergence、単一impedance/reflection boundary、L字/凹room、region-to-region portalまたは明示termination、counter相当のreflecting obstacle、direct path、first reflection、seed repeatability、hybrid overlap continuityを含む。points/elements-per-wavelength等の経験則は初期値に使えてもacceptanceそのものにはせず、backendごとの収束測定からvalid upper frequencyを決める。license/redistribution、Windows再現性、必要physics capability、CPU correctness等のhard gateを通過した候補だけを速度・memory・実装複雑度で比較する。
+共通fixtureは最低限、rigid rectangular analytical modes、grid/mesh convergence、単一impedance/reflection boundary、L字/凹room、region-to-region portalまたは明示termination、counter相当のreflecting obstacle、direct path、first reflection、seed repeatability、hybrid overlap continuityを含む。これに加えて、解析解/cross-solverだけで閉じず、R130/R150のproduction capabilityにはBRAS等の外部実測benchmarkを該当observableごとに追加する。points/elements-per-wavelength等の経験則は初期値に使えてもacceptanceそのものにはせず、backendごとの収束測定からvalid upper frequencyを決める。license/redistribution、Windows再現性、必要physics capability、CPU correctness等のhard gateを通過した候補だけを速度・memory・実装複雑度で比較する。
 
-R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU correctness baseline、材料authority分離、receiver/environment authority、immutable provenance、O60 real-data gateである。production wave library、最終crossover、GPU vendor/API、mesh/grid preset、FEM mesher/linear-solver stack、diffraction/late-field方式はbenchmark前に固定しない。研究報告中の一般的GPU speedup値や単一ハードウェア例をHTDTの性能要件へ直接転記しない。
+R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU correctness baseline、材料authority分離、receiver/environment authority、immutable provenance、外部実測benchmarkとowned-room holdoutを別層にするvalidation構造、O60 real-data gateである。production wave library、最終crossover、GPU vendor/API、mesh/grid preset、FEM mesher/linear-solver stack、diffraction/late-field方式はbenchmark前に固定しない。研究報告中の一般的GPU speedup値や単一ハードウェア例をHTDTの性能要件へ直接転記しない。
 
 ### Issue #101を満たす順序と範囲
 
@@ -221,12 +272,12 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-18時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationとO100 system expansion / virtual channel topology optimizationは正式計画化済みだが未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
 現行O10〜O80 modelをproduction-owned-roomへ昇格させる未完了gateは [Issue #83 — O60R owned-room campaign execution / hardware evidence](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/83)。これはsoftware実装ではなく、実際のspeaker/setup移動とREW測定を伴う実室model validationである。eligible campaign-backed owned-room ValidationRecordとO60R audit PASSが成立するまで、O70 `production_owned_room` recommendationとO80 owned-room directional capabilityはfail-closedを維持する。
 
-新規software feature trackとして [Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101) と [Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
+新規software feature trackとして [Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101)、[Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102)、[Issue #118 — native UI/UX overhaul](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/118) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#118はUX100〜UX160として、HTMをUX benchmarkにしつつnavigation/workspace/layoutを再構成する。R100Bは並行可能だが、R110+の新しい入力UIを旧dock shellへ増築しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
 
 旧Issue #41等の初期milestoneは履歴としてclose済みであり、今後の再開点として扱わない。追加機能を実装する場合は、この完成済みmainを起点に新しいIssue/PRを作り、既存authority契約を弱めない。

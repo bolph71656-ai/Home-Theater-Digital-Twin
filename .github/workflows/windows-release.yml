@@ -7,6 +7,7 @@ on:
       - "scripts/build-native.ps1"
       - "scripts/build-installer.ps1"
       - "scripts/native_entry.py"
+      - "scripts/validate_backup_pc_migration_windows.py"
       - "installer/**"
       - ".github/workflows/windows-release.yml"
   workflow_dispatch:
@@ -97,6 +98,21 @@ jobs:
           if (-not (Test-Path $demoDatabase)) {
             throw "Packaged synthetic demo did not create its database"
           }
+
+      - name: Validate packaged old-PC to new-PC migration
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP "htdt-package\HTDT\HTDT.exe"
+          python .\scripts\validate_backup_pc_migration_windows.py `
+            --exe $exe `
+            --work-dir "$env:RUNNER_TEMP\htdt-pc-migration"
+
+      - name: Upload PC migration acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: HTDT-windows-pc-migration-acceptance
+          path: ${{ runner.temp }}\htdt-pc-migration\pc-migration-report.json
+          if-no-files-found: error
 
       - name: Install pinned Inno Setup
         shell: pwsh

@@ -22,7 +22,7 @@ stable personal Windows releaseは **0.1.0** です。
 - O60 holdout trend / sensitivity / repeatability / applicability validation authority
 - stable Windows package / installer / update / backup / restore / uninstall data retention
 
-N05〜N90のnative release pathとO10〜O80のsoftware pathは実装済みです。  
+N05〜N90のnative release pathとO10〜O80のsoftware pathは実装済みです。O90 robust/tolerance-aware optimizationとO100 system expansion / virtual channel topology optimizationは正式計画化済みですが未実装です。  
 O70 Adaptive Plannerは `development_synthetic` で、O80 Extended SearchとAdaptive Extended acquisitionはsynthetic directional capabilityでsoftware pathを最後まで確認できます。一方、`production_owned_room` recommendationとowned-room directional capabilityは、**独立した実室O60 validation evidenceが成立するまでfail-closed**です。
 
 実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)、今後の実装順とgateは [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) を正本とします。Issue #101の任意形状音響solverはR100〜R180として計画化し、技術判断は [`docs/ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md`](docs/ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) に記録しています。
@@ -173,10 +173,13 @@ native stable releaseのcorrectnessはfrontend buildへ依存しません。
 | [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | CAD-first製品スコープとrelease方針 |
 | [CAD_EDITOR_OSS_RESEARCH.md](docs/CAD_EDITOR_OSS_RESEARCH.md) | 3D CAD/OSS調査、採否、参照コード |
 | [ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md](docs/ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101のwave/geometric hybrid、OSS、CPU/GPU、材料、validation調査 |
+| [COMPETITIVE_PRODUCT_RESEARCH_2026-09-19.md](docs/COMPETITIVE_PRODUCT_RESEARCH_2026-09-19.md) | 類似製品比較、HTDTの機能gap、追加/修正候補と優先順位 |
 | [ADR-0001](docs/adr/0001-native-cad-editor-stack.md) | native CAD editor技術決定 |
 | [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較、座標、保存契約 |
 | [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW / Windows / AVRの測定境界 |
-| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 配置探索算法。O70/O80 gateを含む |
+| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 配置探索算法。O70/O80実装済みauthorityとO90/O100 planned gateを含む |
+| [O90_ROBUST_OPTIMIZATION.md](docs/O90_ROBUST_OPTIMIZATION.md) | 設置誤差・入力不確かさに対するrobust/tolerance-aware最適化の正式仕様 |
+| [O100_SYSTEM_EXPANSION_OPTIMIZATION.md](docs/O100_SYSTEM_EXPANSION_OPTIMIZATION.md) | 仮想SL/SR等の追加、system topology/equipment/placement比較、As-built/Measured移行の正式仕様 |
 | [ROOM_GEOMETRY.md](docs/ROOM_GEOMETRY.md) | polygon room geometry contract |
 | [PLACEMENT_CONSTRAINTS.md](docs/PLACEMENT_CONSTRAINTS.md) | placement hard constraints |
 | [REW_API.md](docs/REW_API.md) | REW API契約 |

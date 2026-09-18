@@ -349,6 +349,64 @@ def delete_wall(
     return deleted_room, validate_wall_topology(deleted_room, candidate_topology)
 
 
+
+def update_wall_thickness(
+    room: RoomPrism,
+    topology: WallTopology,
+    wall_id: str,
+    *,
+    thickness_m: float,
+) -> WallTopology:
+    """Return a topology with one wall thickness changed and fully revalidated."""
+
+    wall = _wall(topology, wall_id)
+    replacement = wall.model_copy(update={'thickness_m': float(thickness_m)})
+    candidate = WallTopology(
+        walls=tuple(replacement if item.wall_id == wall_id else item for item in topology.walls),
+        openings=topology.openings,
+        constraint_bindings=topology.constraint_bindings,
+    )
+    return validate_wall_topology(room, candidate)
+
+
+def update_opening(
+    room: RoomPrism,
+    topology: WallTopology,
+    opening: WallOpening,
+) -> WallTopology:
+    """Replace one existing opening by ID and revalidate wall-local dimensions."""
+
+    if not any(item.opening_id == opening.opening_id for item in topology.openings):
+        raise WallTopologyError(f'unknown opening: {opening.opening_id}')
+    candidate = WallTopology(
+        walls=topology.walls,
+        openings=tuple(
+            opening if item.opening_id == opening.opening_id else item
+            for item in topology.openings
+        ),
+        constraint_bindings=topology.constraint_bindings,
+    )
+    return validate_wall_topology(room, candidate)
+
+
+def delete_opening(
+    room: RoomPrism,
+    topology: WallTopology,
+    opening_id: str,
+) -> WallTopology:
+    """Delete one opening without changing wall identities or bindings."""
+
+    if not any(item.opening_id == opening_id for item in topology.openings):
+        raise WallTopologyError(f'unknown opening: {opening_id}')
+    candidate = WallTopology(
+        walls=topology.walls,
+        openings=tuple(
+            item for item in topology.openings if item.opening_id != opening_id
+        ),
+        constraint_bindings=topology.constraint_bindings,
+    )
+    return validate_wall_topology(room, candidate)
+
 def _replace_binding_walls(
     wall_ids: tuple[str, ...],
     replacements: dict[str, tuple[str, ...]],

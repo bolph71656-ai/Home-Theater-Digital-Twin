@@ -8,9 +8,9 @@
 
 HTDTは、部屋とホームシアター配置を3D CADのように直接構築・編集し、その配置に実測・予測・比較・最適化候補を結び付けるデジタルツインとする。
 
-操作の中心は大きなviewport。mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、move/rotate、snap、寸法入力で精密化する。設定表を読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
+Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、移動/回転、snap、寸法入力で精密化する。3D navigationはMMB pan、Shift+MMB orbit、wheel zoomを既定とする一般CAD型の操作契約を持つ。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
 
-成功は「見た目が3D」だけではなく、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
+成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。「概要」は次に行う作業とblockerを示し、「部屋 / 測定 / 最適化」の少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。O90では、nominal性能だけでなくspeaker/seat位置やaim等の現実的な設置誤差に対する感度・性能分布・feasible fractionを独立objectiveとして扱い、施工誤差に強い候補とのtrade-offをParetoで比較する。O100ではさらに、**現在存在しないSL/SR等を仮想speakerとして追加し、channel topology・機種/source model・配置可能範囲そのものを設計変数にする**。3.0.2 baselineを保持したまま5.0.2等のproposalを比較し、選択案はAs-built/Measuredへappend-onlyで移行する。
 
 ## 2. 利用条件
 
@@ -22,19 +22,24 @@ HTDTは、部屋とホームシアター配置を3D CADのように直接構築�
 | 測定機器 | RX-A4A、REW、UMIK-1の現状は[実装状況](IMPLEMENTATION_STATUS.md)を正本とする |
 | 実際の室形状・機器寸法 | 不明を0や一般値で確定しない。sampleと実測寸法を区別する |
 | 旧互換 | 不要。必要なdomain知識・計算・原本だけ再利用 |
-| 言語 | 制約なし。第一候補はPython/Qt/VTK、未達なら根拠付きで再選定 |
+| 実装言語 | 制約なし。第一候補はPython/Qt/VTK、未達なら根拠付きで再選定 |
+| GUI言語 | 日本語を基本とする。REW/FR/SPL/RT60/CPU/GPU/CAD/3D/dB/Hz等、翻訳が不自然・冗長または標準記号である語だけ英語/略語を維持 |
 | ローカル作業 | `C:\Users\ka092\Desktop\HTDT\` は必要な実機確認に使用。成果・計画・進捗の正本はGitHub |
 
 ## 3. 中心workflow
 
-1. Projectを作り、room footprintと高さをmouseで構築する。
+global navigationの表示は「概要 / 部屋 / 測定 / 最適化」を基本とし、内部N/O/R milestoneやrepository/job構造をnavigationへ露出しない。機能検索から主要taskへ到達できるようにする。
+
+1. 「概要」から次の作業を選び、「部屋」でroom footprintと高さをmouseで構築する。
 2. speaker、seat、screen、furniture、measurement pointを配置する。
 3. snap/寸法で調整し、SceneRevisionを保存する。
 4. 測定点と音源・AVR・マイク条件を選び、AcquisitionContextを固定する。
 5. REWで手動測定し、text/API出力と原本をHTDTへ取り込む。
 6. scene上の対象からFR・比較を確認する。配置変更は新revisionにする。
 7. 制約内の候補をpreviewし、対応するモデルで予測、必要なら多目的比較する。
-8. 候補を実際に試し、再測定と残差で仮説を評価する。
+8. system expansionを検討する場合はO100で現在存在しないspeaker/channelをProposed entityとして追加し、role・機種/source model・配置可能範囲を指定してbaseline topologyと比較する。
+9. 必要に応じてO90で既存/仮想speakerの設置誤差・aim誤差等へのばらつき耐性を評価し、nominal性能とのtrade-offを比較する。
+10. 選択案を実際に導入した場合はproposalを上書きせずAs-built SceneRevisionを作り、REW再測定と残差で仮説を評価する。
 
 未測定でもCAD編集はできる。高度なCAD操作を覚えないと測定を登録できない設計にもせず、templateとInspectorによる入力経路を用意する。
 
@@ -54,7 +59,7 @@ N70/N80の完成をCAD previewや安定個人版の条件にしない。カレ�
 | 領域 | 再利用 | HTDTで作る部分 |
 |---|---|---|
 | 測定・校正・詳細解析 | REW | 条件・配置・原本の対応、取込、必要な比較 |
-| Windows shell | PySide6/Qt Widgets | compactなlayout、操作、Inspector、単位、状態表示 |
+| Windows shell | PySide6/Qt Widgets | workflow shell、dark-first design tokens、contextual Inspector、command palette、motion/feedback、単位・状態表示 |
 | 描画・科学可視化 | PyVista/VTK/PyVistaQt | entity projection、入力/選択、overlay、job結果対応 |
 | editor設計 | FreeCAD、Godot、Three.js等の局所設計 | domain独立のCommand/Tool/Selection/Snap |
 | 幾何 | Shapely、既存G00/G10 | room/wall/openingと制約の参照、adapter |
@@ -91,4 +96,4 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 
 native GUIをWindowsのDPI/mouse/keyboardで確認する。headless CIを操作品質の証拠にしない。仕様上の目標、過去のPoC報告、今回の再検証を分ける。
 
-変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済みで、次の未着手software trackは[ロードマップ](IMPLEMENTATION_ROADMAP.md)のIssue #101 R100Aから始まる。採用gateは各R-series fixture/ADRと[受入仕様](CAD_EDITOR_ACCEPTANCE.md)、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
+変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済み。O90 robust/tolerance-aware optimizationとO100 system expansion / virtual channel topology optimizationはplannedで未実装。現在はIssue #101のR100B solver bakeoff、Issue #118のUX100〜UX160 UI/UX overhaul、O90、O100を独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。

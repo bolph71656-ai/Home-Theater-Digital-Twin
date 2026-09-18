@@ -1,19 +1,21 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path実装済み / Issue #101 R100A merge済み・R100B bakeoff実装中 / O80P physical toe-in + O80A Adaptive Extended追加 / synthetic acceptance対象 / 実室model gate未通過
+> 更新: 2026-09-19 / N05〜N90 + O10〜O80 software path実装済み / O90 robust optimization＋O100 system expansion正式計画・未実装 / Issue #101 R100A merge済み・R100B bakeoff実装中 / synthetic acceptance対象 / 実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100AをPR #110 / merge `1714c078d4063f59da93f0d733171547f7eb486d` でmain反映済み。R100B authority基盤はPR #111 / merge `7be0127fb352c7073d4a686f2e77cc22bc06eac3` でmain反映済み。raw observation evaluator / pyroomacoustics reference probeはPR #112 / merge `5725f8f2eecb150773202bf324132a34a40ba492`、PFFDTD Windows Python/Numba platform smokeはPR #113 / merge `ea5f5b8631e5097d37788210b2652b3089a28807` でmain反映済み。PR #115 / run `35349358027` でPFFDTD R100A rigid rectangular eigenfrequency fixtureは3段階grid convergence + p=2 Richardson extrapolationにより4 observableすべてPASS。accepted evidence summaryを `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json` に固定済み。MFEM rigid-room independent referenceはPR #114 / merge `245a3efc66144b81742d65c62ad99ba081fe7426` でmain反映済み。PR #116ではpressure authority欠落を修正するR100A-2（density明示）とPFFDTD complex-pressure convergenceを実装中。R100A hash変更により旧R100B artifactはcurrent selectionにはstaleとなり、専用workflowで再実行する。candidate-wide physics / impedance / Windows product packaging / production solver selectionは未完了。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
+**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O90 robust/tolerance-aware optimizationはIssue #140、O100 system expansion / virtual channel topology optimizationはIssue #142で正式計画化したが、どちらもproduct codeは未実装。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100AをPR #110 / merge `1714c078d4063f59da93f0d733171547f7eb486d` でmain反映済み。R100B authority基盤はPR #111 / merge `7be0127fb352c7073d4a686f2e77cc22bc06eac3` でmain反映済み。raw observation evaluator / pyroomacoustics reference probeはPR #112 / merge `5725f8f2eecb150773202bf324132a34a40ba492`、PFFDTD Windows Python/Numba platform smokeはPR #113 / merge `ea5f5b8631e5097d37788210b2652b3089a28807` でmain反映済み。PR #115 / run `35349358027` でPFFDTD R100A rigid rectangular eigenfrequency fixtureは3段階grid convergence + p=2 Richardson extrapolationにより4 observableすべてPASS。accepted evidence summaryを `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json` に固定済み。MFEM rigid-room independent referenceはPR #114 / merge `245a3efc66144b81742d65c62ad99ba081fe7426` でmain反映済み。PR #116ではpressure authority欠落を修正するR100A-2（density明示）とPFFDTD complex-pressure convergenceを実装中。R100A hash変更により旧R100B artifactはcurrent selectionにはstaleとなり、専用workflowで再実行する。candidate-wide physics / impedance / Windows product packaging / production solver selectionは未完了。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
 
 N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N05〜N90 stable releaseとO10〜O80 software pathをmerge済み**。O80 PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` / CI #548 PASS / Windows Release Artifact #93 PASS |
+| main | **N05〜N90 stable releaseとO10〜O80 software pathをmerge済み**。O90/O100はplanned / 未実装。O80 PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` / CI #548 PASS / Windows Release Artifact #93 PASS |
 | N80 tracking | Issue #65（closed） / Issue #67（O20 closed） / PR #74 merged |
 | O60 tracking | Issue #75 / PR #76（implementation history） / PR #78 merged。final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3`、CI #427 PASS |
+| O90 tracking | Issue #140。RobustnessSpec / perturbation evidence / robust Pareto / UX140 / owned-room validationを計画。未実装 |
+| O100 tracking | Issue #142。SystemVariant / ProposedEntitySpec / virtual SL/SR topology search / EquipmentDefinition / O90連携 / As-built→Measured loopを計画。未実装 |
 | O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
 | N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
 | N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |
@@ -336,3 +338,75 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - synthetic fixtureは通常repositoryを通るが、常に `synthetic_fixture` / `physical_measurement=false`。owned-room recommendationへ昇格しない。
 - O80 owned-room capabilityはexact document/SearchSpec SHA/candidate-set SHA/O60 eligible ValidationRecord/model versionへ再照合する。
 - このsoftware completionではRDCを使用していない。既存native stackのowned-Windows N90/A15受入は維持されるが、O70/O80の実室音響妥当性はIssue #83が未完了のため未主張。
+
+
+## UX110 parallel integration — 2026-09-18
+
+- PR #123 dark-first design system: main反映済み。
+- PR #125 central command registry / Ctrl+K: main反映済み。
+- PR #126 read-only Overview readiness: main反映済み。
+- PR #124 Issue #102 data-management controller: main反映済み。
+- workflow shell初版 #122 はcomponent統合前のbridge設計として再レビューし、独立legacy workspaceがstale WorkingDocumentを保持できる問題を検出した。
+- integration branchでは `workflow_navigation.py` をsingle workspace/deep-link contractとし、shell/command/OverviewのID重複を解消した。
+- legacy bridgeはdirty/preview/recovery/running-worker中のworkspace移動をfail-closedし、clean再activate時にlatest SceneRevisionへ同期する。
+- shell独自QSSを廃止し `apply_dark_theme(app)` をcomposition rootへ接続、Ctrl+Kとreadiness-driven Overviewもshellへ接続した。
+- Room bridgeはN20-N70 capability維持のため `PredictionWorkspaceWindow` を使用する。
+- UX110 shellは `--workflow-shell` の明示previewとし、UX150/UX160 Windows visual acceptance前は既定launcherへ昇格しない。
+- 詳細: [UX110 integration record](UX110_INTEGRATION_2026-09-18.md)
+- RDC未使用。
+
+
+## UX120–UX140 parallel workspace integration — 2026-09-19
+
+- #128 Settings / Data Management UI、#129 CAD input controller、#130 Room workspace、#132 Measurements workspaceをmainへmerge済み。
+- #131 Optimization workspaceは#129とのshared command/navigation競合をintegration branchで解消して取り込む。
+- `workflow_application.py` をcomposition rootとして追加し、`--workflow-shell` でOverview / Room / Measurements / Optimizationの新workspaceをlazy mountする。
+- Roomはdark viewport、object palette、Inspector、overlay、MMB pan、Shift+MMB orbit、wheel zoom、RMB command menu、M/R direct transform、X/Y/Z constraint、F/Home、Esc/Enter、Ctrl+D、polygon room作図・vertex dragを既存WorkingDocumentへ接続した。
+- Room transform previewは `working.document` を描画し、commitだけがrecovery/Undo履歴へ入る。
+- Measurementsは `読み込み → 割り当て → 品質 → 比較` の4 page compositionへ切替。REW background job中はdeactivation/restoreをblockする。
+- Optimization canonical contextは `setup / candidates / comparison / validation`。旧 `objectives / measurement-plan` deep-linkはshared navigation boundaryで互換normalizeする。
+- rail下部の「設定」から#128 Data Management UIへ入り、restore時は全mounted workspace guard→handle dispose→native restore→fresh SceneRepository→lazy rebuildを行う。
+- follow-upで新Roomへ既存N70 rectangular geometry predictionを接続。request identity / JobGuard / repository / constraint hashを再利用し、dirty/stale/cancelled resultはfail closed、current resultだけ3D overlayへ表示する。
+- 既知残件: 旧wall/opening・高度geometry editingの完全移植、UX140のlegacy QMainWindow adapter除去、UX150/UX160 visual acceptance。
+- workflow shellは引き続き明示 `--workflow-shell` preview。default launcherはUX160 acceptanceまで変更しない。
+- 詳細: [UX120–UX140 integration record](UX120_140_INTEGRATION_2026-09-19.md)
+- RDC未使用。
+
+
+### UX120 Room prediction integration — 2026-09-19
+
+- 新Roomの「音響」contextへN70矩形幾何予測を接続。
+- `rectangular_geometry_request_identity`、`PredictionJobGuard`、`CadPredictionRepository`、`constraint_workspace_snapshot` を既存authorityとして再利用。
+- prediction開始にはcleanな保存済みSceneRevisionとacoustic-reference receiverを要求。
+- Scene/constraint変更後の遅延result、cancelled token、identity mismatchを保存しない。
+- cancel後もworker thread終了まではworkspace移動/restore/new runをblock。
+- 保存済みrunは現在/要再計算を表示し、current runだけdirect/first-reflectionを3D overlayへ出す。
+- central `prediction.run` はRoom/acoustics deep-link後に新controllerへbind。
+- 詳細: [UX120 Room prediction integration](UX120_ROOM_PREDICTION_2026-09-19.md)
+- RDC未使用。
+
+
+### UX120 Room advanced geometry — 2026-09-19
+
+- 新Roomへvertex/edge selection、midpoint handle、wall drag、numeric vertex/edge/ceiling editを追加。
+- Room > 形状の右contextを専用Geometry Inspectorへ分離。
+- wall topology / opening editは既存 `RoomWorkingDocument.replace_room_topology()` と `cad_walls` authorityを再利用。
+- wall thickness、opening update/deleteをreusable `cad_walls` helperへ抽出し、全操作をexisting topology validationへ通す。
+- split/merge/delete/moveでwall/opening referenceを維持し、orphan/overflowはfail closed。
+- selected wall / opening extentをviewport overlayへ表示。
+- 詳細: [UX120 Room advanced geometry](UX120_ROOM_ADVANCED_GEOMETRY_2026-09-19.md)
+- Roomの主要機能残件はUX150/UX160 polish/acceptance。UX140 legacy adapter cleanupは別途。
+- RDC未使用。
+
+
+### UX140 controller/window separation — 2026-09-19
+
+- workflow-first 最適化workspaceをlegacy `OptimizationWorkspaceWindow/QMainWindow` 継承から分離。
+- plain `QWidget` + `OptimizationWorkflowController(QObject)` compositionへ変更。
+- existing O10〜O80 mixins/repositories/servicesをauthorityとして再利用。
+- Scene/WorkingDocument lifecycleは既存 `RoomWorkspaceController` を再利用。
+- candidate viewportはshared dark `RoomViewport3D`、O-seriesはoverlay portだけ利用。
+- Validation pageのREW / measurement point / channel roleを明示化し、hidden legacy measurement controls依存を除去。
+- workflow shell mountから `workflow_legacy_bridge` を除去。
+- 詳細: [UX140 controller/window separation](ISSUE_118_UX140_CONTROLLER_SEPARATION.md)
+- RDC未使用。
