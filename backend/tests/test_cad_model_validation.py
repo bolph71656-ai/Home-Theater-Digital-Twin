@@ -17,7 +17,7 @@ def test_validation_requires_holdout_before_recommendation_eligibility():
 
 
 def test_validation_gate_uses_holdout_not_calibration_fit():
-    record=build_model_validation(model_id='fixture', model_version='1',
+    record=build_model_validation(**AUTH, model_id='fixture', model_version='1',
         samples=(
             ('a','calibration','p:a','m:a',_fr(0),_fr(0)),
             ('b','holdout','p:b','m:b',_fr(0),_fr(6)),
