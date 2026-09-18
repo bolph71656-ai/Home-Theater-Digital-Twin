@@ -25,7 +25,7 @@ def test_measurement_plan_binds_candidate_to_exact_applied_revision(tmp_path):
     search_repo = CadSearchRepository(scene_repo); search_repo.save(spec)
     candidate = generate_cad_candidates(scene_repo, spec).candidates[1]
     working = WorkingDocument(source.document, source_revision_id=source.revision_id)
-    apply_candidate_positions(working, candidate)
+    apply_candidate_positions(working, candidate, spec=spec, current_constraint_set=CadConstraintSet(document_id='o50-fixture', constraints=()))
     applied = scene_repo.save(working.committed_document, parent_revision_id=source.revision_id).revision
 
     plan = build_measurement_plan(scene_repo, search_repo, search_spec_id=spec.search_spec_id,
