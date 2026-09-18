@@ -85,7 +85,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: r100b-pffdtd-rigid-modes
-          path: |
-            artifacts/r100b/pffdtd_rigid_modes.json
-            artifacts/r100b/pffdtd_rigid_modes_signals.npz
+          path: artifacts/r100b/pffdtd_rigid_modes*
           if-no-files-found: error
