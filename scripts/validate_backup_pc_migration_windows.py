@@ -82,6 +82,11 @@ def _database_snapshot(path: Path) -> tuple[str, dict[str, int]]:
         ]
         for table in tables:
             quoted = _quote_identifier(table)
+            schema_row = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            schema_sql = None if schema_row is None else schema_row[0]
             columns = [
                 str(row[1])
                 for row in connection.execute(f"PRAGMA table_info({quoted})").fetchall()
@@ -102,6 +107,7 @@ def _database_snapshot(path: Path) -> tuple[str, dict[str, int]]:
             payload.append(
                 {
                     "table": table,
+                    "schema_sql": schema_sql,
                     "columns": columns,
                     "rows": rows,
                 }
