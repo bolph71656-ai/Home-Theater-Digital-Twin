@@ -40,6 +40,8 @@ from .placement_constraints import (
     AxisConstraint,
     ConstraintSetCreate,
     LinkedPlacementConstraint,
+    PlacementEvaluationRequest,
+    evaluate_constraint_set,
     validate_constraint_set_for_context,
 )
 from .search_space import (
@@ -985,6 +987,24 @@ def topology_candidate_document(
         or candidate.candidate_id != 'tpc-' + expected_sha[:20]
     ):
         raise ValueError('topology placement candidate identity mismatch')
+
+    g10_evaluation = evaluate_constraint_set(
+        scene_to_g10_context(virtual_scene),
+        json.loads(spec.g10_constraint_spec_json),
+        PlacementEvaluationRequest.model_validate({
+            'positions': candidate.positions,
+        }),
+    )
+    if not g10_evaluation['feasible']:
+        rejection_ids = [
+            str(item['constraint_id'])
+            for item in g10_evaluation['rejections']
+        ]
+        raise ValueError(
+            'topology placement candidate violates G10 hard constraints: '
+            + ', '.join(rejection_ids)
+        )
+
     preview = _candidate_document_from_parts(
         virtual_scene,
         o10_candidate_id=candidate.o10_candidate_id,
@@ -1051,7 +1071,18 @@ def topology_candidate_to_system_variant(
         for item in template_variant.diff
         if item.kind == 'remove'
     )
-    provenance = tuple(template_variant.provenance) + (
+    o100b_provenance_keys = {
+        'o100b.topology_search_sha256',
+        'o100b.topology_option_id',
+        'o100b.search_sha256',
+        'o100b.candidate_id',
+        'o100b.candidate_sha256',
+    }
+    provenance = tuple(
+        item
+        for item in template_variant.provenance
+        if item.key not in o100b_provenance_keys
+    ) + (
         VariantProvenanceItem(
             key='o100b.topology_search_sha256',
             value=spec.topology_search_sha256,
@@ -1085,7 +1116,7 @@ def topology_candidate_to_system_variant(
         parent_variant_id=template_variant.variant_id,
         created_at_utc=created_at_utc,
     )
-    deterministic_id = 'sv-o100b-' + candidate.candidate_sha256[:20]
+    deterministic_id = 'sv-o100b-' + built.variant_sha256[:20]
     payload = built.model_dump(mode='python')
     payload['variant_id'] = deterministic_id
     return SystemVariant.model_validate(payload)
