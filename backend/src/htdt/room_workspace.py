@@ -614,9 +614,10 @@ class OverlayControls(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         set_surface_role(self, SurfaceRole.OVERLAY)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(10)
+        self._compact = False
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(10, 6, 10, 6)
+        self._layout.setSpacing(10)
         self.grid = QCheckBox("グリッド")
         self.labels = QCheckBox("ラベル")
         self.acoustics = QCheckBox("音響")
@@ -624,8 +625,43 @@ class OverlayControls(QFrame):
         self.grid.setChecked(True)
         for toggle in (self.grid, self.labels, self.acoustics, self.focus):
             toggle.toggled.connect(lambda checked=False: self.changed.emit())
-            layout.addWidget(toggle)
-        layout.addStretch(1)
+            self._layout.addWidget(toggle)
+
+        self.more_button = QPushButton("表示…")
+        set_control_size(self.more_button, ControlSize.COMPACT)
+        self.more_menu = QMenu(self.more_button)
+        self.labels_action = self.more_menu.addAction("ラベル")
+        self.labels_action.setCheckable(True)
+        self.focus_action = self.more_menu.addAction("選択に集中")
+        self.focus_action.setCheckable(True)
+        self.labels_action.toggled.connect(self.labels.setChecked)
+        self.focus_action.toggled.connect(self.focus.setChecked)
+        self.labels.toggled.connect(self.labels_action.setChecked)
+        self.focus.toggled.connect(self.focus_action.setChecked)
+        self.more_button.setMenu(self.more_menu)
+        self.more_button.hide()
+        self._layout.addWidget(self.more_button)
+        self._layout.addStretch(1)
+
+    @property
+    def is_compact(self) -> bool:
+        return self._compact
+
+    def set_compact(self, compact: bool) -> None:
+        compact = bool(compact)
+        if self._compact == compact:
+            return
+        self._compact = compact
+        self.labels.setVisible(not compact)
+        self.focus.setVisible(not compact)
+        self.more_button.setVisible(compact)
+        self._layout.setContentsMargins(
+            6 if compact else 10,
+            4 if compact else 6,
+            6 if compact else 10,
+            4 if compact else 6,
+        )
+        self._layout.setSpacing(4 if compact else 10)
 
     def state(self) -> RoomOverlayState:
         return RoomOverlayState(
@@ -932,6 +968,7 @@ class RoomWorkspace(QWidget):
         self._responsive_compact = compact
         right_width = 260 if self.width() < 720 else (280 if compact else 300)
         self.right_stack.setFixedWidth(right_width)
+        self.overlay_controls.set_compact(compact)
         show_palette = (
             self.current_context in {"objects", "placement"}
             and (not compact or self._palette_user_open)
