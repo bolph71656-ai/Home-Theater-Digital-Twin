@@ -1,129 +1,181 @@
 # Home Theater Digital Twin
 
-HTDTは、Windows上で**部屋・ホームシアター配置・測定・予測・最適化を一つの3D空間モデルへ統合するデジタルツイン**です。
+HTDTは、Windows上で**部屋・ホームシアター配置・測定・予測・最適化を一つの3D空間モデルへ統合するnative desktop digital twin**です。
 
-## 現在の開発方針
+## 現在の製品状態
 
-2026-09-16にGUI方針を全面改訂し、OSSコードと計画の追加レビューを反映しました。
+stable personal Windows releaseは **0.1.0** です。
 
-従来のbrowser-first UIとの互換性は要件とせず、今後は**3D CADのようにmouseで部屋とセッティングを直接構築・編集できるnative desktop editor**を製品の中心にします。
+主UIはPySide6 / Qt Widgets + PyVista / VTK / PyVistaQtによるnative 3D CAD editorです。browser UIはlegacy/rollback用としてsourceを保持していますが、新しいCAD機能の正本ではなく、native release CIの必須gateからも外しています。
 
-- native Windows desktop application
-- PySide6 / Qt 6 Widgets
-- PyVista / VTK / PyVistaQt
-- rendererから独立したDocument model
-- CAD型のselection / gizmo / snapping / numeric edit / undo-redo
-- room、speaker、seat、screen、furniture、measurement point等を同一sceneで編集
-- REW測定、配置制約、予測、最適化結果を同じ3D viewportへ重畳
+実装済みの主経路:
 
-**今後の実装順と完了条件の正本は [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) です。**
+- 3D CAD型のselection / gizmo / snapping / numeric edit / Undo/Redo
+- 凹polygon room、wall / opening、speaker / seat / screen / furniture / AV機器 / measurement point
+- placement hard constraintと理由overlay
+- immutable SceneRevision / recovery / view state
+- REW実測workspace、Frequency Response表示、過去配置ghost、A/B比較
+- prediction authority / geometry compatibility / reflection overlay
+- deterministic SearchSpec / placement candidate
+- objective vector / Pareto比較
+- candidate→exact SceneRevision→Measurement Plan→N60 measured evidenceの閉ループ
+- O60 holdout trend / sensitivity / repeatability / applicability validation authority
+- stable Windows package / installer / update / backup / restore / uninstall data retention
 
-技術選定の根拠は [`docs/CAD_EDITOR_OSS_RESEARCH.md`](docs/CAD_EDITOR_OSS_RESEARCH.md)、アーキテクチャ決定は [`docs/adr/0001-native-cad-editor-stack.md`](docs/adr/0001-native-cad-editor-stack.md) を参照してください。
+N05〜N90のnative release pathとO10〜O60のsoftware authorityは実装済みです。  
+O70 Adaptive PlannerとO80 Extended Searchは、**owned-roomの独立O60 validation evidenceが成立するまで自動推薦・拡張探索として有効化しません**。
 
-## 完成像
+実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)、今後の実装順とgateは [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) を正本とします。
 
-HTDTでは、数値フォームを先に埋めるのではなく、3D空間を直接操作します。
+## Windows stable release
 
-- room footprintをclickして描く
-- wall vertexをdragし、寸法入力で正確に修正する
-- speaker、seat、screen、furnitureをpaletteから配置する
-- objectを選択してgizmoでmove/rotateする
-- grid / axis / angle / wall / vertexへsnapする
-- Top / Front / Side / Perspectiveを切り替える
-- Scene tree / viewport / Inspectorが同じselectionへ同期する
-- distance / dimension / clearanceをその場で確認する
-- measurement、reflection、placement candidate、heatmap等をlayer表示する
+### インストール
 
-将来的には、配置候補の生成、音響予測、多目的/Pareto探索、実測検証を同じworkspaceで行います。
+N90のWindows installerはper-user installです。
 
-## 現在mainにある実装資産
+- program root: `%LOCALAPPDATA%\Programs\Home Theater Digital Twin`
+- user data root: `%LOCALAPPDATA%\HomeTheaterDigitalTwin`
+- stable AppIdで上書きupdate
+- uninstallはprogram files / shortcutを削除するが、user dataを暗黙削除しない
+- 個人利用buildではcode signingをcorrectness gateにしない
 
-既存コードはすべて捨てるのではなく、新アーキテクチャへ適合するものを再利用します。
+最終A15では実機Windows上で `0.1.0.dev0 -> 0.1.0` update、backup/restore、GUI reopen、uninstall/reinstall、user-data retentionを一連でPASSしています。
 
-主な実装済み資産:
+詳細: [`docs/N90_ACCEPTANCE_2026-09-18.md`](docs/N90_ACCEPTANCE_2026-09-18.md)
 
-- Windowsローカル起動基盤
-- Project / Context revision / Measurement / Dataset / RawAsset / SQLite
-- REW frequency response text import
-- REW 5.40系 read-only API integration
-- measurement/comparison history
-- backup / restore
-- room mode / first-reflection candidate
-- polygon-prism Room Geometry v2
-- placement constraint engine
-- deterministic placement search space
-- report generation
+### Native起動
 
-実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) を正本とします。
-
-## Native CAD editorの計画と保存済み試作
-
-今後の追跡先は[Issue #41 — N05](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/41)です。旧Issue #36 / #38と旧PR #37は、新ロードマップによる置換としてcloseしました。PR #37のbranchと試作コードは保持しています。実装は一時停止中で、今回の変更は計画と追跡先の整理です。
-
-過去の進捗文書には、以下のWindows PoC確認が報告されています（今回のレビューで実機再検証はしていません）。
-
-- PySide6 + PyVista/VTK + PyVistaQtのnative Qt window
-- 8頂点の凹polygon room描画
-- FL/C/FRとMLP描画
-- `AffineWidget3D`によるspeaker actorのmove/rotate interaction
-- initial snap / undo-redo / immutable Context draft semantics
-
-PR #37の追加commit `0353768`ではnative shell、Scene/viewport選択同期、読取Inspector、view切替、起動スクリプトと直接依存の版固定が追加されています。編集gizmo・数値変更・Save/UndoのGUI接続とpackage受入は未完です。次は**N05: 選択→移動→取消/Undo→保存/再openとstandalone packageの縦断試作**をGitHub上のコードから再現し、その後N10〜N40でCAD基盤を完成させます。
-
-操作・保存・wall/opening参照は[編集契約](docs/CAD_EDITOR_SPEC.md)、Windows/DPI/性能の判定は[受入仕様](docs/CAD_EDITOR_ACCEPTANCE.md)へ具体化しました。旧GUI/API/DBとの互換や機能同等性は完成条件にしません。
-
-## 対象環境
-
-- Windows 11 x64
-- 開発PC = 利用PC
-- Yamaha RX-A4A
-- 現在のspeaker構成: 3.0.2（data model上は可変）
-- サブウーファーなしを主要シナリオとするが、将来追加可能
-- REW V5.40 beta 135 API版を所有PCへ導入済み
-- miniDSP UMIK-1を採用、実機接続/serial登録は未実施
-
-## 現行browser版のローカル起動
-
-native editorへ移行中のため、以下は**現行実装を確認するための手順**です。将来の主UIではありません。
-
-リポジトリ直下のPowerShellで:
-
-```powershell
-.\scripts\run-local.ps1
-```
-
-backendのみ:
+リポジトリから:
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".\backend[dev]"
-python -m htdt
+python -m htdt.native_cad
 ```
 
-## 設計文書
+entry point:
+
+```powershell
+htdt-native
+```
+
+repository helper:
+
+```powershell
+.\scripts\run-native.ps1
+```
+
+installed buildではinstallerが配置した `HTDT\HTDT.exe` を起動します。
+
+## Backup / restore
+
+stable packageはGUI起動前にmaintenance CLIを処理します。
+
+version:
+
+```powershell
+HTDT.exe --version
+```
+
+backup:
+
+```powershell
+HTDT.exe --backup "D:\Backups\home-theater.htdt-backup"
+```
+
+restore:
+
+```powershell
+HTDT.exe --restore "D:\Backups\home-theater.htdt-backup"
+```
+
+repository起動でも同じoptionを使用できます。
+
+```powershell
+python -m htdt.native_cad --backup "D:\Backups\home-theater.htdt-backup"
+python -m htdt.native_cad --restore "D:\Backups\home-theater.htdt-backup"
+```
+
+backupはlive SQLite fileの単純copyではなくSQLite backup APIでconsistent snapshotを作り、N60 measurement raw assetsもSHA-256で検証してarchiveへ含めます。restoreはarchive traversal、manifest/hash、SQLite integrity/foreign key、asset hashを全検証してからstagingし、現在dataをpre-restore backupへ退避して置換します。
+
+restoreはHTDT GUIを終了した状態で実行してください。WindowsでDBがopenされている場合は部分上書きせずfailします。
+
+## CAD / analysis architecture
+
+HTDTの中心は、数値フォームを先に埋める方式ではなく、同一Sceneを3D空間として直接操作するeditorです。
+
+- room footprintをclickして描く
+- wall vertexをdragし、寸法入力で精密化する
+- speaker、seat、screen、furnitureをpaletteから配置する
+- objectを選択してgizmoでmove/rotateする
+- grid / axis / angle / wall / vertexへsnapする
+- Top / Front / Side / Perspectiveを切り替える
+- Scene tree / viewport / Inspectorを同じselectionへ同期する
+- measurement、constraint、reflection、prediction、placement candidateを同じsceneへ重畳する
+
+解析結果はSceneRevisionへ版固定し、measured / derived / predicted / hypothesisを区別します。非矩形roomへ矩形専用modelを無言で適用しません。
+
+配置探索も単一の「音質総合点」へ縮約せず、独立objective vectorとPareto集合を保持します。実測validationで傾向・順位・感度・再現性・適用条件が成立しないmodelから自動推薦を出しません。
+
+## 現在mainにある主要実装
+
+- N20b: multi-select、common pivot、object/grid/angle snap、hide/lock
+- N30a: 凹polygon room sketch、vertex edit、dimension、self-intersection拒否
+- N30b: stable wall ID、opening、wall editと参照migration
+- N40: theater objects / 3.0.2 template / duplicate / acoustic reference / explicit aim
+- N50: placement constraint adapter / allowed / exclusion / walkway / wall clearance
+- N60: immutable measurement/revision binding / REW import/read / FR dock / ghost / A/B comparison
+- N70: immutable prediction authority / geometry compatibility / prediction overlays / bulk marker rendering
+- N80: SearchSpec / candidate preview+apply / O20 batch prediction / objective / Pareto / Measurement Plan
+- O60: calibration/holdout分離 / trend / sensitivity / repeatability / applicability / recommendation gate
+- N90: reproducible package / per-user installer / backup+restore / update+uninstall data retention
+
+## 対象環境
+
+- Windows 11 x64
+- Python 3.12 x64
+- 個人利用
+- Yamaha RX-A4A
+- 主要speaker構成: 3.0.2（data model上は可変）
+- サブウーファーなしを主要シナリオとするが将来追加可能
+- REW V5.40 beta 135 API版をowned Windows環境で使用
+- miniDSP UMIK-1を主要測定マイクとして想定
+
+## Legacy browser path
+
+旧browser/FastAPI UI sourceはmigration rollback/historyのため保持していますが、native CADの新機能を二重実装しません。
+
+旧browser pathの開発確認が必要な場合のみ:
+
+```powershell
+.\scripts\run-local.ps1
+```
+
+native stable releaseのcorrectnessはfrontend buildへ依存しません。
+
+## 設計・受入文書
 
 | 文書 | 内容 |
 |---|---|
-| [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | **今後の実装順・milestone・受入条件の正本** |
-| [CAD_EDITOR_SPEC.md](docs/CAD_EDITOR_SPEC.md) | Scene/測定Context分離、操作、保存、座標、wall/opening、非同期契約 |
-| [CAD_EDITOR_ACCEPTANCE.md](docs/CAD_EDITOR_ACCEPTANCE.md) | fixture、操作/DPI/性能、packageの受入 |
+| [IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) | **実装順・milestone・受入条件の正本** |
+| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | main / branch / accepted gate / 未検証の実装事実 |
+| [N90_ACCEPTANCE_2026-09-18.md](docs/N90_ACCEPTANCE_2026-09-18.md) | stable 0.1.0 / A15 Windows受入 |
+| [CAD_EDITOR_SPEC.md](docs/CAD_EDITOR_SPEC.md) | Scene、操作、保存、座標、wall/opening、非同期契約 |
+| [CAD_EDITOR_ACCEPTANCE.md](docs/CAD_EDITOR_ACCEPTANCE.md) | fixture、DPI/性能、A01〜A15 |
 | [UI_DESIGN.md](docs/UI_DESIGN.md) | native CADの画面・mouse/keyboard設計 |
 | [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | CAD-first製品スコープとrelease方針 |
-| [CAD_EDITOR_OSS_RESEARCH.md](docs/CAD_EDITOR_OSS_RESEARCH.md) | 3D CAD/OSS調査、採用・不採用理由、参照コード |
+| [CAD_EDITOR_OSS_RESEARCH.md](docs/CAD_EDITOR_OSS_RESEARCH.md) | 3D CAD/OSS調査、採否、参照コード |
 | [ADR-0001](docs/adr/0001-native-cad-editor-stack.md) | native CAD editor技術決定 |
-| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | mainへ反映済みの実装事実 |
-| [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較数式、座標、保存契約 |
-| [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW/Windows/AVRの測定境界 |
-| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 配置探索アルゴリズム詳細。実装順はCAD-first roadmapに従う |
+| [DATA_AND_ANALYSIS.md](docs/DATA_AND_ANALYSIS.md) | 不変履歴、比較、座標、保存契約 |
+| [MEASUREMENT_WORKFLOW.md](docs/MEASUREMENT_WORKFLOW.md) | REW / Windows / AVRの測定境界 |
+| [PLACEMENT_OPTIMIZATION_ROADMAP.md](docs/PLACEMENT_OPTIMIZATION_ROADMAP.md) | 配置探索算法。O70/O80 gateを含む |
 | [ROOM_GEOMETRY.md](docs/ROOM_GEOMETRY.md) | polygon room geometry contract |
 | [PLACEMENT_CONSTRAINTS.md](docs/PLACEMENT_CONSTRAINTS.md) | placement hard constraints |
-| [REW_API.md](docs/REW_API.md) | read-only REW API契約 |
+| [REW_API.md](docs/REW_API.md) | REW API契約 |
 
 ## 開発運用
 
-ローカル作業は `C:\Users\ka092\Desktop\HTDT\` で行います。Windows renderingやmouse interaction等の実機確認に使用します。
+Windows実機確認が必要な場合のlocal worktreeは `C:\Users\ka092\Desktop\HTDT\repo` です。
 
-ただし、**計画、考察、設計判断、実装記録、検証結果、進捗、成果物の正本はGitHubに残します。**
-
-各native editor PRではRoadmap milestone ID（N10、N20等）、参考OSS、検証結果、Windows実機確認、既知の制限を記録します。
+ただし、**計画、設計判断、実装記録、検証結果、進捗、成果物の正本はGitHubに残します**。GitHub Actionsで検証できる事項はActionsを優先し、RDCは実機GPU/UI/installer等でしか確認できないgateへ限定します。
