@@ -603,6 +603,21 @@ Coarse fidelity is an explicitly validated model/resolution, not merely a faster
 
 Screening uses hard geometric constraints for definitive feasibility rejection. Acoustic coarse screening needs documented discrepancy/uncertainty criteria against finer runs, an audit sample of discarded candidates and recovery when ranking reversals are observed. Without a validated error bound it is heuristic shortlisting, not proof that the global Pareto set was retained. Before reporting a final simulated Pareto comparison, recompute retained candidates with a common validated fidelity, band, source/reference and objective spec; mixed-fidelity scores cannot silently establish dominance. Include a coarse/fine ranking-reversal fixture. If the budget cannot support refinement, label the result preliminary and keep the production recommendation gate closed.
 
+### Future reduced-order and adjoint acceleration
+
+After the full-order path has passed its numerical gates, HTDT may evaluate reduced-order and gradient-based acceleration as a **non-blocking research track**.
+
+Evaluate in this order:
+
+1. exact structural reuse from the governing operator: receiver batching, reciprocity where valid, reusable grid/BVH/matrix/factorization and source-equivalence grouping;
+2. modal/Green-function or reduced-basis/model-order-reduction methods over an explicitly bounded parameter domain;
+3. adjoint gradients for high-dimensional calibration or optimization after the forward and boundary models are validated;
+4. generic statistical surrogates/residual models only with explicit training/holdout authority and uncertainty.
+
+CRUNA/Adjointsound (TU Berlin) is a useful research reference for FDTD plus adjoint acoustic optimization/calibration, and open DG room-acoustics projects are useful references for high-order wave propagation. Relevance as research code does not make them product dependencies.
+
+Any reduced model must bind to the high-fidelity training authority/hash, parameter-domain applicability, independent validation or error estimator and invalidation rules. Geometry/material/source changes outside that domain invalidate the reduced model. Published research speedups are not HTDT performance requirements.
+
 ## 11. Validation ladder
 
 ### L0 — deterministic math/unit references
@@ -655,14 +670,25 @@ Agreement tolerance is defined from convergence error and the quantity being com
 - ray-count/receiver-estimator/time-bin convergence and variation across independent seeds;
 - energy decay sanity cases.
 
-### L5 — hybrid stitch
+### L5 — external measured benchmark
+
+Use BRAS-class externally measured data for the observables the candidate claims to support:
+
+- preserve dataset/version/hash, geometry/source/receiver/material mapping, uncertainty and preprocessing;
+- compare transfer/path/decay observables only where the benchmark defines them;
+- keep fitted/calibration scenes separate from independent validation scenes;
+- report unsupported input semantics instead of inventing a mapping.
+
+External measurement complements analytical/cross-solver validation; it does not replace owned-room applicability evidence.
+
+### L6 — hybrid stitch
 
 - direct-arrival timing preserved;
 - no artificial level discontinuity through overlap;
 - energy decay continuity;
 - no unsupported high-band phase claim.
 
-### L6 — owned room
+### L7 — owned room
 
 Reuse the O60 campaign invariants through an explicit new-result adapter, not by pretending its current service already accepts arbitrary solver outputs:
 
