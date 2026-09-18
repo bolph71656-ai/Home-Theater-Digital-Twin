@@ -333,3 +333,19 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - synthetic fixtureは通常repositoryを通るが、常に `synthetic_fixture` / `physical_measurement=false`。owned-room recommendationへ昇格しない。
 - O80 owned-room capabilityはexact document/SearchSpec SHA/candidate-set SHA/O60 eligible ValidationRecord/model versionへ再照合する。
 - このsoftware completionではRDCを使用していない。既存native stackのowned-Windows N90/A15受入は維持されるが、O70/O80の実室音響妥当性はIssue #83が未完了のため未主張。
+
+
+## UX110 parallel integration — 2026-09-18
+
+- PR #123 dark-first design system: main反映済み。
+- PR #125 central command registry / Ctrl+K: main反映済み。
+- PR #126 read-only Overview readiness: main反映済み。
+- PR #124 Issue #102 data-management controller: main反映済み。
+- workflow shell初版 #122 はcomponent統合前のbridge設計として再レビューし、独立legacy workspaceがstale WorkingDocumentを保持できる問題を検出した。
+- integration branchでは `workflow_navigation.py` をsingle workspace/deep-link contractとし、shell/command/OverviewのID重複を解消した。
+- legacy bridgeはdirty/preview/recovery/running-worker中のworkspace移動をfail-closedし、clean再activate時にlatest SceneRevisionへ同期する。
+- shell独自QSSを廃止し `apply_dark_theme(app)` をcomposition rootへ接続、Ctrl+Kとreadiness-driven Overviewもshellへ接続した。
+- Room bridgeはN20-N70 capability維持のため `PredictionWorkspaceWindow` を使用する。
+- UX110 shellは `--workflow-shell` の明示previewとし、UX150/UX160 Windows visual acceptance前は既定launcherへ昇格しない。
+- 詳細: [UX110 integration record](UX110_INTEGRATION_2026-09-18.md)
+- RDC未使用。
