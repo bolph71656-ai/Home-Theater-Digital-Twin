@@ -9,6 +9,7 @@ from htdt.acoustic_bakeoff import (
     BakeoffDecision,
     BakeoffFixtureEvidence,
     BakeoffHardGateEvidence,
+    BakeoffObservableEvidence,
     BakeoffPlatform,
     BakeoffRun,
     applicable_fixture_ids,
@@ -217,3 +218,78 @@ def test_reference_only_candidate_cannot_be_selected_for_production() -> None:
 
     with pytest.raises(ValueError, match='reference-only'):
         validate_bakeoff_decision(benchmark, candidates, (run,), decision)
+
+
+def _passing_geometric_evidence(*, direct_length_absolute_error: float = 0.0, solve_s: float = 1.0):
+    return BakeoffFixtureEvidence(
+        fixture_id='geometric-direct-first-reflection-v1',
+        status='pass',
+        evidence_ref='artifacts/r100b/pyroom/direct-first-reflection.json',
+        adapter_id='htdt-r100b-pyroom-reference',
+        adapter_version='0',
+        backend_version='0.10.1',
+        precision='float64',
+        compile_s=1.0,
+        solve_s=solve_s,
+        postprocess_s=1.0,
+        peak_ram_mb=128.0,
+        output_mb=1.0,
+        observables=(
+            BakeoffObservableEvidence(
+                observable_id='direct-length',
+                status='pass',
+                summary='closed-form comparison',
+                absolute_error=direct_length_absolute_error,
+                relative_error=0.0,
+            ),
+            BakeoffObservableEvidence(
+                observable_id='direct-delay',
+                status='pass',
+                summary='closed-form comparison',
+                absolute_error=0.0,
+                relative_error=0.0,
+            ),
+            BakeoffObservableEvidence(
+                observable_id='first-reflection-point-ymin',
+                status='pass',
+                summary='closed-form comparison',
+                absolute_error=0.0,
+                relative_error=0.0,
+            ),
+            BakeoffObservableEvidence(
+                observable_id='first-reflection-length-ymin',
+                status='pass',
+                summary='closed-form comparison',
+                absolute_error=0.0,
+                relative_error=0.0,
+            ),
+        ),
+    )
+
+
+def test_passing_observable_cannot_exceed_r100a_tolerance() -> None:
+    benchmark, candidates = _authorities()
+    pyroom = _candidate(candidates, 'pyroomacoustics-v0.10.1-f02b01d')
+    run = _run(pyroom.candidate_id, ('geometric-direct-first-reflection-v1',))
+    payload = run.model_dump(mode='python')
+    payload['fixture_evidence'][0] = _passing_geometric_evidence(
+        direct_length_absolute_error=2e-6
+    ).model_dump(mode='python')
+
+    altered = BakeoffRun.model_validate(payload)
+    with pytest.raises(ValueError, match='exceeds absolute_error tolerance'):
+        validate_bakeoff_run(benchmark, candidates, altered)
+
+
+def test_passing_fixture_cannot_exceed_r100a_resource_budget() -> None:
+    benchmark, candidates = _authorities()
+    pyroom = _candidate(candidates, 'pyroomacoustics-v0.10.1-f02b01d')
+    run = _run(pyroom.candidate_id, ('geometric-direct-first-reflection-v1',))
+    payload = run.model_dump(mode='python')
+    payload['fixture_evidence'][0] = _passing_geometric_evidence(
+        solve_s=61.0
+    ).model_dump(mode='python')
+
+    altered = BakeoffRun.model_validate(payload)
+    with pytest.raises(ValueError, match='exceeds resource budget'):
+        validate_bakeoff_run(benchmark, candidates, altered)
