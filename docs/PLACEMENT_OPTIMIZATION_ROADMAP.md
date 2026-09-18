@@ -1,8 +1,8 @@
 # 配置探索・シミュレーション最適化ロードマップ
 
-> 改訂: 2026-09-19 / O90 robust/tolerance-aware optimization正式化
+> 改訂: 2026-09-19 / O90 robust optimization＋O100 system expansion正式化
 > 状態: 配置探索アルゴリズムの長期仕様。実装順・release条件は[CAD-firstロードマップ](IMPLEMENTATION_ROADMAP.md)を正本とし、任意形状solverの技術判断は[ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md)に従う。
-> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。**O90はplanned**で、nominal最適化に設置・入力ばらつき耐性を追加する。trackingは[Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140)、詳細authorityは[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
+> O10〜O50はnative CADへ実装・接続済み。O60 full validationのsoftware authorityは実装済みだが、owned-room model gateは未通過。実室O60はmeasurement前にValidation Campaignでcalibration/holdout、target response、帯域、閾値、sensitivity/repeatability/separation/applicability条件をimmutable事前登録する。O70/O80はcampaign-backed real-data gateを満たすまで自動推薦・拡張探索として有効化しない。**O90はplanned**で、nominal最適化に設置・入力ばらつき耐性を追加する。trackingは[Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140)、詳細authorityは[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。**O100もplanned**で、現在存在しないspeaker/channelをProposed entityとして追加しsystem topology/equipment/placement自体を探索対象へ拡張する。trackingは[Issue #142](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/142)、詳細は[O100 System Expansion](O100_SYSTEM_EXPANSION_OPTIMIZATION.md)。
 > 以下の既存座標/G00/G10契約を新Sceneへ接続する際は[編集契約](CAD_EDITOR_SPEC.md)のadapterを用いる。
 
 ## 1. 目的
@@ -147,8 +147,9 @@ cache artifactとPredictionRunのexact SceneRevision bindingを分離する。�
 | O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **software実装済み / synthetic acceptance PASS**。O60 calibration残差のobjective別GP補正と不確実性から次測定候補を決定し、SearchSpec/candidate-set/ValidationRecordへimmutable保存する。`development_synthetic`は完全PASS synthetic fixtureを許可するがproduction gateを開かない。`production_owned_room`はcurrent campaign-backed eligible ValidationRecordを必須とする |
 | O80 | Extended Search / Adaptive Extended | 多席、多チャンネル、acoustic aim、physical toe-in、高さ等 | **software実装済み**。`aim_yaw_deg`と`body_yaw_deg`を明示capability付きで扱い、physical toe-inはorientation-aware hard constraintを再評価する。Adaptive Extended Planはbase XYZ + extended parameterをaxis span正規化してobjective別residual GP/uncertainty acquisitionへ入力し、exact O80 authorityへimmutable bindingする。synthetic laneはproduction gateを開かず、owned-room有効化はdirectional modelの独立O60 gate後だけ |
 | O90 | Robust / Tolerance-aware Optimization | 設置誤差・入力不確かさに対する性能分布、感度、feasible fraction、robust Pareto | **planned / 未実装**。immutable `RobustnessSpec`で±位置/aim/seat等のuncertaintyを定義し、nominal・local sensitivity・sampled envelope・明示distribution時のみpercentileを別objectiveとして保持する。有限samplingを真のworst-caseと呼ばない。perturbationごとにG10/O80 hard constraintを再評価し、infeasible sampleもevidenceとして保存する。software laneはsyntheticで検証可。production robustness recommendationは対象model/observable/perturbation domainのeligible O60/R180 evidenceを必須とする |
+| O100 | System Expansion / Virtual Channel Topology | 現在存在しないSL/SR等を仮想追加し、topology・equipment/source・配置範囲・aimを含めて比較 | **planned / 未実装**。baseline SceneRevisionを変更せずSystemVariant/ProposedEntitySpecを作り、role別allowed regionからG10/O10/O80でcandidate生成。source/directivity/SPL等はcapability/provenance付きEquipmentDefinitionへbindingし、coverage/SPL/FR等は成立するobjectiveだけ評価する。3.0.2 vs 5.0.2等をPareto比較し、selected proposal→As-built→Measuredをappend-only lineageで保持。O90 robustnessとO60/R180 gateを再利用する |
 
-O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。O90はO10〜O80を置換せず、nominal候補へrobustness evidenceを追加する後続milestoneとする。
+O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。O90はO10〜O80を置換せずnominal候補へrobustness evidenceを追加し、O100はbaseline topologyを壊さずProposed system variantを探索へ追加する後続milestoneとする。
 
 ## 6. 探索空間と制約
 
@@ -217,6 +218,25 @@ O90ではnominal objectiveを残したまま、明示したuncertainty/tolerance
 `±20 mm`のようなbounded intervalだけから確率分布を捏造しない。有限sampleの最大/最小は`sampled_worst`とし、数学的・探索的に保証していない`worst_case`と呼ばない。
 
 robust Paretoでも単一scoreへ縮約しない。例えば「nominal FRはAが優位、±20 mm耐性はBが優位」を同時に保持する。詳細は[O90 Robust Optimization](O90_ROBUST_OPTIMIZATION.md)。
+
+### 7.2 O100 system topology / expansion objective
+
+O100では「存在しているspeakerをどこへ動かすか」だけでなく、**どのroleを追加するか・どの機種/source modelを使うか・どのinstallation zoneへ置くか**を明示的なdesign variableとして扱える。
+
+例:
+
+- baseline 3.0.2を保持;
+- `+SL/SR` の5.0.2 SystemVariantを派生;
+- SL/SRそれぞれにallowed/exclusion、高さ、pair symmetry、aim範囲を指定;
+- EquipmentDefinitionをbinding;
+- feasible placementをO10/O80で生成;
+- layout/coverage/SPL/FR等、現在のcapabilityで成立するobjectiveだけをO30へ追加;
+- O40 Paretoでbaselineとproposalを比較;
+- surviving proposalをO90でtolerance評価。
+
+baselineにSL/SRが存在しないことをresponse=0として数値比較しない。channel topologyの差はSystemVariantとして保持する。multi-channel acoustic comparisonはper-channel transferまたはrouting/gain/delay/filterを固定した明示excitation scenarioだけで行い、無関係channelを未定義coherent sumにしない。
+
+詳細は[O100 System Expansion](O100_SYSTEM_EXPANSION_OPTIMIZATION.md)。
 
 ## 8. 実測閉ループ
 
@@ -302,6 +322,10 @@ ROM/adjointはO-series production gateの依存にしない。採用する場合
 - RobustnessSpec: base candidate-set/model/objective、uncertainty axis/model/correlation、sampling/fidelity/budget、算法版。
 - PerturbationSample: candidate、exact delta、resulting Scene/config identity、feasibility、PredictionRun、ObjectiveVector、failure/reuse provenance。
 - RobustnessEvaluation: nominal、sensitivity、sampled envelope、explicit distribution時のpercentile、feasible fraction、robust objective/provenance。
+- SystemVariant: baseline SceneRevisionから派生したtopology/equipment/placement構成。current/proposed/as-built/measured stateとexact diffを保持。
+- TopologySearchSpec: add/remove/replace可能なrole/group、installation zone、equipment alternative等を明示。
+- ProposedEntitySpec: 未導入speaker等のrole、physical envelope、source/equipment、placement/aim constraint、provenance。
+- ChannelRoleBinding / EquipmentDefinition reference: role/layout-profileとsource capabilityを名前だけでなくversion/provenance付きでbinding。
 
 予測結果を再計算して過去の表示を上書きしない。再計算は新しいPredictionRunとして保存し、旧結果から新結果への参照を持てるようにする。
 
