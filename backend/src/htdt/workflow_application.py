@@ -194,7 +194,18 @@ class WorkflowApplicationComposition:
         )
         prediction_panel = RoomPredictionPanel(prediction)
         workspace.attach_acoustics_panel(prediction_panel)
-        prediction.runSelected.connect(workspace.set_prediction_results)
+
+        def show_prediction_overlay(results: object) -> None:
+            if (
+                isinstance(results, tuple)
+                and results
+                and prediction.result_is_current(results[0])
+            ):
+                workspace.set_prediction_results(results)
+            else:
+                workspace.set_prediction_results(())
+
+        prediction.runSelected.connect(show_prediction_overlay)
 
         cad_input = CadInputController(
             shortcut_parent=workspace,
@@ -330,7 +341,7 @@ class WorkflowApplicationComposition:
             self._unbind_workspace_commands()
             workspace.activate()
             prediction_panel.refresh()
-            workspace.set_prediction_results(prediction.refresh_selection())
+            show_prediction_overlay(prediction.refresh_selection())
             bind_room_commands()
 
         def deactivate() -> None:
