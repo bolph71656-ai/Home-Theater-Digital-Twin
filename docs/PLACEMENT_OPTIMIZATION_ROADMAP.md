@@ -51,7 +51,7 @@ HTDTの配置探索は、部屋・スピーカー・MLPの可動範囲から候�
 
 ### 3.1 実室Geometry: 非矩形を正本にする
 
-実室形状は矩形を前提にしない。初期の一般形状は**任意頂点数の単純2Dポリゴンを一定天井高で押し出したpolygon prism**とする。8頂点の部屋を標準受入fixtureに含め、凸形状だけでなく凹形状も扱う。曲面壁、段差天井、傾斜天井は後続拡張とする。
+実室形状は矩形を前提にしない。初期の一般形状は**任意頂点数の単純2Dポリゴンを一定天井高で押し出したpolygon prism**とする。8頂点の部屋を標準受入fixtureに含め、凸形状だけでなく凹形状も扱う。段差/傾斜天井、許容誤差付きで面分割した曲面壁はR120Bのgeneral-3D入力/保存/compilerと対応数値gateへ割り当てる。prism先行のR120Aだけで任意3D形状を完了としない。R170Bで実3D air volumeとentity envelopeの包含/衝突判定を接続し、XY footprintは成立していても傾斜天井を突き抜ける候補等を拒否する。このadapter未対応の形状はsearchを無効にし、矩形prismへの置換で通さない。
 
 - 座標系は既存の`X=right / Y=rear / Z=up`を維持する。
 - footprint vertexは順序付きで保存し、自己交差を拒否する。
@@ -300,7 +300,8 @@ Bayesian Optimization等の適応探索は最初から必須にしない。O60�
 - 同一SearchSpec/seedからpolygon内の同一候補集合を再生成し、reference box内でも実室polygon外の点を生成しない。
 - REW矩形近似を使ったPredictionRunには`rectangular_approximation`を残し、polygon実室のexact predictionへ自動昇格しない。
 - R130 wave fixtureではrigid rectangular analytical mode、grid/mesh convergence、独立FEM/reference比較を行い、backendごとのvalid upper frequencyを測定で固定する。
-- R150ではdirect delay、first-reflection point/path length、seed repeatabilityを既知解と比較する。
+- R150ではdirect delay、first-reflection point/path length、seed repeatabilityを既知解と比較する。さらにray数・receiver estimator/radius・time bin・打切りをrefineし、独立seed間のばらつきと収束を検証する。sampling uncertainty内の候補差で確定的なPareto優位を主張せず、未収束/到達数不足はゼロresponseに変換しない。
+- frequency-domain resultからIRを得る場合は、周波数grid/範囲、位相、正規化、時間span、再構成法を固定して遅延既知transferと打切りfixtureを検証する。FR合格をIR合格や広帯域decayへ転用しない。
 - R160ではoverlap bandのlevel/energy continuity、direct-arrival timing、unsupported high-band phaseを生成しないことを検証する。
 - CPU/GPU backend差は同一authority inputで数値許容差を定義し、device/backend/versionを保存する。
 

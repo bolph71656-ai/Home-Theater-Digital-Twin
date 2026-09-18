@@ -314,9 +314,9 @@ SceneRevision
   -> AcousticRegion(s)
       -> surfaces / objects / explicit Portal(s) / BoundaryTermination(s)
       -> canonical acoustic triangle/surface representation
-          -> structured wave grid / voxel boundary map
-          -> FEM surface/volume mesh (reference backend)
-          -> ray-tracing BVH
+          -> selected wave representation: FDTD grid OR FEM volume mesh
+          -> independent reference representation when required
+          -> ray-tracing BVH when the geometric path is implemented
 ~~~
 
 This prevents each solver from inventing its own interpretation of doors, openings, furniture and materials. An opening is not represented only as “missing wall geometry”: it either connects two modeled acoustic regions or carries an explicit termination model. Unmodeled adjacent space remains unknown/unsupported rather than being silently treated as anechoic.
@@ -340,7 +340,7 @@ No automatic rectangularization is permitted.
 
 The current SceneDocument has a single RoomPrism; the existing editor does not already author arbitrary connected air volumes. R110 must define a persisted, versioned acoustic configuration linked to the exact SceneRevision, plus authoring of material assignments, source/receiver/environment properties, adjacent-region geometry and portal/termination choices. R120 must compile this configuration and retain surface-to-Scene IDs for diagnostics/selection. Save/reopen, Undo/Redo, stale invalidation and old-scene loading are acceptance cases. Old scenes open with unresolved acoustic inputs; they do not acquire invented materials or adjacent rooms.
 
-The first supported product geometry is an explicit subset: concave polygon prisms, supported object surfaces/volumes and connected prism regions or declared terminations. Sloped/curved ceilings and other general 3D shapes remain unsupported until separately specified, authored and verified; a backend's mesh capability alone does not establish an editor feature. The umbrella goal remains broader than the first release.
+R120A's first supported product geometry is an explicit subset: concave polygon prisms, supported object surfaces/volumes and connected prism regions or declared terminations. R120B is the tracked general-3D extension: a documented oriented polyhedral surface/air-volume representation, including stepped/sloped ceilings and faceted curved boundaries with saved approximation tolerance. It must supply a native authoring or explicit import-to-SceneRevision path, material/surface IDs and visual diagnostics; a standalone backend mesh is insufficient. Curved CAD kernels and every interchange format are not required. Shapes outside the declared representation remain unsupported, but completion of the prism slice must not close the general-3D requirement.
 
 Separate visibility from acoustic participation. Hiding a sofa or locking a cabinet does not remove its acoustic boundary. Source and receiver markers are not automatically solid obstacles. For each physical entity record whether/how its volume or thin surface participates, including any deliberate omission.
 
@@ -446,6 +446,8 @@ Store per-band provenance:
 - overlap band;
 - crossover/stitch algorithm and version.
 
+Result capabilities are declared independently: sampled coherent FR, time-domain IR, eigenmodes, field samples, deterministic paths and stochastic energy are not interchangeable outputs. A frequency-domain FEM path can deliver FR/phase before IR synthesis passes its own gate.
+
 Initial result types are intentionally distinct:
 
 - `CoherentTransfer` / coherent IR from a solver that carries phase;
@@ -461,6 +463,8 @@ Initial hybrid design:
 5. time-align and crossfade/combine without double-counting those shared components;
 6. apply complementary crossover windows only to compatible quantities over a finite overlap band;
 7. validate amplitude/energy continuity and impulse timing at the stitch.
+
+Frequency-domain IR synthesis is an explicit derived operation. R100A/R130/R160 must fix the solved frequency range/grid, phase/time reference, normalization, real-signal symmetry and band window. For a uniform grid, the frequency spacing sets the periodic time span (1/Δf); verify sufficient span and no wraparound for the claimed observation. Adaptive/log-spaced frequency samples need a verified reconstruction or resampling method, not an ordinary IFFT applied directly. Zero outside a deliberately selected band defines a band-limited result; missing samples within the claimed band must not silently become zero. Test a known delayed transfer, a damped reference and insufficient frequency coverage. Band-limited IR/ETC is labeled with its filter/range and cannot justify broadband decay/clarity. [COMSOL's FFT solver documentation](https://doc.comsol.com/6.4/doc/com.comsol.help.comsol/comsol_ref_solver.36.132.html) distinguishes inverse FFT from nonuniform transforms; HTDT's adequacy tests are design requirements.
 
 A `LateEnergyDecay` is not converted into a complex FR merely to make the API uniform. Metrics are enabled only when their underlying result type and time/energy semantics support them.
 
@@ -602,6 +606,7 @@ Agreement tolerance is defined from convergence error and the quantity being com
 - first-order reflection point/path length;
 - deterministic image-source cases;
 - scattering seed repeatability;
+- ray-count/receiver-estimator/time-bin convergence and variation across independent seeds;
 - energy decay sanity cases.
 
 ### L5 — hybrid stitch
@@ -665,17 +670,19 @@ Define semantic acoustic geometry identity separately from backend-compiled repr
 
 No high-cost solver is required to finish the data contract.
 
-### R120 — acoustic geometry compiler
+### R120 — acoustic geometry compiler umbrella
 
-Compile exact Scene geometry and R110 region/portal semantics into:
+#### R120A — supported prism geometry and selected backend
 
-- canonical triangulated acoustic regions/surfaces;
-- explicit portal/termination representation;
-- wave-grid representation;
-- ray BVH input;
-- optional FEM mesh input.
+Compile exact Scene geometry and R110 region/portal semantics into canonical acoustic regions/surfaces and the representation required by the R100B-selected backend. An FDTD backend requires its grid/boundary map; a FEM backend requires its volume mesh, element/order/quadrature and boundary mapping. A FEM production path does not require an unused FDTD grid, and its mesh is not optional. R150 adds the ray BVH; independent references may compile a different representation of the same physical fixture.
 
-Persist compiler version/tolerance/approximation provenance and compiled representation identity. Add fail-closed diagnostics for non-manifold/unintended-open/degenerate/thin/unresolved geometry.
+The backend capability manifest must declare required compiled inputs, precision/resolution controls and output observables. Persist these and compiler version/tolerance/approximation with compiled identity. Add diagnostics for non-manifold/unintended-open/degenerate/thin/unresolved geometry. Validate both candidate adapter contracts during R100B, then implement the selected production path; do not require shipping both solvers.
+
+#### R120B — general-3D Scene input and compilation
+
+Extend R110/Scene authoring or explicit import and R120A compilation to the polyhedral/air-volume scope in §5.3. Acceptance includes a stepped-ceiling room, a sloped face, a curved boundary with declared faceting error, connected regions and obstacles; verify save/reopen, surface material identity, volume/topology, compiler approximation and unsupported diagnostics. Re-run the applicable R130/R150 numerical fixtures on the expanded geometry before its results enter R170B/R180B.
+
+R120B exits on its Scene/geometry/compiler contract; numerical capability acceptance follows in R130/R150, so these gates do not depend on each other's completion. R120A unlocks the first low-band slice; R120B need not delay it. R120B remains required for the umbrella's general-3D claim and is not satisfied by silently extruding a footprint.
 
 ### R130 — low-band wave solver
 
@@ -719,6 +726,8 @@ Implement/choose:
 - deterministic seed/provenance;
 - late/diffuse energy only with explicit semantics.
 
+A repeated seed only establishes repeatability. R150 also fixes ray count/launch distribution, energy weighting, receiver estimator/radius, time-bin width, reflection/time/energy termination and estimator normalization in identity. Refine ray count, receiver sampling and histogram/termination settings against reference energy/delay/decay observables; measure variation across independent seeds with tolerances specified before acceptance. Too few arrivals or a budget-stopped estimate remains insufficient, not zero response. Candidate differences within sampling uncertainty must not establish a reliable Pareto preference. [Pyroomacoustics exposes these ray/receiver/histogram controls](https://pyroomacoustics.readthedocs.io/en/stable/pyroomacoustics.room.html); the convergence gate is HTDT's requirement.
+
 ### R160 — hybrid broadband result
 
 Implement overlap/crossover and derive only metrics supported by the combined authority:
@@ -734,13 +743,13 @@ Implement overlap/crossover and derive only metrics supported by the combined au
 
 #### R170A — low-band vertical slice
 
-After R110/R120 and the R130 boundary capabilities required by the declared model, connect one wave result through N70 visualization, bounded CPU candidate batch, O30/O40 comparison, O50 MeasurementPlan and N60/O60 validation. Deliver the typed result adapter in §11 and basic identity/cancel/cache/resume semantics. R140 acceleration, R150 geometric acoustics, R160 hybrid and adaptive search are not prerequisites.
+After R110/R120A and the R130 boundary capabilities required by the declared model, connect one wave result through N70 visualization, bounded CPU candidate batch, O30/O40 comparison, O50 MeasurementPlan and N60/O60 validation. Deliver the typed result adapter in §11 and basic identity/cancel/cache/resume semantics. R140 acceleration, R150 geometric acoustics, R160 hybrid and adaptive search are not prerequisites.
 
 The first slice uses validated single-source/receiver and FR objectives where appropriate; 20–300 Hz remains the target, and any narrower delivered band is explicit. Unknown boundary data permits a labeled numerical hypothesis, not owned-room eligibility.
 
 #### R170B — hybrid / multi-fidelity / extended search
 
-After R170A, R140 and R160, add hybrid batch outputs, validated coarse/fine scheduling, reuse in §10, O70 residual/adaptive integration and O80 directional/multiseat/multichannel capabilities where the source/result contracts support them. R170A retains O60/O70 authority bindings but does not have to ship every adaptive feature.
+After R170A, R140 and R160 (plus the applicable R120A/B geometry gate), add hybrid batch outputs, validated coarse/fine scheduling, reuse in §10, O70 residual/adaptive integration and O80 directional/multiseat/multichannel capabilities where the source/result contracts support them. R170A retains O60/O70 authority bindings but does not have to ship every adaptive feature. For R120B geometry, R170B also adapts candidate feasibility to the actual 3D air volume and physical entity envelopes: a valid XY footprint alone does not permit a source/cabinet above a sloped ceiling or inside an overhang. Keep existing constraints as a broad-phase filter and require verified 3D containment/collision checks before candidate acceptance; otherwise disable that geometry's search. Include stepped/sloped-ceiling rejection fixtures.
 
 ### R180 — owned-room validation umbrella
 

@@ -93,16 +93,17 @@ R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、そ�
 | R100A — benchmark authority | N70 prediction authority | solver-neutral fixture contractを先に固定。AcousticRegion、Portal/BoundaryTermination、source/receiver、boundary/material、environment、expected observable、quantity-specific toleranceを定義。hard gateと性能比較を分離 |
 | R100B — solver bakeoff / ADR | R100A | OSS既存FDTD CPU engine/adapterを優先評価し、独立FEM/reference・geometric referenceとrole別共通fixtureで比較。secondary候補の全実装は必須にしない。version/license/Windows/resource evidenceから採用またはno-go/次実験をADR化。新kernelは再利用不可の根拠がある場合のみ |
 | R110 — acoustic authority / 入力・保存 | R100Bの採用gate通過・interface決定 | immutable AcousticSceneSnapshotとexact SceneRevisionに結ぶacoustic configuration。material/source/receiver/environment、隣接region・portal/terminationの入力と保存、Undo/Redo、既存Sceneの未設定状態を実装。semantic geometry hashとcompiled representation hashを分離 |
-| R120 — geometry compiler | R110 | exact SceneRevision→canonical acoustic regions/surfaces/portals→wave grid / ray BVH / optional FEM mesh。compiler version/toleranceをprovenanceへ保存し、non-manifold/unintended-open/degenerate/thin unresolvedをfail-closed |
-| R130A — rigid wave core | R120 | 20–300 Hz初期target。CPU correctness baseline、rigid analytical modes、FR/phase/IR/spatial field、convergence＋cross-solver gate |
+| R120A — prism geometry / selected backend | R110 | exact SceneRevision→canonical regions/surfaces/portals→採用backendの必須representation。FDTDはgrid、FEMはvolume mesh/element/boundary mapping。未使用gridは不要。R150でray BVHを追加。compiler tolerance/provenance、geometry診断を保持 |
+| R120B — general-3D geometry | R110/R120A | 向き付きpolyhedral surface/air volumeの編集または明示import→SceneRevision保存。段差/傾斜天井・曲面の許容誤差付き面分割を含み、material ID、volume/topology、表示診断を検証。対応R130/R150数値gateへ接続 |
+| R130A — rigid wave core | 使用形状のR120A/B | 20–300 Hz初期target。CPU correctness baseline、rigid analytical modes、FR/phase/IR/spatial field、convergence＋cross-solver gate |
 | R130B — lossy boundary | R130A | 独立referenceを持つsimple impedance/admittance boundaryを追加し、reflection magnitude/phaseを検証 |
 | R130C — frequency-dependent boundary | R130B | causal frequency-dependent boundary。time-domainではstability/passivity/causalityもacceptance対象 |
 | R140 — hardware-aware execution | R130A以降 | R110/R130のidentity/stale/cancel/provenanceを維持したままCPU/GPU検出、RAM/VRAM estimate、candidate/solver二階層scheduler、oversubscription回避、efficient cache/resume、silent quality downgrade禁止 |
-| R150 — geometric acoustics | R120 | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance。diffractionは独立fixture成立時のみ追加 |
+| R150 — geometric acoustics | 使用形状のR120A/B | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance。diffractionは独立fixture成立時のみ追加 |
 | R160 — typed hybrid broadband | 使用する境界capabilityのR130A/B/C gate + R150 + 有効overlap | CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、explicit overlap/crossoverと共有成分のdouble-counting防止を実装。unsupported phase/metricを生成しない |
-| R170A — low-band integration | R110/R120 + 使用境界capabilityのR130 gate + 既存O-series | typed result provider→N70表示→bounded CPU batch→O30/O40→O50→N60/O60。基本cancel/cache/resumeとO70 authority bindingを維持。R140/R150/R160や適応探索完成を前提にしない |
+| R170A — low-band integration | R110/R120A + 使用境界capabilityのR130 gate + 既存O-series | typed result provider→N70表示→bounded CPU batch→O30/O40→O50→N60/O60。基本cancel/cache/resumeとO70 authority bindingを維持。R140/R150/R160や適応探索完成を前提にしない |
 | R180A — low-band validation | R170A + 対象数値gate | source/playback/receiver/time referenceを揃えた低域campaign。calibration後のmodel/config hashを固定し独立holdoutでFR目的を検証。合格しても未検証phase/IR/広帯域/aimへ拡張しない |
-| R170B — hybrid / extended integration | R170A + R140/R160 + 使用O70/O80 capability | multi-fidelity・hybrid batch、O70残差/適応、O80多席/多音源/aimを対応契約付きで追加。reuse・screening gateを適用 |
+| R170B — hybrid / extended integration | R170A + R140/R160 + 使用形状のR120A/B + 使用O70/O80 capability | multi-fidelity・hybrid batch、O70残差/適応、O80多席/多音源/aimを追加。R120Bでは実3D volumeと筐体envelopeの包含/衝突判定を接続し、XY内でも天井超過等は拒否。reuse・screening gateを適用 |
 | R180B — additional validation | R170B + 対象数値gate | hybrid/decay/phase/directional等の追加claimごとに測定adapter・許容差・独立holdoutを検証。旧RoomSim/R180A合格を流用しない |
 
 R100はumbrellaとし、先にR100Aでsolver-neutral fixture authorityを作り、その後R100Bでsolverを比較する。各solver専用の仮geometry/開口/material定義を先に作って比較しない。openingは「壁の穴」だけでは不十分で、explicit adjacent AcousticRegionまたはBoundaryTerminationを持つ。未知の隣接空間を無言でanechoic/absorbingとみなさない。
@@ -115,7 +116,7 @@ R100で**確定してよい**のは hybrid/multi-fidelity architecture、CPU cor
 
 ### Issue #101を満たす順序と範囲
 
-最短の実用検証経路は **R100A→R100B採用→R110/R120→必要なR130 boundary gate→R170A→R180A**。低域の配置比較を実室で確かめるために、GPU高度化・幾何音響・広帯域hybridの完成を待たない。R140/R150以降を別経路で進め、追加能力をR170B/R180Bで評価する。R170/R180はA/Bをまとめるumbrella IDとして維持する。
+最短の実用検証経路は **R100A→R100B採用→R110/R120A→必要なR130 boundary gate→R170A→R180A**。低域の配置比較を実室で確かめるために、GPU高度化・幾何音響・広帯域hybridの完成を待たない。R140/R150以降を別経路で進め、追加能力をR170B/R180Bで評価する。R120/R170/R180はA/Bをまとめるumbrella IDとして維持する。R120Bは一般3D入力の担当工程であり、prism先行を理由に消さない。
 
 現行O60は `cad_model_validation_service.py` でRoomSim attemptを読んでおり、campaignはFRの4 objectiveを受け入れる。R170Aにtyped prediction-result provider/adapterとO20/O30/O50/O60/O70のbinding変更を明示し、新solverを偽のRoomSim attemptに格納しない。既存record/adapterを保ち、新observableは独立gateで追加する。
 
@@ -128,6 +129,7 @@ R100Aの成果物はfixture一覧だけではない。対象room/隣接容積、
 | Acceptance 7, 9: batch/owned-room推薦 | R170A/B、R180A/B | typed adapter、対象帯域/observable限定のcampaign/holdout |
 | Acceptance 10: native 3D可視化 | R170A、R150/R160/R170B | 低域fieldと後続reflectionのrevision付きoverlay受入 |
 | Acceptance 11–17: hardware/parallelism/cache | R140、R170B | CPU必須、該当GPU backendの数値/resource/fallback、resume evidence |
+| 本文の任意3D形状 | R120B + 対応R130/R150/R170B/R180B | 段差/傾斜/曲面近似のScene入力・保存・材料参照・mesh誤差・独立数値検証 |
 | 本文の広帯域・directivity/O80・校正 | R150/R160/R170B/R180B | valid-band/result capability、playback/reference、calibration/holdoutと追加metric検証 |
 
 低域sliceの合格だけでIssue #101全体をcloseしない。CPU-only機でGPU比較が対象外であることと、選定したGPU backendの検証未完了を区別し、未対応形状・指標・帯域は未完了範囲として残す。
@@ -138,8 +140,10 @@ R100Aの成果物はfixture一覧だけではない。対象room/隣接容積、
 
 - **工程**: 次の実装はR100Aのfixture/observable/tolerance manifest。R100Bは適用対象PoCの比較までとし、後続の製品GUI・scheduler・hybridの完成を前提にしない。shipping candidateのWindows/CPU gateと、別環境でも再現可能な独立referenceを区別する。GPU未搭載はGPU比較のみ対象外。
 - **数値比較**: source単位・正規化、座標・補間、phase/Fourier符号、時間原点、dt/周波数刻み、観測時間、精度、window/filter、reference・許容差を固定する。無損失閉室の固有モードと、共振点の有限FR/RT60を混同しない。FR/phaseは成立する損失条件または有限時間処理を揃え、null付近の位相・相対誤差をmaskする。
-- **製品入力**: 現行CADは単一RoomPrismであり、複数regionの編集済みとは扱わない。R110/R120の初期対応を凹prism・対応object・隣接prism/terminationへ明示限定し、傾斜/曲面等は別gateまでunsupported。material割当・隣接空間・boundaryをGUIで入力し、保存/再open、Undo/Redo、staleを検証する。
+- **製品入力**: 現行CADは単一RoomPrismであり、複数regionの編集済みとは扱わない。R110/R120Aで凹prism・対応object・隣接prism/terminationを先行し、傾斜/曲面近似等はR120Bと対応数値gateへ割り当てる。material割当・隣接空間・boundaryをGUIで入力し、保存/再open、Undo/Redo、staleを検証する。
 - **物体の意味**: hide/lockとacoustic participationを分ける。speaker cabinetを反射体として含む場合は移動/回転でgeometryを更新し、密閉cabinet内部の点音源やdirectivityとの二重計上を無検証で許さない。
+- **backend・出力**: R100Bのcapability manifestで必須representationとobservableを宣言する。FEM採用時のmeshを任意にせず、FR/phaseからIRを作る場合は周波数grid・範囲・時間span・再構成法を検証する。FR合格はIR合格ではなく、band-limited IRを広帯域指標へ転用しない。
+- **確率的GA**: seed再現に加えray数、receiver estimator/radius、time bin、打切りをrefineし、独立seed間のばらつきと収束を検証。未収束/到達ray不足をゼロresponseや確定順位にしない。
 - **帯域・指標**: wave/GAの検証済み帯域が重ならなければgapを残し、広帯域IRやcoherent phaseを生成しない。経路だけで複素応答を認めず、reflection/source/timing authorityを要求。RT60/EDT/C50/C80はfilter・時間原点・tail/fit条件を保存し、打切り/減衰不足を判定する。
 - **計算資源**: R100B CPU PoCからRAM/出力容量・実行長の上限を設け、R110/R130で取消・staleを保持する。全空間×全時刻のfield保存を既定にしない。R140のCPU fallbackも再見積りし、OOMや無断出力縮小を避ける。
 - **最適化**: reuseはoperator不変を検証し、物体移動/回転・材料変更で必要なcacheを失効する。粗計算の誤差/順位逆転・除外候補auditを検証し、未対応値を悪いscoreに置換しない。最終Paretoは同一fidelity・帯域・objective条件で再評価する。
