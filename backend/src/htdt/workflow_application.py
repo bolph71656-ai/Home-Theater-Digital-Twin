@@ -34,11 +34,6 @@ from .data_management import (
 from .data_management_ui import build_data_management_component
 from .measurement_page_workspace import build_measurement_workspace_mount
 from .measurement_workflow import MeasurementWorkflowController
-from .native_command_adapter import (
-    bind_active_editor_commands,
-    bind_native_workspace_commands,
-    unbind_active_editor_commands,
-)
 from .optimization_workflow_workspace import build_optimization_workspace_mount
 from .overview_readiness import OverviewReadinessService
 from .overview_workspace import OverviewWorkspace
@@ -475,25 +470,66 @@ class WorkflowApplicationComposition:
     def _make_optimization(self) -> WorkspaceMount:
         mount = build_optimization_workspace_mount(self.repository, self.document_id)
         workspace = mount.widget
+        controller = workspace.controller  # type: ignore[attr-defined]
         original_activate = mount.on_activate
         original_deactivate = mount.on_deactivate
+
+        def edit_idle() -> bool:
+            return (
+                controller.active_search_worker_count() == 0
+                and controller.active_extended_worker_count() == 0
+                and not controller._rew_tasks
+                and controller.scene.recovery_candidate is None
+                and not controller.working.has_preview
+            )
 
         def activate() -> None:
             self._unbind_workspace_commands()
             if original_activate is not None:
                 original_activate()
-            bind_active_editor_commands(self.registry, workspace)
-            bind_native_workspace_commands(
-                self.registry,
-                workspace,
-                WorkspaceId.OPTIMIZATION,
+            self.registry.bind(
+                "project.save",
+                execute=controller.save,
+                availability=lambda: _available(
+                    edit_idle() and controller.working.is_dirty,
+                    "保存する変更がないか、候補生成・REW読込・編集操作が実行中です",
+                ),
+            )
+            self.registry.bind(
+                "edit.undo",
+                execute=controller.undo,
+                availability=lambda: _available(
+                    edit_idle() and controller.working.can_undo,
+                    "元に戻せる操作がないか、処理が実行中です",
+                ),
+            )
+            self.registry.bind(
+                "edit.redo",
+                execute=controller.redo,
+                availability=lambda: _available(
+                    edit_idle() and controller.working.can_redo,
+                    "やり直せる操作がないか、処理が実行中です",
+                ),
+            )
+            self.registry.bind(
+                "optimization.compare_candidates",
+                execute=controller.refresh_pareto_comparison,
+                availability=lambda: _available(
+                    controller.search_selected_spec_id is not None,
+                    "比較する探索仕様を選択してください",
+                ),
             )
 
         def deactivate() -> None:
             if original_deactivate is not None:
                 original_deactivate()
-            unbind_active_editor_commands(self.registry)
-            self.registry.unbind("optimization.compare_candidates")
+            for command_id in (
+                "project.save",
+                "edit.undo",
+                "edit.redo",
+                "optimization.compare_candidates",
+            ):
+                self.registry.unbind(command_id)
 
         mount.on_activate = activate
         mount.on_deactivate = deactivate

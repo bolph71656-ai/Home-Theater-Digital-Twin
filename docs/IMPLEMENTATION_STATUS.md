@@ -392,3 +392,16 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - 詳細: [UX120 Room advanced geometry](UX120_ROOM_ADVANCED_GEOMETRY_2026-09-19.md)
 - Roomの主要機能残件はUX150/UX160 polish/acceptance。UX140 legacy adapter cleanupは別途。
 - RDC未使用。
+
+
+### UX140 controller/window separation — 2026-09-19
+
+- workflow-first 最適化workspaceをlegacy `OptimizationWorkspaceWindow/QMainWindow` 継承から分離。
+- plain `QWidget` + `OptimizationWorkflowController(QObject)` compositionへ変更。
+- existing O10〜O80 mixins/repositories/servicesをauthorityとして再利用。
+- Scene/WorkingDocument lifecycleは既存 `RoomWorkspaceController` を再利用。
+- candidate viewportはshared dark `RoomViewport3D`、O-seriesはoverlay portだけ利用。
+- Validation pageのREW / measurement point / channel roleを明示化し、hidden legacy measurement controls依存を除去。
+- workflow shell mountから `workflow_legacy_bridge` を除去。
+- 詳細: [UX140 controller/window separation](ISSUE_118_UX140_CONTROLLER_SEPARATION.md)
+- RDC未使用。

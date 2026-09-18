@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TypeVar
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
-    QDockWidget,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
-    QToolBar,
     QTreeWidget,
     QVBoxLayout,
     QWidget,
@@ -24,7 +23,8 @@ from PySide6.QtWidgets import (
 
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID
-from .optimization_workspace import OptimizationWorkspaceWindow
+from .optimization_workflow_controller import OptimizationWorkflowController
+from .room_viewport import RoomOverlayState, RoomViewport3D
 from .ui_theme import (
     ControlSize,
     SurfaceRole,
@@ -33,10 +33,6 @@ from .ui_theme import (
     set_primary_action,
     set_surface_role,
     set_typography_role,
-)
-from .workflow_legacy_bridge import (
-    legacy_editor_deactivation_guard,
-    refresh_legacy_editor_revision,
 )
 from .workflow_shell import WorkspaceMount
 
@@ -147,26 +143,83 @@ def _advanced_block(
     return frame
 
 
-class OptimizationWorkflowWorkspace(OptimizationWorkspaceWindow):
-    """UX140 page-first composition over the existing O10-O80 controller authority.
+class _OptimizationViewportAdapter:
+    """PyVista-like overlay port over the shared dark Room viewport."""
 
-    The inherited optimization window remains the execution/state adapter for the
-    accepted SearchSpec, objective/Pareto, measurement-plan, validation, adaptive,
-    and extended-search controllers. This class only recomposes their existing
-    controls into task pages and does not introduce optimization semantics.
-    """
+    def __init__(self, widget: RoomViewport3D) -> None:
+        self.widget = widget
+
+    def add_mesh(self, *args, **kwargs):
+        return self.widget.plotter.add_mesh(*args, **kwargs)
+
+    def remove_actor(self, *args, **kwargs):
+        return self.widget.plotter.remove_actor(*args, **kwargs)
+
+    def add_text(self, *args, **kwargs):
+        return self.widget.plotter.add_text(*args, **kwargs)
+
+    def render(self) -> None:
+        self.widget.plotter.render()
+
+
+class OptimizationWorkflowWorkspace(QWidget):
+    """UX140 page-first QWidget over QMainWindow-free O10-O80 controller state."""
 
     def __init__(
         self,
         repository: SceneRepository,
         document_id: str = F1_DOCUMENT_ID,
+        *,
+        viewport_factory: Callable[[QWidget | None], QWidget] | None = None,
     ) -> None:
-        super().__init__(repository, document_id)
-        self.setWindowTitle("Home Theater Digital Twin — 最適化")
+        super().__init__()
+        self.setObjectName("optimizationWorkflowWorkspace")
+        set_surface_role(self, SurfaceRole.BASE)
+        self.controller = OptimizationWorkflowController(repository, document_id)
+        self.controller.statusChanged.connect(self._set_status)
+
         self._optimization_stack = QStackedWidget()
         self._optimization_pages: dict[str, QWidget] = {}
-        self._install_workflow_surface()
+        viewport_widget = (
+            RoomViewport3D(self)
+            if viewport_factory is None
+            else viewport_factory(self)
+        )
+        self.viewport_widget = viewport_widget
+        self.viewport_adapter = _OptimizationViewportAdapter(viewport_widget)
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(20, 16, 20, 16)
+        root_layout.setSpacing(12)
+        root_layout.addWidget(self._optimization_stack, 1)
+
+        pages = {
+            "setup": self._build_setup_page(),
+            "candidates": self._build_candidates_page(self.viewport_widget),
+            "comparison": self._build_comparison_page(),
+            "validation": self._build_validation_page(),
+        }
+        for page_id in OPTIMIZATION_PAGE_IDS:
+            page = pages[page_id]
+            page.setObjectName(f"optimizationPage:{page_id}")
+            self._optimization_pages[page_id] = page
+            self._optimization_stack.addWidget(page)
+
+        self.status = QLabel()
+        self.status.setContentsMargins(12, 6, 12, 6)
+        set_surface_role(self.status, SurfaceRole.RAISED)
+        set_typography_role(self.status, TypographyRole.SECONDARY)
+        root_layout.addWidget(self.status)
+
+        self.controller.bind_viewport(self.viewport_adapter, self._render_scene)
         self.select_section("setup")
+        self._set_status("保存済み")
+
+    def __getattr__(self, name: str):
+        controller = self.__dict__.get("controller")
+        if controller is not None and hasattr(controller, name):
+            return getattr(controller, name)
+        raise AttributeError(name)
 
     @property
     def page_ids(self) -> tuple[str, ...]:
@@ -180,60 +233,41 @@ class OptimizationWorkflowWorkspace(OptimizationWorkspaceWindow):
                 return page_id
         raise RuntimeError("optimization page stack has no active page")
 
+    def activate(self) -> None:
+        self.controller.activate()
+
+    def before_deactivate(self) -> tuple[bool, str | None]:
+        return self.controller.before_deactivate()
+
     def select_section(self, section_id: str) -> None:
         page_id = normalize_optimization_page(section_id)
         self._optimization_stack.setCurrentWidget(self._optimization_pages[page_id])
         if page_id == "validation":
-            self.refresh_measurement_plans()
-            self.refresh_validation_campaigns()
-            self.refresh_model_validations()
-            self.refresh_adaptive_plans()
-            self.refresh_adaptive_extended_plans()
+            self.controller.refresh_measurement_plans()
+            self.controller.refresh_validation_campaigns()
+            self.controller.refresh_model_validations()
+            self.controller.refresh_adaptive_plans()
+            self.controller.refresh_adaptive_extended_plans()
+            self.controller._refresh_campaign_measurement_points()
 
     def refresh_from_authorities(self) -> None:
-        """Refresh visible data through the existing O-series repositories/services."""
-        self._refresh_search_entities()
-        self._refresh_search_specs()
-        self._refresh_extended_entities()
-        self._refresh_extended_capabilities()
-        self._refresh_extended_specs()
-        self.refresh_measurement_plans()
-        self.refresh_validation_campaigns()
-        self.refresh_model_validations()
-        self.refresh_adaptive_plans()
-        self.refresh_adaptive_extended_plans()
+        self.controller.refresh_from_authorities()
 
-    def _install_workflow_surface(self) -> None:
-        viewport_widget = self.takeCentralWidget()
-        if viewport_widget is None:
-            raise RuntimeError("optimization controller did not provide a viewport")
+    def _render_scene(self, reset_camera: bool = False) -> None:
+        self.viewport_widget.render_document(
+            self.controller.working.document,
+            selected_id=self.controller.selected_id,
+            overlays=RoomOverlayState(grid=True, labels=False, acoustics=False),
+            reset_camera=reset_camera,
+        )
 
-        # Legacy docks/toolbars remain alive because controller methods own widgets
-        # and state there, but the UX140 surface no longer exposes that composition.
-        for dock in self.findChildren(QDockWidget):
-            dock.hide()
-        for toolbar in self.findChildren(QToolBar):
-            toolbar.hide()
+    def _set_status(self, text: str) -> None:
+        self.status.setText(str(text))
 
-        root = QWidget()
-        set_surface_role(root, SurfaceRole.BASE)
-        root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(20, 16, 20, 16)
-        root_layout.setSpacing(12)
-        root_layout.addWidget(self._optimization_stack, 1)
-        self.setCentralWidget(root)
-
-        pages = {
-            "setup": self._build_setup_page(),
-            "candidates": self._build_candidates_page(viewport_widget),
-            "comparison": self._build_comparison_page(),
-            "validation": self._build_validation_page(),
-        }
-        for page_id in OPTIMIZATION_PAGE_IDS:
-            page = pages[page_id]
-            page.setObjectName(f"optimizationPage:{page_id}")
-            self._optimization_pages[page_id] = page
-            self._optimization_stack.addWidget(page)
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self.controller.dispose()
+        self.viewport_widget.close()
+        event.accept()
 
     def _build_setup_page(self) -> QWidget:
         body = QWidget()
@@ -582,6 +616,24 @@ class OptimizationWorkflowWorkspace(OptimizationWorkspaceWindow):
         )
         campaign.addWidget(_required(self.campaign_tree, "campaign_tree"))
 
+        rew_form = QFormLayout()
+        rew_row = QHBoxLayout()
+        rew_row.addWidget(_required(self.rew_combo, "rew_combo"), 1)
+        rew_row.addWidget(_required(self.rew_refresh_button, "rew_refresh_button"))
+        rew_form.addRow("REW測定", rew_row)
+        rew_form.addRow(
+            "測定点",
+            _required(
+                self.campaign_measurement_point_combo,
+                "campaign_measurement_point_combo",
+            ),
+        )
+        rew_form.addRow(
+            "channel role",
+            _required(self.rew_channel_role_field, "rew_channel_role_field"),
+        )
+        campaign.addLayout(rew_form)
+
         campaign_actions = QHBoxLayout()
         campaign_actions.addWidget(_button("readiness更新", self.refresh_validation_campaigns))
         campaign_actions.addWidget(
@@ -701,14 +753,10 @@ def build_optimization_workspace_mount(
 
     workspace = OptimizationWorkflowWorkspace(repository, document_id)
 
-    def activate() -> None:
-        refresh_legacy_editor_revision(workspace)
-        workspace.refresh_from_authorities()
-
     return WorkspaceMount.from_widget(
         workspace,
-        on_activate=activate,
-        before_deactivate=lambda: legacy_editor_deactivation_guard(workspace),
+        on_activate=workspace.activate,
+        before_deactivate=workspace.before_deactivate,
         on_context_changed=workspace.select_section,
     )
 
