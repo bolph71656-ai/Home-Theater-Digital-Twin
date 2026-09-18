@@ -4,12 +4,12 @@ Issue #118 の「概要」は、機能一覧ではなく、保存済み project 
 
 ## Scope
 
-実装は `backend/src/htdt/overview_readiness.py` に閉じる。
+readiness ruleは `backend/src/htdt/overview_readiness.py` に閉じ、描画だけを `backend/src/htdt/overview_workspace.py` が担当する。
 
 - Scene / DB を変更しない。
 - repository を Overview widget/service 内部で construct しない。application composition root が既存 repository class を所有し、read protocol として注入する。
 - domain gate を再計算しない。
-- Qt widget、shell、router、workspace mount は実装しない。
+- readiness serviceはQt/shell/routerを知らない。Qt widgetはview modelを描画し、navigationはshared deep-linkをshellへ委譲する。
 - UUID / hash / schema / job ID を user-facing copy に埋め込まない。
 - entity ID は navigation metadata として保持できるが、通常表示文字列には含めない。
 
