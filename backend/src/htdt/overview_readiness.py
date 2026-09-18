@@ -8,22 +8,11 @@ from .cad_model_validation import CadModelValidationRecord
 from .cad_prediction_models import CadPredictionResult
 from .cad_repository import SceneRevision
 from .cad_search_models import CadSearchSpec
+from .workflow_navigation import WorkspaceDeepLink, WorkspaceId
 
 
-OverviewWorkspace = Literal['overview', 'room', 'measurement', 'optimization']
 OverviewSeverity = Literal['blocker', 'warning']
-
-
-@dataclass(frozen=True, slots=True)
-class OverviewNavigationTarget:
-    """Transport-only navigation metadata consumed by the workflow shell.
-
-    The Overview layer does not navigate, select entities, or own router state.
-    """
-
-    workspace: OverviewWorkspace
-    subsection: str | None = None
-    entity_id: str | None = None
+OverviewNavigationTarget = WorkspaceDeepLink
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,13 +69,13 @@ class ValidationReadSource(Protocol):
     ) -> tuple[CadModelValidationRecord, ...]: ...
 
 
-ROOM_GEOMETRY = OverviewNavigationTarget('room', 'geometry')
-ROOM_PLACEMENT = OverviewNavigationTarget('room', 'placement')
-ROOM_ACOUSTICS = OverviewNavigationTarget('room', 'acoustics')
-MEASUREMENT_IMPORT = OverviewNavigationTarget('measurement', 'import')
-MEASUREMENT_QUALITY = OverviewNavigationTarget('measurement', 'quality')
-OPTIMIZATION_SETUP = OverviewNavigationTarget('optimization', 'setup')
-OPTIMIZATION_VALIDATION = OverviewNavigationTarget('optimization', 'validation')
+ROOM_GEOMETRY = OverviewNavigationTarget(WorkspaceId.ROOM, 'geometry')
+ROOM_PLACEMENT = OverviewNavigationTarget(WorkspaceId.ROOM, 'placement')
+ROOM_ACOUSTICS = OverviewNavigationTarget(WorkspaceId.ROOM, 'acoustics')
+MEASUREMENT_IMPORT = OverviewNavigationTarget(WorkspaceId.MEASUREMENT, 'import')
+MEASUREMENT_QUALITY = OverviewNavigationTarget(WorkspaceId.MEASUREMENT, 'quality')
+OPTIMIZATION_SETUP = OverviewNavigationTarget(WorkspaceId.OPTIMIZATION, 'setup')
+OPTIMIZATION_VALIDATION = OverviewNavigationTarget(WorkspaceId.OPTIMIZATION, 'validation')
 
 
 def _action(
