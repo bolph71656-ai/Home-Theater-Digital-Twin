@@ -247,3 +247,57 @@ REWにはHTDT用CAS/transaction APIがないため、競合を「防止した」
 - exact rectangular frameへlocalizeする。
 - legacy Contextを保存authorityとして使わない。
 - O20結果を後段で保存する際はSceneRevision/SearchSpec/candidate/model version/pre-state hashをimmutable provenanceとして持たせる。
+
+
+## 13. O20 immutable batch/result persistence and resume
+
+PR #71で確立したposition-only Room Simulator transactionを、native SearchSpec/candidate authorityへ不変に結びつけて保存する。
+
+### BatchSpec
+
+1つの `CadRoomSimBatchSpec` は以下を固定する。
+
+- exact document / SceneRevision / scene content hash
+- SearchSpec ID / SHA
+- O10 candidate-set SHA
+- explicit `CadRoomSimBinding` canonical JSON / SHA
+- model ID `rew-room-simulator`
+- adapter version `rew-roomsim-position-batch-1`
+- 実行対象candidateごとのraw/feasible index
+- candidateから構築済みのexact Room Simulator request canonical JSON / SHA
+
+candidate実行時にcurrent WorkingDocumentからrequestを再構築しない。batch作成時にnative authorityを解決してfreezeし、後続I/Oはその不変requestを使用する。
+
+### Candidate attempt
+
+各candidate実行はappend-only `CadRoomSimCandidateAttempt` として保存する。
+
+completed attempt:
+
+- exact candidate ID / attempt index
+- exact REW version
+- pre/applied/restored full-state SHA
+- canonical Room Simulator FR payload / SHA
+- started/completed timestamp
+- attempt identity SHA
+
+failed attempt:
+
+- candidate ID / attempt index
+- error type/message
+- started/completed timestamp
+- attempt identity SHA
+- response payloadは持たない
+
+completed attemptが1つ存在するcandidateは同じbatchで再実行しない。failed attemptは履歴を上書きせず次のattempt indexとしてretry可能にする。
+
+### Resume / cancel / failure semantics
+
+- cancellationはcandidate間だけで受け付ける。active REW transactionは必ずrestore pathまで完了させる。
+- resumeは同一immutable BatchSpecを再利用し、completed candidateをskipする。
+- failureはattemptとして保存してそのbatch invocationを停止する。安全確認なしに次candidateへ連続writeしない。
+- retryは明示resumeで新attemptを追加する。
+- repository saveに失敗した場合は成功扱いにせずcallerへ伝播する。
+- completed attemptのFRはO30へ渡す `predicted` evidence sourceとして参照できるが、実測へ昇格しない。
+
+このsliceはUI・Pareto表示・自動推薦を追加しない。owned-Windows writable acceptanceはbatch persistence/orchestrationとnative UI接続をまとめた後に1回へ集約する。
