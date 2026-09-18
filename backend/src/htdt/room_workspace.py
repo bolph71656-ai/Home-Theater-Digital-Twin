@@ -87,6 +87,11 @@ class RoomWorkspaceController:
 
     @property
     def document(self) -> SceneDocument:
+        """Current presentation snapshot, including an active transform preview."""
+        return self.working.document
+
+    @property
+    def committed_document(self) -> SceneDocument:
         return self.working.committed_document
 
     @property
@@ -168,7 +173,7 @@ class RoomWorkspaceController:
         if self.working.has_preview:
             raise EditStateError("操作中のプレビューを確定またはキャンセルしてから保存してください")
         result = self.repository.save(
-            self.document,
+            self.committed_document,
             parent_revision_id=self.working.source_revision_id,
         )
         self.working.mark_saved(
@@ -208,6 +213,14 @@ class RoomWorkspaceController:
         self._sync_recovery()
         self._persist_view_state()
         return entity
+
+    def replace_room(self, room) -> bool:
+        if self.recovery_candidate is not None:
+            raise EditStateError("復旧データを処理してから部屋形状を編集してください")
+        changed = self.working.replace_room(room)
+        if changed:
+            self._sync_recovery()
+        return changed
 
     def update_selected(
         self,
@@ -653,6 +666,9 @@ class RoomWorkspace(QWidget):
         set_surface_role(self, SurfaceRole.BASE)
         self.controller = RoomWorkspaceController(repository, document_id)
         self.current_context = "geometry"
+        self.active_axis_constraint: str | None = None
+        self.geometry_input = None
+        self.transform_input = None
         self._viewport_factory = viewport_factory or (lambda owner: RoomViewport3D(owner))
 
         root = QVBoxLayout(self)
@@ -716,7 +732,98 @@ class RoomWorkspace(QWidget):
         self._refresh(reset_camera=changed)
 
     def before_deactivate(self) -> tuple[bool, str | None]:
+        if self.geometry_input is not None and self.geometry_input.is_active:
+            return False, "部屋形状の編集中です。確定またはキャンセルしてから画面を切り替えてください"
+        if self.transform_input is not None and self.transform_input.is_active:
+            return False, "項目の移動または回転を確定・キャンセルしてから画面を切り替えてください"
         return self.controller.before_deactivate()
+
+    def attach_geometry_input(self, controller) -> None:
+        self.geometry_input = controller
+
+    def attach_transform_input(self, controller) -> None:
+        self.transform_input = controller
+
+    def refresh(self, *, reset_camera: bool = False) -> None:
+        self._refresh(reset_camera=reset_camera)
+
+    def add_object(self, kind: str) -> bool:
+        before = self.controller.document
+        self._add_object(kind)
+        return self.controller.document != before
+
+    def duplicate_selected(self) -> bool:
+        entity_id = self.controller.selected_id
+        if entity_id is None or not self.controller.can_edit:
+            return False
+        if self.controller.view_state.is_locked(entity_id):
+            return False
+        source = self.controller.document.entity(entity_id)
+        new_id = f"{source.kind}-{uuid4().hex[:10]}"
+        position = Position3(
+            x_m=source.position.x_m + 0.10,
+            y_m=source.position.y_m + 0.10,
+            z_m=source.position.z_m,
+        )
+        if not self.controller.working.duplicate_entity(
+            entity_id,
+            new_entity_id=new_id,
+            name=f"{source.name} コピー",
+            position=position,
+        ):
+            return False
+        self.controller.view_state.set_selection((new_id,), primary_id=new_id)
+        self.controller._sync_recovery()
+        self.controller._persist_view_state()
+        self._refresh()
+        self._set_status("選択項目を複製しました")
+        return True
+
+    def set_transform_mode(self, mode: str) -> None:
+        if mode not in {"move", "rotate"}:
+            raise ValueError(mode)
+        self.controller.view_state.transform_mode = mode
+        self._set_status("移動モード" if mode == "move" else "回転モード")
+
+    def fit_selection(self) -> None:
+        entity_id = self.controller.selected_id
+        if entity_id is not None:
+            self.viewport.focus_entity(entity_id)
+
+    def fit_all(self) -> None:
+        self.viewport.fit_scene()
+
+    def cancel_active_operation(self) -> bool:
+        if self.transform_input is not None and self.transform_input.is_active:
+            return bool(self.transform_input.cancel())
+        if self.geometry_input is not None and self.geometry_input.is_active:
+            return bool(self.geometry_input.cancel())
+        if self.controller.working.has_preview:
+            changed = self.controller.working.cancel_preview()
+            self._refresh()
+            return changed
+        return False
+
+    def commit_active_operation(self) -> bool:
+        if self.transform_input is not None and self.transform_input.is_active:
+            return bool(self.transform_input.commit())
+        if self.geometry_input is not None and self.geometry_input.is_active:
+            return bool(self.geometry_input.commit())
+        if self.controller.working.has_preview:
+            changed = self.controller.working.commit_preview()
+            if changed:
+                self.controller._sync_recovery()
+            self._refresh()
+            return changed
+        return False
+
+    def constrain_axis(self, axis) -> None:
+        if self.transform_input is not None and self.transform_input.is_active:
+            self.transform_input.set_axis(axis)
+            return
+        value = getattr(axis, "value", str(axis))
+        self.active_axis_constraint = value
+        self._set_status(f"{str(value).upper()}軸に拘束")
 
     def set_context(self, context_id: str) -> None:
         if context_id not in ROOM_CONTEXT_IDS:
@@ -771,8 +878,12 @@ class RoomWorkspace(QWidget):
         if tool_id == "toggle-acoustics":
             self.overlay_controls.acoustics.toggle()
             return
-        # Geometry edit input is owned by Agent B. The signal is the integration
-        # boundary for draw-room/edit-room without duplicating the CAD controller.
+        if tool_id == "draw-room" and self.geometry_input is not None:
+            self.geometry_input.start_sketch()
+            return
+        if tool_id == "edit-room" and self.geometry_input is not None:
+            self.geometry_input.start_edit()
+            return
         self.toolRequested.emit(tool_id)
 
     def _add_object(self, kind: str) -> None:
@@ -857,6 +968,10 @@ class RoomWorkspace(QWidget):
         set_semantic_state(self.status, SemanticState.ERROR if error else None)
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self.transform_input is not None:
+            self.transform_input.dispose()
+        if self.geometry_input is not None:
+            self.geometry_input.dispose()
         self.controller.close()
         self.viewport.close()
         event.accept()

@@ -122,3 +122,8 @@ UX130 workspace 自体は command registry の authority を複製しない。
 
 REW parser、repository の immutable binding、comparison algorithm 自体は既存テストを
 authority とし、UX130 用に重複テストしない。
+
+
+## Integration update — 2026-09-19
+
+The UX120–UX140 integration composition now uses this page workspace as the workflow-shell Measurement factory. `measurements.import_rew` is bound to this workspace on activation, and active REW background jobs block workspace disposal/destructive restore. The legacy measurement QMainWindow is no longer used by the `--workflow-shell` preview.

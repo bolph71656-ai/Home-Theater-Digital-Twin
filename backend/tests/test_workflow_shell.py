@@ -4,6 +4,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
+
 from PySide6.QtWidgets import QApplication, QLabel
 
 from htdt.workflow_navigation import WorkspaceDeepLink, WorkspaceId
@@ -56,6 +58,15 @@ def test_workflow_shell_routes_canonical_workspaces_lazily() -> None:
     assert window.handle_deep_link(WorkspaceDeepLink(WorkspaceId.MEASUREMENT, "quality"))
     assert window.current_workspace_id is WorkspaceId.MEASUREMENT
     assert context_events[WorkspaceId.MEASUREMENT][-1] == "quality"
+
+    assert window.navigate(WorkspaceId.OPTIMIZATION)
+    assert window.context_labels == ("探索設定", "候補", "比較", "測定・検証")
+    assert context_events[WorkspaceId.OPTIMIZATION][-1] == "setup"
+
+    assert window.handle_deep_link(
+        WorkspaceDeepLink(WorkspaceId.OPTIMIZATION, "objectives")
+    )
+    assert context_events[WorkspaceId.OPTIMIZATION][-1] == "comparison"
 
     window.close()
     window.deleteLater()
@@ -120,5 +131,64 @@ def test_entity_deep_link_is_forwarded_to_workspace_callback() -> None:
     assert selected == ["speaker-1"]
 
     window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_settings_utility_emits_without_becoming_a_workspace() -> None:
+    app = _app()
+
+    def factory(workspace_id: WorkspaceId):
+        return lambda: WorkspaceMount.from_widget(QLabel(workspace_id.value))
+
+    window = WorkflowShellWindow(_registrations(factory))
+    events: list[str] = []
+    window.settingsRequested.connect(lambda: events.append("settings"))
+
+    window.rail.settings_button.click()
+    app.processEvents()
+
+    assert events == ["settings"]
+    assert window.current_workspace_id is WorkspaceId.OVERVIEW
+    assert window.navigation_labels == ("概要", "部屋", "測定", "最適化")
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_restore_release_checks_hidden_mounted_workspaces() -> None:
+    app = _app()
+    blocked = {"room": False}
+
+    def factory(workspace_id: WorkspaceId):
+        def build() -> WorkspaceMount:
+            guard = None
+            if workspace_id is WorkspaceId.ROOM:
+                guard = lambda: (
+                    (False, "部屋の処理が実行中です")
+                    if blocked["room"]
+                    else (True, None)
+                )
+            return WorkspaceMount.from_widget(
+                QLabel(workspace_id.value),
+                before_deactivate=guard,
+            )
+
+        return build
+
+    window = WorkflowShellWindow(_registrations(factory))
+    assert window.navigate(WorkspaceId.ROOM)
+    assert window.navigate(WorkspaceId.MEASUREMENT)
+    blocked["room"] = True
+
+    with pytest.raises(RuntimeError, match="部屋の処理"):
+        window.dispose_data_workspaces()
+
+    assert window.router.mount(WorkspaceId.ROOM) is not None
+    blocked["room"] = False
+    window.dispose_data_workspaces()
+    assert window.router.current_workspace_id is None
+    assert window.router.mount(WorkspaceId.ROOM) is None
+
     window.deleteLater()
     app.processEvents()

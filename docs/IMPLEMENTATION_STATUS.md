@@ -349,3 +349,19 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - UX110 shellは `--workflow-shell` の明示previewとし、UX150/UX160 Windows visual acceptance前は既定launcherへ昇格しない。
 - 詳細: [UX110 integration record](UX110_INTEGRATION_2026-09-18.md)
 - RDC未使用。
+
+
+## UX120–UX140 parallel workspace integration — 2026-09-19
+
+- #128 Settings / Data Management UI、#129 CAD input controller、#130 Room workspace、#132 Measurements workspaceをmainへmerge済み。
+- #131 Optimization workspaceは#129とのshared command/navigation競合をintegration branchで解消して取り込む。
+- `workflow_application.py` をcomposition rootとして追加し、`--workflow-shell` でOverview / Room / Measurements / Optimizationの新workspaceをlazy mountする。
+- Roomはdark viewport、object palette、Inspector、overlay、MMB pan、Shift+MMB orbit、wheel zoom、RMB command menu、M/R direct transform、X/Y/Z constraint、F/Home、Esc/Enter、Ctrl+D、polygon room作図・vertex dragを既存WorkingDocumentへ接続した。
+- Room transform previewは `working.document` を描画し、commitだけがrecovery/Undo履歴へ入る。
+- Measurementsは `読み込み → 割り当て → 品質 → 比較` の4 page compositionへ切替。REW background job中はdeactivation/restoreをblockする。
+- Optimization canonical contextは `setup / candidates / comparison / validation`。旧 `objectives / measurement-plan` deep-linkはshared navigation boundaryで互換normalizeする。
+- rail下部の「設定」から#128 Data Management UIへ入り、restore時は全mounted workspace guard→handle dispose→native restore→fresh SceneRepository→lazy rebuildを行う。
+- 既知残件: 新RoomへのN70 prediction実行/結果表示、旧wall/opening・高度geometry editingの完全移植、UX140のlegacy QMainWindow adapter除去、UX150/UX160 visual acceptance。
+- workflow shellは引き続き明示 `--workflow-shell` preview。default launcherはUX160 acceptanceまで変更しない。
+- 詳細: [UX120–UX140 integration record](UX120_140_INTEGRATION_2026-09-19.md)
+- RDC未使用。

@@ -438,7 +438,7 @@ def default_command_definitions() -> tuple[CommandDefinition, ...]:
             display_name='候補比較',
             contexts=frozenset({CommandContext.OPTIMIZATION}),
             keywords=('候補を比較', 'candidate compare', 'Pareto', 'パレート'),
-            deep_link=WorkspaceDeepLink(WorkspaceId.OPTIMIZATION, 'candidates'),
+            deep_link=WorkspaceDeepLink(WorkspaceId.OPTIMIZATION, 'comparison'),
         ),
     )
 

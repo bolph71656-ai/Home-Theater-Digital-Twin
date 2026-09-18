@@ -81,8 +81,12 @@ class CommandShortcutBinder(QObject):
                 definition,
                 text_input_focused=text_input_focused,
             )
-            available = self._registry.availability(command_id).enabled
-            shortcut.setEnabled(focus_allows and available)
+            # Availability providers can change after any scene edit. Keeping a
+            # QShortcut disabled based on a stale snapshot would make Save/Undo/M/R
+            # remain inaccessible until focus changes. Focus ownership is the only
+            # property that must be enforced at the QShortcut level; execute() checks
+            # live registry availability on every activation.
+            shortcut.setEnabled(focus_allows)
 
     def _focus_changed(self, _old: QWidget | None, _new: QWidget | None) -> None:
         self.refresh()

@@ -141,3 +141,8 @@ backend/tests/test_room_workspace.py covers:
 - Optimization workspace: unchanged
 - Scene / WorkingDocument / repository semantics: unchanged
 - CAD shortcut/input policy: unchanged
+
+
+## Integration update — 2026-09-19
+
+Integration branch `integration/ux120-140-workspaces` connected PR #129's `CadInputController` to this workspace, added WorkingDocument-backed polygon geometry input and M/R entity transform previews, and switched the workflow-shell Room factory to this component. The remaining Room gaps are N70 prediction execution/result presentation, advanced midpoint/numeric/wall/opening editing parity, and UX150/UX160 visual acceptance.

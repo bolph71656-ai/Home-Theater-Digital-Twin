@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -32,11 +33,13 @@ from .workflow_navigation import (
     WorkspaceContext,
     WorkspaceDeepLink,
     WorkspaceId,
+    normalize_workspace_context,
     normalize_workspace_id,
 )
 
 
 DeactivationGuard: TypeAlias = Callable[[], tuple[bool, str | None]]
+CloseGuard: TypeAlias = Callable[[], tuple[bool, str | None]]
 
 
 @dataclass(slots=True)
@@ -149,27 +152,50 @@ class WorkspaceRouter(QStackedWidget):
             mount.on_activate()
         return mount
 
-    def select_context(self, workspace_id: WorkspaceId | str, context_id: str) -> None:
+    def select_context(self, workspace_id: WorkspaceId | str, context_id: str) -> str:
         destination = normalize_workspace_id(workspace_id)
+        normalized_context = normalize_workspace_context(destination, context_id)
         registration = self._registrations[destination]
         valid_ids = {context.context_id for context in registration.contexts}
-        if context_id not in valid_ids:
-            raise ValueError(f"unknown context {context_id!r} for workspace {destination.value!r}")
+        if normalized_context not in valid_ids:
+            raise ValueError(
+                f"unknown context {context_id!r} for workspace {destination.value!r}"
+            )
         mount = self._ensure_mount(destination)
         if mount.on_context_changed is not None:
-            mount.on_context_changed(context_id)
+            mount.on_context_changed(normalized_context)
+        return normalized_context
 
     def request_entity(self, workspace_id: WorkspaceId | str, entity_id: str) -> None:
         mount = self._ensure_mount(normalize_workspace_id(workspace_id))
         if mount.on_entity_requested is not None:
             mount.on_entity_requested(entity_id)
 
-    def shutdown(self) -> None:
-        for mount in tuple(self._mounts.values()):
+    def can_dispose_all(self) -> tuple[bool, str | None]:
+        for workspace_id, mount in self._mounts.items():
+            if mount.before_deactivate is None:
+                continue
+            allowed, reason = mount.before_deactivate()
+            if not allowed:
+                label = self._registrations[workspace_id].label
+                return False, reason or f"{label}の作業を完了してから復元してください"
+        return True, None
+
+    def dispose_mounts(self) -> None:
+        mounts = tuple(self._mounts.values())
+        self._mounts.clear()
+        self._current_workspace_id = None
+        for mount in mounts:
             if mount.on_close is not None:
                 mount.on_close()
             else:
                 mount.widget.close()
+            self.removeWidget(mount.widget)
+            mount.widget.setParent(None)
+            mount.widget.deleteLater()
+
+    def shutdown(self) -> None:
+        self.dispose_mounts()
 
     def _ensure_mount(self, workspace_id: WorkspaceId) -> WorkspaceMount:
         existing = self._mounts.get(workspace_id)
@@ -190,6 +216,7 @@ class WorkflowRail(QFrame):
         self,
         registrations: Iterable[WorkspaceRegistration],
         on_navigate: Callable[[WorkspaceId], bool],
+        on_settings: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -224,6 +251,13 @@ class WorkflowRail(QFrame):
             layout.addWidget(button)
 
         layout.addStretch(1)
+
+        self.settings_button = QPushButton("設定")
+        self.settings_button.setObjectName("workflowSettingsButton")
+        set_control_size(self.settings_button, ControlSize.STANDARD)
+        if on_settings is not None:
+            self.settings_button.clicked.connect(lambda checked=False: on_settings())
+        layout.addWidget(self.settings_button)
 
     @property
     def labels(self) -> tuple[str, ...]:
@@ -307,6 +341,8 @@ class TopContextBar(QFrame):
 class WorkflowShellWindow(QMainWindow):
     """Workflow-first shell; domain and SceneRevision authority stay in workspaces."""
 
+    settingsRequested = Signal()
+
     def __init__(
         self,
         registrations: Iterable[WorkspaceRegistration],
@@ -323,6 +359,8 @@ class WorkflowShellWindow(QMainWindow):
             raise ValueError("workflow shell requires exactly the four canonical workspace destinations")
 
         self._selected_context: dict[WorkspaceId, str] = {}
+        self._close_guards: list[CloseGuard] = []
+        self._data_mutations_frozen = False
         for registration in registration_tuple:
             if registration.contexts:
                 self._selected_context[registration.workspace_id] = registration.contexts[0].context_id
@@ -333,7 +371,11 @@ class WorkflowShellWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        self.rail = WorkflowRail(registration_tuple, self.navigate)
+        self.rail = WorkflowRail(
+            registration_tuple,
+            self.navigate,
+            on_settings=self.settingsRequested.emit,
+        )
         root_layout.addWidget(self.rail)
 
         content = QFrame()
@@ -370,6 +412,9 @@ class WorkflowShellWindow(QMainWindow):
         return self.context_bar.context_labels
 
     def navigate(self, workspace_id: WorkspaceId | str) -> bool:
+        if self._data_mutations_frozen:
+            self.statusBar().showMessage("データ処理中は画面を切り替えられません")
+            return False
         destination = normalize_workspace_id(workspace_id)
         previous = self.router.current_workspace_id
         registration = self._registrations[destination]
@@ -401,12 +446,41 @@ class WorkflowShellWindow(QMainWindow):
         return True
 
     def _select_current_context(self, context_id: str) -> None:
+        if self._data_mutations_frozen:
+            return
         workspace_id = self.current_workspace_id
-        self.router.select_context(workspace_id, context_id)
-        self._selected_context[workspace_id] = context_id
-        self.context_bar.set_active_context(context_id)
+        normalized_context = self.router.select_context(workspace_id, context_id)
+        self._selected_context[workspace_id] = normalized_context
+        self.context_bar.set_active_context(normalized_context)
+
+    def register_close_guard(self, guard: CloseGuard) -> None:
+        self._close_guards.append(guard)
+
+    def freeze_data_mutations(self) -> None:
+        self._data_mutations_frozen = True
+        self.rail.setEnabled(False)
+        self.context_bar.setEnabled(False)
+        self.router.setEnabled(False)
+
+    def thaw_data_mutations(self) -> None:
+        self._data_mutations_frozen = False
+        self.rail.setEnabled(True)
+        self.context_bar.setEnabled(True)
+        self.router.setEnabled(True)
+
+    def dispose_data_workspaces(self) -> None:
+        allowed, reason = self.router.can_dispose_all()
+        if not allowed:
+            raise RuntimeError(reason or "現在の作業を完了してから復元してください")
+        self.router.dispose_mounts()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        for guard in self._close_guards:
+            allowed, reason = guard()
+            if not allowed:
+                self.statusBar().showMessage(reason or "現在の処理が完了してから終了してください")
+                event.ignore()
+                return
         current = self.router.mount(self.router.current_workspace_id) if self.router.current_workspace_id else None
         if current is not None and current.before_deactivate is not None:
             allowed, reason = current.before_deactivate()
