@@ -213,7 +213,10 @@ def _fixture(tmp_path):
                 scene_revision_id=f'applied:{candidate_id}',
                 evidence_type='measured',
                 captured_at=f'2030-01-0{repeat_index + 1}T00:00:00+00:00',
-                provenance_json='{"validation_scope":"owned_room"}',
+                provenance_json=json.dumps({
+                    'validation_scope': 'owned_room',
+                    'validation_campaign_id': campaign.campaign_id,
+                }, separators=(',', ':')),
             )
             measurements.datasets[measurement_id] = SimpleNamespace(
                 frequency_hz=frequency,
