@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -31,7 +32,7 @@ class CadObjectiveRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_objective_evaluations (
@@ -105,7 +106,7 @@ class CadObjectiveRepository:
             evaluation.search_spec_id,
             evaluation.search_spec_sha256,
         )
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''INSERT INTO cad_objective_evaluations(
                     evaluation_id, document_id, scene_revision_id, scene_content_hash,
@@ -127,7 +128,7 @@ class CadObjectiveRepository:
             )
 
     def get_evaluation(self, evaluation_id: str) -> CadObjectiveEvaluation | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_objective_evaluations WHERE evaluation_id=?',
                 (evaluation_id,),
@@ -135,7 +136,7 @@ class CadObjectiveRepository:
         return None if row is None else CadObjectiveEvaluation.model_validate_json(row['payload_json'])
 
     def list_evaluations(self, search_spec_id: str) -> tuple[CadObjectiveEvaluation, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_objective_evaluations WHERE search_spec_id=? ORDER BY seq ASC',
                 (search_spec_id,),
@@ -177,7 +178,7 @@ class CadObjectiveRepository:
         if expected != pareto_set.result:
             raise ValueError('Pareto result does not match referenced objective evaluations')
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''INSERT INTO cad_pareto_sets(
                     pareto_set_id, document_id, scene_revision_id, scene_content_hash,
@@ -198,7 +199,7 @@ class CadObjectiveRepository:
             )
 
     def find_pareto_set_by_sha(self, search_spec_id: str, pareto_sha256: str) -> CadParetoSet | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_pareto_sets WHERE search_spec_id=? AND pareto_sha256=? '
                 'ORDER BY seq DESC LIMIT 1',
@@ -207,7 +208,7 @@ class CadObjectiveRepository:
         return None if row is None else CadParetoSet.model_validate_json(row['payload_json'])
 
     def get_pareto_set(self, pareto_set_id: str) -> CadParetoSet | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_pareto_sets WHERE pareto_set_id=?',
                 (pareto_set_id,),
@@ -229,7 +230,7 @@ class CadObjectiveRepository:
         return tuple(latest[candidate_id] for candidate_id in order)
 
     def list_pareto_sets(self, search_spec_id: str) -> tuple[CadParetoSet, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_pareto_sets WHERE search_spec_id=? ORDER BY seq ASC',
                 (search_spec_id,),
