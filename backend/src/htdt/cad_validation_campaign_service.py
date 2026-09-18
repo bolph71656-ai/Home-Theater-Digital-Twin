@@ -190,6 +190,9 @@ class CadValidationCampaignService:
             if not isinstance(provenance, dict) or provenance.get('validation_scope') != 'owned_room':
                 reasons.append(f'{measurement_id}: validation_scope is not owned_room')
                 continue
+            if provenance.get('validation_campaign_id') != campaign.campaign_id:
+                reasons.append(f'{measurement_id}: validation campaign binding mismatch')
+                continue
             records.append(record)
         records.sort(key=lambda record: (record.captured_at or '', record.measurement_id))
         return tuple(records), tuple(reasons)
