@@ -91,6 +91,28 @@ def test_room_controller_deactivation_fails_closed_during_preview(tmp_path) -> N
     assert controller.before_deactivate() == (True, None)
 
 
+def test_room_controller_deactivation_blocks_dirty_and_recovery(tmp_path) -> None:
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    controller = RoomWorkspaceController(repository, F1_DOCUMENT_ID)
+
+    controller.add_object("seat")
+    allowed, reason = controller.before_deactivate()
+    assert allowed is False
+    assert reason is not None
+    assert "未保存" in reason
+
+    controller.save()
+    assert controller.before_deactivate() == (True, None)
+
+    controller.add_object("speaker")
+    restored = RoomWorkspaceController(repository, F1_DOCUMENT_ID)
+    assert restored.recovery_candidate is not None
+    allowed, reason = restored.before_deactivate()
+    assert allowed is False
+    assert reason is not None
+    assert "復旧" in reason
+
+
 def test_room_workspace_is_component_composition_and_contextual(tmp_path) -> None:
     app = _app()
     repository = SceneRepository(tmp_path / "scenes.sqlite3")
