@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import radians, tan
 
 import numpy as np
 import pyvista as pv
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QPointF, Signal
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
@@ -101,6 +102,7 @@ class RoomViewport3D(QFrame):
     """
 
     entitySelected = Signal(object)
+    contextMenuRequested = Signal(object, object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -262,6 +264,89 @@ class RoomViewport3D(QFrame):
         entity_id = self._actor_entity_ids.get(id(actor))
         if entity_id is not None:
             self.entitySelected.emit(entity_id)
+
+    def begin_pan(self, position: QPointF) -> None:
+        # Gesture lifetime is owned by CadInputController; this renderer only
+        # applies normalized deltas.
+        del position
+
+    def pan_by(self, delta: QPointF) -> None:
+        camera = self.plotter.camera
+        position = np.asarray(camera.GetPosition(), dtype=float)
+        focal = np.asarray(camera.GetFocalPoint(), dtype=float)
+        direction = focal - position
+        distance = float(np.linalg.norm(direction))
+        if distance <= 1e-9:
+            return
+        forward = direction / distance
+        up = np.asarray(camera.GetViewUp(), dtype=float)
+        up_norm = float(np.linalg.norm(up))
+        if up_norm <= 1e-9:
+            return
+        up /= up_norm
+        right = np.cross(forward, up)
+        right_norm = float(np.linalg.norm(right))
+        if right_norm <= 1e-9:
+            return
+        right /= right_norm
+
+        _, height = self.plotter.render_window.GetSize()
+        pixel_height = max(float(height), 1.0)
+        if camera.GetParallelProjection():
+            world_per_pixel = (2.0 * float(camera.GetParallelScale())) / pixel_height
+        else:
+            world_per_pixel = (
+                2.0
+                * distance
+                * tan(radians(float(camera.GetViewAngle())) * 0.5)
+                / pixel_height
+            )
+        shift = (
+            -float(delta.x()) * world_per_pixel * right
+            + float(delta.y()) * world_per_pixel * up
+        )
+        camera.SetPosition(*(position + shift))
+        camera.SetFocalPoint(*(focal + shift))
+        self.plotter.render()
+
+    def end_pan(self, position: QPointF) -> None:
+        del position
+
+    def begin_orbit(self, position: QPointF) -> None:
+        del position
+
+    def orbit_by(self, delta: QPointF) -> None:
+        camera = self.plotter.camera
+        camera.Azimuth(-float(delta.x()) * 0.25)
+        camera.Elevation(float(delta.y()) * 0.25)
+        camera.OrthogonalizeViewUp()
+        self.plotter.reset_camera_clipping_range()
+        self.plotter.render()
+
+    def end_orbit(self, position: QPointF) -> None:
+        del position
+
+    def zoom_by(self, steps: float, position: QPointF) -> None:
+        del position
+        if abs(float(steps)) <= 1e-12:
+            return
+        camera = self.plotter.camera
+        factor = 1.15 ** float(steps)
+        if camera.GetParallelProjection():
+            camera.SetParallelScale(float(camera.GetParallelScale()) / factor)
+        else:
+            camera.Zoom(factor)
+        self.plotter.reset_camera_clipping_range()
+        self.plotter.render()
+
+    def open_context_menu(
+        self,
+        position: QPointF,
+        global_position: QPointF,
+    ) -> None:
+        # Command content remains outside the renderer and can be supplied by the
+        # Room workspace / central command registry.
+        self.contextMenuRequested.emit(QPointF(position), QPointF(global_position))
 
     def fit_scene(self) -> None:
         self.plotter.reset_camera()
