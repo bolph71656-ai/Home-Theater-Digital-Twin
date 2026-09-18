@@ -5,8 +5,8 @@ on:
     paths:
       - 'backend/src/htdt/acoustic_bakeoff.py'
       - 'backend/src/htdt/acoustic_bakeoff_observation.py'
-      - 'backend/src/htdt/acoustic_pffdtd_adapter.py'
-      - 'backend/tests/test_acoustic_pffdtd_adapter.py'
+      - 'backend/src/htdt/acoustic_pffdtd_impedance_adapter.py'
+      - 'backend/tests/test_acoustic_pffdtd_impedance_adapter.py'
       - 'benchmarks/acoustics/r100a_manifest.json'
       - 'benchmarks/acoustics/r100b_candidates.json'
       - 'scripts/run_r100b_pffdtd_impedance.py'

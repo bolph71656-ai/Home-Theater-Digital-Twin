@@ -40,14 +40,14 @@ and therefore
 
 PFFDTD's exact frequency-independent branch representation is therefore `DEF=[0, Zn, 0]`, i.e. `[0, 2, 0]`. The normalized admittance is 0.5.
 
-`compile_impedance_fixture_boundary()` accepts this exact, frequency-independent, purely resistive subset and refuses two cases rather than inventing an authority:
+`acoustic_pffdtd_impedance_adapter.compile_impedance_fixture_boundary()` accepts this exact, frequency-independent, purely resistive subset and refuses two cases rather than inventing an authority:
 
 1. non-zero reactance, because an exact table-to-DEF fitting policy has not been frozen;
 2. frequency-varying resistance, for the same reason.
 
 The refusal is intentional capability-gap evidence. This slice does not use PFFDTD's scalar-absorption fitting helpers.
 
-`compile_impedance_fixture_model()` separately maps the canonical rigid faces and impedance face to PFFDTD material groups while preserving source and receiver locations.
+`acoustic_pffdtd_impedance_adapter.compile_impedance_fixture_model()` separately maps the canonical rigid faces and impedance face to PFFDTD material groups while preserving source and receiver locations.
 
 ## Raw-result and evaluator boundary
 
@@ -90,7 +90,7 @@ It also does not:
 
 Focused validation is performed by:
 
-- `backend/tests/test_acoustic_pffdtd_adapter.py`
+- `backend/tests/test_acoustic_pffdtd_impedance_adapter.py`
 - `.github/workflows/r100b-pffdtd-impedance.yml`
 - `scripts/run_r100b_pffdtd_impedance.py`
 

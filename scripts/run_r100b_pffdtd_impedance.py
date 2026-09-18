@@ -33,10 +33,10 @@ from htdt.acoustic_bakeoff_observation import (
     evaluate_sampled_fixture,
 )
 from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
-from htdt.acoustic_pffdtd_adapter import (
+from htdt.acoustic_pffdtd_adapter import pffdtd_git_head
+from htdt.acoustic_pffdtd_impedance_adapter import (
     compile_impedance_fixture_boundary,
     compile_impedance_fixture_model,
-    pffdtd_git_head,
 )
 
 
@@ -408,7 +408,7 @@ def _execute(
             'htdt_source_commit_sha': _htdt_git_head(),
             'adapter_id': ADAPTER_ID,
             'adapter_version': ADAPTER_VERSION,
-            'adapter_sha256': _file_sha256(root / 'backend' / 'src' / 'htdt' / 'acoustic_pffdtd_adapter.py'),
+            'adapter_sha256': _file_sha256(root / 'backend' / 'src' / 'htdt' / 'acoustic_pffdtd_impedance_adapter.py'),
             'probe_sha256': _file_sha256(Path(__file__).resolve()),
             'upstream_boundary_function': 'python/materials/adm_funcs.py:compute_Rf_from_DEF',
             'upstream_material_writer': 'python/materials/adm_funcs.py:write_freq_ind_mat_from_Zn',
