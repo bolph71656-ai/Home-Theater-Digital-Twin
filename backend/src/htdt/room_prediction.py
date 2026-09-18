@@ -483,7 +483,7 @@ class RoomPredictionPanel(QWidget):
         layout.addWidget(title)
 
         description = QLabel(
-            "矩形幾何modelのroom modeと一次反射候補です。実測FRやSPL音場ではありません。"
+            "矩形幾何モデルのルームモードと一次反射候補です。実測FRやSPL音場ではありません。"
         )
         description.setWordWrap(True)
         set_typography_role(description, TypographyRole.SECONDARY)
@@ -496,7 +496,7 @@ class RoomPredictionPanel(QWidget):
         self.max_mode.setRange(20.0, 1000.0)
         self.max_mode.setValue(300.0)
         self.max_mode.setSuffix(" Hz")
-        form.addRow("mode上限", self.max_mode)
+        form.addRow("モード上限", self.max_mode)
         self.sound_speed = QDoubleSpinBox()
         self.sound_speed.setRange(250.0, 400.0)
         self.sound_speed.setDecimals(2)
