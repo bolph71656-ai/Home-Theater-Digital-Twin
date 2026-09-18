@@ -192,9 +192,16 @@ class SearchControllerMixin:
         self._set_axis_tree_item(tree_item, item)
         self.search_axis_tree.addTopLevelItem(tree_item)
 
-    @staticmethod
-    def _set_axis_tree_item(tree_item: QTreeWidgetItem, axis: CadSearchAxis) -> None:
-        tree_item.setText(0, axis.entity_id)
+    def _entity_display_name(self, entity_id: str) -> str:
+        if self.working is not None:
+            try:
+                return self.working.committed_document.entity(entity_id).name
+            except KeyError:
+                pass
+        return "対象"
+
+    def _set_axis_tree_item(self, tree_item: QTreeWidgetItem, axis: CadSearchAxis) -> None:
+        tree_item.setText(0, self._entity_display_name(axis.entity_id))
         tree_item.setText(1, axis.axis.upper())
         tree_item.setText(2, f'{axis.min_m:.3f}')
         tree_item.setText(3, f'{axis.max_m:.3f}')
@@ -225,20 +232,20 @@ class SearchControllerMixin:
 
     def _saved_search_revision(self) -> SceneRevision:
         if self.working is None or self.working.source_revision_id is None:
-            raise ValueError('保存済みSceneRevisionが必要です')
+            raise ValueError('保存済みの部屋状態が必要です')
         if self.working.has_preview:
-            raise ValueError('編集中のtransformを完了またはキャンセルしてください')
+            raise ValueError('編集中の移動・回転を確定またはキャンセルしてください')
         if self.working.is_dirty:
-            raise ValueError('探索仕様を作る前に現在の配置を保存してください')
+            raise ValueError('探索設定を作る前に現在の配置を保存してください')
         revision = self.repository.get(self.working.source_revision_id)
         if revision is None:
-            raise ValueError('現在のSceneRevisionを読み込めません')
+            raise ValueError('現在の保存状態を読み込めません')
         return revision
 
     def save_search_spec(self) -> None:
         axes = self._draft_search_axes()
         if not axes:
-            self.statusBar().showMessage('探索仕様には少なくとも1つの可動軸が必要です')
+            self.statusBar().showMessage('探索設定には少なくとも1つの可動軸が必要です')
             return
         try:
             revision = self._saved_search_revision()
@@ -253,7 +260,7 @@ class SearchControllerMixin:
             )
             self.search_repository.save(spec)
         except Exception as exc:
-            self.statusBar().showMessage(f'探索仕様を保存できません · {exc}')
+            self.statusBar().showMessage(f'探索設定を保存できません · {exc}')
             return
 
         self.search_selected_spec_id = spec.search_spec_id
@@ -263,7 +270,7 @@ class SearchControllerMixin:
         self._refresh_search_specs()
         self._remove_search_overlays()
         self.statusBar().showMessage(
-            f'探索仕様を保存しました · raw候補 {estimate["raw_candidate_count"]} · '
+            f'探索仕様を保存しました · 総候補 {estimate["raw_candidate_count"]} · '
             f'revision {spec.scene_revision_id[:8]}'
         )
 
@@ -278,7 +285,7 @@ class SearchControllerMixin:
         selected_item: QTreeWidgetItem | None = None
         with QSignalBlocker(tree):
             tree.clear()
-            for spec in reversed(specs):
+            for display_index, spec in enumerate(reversed(specs), start=1):
                 current = (
                     self.working is not None
                     and search_spec_current_working(
@@ -290,9 +297,9 @@ class SearchControllerMixin:
                 )
                 item = QTreeWidgetItem(
                     [
-                        spec.name or '探索仕様',
-                        spec.scene_revision_id[:8],
-                        'current' if current else 'stale',
+                        spec.name or f'探索設定 {display_index}',
+                        '現在の部屋' if current else '以前の部屋',
+                        '利用可' if current else '再設定が必要',
                     ]
                 )
                 item.setData(0, ROLE, spec.search_spec_id)
@@ -370,15 +377,16 @@ class SearchControllerMixin:
         )
         if self.search_binding_label is not None:
             if self.working is None or self.working.source_revision_id is None:
-                self.search_binding_label.setText('保存済みSceneRevisionがありません')
+                self.search_binding_label.setText('保存済みの部屋状態がありません')
             elif spec is None:
                 self.search_binding_label.setText(
-                    f'現在のrevision {self.working.source_revision_id[:8]} · 探索仕様を作成してください'
+                    '現在の保存状態から探索設定を作成してください'
                 )
             else:
-                state = 'current' if current else 'stale'
                 self.search_binding_label.setText(
-                    f'SearchSpec {spec.search_spec_id[:8]} · source {spec.scene_revision_id[:8]} · {state}'
+                    '現在の部屋・制約に一致しています'
+                    if current
+                    else '部屋または制約が変更されています · 探索設定を更新してください'
                 )
         search_busy = self._current_search_task_id is not None
         extended_busy = self._current_extended_task_id is not None
@@ -420,7 +428,7 @@ class SearchControllerMixin:
             return
         spec = self._selected_search_spec()
         if spec is None or self.working is None:
-            self.statusBar().showMessage('生成する探索仕様を選択してください')
+            self.statusBar().showMessage('生成する探索設定を選択してください')
             return
         if not search_spec_current_working(
             spec,
@@ -428,7 +436,7 @@ class SearchControllerMixin:
             self.constraint_set,
             current_document_id=self.document_id,
         ):
-            self.statusBar().showMessage('staleな探索仕様から現在sceneへ候補を生成できません')
+            self.statusBar().showMessage('部屋または制約が変更された探索設定からは候補を生成できません')
             self._refresh_search_binding_state()
             return
 
@@ -438,7 +446,7 @@ class SearchControllerMixin:
         self._search_task_spec_ids[key] = spec.search_spec_id
         self._refresh_search_binding_state()
         self.statusBar().showMessage(
-            f'候補生成中… SearchSpec {spec.search_spec_id[:8]} · offset {page_offset}'
+            f'候補を生成しています… · {page_offset + 1}件目から'
         )
         self._start_search_task(
             key,
@@ -489,7 +497,7 @@ class SearchControllerMixin:
             self._refresh_search_binding_state()
             return
         if not isinstance(result, CadCandidateSetPage):
-            self.statusBar().showMessage('候補生成結果を拒否しました · result contract mismatch')
+            self.statusBar().showMessage('候補生成結果を利用できません · 結果形式が一致しません')
             self._refresh_search_binding_state()
             return
         spec = None if spec_id is None else self.search_repository.get(spec_id)
@@ -503,11 +511,11 @@ class SearchControllerMixin:
                         current_document_id=self.document_id,
                     )
         ):
-            self.statusBar().showMessage('古い候補生成結果を破棄しました · scene/constraintが変更されています')
+            self.statusBar().showMessage('古い候補生成結果を破棄しました · 部屋または制約が変更されています')
             self._refresh_search_binding_state()
             return
         if spec.search_spec_id != self.search_selected_spec_id:
-            self.statusBar().showMessage('候補生成は完了しました · 別の探索仕様が選択されています')
+            self.statusBar().showMessage('候補生成は完了しました · 別の探索設定が選択されています')
             self._refresh_search_binding_state()
             return
 
@@ -521,14 +529,13 @@ class SearchControllerMixin:
         self._render_search_overlay()
         if self.search_summary_label is not None:
             self.search_summary_label.setText(
-                f'raw {result.raw_candidate_count} · feasible {result.feasible_candidate_count} · '
-                f'rejected {result.rejected_candidate_count} · duplicate {result.duplicate_candidate_count} · '
+                f'総候補 {result.raw_candidate_count} · 有効 {result.feasible_candidate_count} · '
+                f'除外 {result.rejected_candidate_count} · 重複 {result.duplicate_candidate_count} · '
                 f'表示 {result.offset + 1 if result.candidates else 0}–'
                 f'{result.offset + len(result.candidates)}'
             )
         self.statusBar().showMessage(
-            f'候補を生成しました · feasible {result.feasible_candidate_count} · '
-            f'set {result.candidate_set_sha256[:8]}'
+            f'候補を生成しました · 有効 {result.feasible_candidate_count}件'
         )
 
     def _refresh_search_candidate_tree(self) -> None:
@@ -541,15 +548,18 @@ class SearchControllerMixin:
             tree.clear()
             if page is None:
                 return
-            for candidate in page.candidates:
+            for row_number, candidate in enumerate(page.candidates, start=1):
                 position_text = ' · '.join(
-                    f'{entity_id}:({position["x_m"]:.2f},{position["y_m"]:.2f},{position["z_m"]:.2f})'
+                    f'{self._entity_display_name(entity_id)} '
+                    f'({position["x_m"]:.2f}, {position["y_m"]:.2f}, {position["z_m"]:.2f})'
                     for entity_id, position in sorted(candidate.positions.items())
                 )
                 item = QTreeWidgetItem(
                     [
-                        candidate.candidate_id[:14],
-                        str(candidate.feasible_index),
+                        f'候補 {result_number}'
+                        if (result_number := page.offset + row_number) > 0
+                        else f'候補 {row_number}',
+                        str(candidate.feasible_index + 1),
                         position_text,
                     ]
                 )
