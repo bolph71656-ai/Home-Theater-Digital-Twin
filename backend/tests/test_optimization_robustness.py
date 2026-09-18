@@ -16,11 +16,10 @@ from htdt.cad_scene import (
     Size3,
 )
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates
-from htdt.cad_search_models import CadSearchAxis
+from htdt.cad_search_models import CadCandidate, CadSearchAxis
 from htdt.optimization_objectives import ObjectiveMetric, ObjectiveVector
 from htdt.optimization_robustness import (
     PerturbationObjectiveResult,
-    RobustnessSpec,
     UncertaintyAxis,
     build_local_stencil,
     build_robustness_spec,
@@ -204,10 +203,7 @@ def test_o90a_rechecks_constraints_keeps_infeasible_sample_and_builds_sensitivit
     spec = build_robustness_spec(
         source_revision=revision,
         search_spec=search_spec,
-        candidate=__import__('json').loads(spec.candidate_payload_json)
-        and __import__('htdt.cad_search_models', fromlist=['CadCandidate']).CadCandidate.model_validate_json(
-            spec.candidate_payload_json
-        ),
+        candidate=CadCandidate.model_validate_json(spec.candidate_payload_json),
         candidate_set_sha256=spec.candidate_set_sha256,
         nominal_objective=nominal,
         nominal_prediction_result_ref=spec.nominal_prediction_result_ref,
@@ -321,8 +317,3 @@ def test_o90a_persistence_round_trips_exact_provenance(tmp_path) -> None:
         scene_revision_id=spec.scene_revision_id,
         candidate_id=spec.candidate_id,
     ) == (spec,)
-
-    raw = RobustnessSpec.model_validate(
-        spec.model_dump(mode='json') | {'candidate_set_sha256': '0' * 64}
-    )
-    assert raw.candidate_set_sha256 != spec.candidate_set_sha256
