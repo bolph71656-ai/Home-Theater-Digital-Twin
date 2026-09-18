@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from hashlib import sha256
 from pathlib import Path
 import sqlite3
@@ -26,7 +27,7 @@ def _seed_data(data_dir: Path):
     asset = data_dir / relative_path
     asset.parent.mkdir(parents=True, exist_ok=True)
     asset.write_bytes(raw)
-    with sqlite3.connect(repository.path) as connection:
+    with closing(sqlite3.connect(repository.path)) as connection, connection:
         connection.execute(
             '''INSERT INTO cad_measurement_assets(
                 sha256, filename, relative_path, size_bytes
@@ -163,7 +164,7 @@ def test_backup_normalizes_existing_windows_asset_relative_paths(tmp_path: Path)
     asset = data_dir / 'measurement-assets' / digest
     asset.parent.mkdir(parents=True, exist_ok=True)
     asset.write_bytes(raw)
-    with sqlite3.connect(repository.path) as connection:
+    with closing(sqlite3.connect(repository.path)) as connection, connection:
         connection.execute(
             '''INSERT INTO cad_measurement_assets(
                 sha256, filename, relative_path, size_bytes
