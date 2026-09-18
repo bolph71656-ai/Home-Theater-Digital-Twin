@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Signal
@@ -300,7 +302,7 @@ def test_room_move_preview_is_visible_and_commits_as_one_undoable_command(tmp_pa
 
     preview = workspace.controller.document.entity("speaker-fl").position
     committed_before_release = workspace.controller.committed_document.entity("speaker-fl").position
-    assert preview.x_m == before.x_m + 1.0
+    assert preview.x_m == pytest.approx(before.x_m + 1.0)
     assert preview.y_m == before.y_m
     assert committed_before_release == before
 
