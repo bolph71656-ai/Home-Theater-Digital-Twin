@@ -83,13 +83,13 @@ class _RewTask(QObject):
 
 
 class OptimizationWorkflowController(
+    QObject,
     ValidationControllerMixin,
     MeasurementPlanControllerMixin,
     AdaptiveControllerMixin,
     AdaptiveExtendedControllerMixin,
     ExtendedSearchControllerMixin,
     SearchControllerMixin,
-    QObject,
 ):
     """QMainWindow-free UX140 controller over existing O10-O80 authorities."""
 
