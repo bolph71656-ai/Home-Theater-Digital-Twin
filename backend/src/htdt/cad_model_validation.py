@@ -53,6 +53,7 @@ def _advanced_gate_reasons(
     *,
     evidence_scope: EvidenceScope,
     residual_gate: Literal['pass', 'fail', 'insufficient'],
+    pairs: Sequence[CadValidationPair],
     objective_samples: Sequence[CadObjectiveValidationSample],
     trend_checks: Sequence[CadTrendCheck],
     sensitivity_checks: Sequence[CadSensitivityCheck],
@@ -63,6 +64,14 @@ def _advanced_gate_reasons(
     reasons: list[str] = []
     if evidence_scope != 'owned_room':
         reasons.append('automatic recommendation requires owned-room evidence')
+    calibration_candidates = {pair.candidate_id for pair in pairs if pair.split == 'calibration'}
+    holdout_candidates = {pair.candidate_id for pair in pairs if pair.split == 'holdout'}
+    if not calibration_candidates:
+        reasons.append('independent calibration evidence is required')
+    if not holdout_candidates:
+        reasons.append('independent holdout evidence is required')
+    if calibration_candidates & holdout_candidates:
+        reasons.append('calibration and holdout candidate sets must be disjoint')
     if residual_gate != 'pass':
         reasons.append(f'holdout residual gate is {residual_gate}')
 
@@ -208,6 +217,7 @@ class CadModelValidationRecord(BaseModel):
         advanced_reasons = _advanced_gate_reasons(
             evidence_scope=self.evidence_scope,
             residual_gate=self.residual_gate,
+            pairs=self.pairs,
             objective_samples=self.objective_samples,
             trend_checks=self.trend_checks,
             sensitivity_checks=self.sensitivity_checks,
@@ -337,6 +347,7 @@ def _build_record(payload: dict[str, Any]) -> CadModelValidationRecord:
     reasons = _advanced_gate_reasons(
         evidence_scope=payload['evidence_scope'],
         residual_gate=payload['residual_gate'],
+        pairs=payload['pairs'],
         objective_samples=payload.get('objective_samples', ()),
         trend_checks=payload.get('trend_checks', ()),
         sensitivity_checks=payload.get('sensitivity_checks', ()),
