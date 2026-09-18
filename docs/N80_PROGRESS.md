@@ -296,3 +296,19 @@ This follows the roadmap safety boundary: HTDT does not autonomously move speake
 - Focused O60 tests verify that calibration fit cannot substitute for independent holdout evidence.
 
 O70 adaptive planning is intentionally not implemented as an automatic recommendation yet: the roadmap requires real O60 holdout evidence and stability evidence, not merely the existence of the validation code. Until such evidence exists, the product remains a Pareto comparison and measurement-planning tool.
+
+
+## 2026-09-18 — N80c/O50 authority tightened; O60 recommendation remains gated
+
+Current PR: #74 / branch `feat/n80-pareto-workspace`.
+
+- Measurement Plan now resolves the selected candidate by regenerating the exact SearchSpec candidate set. It stores the actual candidate-set SHA and rejects unknown candidate IDs.
+- A plan is accepted only when the saved applied SceneRevision directly descends from the SearchSpec source revision and its content hash exactly equals the selected candidate placement applied to that source scene.
+- Measurement-plan persistence independently rechecks every completed measurement ID, exact document/revision/content hash and `evidence_type=measured`.
+- Native Optimization workspace now contains an O50 measurement queue. It lists latest immutable state per plan and only offers N60 measured records bound to the exact applied revision/content hash. Completion appends a new `measured` plan state; the original `planned` row remains immutable.
+- Pareto refresh now fails closed for stale SearchSpec/Scene/constraint binding, mismatched objective sets, or mismatched units. Evidence provenance includes class/kind/source identity. Semantically identical Pareto snapshots are reused by SHA instead of duplicated.
+- O60 `CadModelValidationRecord` binds document, SearchSpec ID+SHA, candidate-set SHA, model ID/version and immutable prediction/measurement pairs. Calibration and holdout candidates cannot overlap.
+- O60 persistence cross-checks completed Room Simulator attempts against the exact batch/SearchSpec/model and requires every measured ID to be linked through a completed O50 Measurement Plan for the same candidate.
+- Residual validation is stored separately as `pass/fail/insufficient`. Automatic recommendation remains `disabled` even after a residual pass until independent trend/rank, sensitivity and repeatability evidence exists. Therefore O70 remains gated.
+- Added focused tests for exact candidate/revision rejection, planned→measured append-only history, Pareto semantic lookup, residual gating, and O60 cross-evidence persistence.
+- RDC use for PR #74 remains zero at this point. GitHub Actions remains the primary verification authority until the product branch is green.
