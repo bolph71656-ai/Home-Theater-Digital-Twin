@@ -283,12 +283,13 @@ class BenchmarkEnvironment(BaseModel):
 
     temperature_c: float
     sound_speed_m_s: float = Field(gt=0.0)
+    density_kg_m3: float = Field(gt=0.0)
     relative_humidity_percent: float | None = Field(default=None, ge=0.0, le=100.0)
     pressure_pa: float | None = Field(default=None, gt=0.0)
 
     @model_validator(mode='after')
     def finite_environment(self) -> 'BenchmarkEnvironment':
-        values = [self.temperature_c, self.sound_speed_m_s]
+        values = [self.temperature_c, self.sound_speed_m_s, self.density_kg_m3]
         if self.relative_humidity_percent is not None:
             values.append(self.relative_humidity_percent)
         if self.pressure_pa is not None:
@@ -603,7 +604,7 @@ class AcousticBenchmarkManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal['r100a-1'] = 'r100a-1'
+    schema_version: Literal['r100a-2'] = 'r100a-2'
     manifest_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     purpose: str = Field(min_length=1)
