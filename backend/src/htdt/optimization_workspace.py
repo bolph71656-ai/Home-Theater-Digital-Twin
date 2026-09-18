@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QTreeWidget,
+    QListWidget,
+    QListWidgetItem,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -26,6 +28,8 @@ from PySide6.QtWidgets import (
 
 from .analysis_markers import render_analysis_marker_cloud
 from .cad_repository import SceneRepository, SceneRevision
+from .cad_objectives import build_pareto_set
+from .cad_objective_repository import CadObjectiveRepository
 from .cad_scene import F1_DOCUMENT_ID
 from .cad_search import (
     apply_candidate_positions,
@@ -101,6 +105,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
 
     def __init__(self, repository: SceneRepository, document_id: str = F1_DOCUMENT_ID) -> None:
         self.search_repository = CadSearchRepository(repository)
+        self.objective_repository = CadObjectiveRepository(repository, self.search_repository)
         self.search_selected_spec_id: str | None = None
         self.search_selected_candidate_id: str | None = None
         self.search_preview_candidate_id: str | None = None
@@ -125,6 +130,10 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_preview_button: QPushButton | None = None
         self.search_clear_preview_button: QPushButton | None = None
         self.search_apply_button: QPushButton | None = None
+        self.objective_list: QListWidget | None = None
+        self.pareto_tree: QTreeWidget | None = None
+        self.pareto_summary_label: QLabel | None = None
+        self.pareto_refresh_button: QPushButton | None = None
         self._search_actor_names: set[str] = set()
         self._search_tasks: dict[str, tuple[QThread, _SearchTask]] = {}
         self._search_task_spec_ids: dict[str, str] = {}
@@ -246,6 +255,29 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_apply_button.clicked.connect(self.apply_selected_candidate)
         candidate_actions.addWidget(self.search_apply_button)
         layout.addLayout(candidate_actions)
+
+        comparison_label = QLabel('Pareto比較 · objectiveは独立指標のまま保持します')
+        comparison_label.setWordWrap(True)
+        layout.addWidget(comparison_label)
+
+        self.objective_list = QListWidget()
+        self.objective_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self.objective_list.setMinimumHeight(100)
+        layout.addWidget(self.objective_list)
+
+        self.pareto_refresh_button = QPushButton('Pareto集合を再計算・保存')
+        self.pareto_refresh_button.clicked.connect(self.refresh_pareto_comparison)
+        layout.addWidget(self.pareto_refresh_button)
+
+        self.pareto_summary_label = QLabel('objective evaluation未読込')
+        self.pareto_summary_label.setWordWrap(True)
+        layout.addWidget(self.pareto_summary_label)
+
+        self.pareto_tree = QTreeWidget()
+        self.pareto_tree.setHeaderLabels(['候補', 'Pareto', 'evidence', 'objective'])
+        self.pareto_tree.setMinimumHeight(180)
+        self.pareto_tree.itemSelectionChanged.connect(self._pareto_candidate_selected)
+        layout.addWidget(self.pareto_tree)
         layout.addStretch(1)
 
         dock = QDockWidget('最適化', self)
@@ -254,6 +286,76 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self._unify_right_context_docks(dock)
         dock.raise_()
+
+    def refresh_pareto_comparison(self) -> None:
+        spec_id = self.search_selected_spec_id
+        if spec_id is None or self.objective_list is None or self.pareto_tree is None:
+            return
+        evaluations = self.objective_repository.latest_evaluations_by_candidate(spec_id)
+        if not evaluations:
+            self.objective_list.clear()
+            self.pareto_tree.clear()
+            if self.pareto_summary_label is not None:
+                self.pareto_summary_label.setText('この探索仕様にはobjective evaluationがありません')
+            return
+
+        available = tuple(metric.objective_id for metric in evaluations[0].vector.metrics)
+        previous = {item.data(Qt.ItemDataRole.UserRole) for item in self.objective_list.selectedItems()}
+        self.objective_list.clear()
+        for objective_id in available:
+            item = QListWidgetItem(objective_id)
+            item.setData(Qt.ItemDataRole.UserRole, objective_id)
+            self.objective_list.addItem(item)
+            if not previous or objective_id in previous:
+                item.setSelected(True)
+        selected = tuple(
+            str(item.data(Qt.ItemDataRole.UserRole))
+            for item in self.objective_list.selectedItems()
+        )
+        if not selected:
+            selected = available
+
+        pareto_set = build_pareto_set(evaluations, selected)
+        self.objective_repository.save_pareto_set(pareto_set)
+        non_dominated = set(pareto_set.result.non_dominated_candidate_ids)
+        self.pareto_tree.clear()
+        for evaluation in evaluations:
+            metric_map = {metric.objective_id: metric for metric in evaluation.vector.metrics}
+            evidence = ', '.join(sorted({ref.evidence_class for ref in evaluation.input_refs}))
+            values = '; '.join(
+                f'{objective_id}={metric_map[objective_id].value:.4g} {metric_map[objective_id].unit}'
+                for objective_id in selected
+            )
+            item = QTreeWidgetItem([
+                evaluation.candidate_id[:12],
+                '非劣' if evaluation.candidate_id in non_dominated else '支配あり',
+                evidence,
+                values,
+            ])
+            item.setData(0, ROLE, evaluation.candidate_id)
+            self.pareto_tree.addTopLevelItem(item)
+        if self.pareto_summary_label is not None:
+            self.pareto_summary_label.setText(
+                f'{len(evaluations)}候補 · 非劣 {len(non_dominated)} · '
+                f'objective {len(selected)} · {pareto_set.pareto_set_id[:8]}'
+            )
+
+    def _pareto_candidate_selected(self) -> None:
+        if self.pareto_tree is None or self.search_candidate_tree is None:
+            return
+        item = self.pareto_tree.currentItem()
+        if item is None:
+            return
+        candidate_id = item.data(0, ROLE)
+        if not isinstance(candidate_id, str):
+            return
+        self.search_selected_candidate_id = candidate_id
+        for index in range(self.search_candidate_tree.topLevelItemCount()):
+            candidate_item = self.search_candidate_tree.topLevelItem(index)
+            payload = candidate_item.data(0, ROLE)
+            if isinstance(payload, dict) and payload.get('candidate_id') == candidate_id:
+                self.search_candidate_tree.setCurrentItem(candidate_item)
+                break
 
     @staticmethod
     def _search_distance_field(*, minimum: float = -1000.0, value: float = 0.0) -> QDoubleSpinBox:
