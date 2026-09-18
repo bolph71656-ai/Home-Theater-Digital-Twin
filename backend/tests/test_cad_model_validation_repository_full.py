@@ -15,6 +15,14 @@ from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity, Siz
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates
 from htdt.cad_search_models import CadSearchAxis
 from htdt.cad_search_repository import CadSearchRepository
+from htdt.cad_validation_campaign import (
+    CadValidationCampaignCandidate,
+    CadValidationCampaignRepeatability,
+    CadValidationCampaignSensitivity,
+    CadValidationCampaignSeparation,
+    build_validation_campaign,
+)
+from htdt.cad_validation_campaign_repository import CadValidationCampaignRepository
 from htdt.cad_validation_metrics import (
     CadApplicabilityCheck,
     CadObjectiveValidationSample,
@@ -66,6 +74,14 @@ class _RoomSimEvidence:
         )
 
 
+class _PreMeasurementEvidence:
+    def __init__(self, path):
+        self.path = path
+
+    def latest_measurement_plans(self, search_spec_id):
+        return ()
+
+
 class _MeasurementEvidence:
     def __init__(self, path, document_id, candidate_set_sha256, candidate_ids):
         self.path = path
@@ -99,6 +115,7 @@ class _MeasurementEvidence:
             document_id=self.document_id,
             scene_revision_id=revision_id,
             provenance_json='{"validation_scope":"' + validation_scope + '"}',
+            captured_at='2030-01-01T00:00:00+00:00',
         )
         response = _fr(offset)
         self.datasets[measurement_id] = SimpleNamespace(
@@ -147,6 +164,56 @@ def _fixture(tmp_path):
     candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
 
     objective_repo = CadObjectiveRepository(scene_repo, search_repo)
+
+    campaign = build_validation_campaign(
+        document_id=document.document_id,
+        search_spec_id=spec.search_spec_id,
+        search_spec_sha256=spec.search_spec_sha256,
+        candidate_set_sha256=page.candidate_set_sha256,
+        campaign_id=campaign.campaign_id,
+        campaign_sha256=campaign.campaign_sha256,
+        model_id='rew-roomsim',
+        model_version='fixture-1',
+        requested_band_hz=(20.0, 160.0),
+        max_holdout_rms_db=1.0,
+        candidates=(
+            CadValidationCampaignCandidate(candidate_id=candidate_ids[0], split='holdout'),
+            CadValidationCampaignCandidate(candidate_id=candidate_ids[1], split='holdout'),
+            CadValidationCampaignCandidate(candidate_id=candidate_ids[2], split='calibration'),
+        ),
+        objective_ids=('response.shape_rms_db',),
+        objective_evaluation_spec={'fixture': True},
+        sensitivity=(
+            CadValidationCampaignSensitivity(
+                objective_id='response.shape_rms_db',
+                candidate_a_id=candidate_ids[0],
+                candidate_b_id=candidate_ids[1],
+                max_observed_sensitivity_per_m=6.0,
+                max_model_error_per_m=1.0,
+            ),
+        ),
+        repeatability=(
+            CadValidationCampaignRepeatability(
+                candidate_id=candidate_ids[0],
+                min_measurements=2,
+            ),
+        ),
+        separation=(
+            CadValidationCampaignSeparation(
+                candidate_a_id=candidate_ids[0],
+                candidate_b_id=candidate_ids[1],
+                repeatability_candidate_id=candidate_ids[0],
+                min_repeatability_multiple=2.0,
+            ),
+        ),
+        required_applicability_codes=('geometry', 'band', 'routing'),
+    )
+    campaign_repository = CadValidationCampaignRepository(
+        search_repo,
+        _PreMeasurementEvidence(scene_repo.path),
+    )
+    campaign_repository.save(campaign)
+
     objective_samples = []
     for index, candidate in enumerate(candidates, start=1):
         split = 'calibration' if index == 3 else 'holdout'
