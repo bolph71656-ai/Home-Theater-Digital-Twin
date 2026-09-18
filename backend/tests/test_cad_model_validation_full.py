@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from htdt.cad_model_validation import build_full_model_validation
+from hashlib import sha256
+import json
+import pytest
+
+from htdt.cad_model_validation import CadModelValidationRecord, build_full_model_validation
 from htdt.cad_validation_metrics import (
     CadApplicabilityCheck,
     CadObjectiveValidationSample,
@@ -131,3 +135,23 @@ def test_discordant_holdout_trend_disables_recommendation():
     assert record.trend_checks[0].gate == 'fail'
     assert record.recommendation_gate == 'disabled'
     assert any('objective trend' in reason for reason in record.gate_reasons)
+
+
+def test_stop_reasons_cannot_be_removed_even_with_rehashed_payload():
+    record = _record(evidence_scope='synthetic_fixture')
+    payload = record.model_dump(mode='python')
+    payload['gate_reasons'] = ()
+    identity = record.identity_payload()
+    identity['gate_reasons'] = []
+    payload['validation_sha256'] = sha256(
+        json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(',', ':'),
+            allow_nan=False,
+        ).encode('utf-8')
+    ).hexdigest()
+
+    with pytest.raises(ValueError, match='gate reasons'):
+        CadModelValidationRecord.model_validate(payload)
