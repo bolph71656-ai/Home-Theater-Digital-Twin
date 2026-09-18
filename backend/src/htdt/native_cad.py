@@ -17,6 +17,7 @@ from .measurement_workspace import MeasurementWorkspaceWindow
 from .native_backup import create_backup, restore_backup
 from .native_editor import default_data_dir
 from .optimization_workspace import OptimizationWorkspaceWindow
+from .prediction_workspace import PredictionWorkspaceWindow
 from .runtime_instance import SingleInstanceGuard
 from .theater_workflow import TheaterWorkflowWindow
 from .ui_theme import apply_dark_theme
@@ -40,7 +41,6 @@ __all__ = [
     "build_workflow_shell",
     "main",
 ]
-
 
 
 def build_workflow_shell(repository: SceneRepository, document_id: str) -> WorkflowShellWindow:
