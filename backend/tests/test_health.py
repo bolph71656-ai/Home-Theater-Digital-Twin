@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from htdt import __version__
 from htdt.database import SCHEMA_VERSION
 from htdt.main import create_app
 
@@ -12,7 +13,7 @@ def test_health_endpoint(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json() == {
         'status': 'ok',
-        'version': '0.1.0.dev0',
+        'version': __version__,
         'platform_target': 'Windows 11 x64',
         'rew_required': False,
         'measurement_hardware_required': False,
