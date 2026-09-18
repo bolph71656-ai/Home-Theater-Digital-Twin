@@ -5,11 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from htdt.cad_constraint_models import CadConstraintSet
+from htdt.cad_constraint_models import CadConstraintSet, CadWallClearanceConstraint
 from htdt.cad_document import WorkingDocument
 from htdt.cad_extended_search import (
     CadExtendedSearchAxis,
     aim_horizontal_yaw_deg,
+    body_horizontal_yaw_deg,
     apply_extended_candidate,
     build_extended_model_capability,
     build_extended_search_spec,
@@ -30,6 +31,7 @@ from htdt.cad_scene import (
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates
 from htdt.cad_search_models import CadSearchAxis
 from htdt.cad_search_repository import CadSearchRepository
+from htdt.cad_walls import make_wall_topology
 
 
 DOCUMENT_ID = 'o80-extended-fixture'
@@ -91,7 +93,7 @@ def _fixture(tmp_path):
         model_id='synthetic-directional-fixture',
         model_version='1',
         evidence_scope='synthetic_fixture',
-        supported_parameters=('aim_yaw_deg',),
+        supported_parameters=('aim_yaw_deg', 'body_yaw_deg'),
         detail='synthetic directional model for software acceptance only',
         created_at_utc=_now(),
     )
@@ -254,12 +256,12 @@ def test_extended_apply_rejects_position_tampering_even_with_base_candidate_id(t
 
 
 def test_rew_roomsim_cannot_claim_toe_in_capability():
-    with pytest.raises(ValueError, match='does not model speaker acoustic aim'):
+    with pytest.raises(ValueError, match='does not model speaker acoustic direction'):
         build_extended_model_capability(
             model_id='rew-room-simulator',
             model_version='5.40',
             evidence_scope='synthetic_fixture',
-            supported_parameters=('aim_yaw_deg',),
+            supported_parameters=('aim_yaw_deg', 'body_yaw_deg'),
             detail='invalid',
             created_at_utc=_now(),
         )
@@ -296,7 +298,7 @@ def test_extended_search_requires_explicit_source_aim(tmp_path):
         model_id='synthetic-directional-fixture',
         model_version='1',
         evidence_scope='synthetic_fixture',
-        supported_parameters=('aim_yaw_deg',),
+        supported_parameters=('aim_yaw_deg', 'body_yaw_deg'),
         detail='fixture',
         created_at_utc=_now(),
     )
@@ -368,7 +370,7 @@ def test_owned_room_extended_spec_requires_exact_o60_search_authority(tmp_path):
         model_id=validation.model_id,
         model_version=validation.model_version,
         evidence_scope='owned_room',
-        supported_parameters=('aim_yaw_deg',),
+        supported_parameters=('aim_yaw_deg', 'body_yaw_deg'),
         detail='owned-room directional fixture',
         validation=validation,
         created_at_utc=_now(),
@@ -398,3 +400,176 @@ def test_owned_room_extended_spec_requires_exact_o60_search_authority(tmp_path):
     ):
         repository.save_spec(spec)
 
+
+
+def test_physical_toe_in_rotates_body_and_coupled_aim_in_one_undo(tmp_path):
+    (
+        scene_repository,
+        revision,
+        constraints,
+        base_spec,
+        base_page,
+        capability,
+        _repository,
+        _aim_spec,
+    ) = _fixture(tmp_path)
+    body_spec = build_extended_search_spec(
+        source_revision=revision,
+        base_spec=base_spec,
+        base_candidate_set_sha256=base_page.candidate_set_sha256,
+        base_candidate_count=base_page.feasible_candidate_count,
+        capability=capability,
+        axes=(
+            CadExtendedSearchAxis(
+                entity_id='fl',
+                parameter='body_yaw_deg',
+                min_value=-15.0,
+                max_value=15.0,
+                step=15.0,
+            ),
+        ),
+        candidate_limit=20,
+        created_at_utc=_now(),
+    )
+    page = generate_extended_candidates(
+        scene_repository,
+        base_spec,
+        body_spec,
+        limit=20,
+    )
+    candidate = page.candidates[-1]
+    assert candidate.body_yaw_deg == {'fl': 15.0}
+    assert candidate.aim_yaw_deg == {}
+
+    preview = extended_candidate_preview_document(revision.document, candidate)
+    preview_speaker = preview.entity('fl')
+    assert body_horizontal_yaw_deg(preview_speaker) == pytest.approx(15.0)
+    assert aim_horizontal_yaw_deg(preview_speaker.aim_xyz) == pytest.approx(15.0)
+
+    working = WorkingDocument(
+        revision.document,
+        source_revision_id=revision.revision_id,
+        saved_content_hash=revision.content_hash,
+    )
+    assert apply_extended_candidate(
+        working,
+        candidate,
+        extended_spec=body_spec,
+        base_spec=base_spec,
+        current_constraint_set=constraints,
+        current_document_id=DOCUMENT_ID,
+    )
+    assert working.history_length == 1
+    applied = working.committed_document.entity('fl')
+    assert body_horizontal_yaw_deg(applied) == pytest.approx(15.0)
+    assert aim_horizontal_yaw_deg(applied.aim_xyz) == pytest.approx(15.0)
+
+    assert working.undo()
+    restored = working.committed_document.entity('fl')
+    assert body_horizontal_yaw_deg(restored) == pytest.approx(0.0)
+    assert aim_horizontal_yaw_deg(restored.aim_xyz) == pytest.approx(0.0)
+
+
+def test_physical_toe_in_rechecks_exact_oriented_wall_clearance(tmp_path):
+    room = RoomPrism(width_m=5.0, depth_m=4.0, height_m=2.4)
+    topology = make_wall_topology(room)
+    document = SceneDocument(
+        document_id='o80p-wall-fixture',
+        schema_version=3,
+        room=room,
+        wall_topology=topology,
+        entities=(
+            SceneEntity(
+                entity_id='fl',
+                kind='speaker',
+                name='FL',
+                speaker_role='FL',
+                position=Position3(x_m=0.6, y_m=1.5, z_m=1.0),
+                size_m=Size3(x_m=0.2, y_m=1.0, z_m=0.4),
+                acoustic_reference_offset_m=Offset3(),
+                aim_xyz=Direction3(x=0.0, y=1.0, z=0.0),
+            ),
+            SceneEntity(
+                entity_id='mlp',
+                kind='measurement_point',
+                name='MLP',
+                position=Position3(x_m=2.5, y_m=3.0, z_m=1.1),
+            ),
+        ),
+    )
+    scene_repository = SceneRepository(tmp_path / 'physical.sqlite3')
+    revision = scene_repository.save(document, parent_revision_id=None).revision
+    left_wall_id = 'wall:rear-left->front-left'
+    constraints = CadConstraintSet(
+        document_id=document.document_id,
+        constraints=(
+            CadWallClearanceConstraint(
+                constraint_id='left-clearance',
+                name='left clearance',
+                entity_ids=('fl',),
+                wall_id=left_wall_id,
+                min_m=0.3,
+            ),
+        ),
+    )
+    base_spec, _ = build_cad_search_spec(
+        revision,
+        constraints,
+        (
+            CadSearchAxis(
+                entity_id='fl',
+                axis='x',
+                min_m=0.6,
+                max_m=0.6,
+                step_m=0.1,
+            ),
+        ),
+        candidate_limit=10,
+        name='source orientation position',
+    )
+    base_page = generate_cad_candidates(scene_repository, base_spec, limit=10)
+
+    # Exact source body yaw=0 footprint has x half-extent 0.1 m, so the
+    # cabinet clearance is 0.5 m and this XYZ is feasible.
+    assert base_page.feasible_candidate_count == 1
+
+    capability = build_extended_model_capability(
+        model_id='synthetic-directional-fixture',
+        model_version='1',
+        evidence_scope='synthetic_fixture',
+        supported_parameters=('body_yaw_deg',),
+        detail='physical toe-in geometry acceptance',
+        created_at_utc=_now(),
+    )
+    spec = build_extended_search_spec(
+        source_revision=revision,
+        base_spec=base_spec,
+        base_candidate_set_sha256=base_page.candidate_set_sha256,
+        base_candidate_count=base_page.feasible_candidate_count,
+        capability=capability,
+        axes=(
+            CadExtendedSearchAxis(
+                entity_id='fl',
+                parameter='body_yaw_deg',
+                min_value=0.0,
+                max_value=90.0,
+                step=90.0,
+            ),
+        ),
+        candidate_limit=10,
+        created_at_utc=_now(),
+    )
+    page = generate_extended_candidates(
+        scene_repository,
+        base_spec,
+        spec,
+        limit=10,
+    )
+
+    # At 90 degrees the 1.0 m cabinet depth becomes the x extent, reducing
+    # exact wall clearance to 0.1 m. The rotated body must be rejected.
+    assert page.raw_candidate_count == 2
+    assert page.feasible_candidate_count == 1
+    assert page.rejected_candidate_count == 1
+    assert page.rejection_counts == {'left-clearance': 1}
+    assert [item.body_yaw_deg['fl'] for item in page.candidates] == [0.0]
