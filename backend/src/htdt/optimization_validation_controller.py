@@ -463,6 +463,7 @@ class ValidationControllerMixin:
             return
 
 
+    @staticmethod
     def _validation_gate_summary(checks) -> str:
         if not checks:
             return '—'
