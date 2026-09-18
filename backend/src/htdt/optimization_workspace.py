@@ -2094,7 +2094,10 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 model_text = (
                     'missing capability'
                     if capability is None
-                    else f'{capability.model_id}/{capability.model_version}'
+                    else (
+                        f'{capability.evidence_scope} · '
+                        f'{capability.model_id}/{capability.model_version}'
+                    )
                 )
                 axes_text = ', '.join(
                     f'{axis.entity_id}:{axis.parameter}'
