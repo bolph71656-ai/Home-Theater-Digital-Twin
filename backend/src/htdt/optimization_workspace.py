@@ -1985,8 +1985,11 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             specs = self.extended_repository.list_for_base_search(
                 base.search_spec_id
             )
-            if specs and self.extended_selected_spec_id is None:
-                self.extended_selected_spec_id = specs[-1].extended_search_id
+            valid_ids = {item.extended_search_id for item in specs}
+            if self.extended_selected_spec_id not in valid_ids:
+                self.extended_selected_spec_id = (
+                    specs[-1].extended_search_id if specs else None
+                )
             selected_item = None
             current = (
                 self.working is not None
@@ -2742,6 +2745,10 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.search_candidate_page = None
             self.search_selected_candidate_id = None
             self.search_preview_candidate_id = None
+            self.extended_selected_spec_id = None
+            self.extended_candidate_page = None
+            self.extended_selected_candidate_id = None
+            self.extended_preview_candidate_id = None
             self.campaign_assignments.clear()
             self._refresh_campaign_assignment_tree()
         self.search_selected_spec_id = normalized
