@@ -119,4 +119,12 @@ cleanup rather than only the no-database fast path.
 This changes SQLite connection lifetime only. It does not alter campaign,
 prediction, validation, or recommendation semantics, and the source owned-room
 database remains read-only during O60R inventory/audit.
+## CI preflight versus real audit authority
+
+O60R has two deliberately different checks:
+
+- `-PreflightOnly` validates that the runner can resolve the frozen audited commit, that it remains an ancestor of the target branch, and that the audit harness is present. It **does not** reject later product-code development. Otherwise every O70/O80 software PR after O60R would be untestable by CI.
+- the real owned-room invocation (without `-PreflightOnly`) still rejects unexpected product-code changes after `ExpectedProductHead`. Before the eventual physical campaign audit, that SHA must be explicitly advanced to the final software authority being measured.
+
+This keeps CI useful during continued product development without weakening the real measurement gate or allowing a synthetic fixture to masquerade as audited owned-room evidence.
 
