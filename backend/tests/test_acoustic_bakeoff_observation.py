@@ -34,6 +34,7 @@ def _direct_reflection_raw(*, direct_length: float = 3.0) -> RawFixtureObservati
         solve_s=0.01,
         postprocess_s=0.01,
         peak_ram_mb=64.0,
+        disk_mb=0.02,
         output_mb=0.01,
         observations=(
             RawObservableObservation(
@@ -135,6 +136,7 @@ def test_unsampled_reference_requires_specialized_evaluator() -> None:
         solve_s=0.01,
         postprocess_s=0.01,
         peak_ram_mb=64.0,
+        disk_mb=0.02,
         output_mb=0.01,
         observations=(
             RawObservableObservation(
