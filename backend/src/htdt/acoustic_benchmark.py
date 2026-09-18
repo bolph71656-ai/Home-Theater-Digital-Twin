@@ -110,6 +110,38 @@ class AcousticRegion(BaseModel):
         return self
 
 
+class AcousticObstacle(BaseModel):
+    """Explicit solid or thin acoustic object inside one host air region."""
+
+    model_config = ConfigDict(frozen=True)
+
+    obstacle_id: str = Field(min_length=1)
+    host_region_id: str = Field(min_length=1)
+    representation: Literal['solid_volume', 'thin_surface']
+    vertices: tuple[AcousticVertex, ...] = Field(min_length=3)
+    faces: tuple[AcousticFace, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_topology_references(self) -> 'AcousticObstacle':
+        vertex_ids = [item.vertex_id for item in self.vertices]
+        face_ids = [item.face_id for item in self.faces]
+        if len(vertex_ids) != len(set(vertex_ids)):
+            raise ValueError('obstacle vertex ids must be unique')
+        if len(face_ids) != len(set(face_ids)):
+            raise ValueError('obstacle face ids must be unique')
+        known_vertices = set(vertex_ids)
+        dangling = [
+            face.face_id
+            for face in self.faces
+            if any(vertex_id not in known_vertices for vertex_id in face.vertex_ids)
+        ]
+        if dangling:
+            raise ValueError(f'obstacle faces reference unknown vertices: {dangling}')
+        if self.representation == 'solid_volume' and len(self.vertices) < 4:
+            raise ValueError('solid obstacle requires at least four vertices')
+        return self
+
+
 class AcousticPortal(BaseModel):
     """Explicit pressure/velocity-continuity opening between two modeled regions."""
 
@@ -454,6 +486,7 @@ class AcousticBenchmarkFixture(BaseModel):
     benchmark_role: Literal['wave', 'geometric', 'hybrid']
     required_capabilities: tuple[BenchmarkCapability, ...]
     regions: tuple[AcousticRegion, ...] = Field(min_length=1)
+    obstacles: tuple[AcousticObstacle, ...] = ()
     portals: tuple[AcousticPortal, ...] = ()
     terminations: tuple[BoundaryTermination, ...] = ()
     materials: tuple[AcousticMaterial, ...] = Field(min_length=1)
@@ -477,6 +510,7 @@ class AcousticBenchmarkFixture(BaseModel):
         region_ids = unique([item.region_id for item in self.regions], 'region')
         material_ids = unique([item.material_id for item in self.materials], 'material')
         boundary_ids = unique([item.boundary_id for item in self.boundaries], 'boundary')
+        unique([item.obstacle_id for item in self.obstacles], 'obstacle')
         unique([item.portal_id for item in self.portals], 'portal')
         unique([item.termination_id for item in self.terminations], 'termination')
         unique([item.source_id for item in self.sources], 'source')
@@ -497,6 +531,15 @@ class AcousticBenchmarkFixture(BaseModel):
         ]
         if bad_faces:
             raise ValueError(f'region faces reference unknown boundaries: {bad_faces}')
+
+        bad_obstacles = [
+            obstacle.obstacle_id
+            for obstacle in self.obstacles
+            if obstacle.host_region_id not in region_ids
+            or any(face.boundary_id not in boundary_ids for face in obstacle.faces)
+        ]
+        if bad_obstacles:
+            raise ValueError(f'obstacles reference unknown authority: {bad_obstacles}')
 
         bad_portals = [
             portal.portal_id
