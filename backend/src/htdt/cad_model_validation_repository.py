@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from math import sqrt
 from pathlib import Path
 import json
@@ -11,6 +12,7 @@ from .cad_objective_repository import CadObjectiveRepository
 from .cad_roomsim_repository import CadRoomSimRepository
 from .cad_search import generate_cad_candidates
 from .cad_search_repository import CadSearchRepository
+from .cad_validation_campaign_repository import CadValidationCampaignRepository
 from .cad_validation_metrics import (
     build_candidate_separation_check,
     build_repeatability_check,
@@ -324,6 +326,195 @@ class CadModelValidationRepository:
                     'owned-room validation requires measurement provenance validation_scope=owned_room'
                 )
 
+    @staticmethod
+    def _aware_timestamp(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return parsed if parsed.tzinfo is not None else None
+
+    def _validate_campaign_binding(self, record: CadModelValidationRecord, plans) -> None:
+        if record.evidence_scope != 'owned_room':
+            return
+        if record.campaign_id is None or record.campaign_sha256 is None:
+            raise ValueError('owned-room validation campaign binding is missing')
+
+        campaign_repository = CadValidationCampaignRepository(
+            self.search_repository,
+            self.measurement_repository,
+        )
+        campaign = campaign_repository.get(record.campaign_id)
+        if campaign is None:
+            raise ValueError('owned-room validation campaign does not exist')
+        if campaign.campaign_sha256 != record.campaign_sha256:
+            raise ValueError('owned-room validation campaign hash mismatch')
+        if (
+            campaign.document_id != record.document_id
+            or campaign.search_spec_id != record.search_spec_id
+            or campaign.search_spec_sha256 != record.search_spec_sha256
+            or campaign.candidate_set_sha256 != record.candidate_set_sha256
+            or campaign.model_id != record.model_id
+            or campaign.model_version != record.model_version
+            or campaign.requested_band_hz != record.requested_band_hz
+            or abs(campaign.max_holdout_rms_db - record.max_holdout_rms_db) > 1e-12
+        ):
+            raise ValueError('owned-room validation does not match preregistered campaign authority')
+
+        expected_split = {
+            item.candidate_id: item.split
+            for item in campaign.candidates
+        }
+        pair_split = {pair.candidate_id: pair.split for pair in record.pairs}
+        if pair_split != expected_split:
+            raise ValueError('validation candidate split does not match preregistered campaign')
+
+        objective_by_candidate: dict[str, set[str]] = {}
+        for sample in record.objective_samples:
+            objective_by_candidate.setdefault(sample.candidate_id, set()).add(sample.objective_id)
+            predicted = (
+                None
+                if self.objective_repository is None
+                else self.objective_repository.get_evaluation(sample.predicted_evaluation_id)
+            )
+            measured = (
+                None
+                if self.objective_repository is None
+                else self.objective_repository.get_evaluation(sample.measured_evaluation_id)
+            )
+            if predicted is None or measured is None:
+                raise ValueError('campaign objective evaluation does not exist')
+            if (
+                predicted.evaluation_spec_sha256
+                != campaign.objective_evaluation_spec_sha256
+                or measured.evaluation_spec_sha256
+                != campaign.objective_evaluation_spec_sha256
+            ):
+                raise ValueError('objective evaluation spec does not match preregistered campaign')
+        expected_objectives = set(campaign.objective_ids)
+        if set(objective_by_candidate) != set(expected_split):
+            raise ValueError('campaign objective evidence is missing a candidate')
+        if any(values != expected_objectives for values in objective_by_candidate.values()):
+            raise ValueError('campaign objective ids do not match preregistration')
+
+        trend_by_objective = {check.objective_id: check for check in record.trend_checks}
+        if set(trend_by_objective) != expected_objectives:
+            raise ValueError('campaign trend checks do not match preregistered objectives')
+        for objective_id, check in trend_by_objective.items():
+            expected_tolerance = campaign.trend_tolerance_by_objective.get(objective_id, 0.0)
+            if (
+                abs(check.tie_tolerance - expected_tolerance) > 1e-12
+                or check.min_comparable_pairs != campaign.trend_min_comparable_pairs
+                or abs(check.min_agreement_ratio - campaign.trend_min_agreement_ratio) > 1e-12
+            ):
+                raise ValueError('campaign trend threshold mismatch')
+
+        sensitivity_by_key = {
+            (
+                check.objective_id,
+                tuple(sorted((check.candidate_a_id, check.candidate_b_id))),
+            ): check
+            for check in record.sensitivity_checks
+        }
+        expected_sensitivity = {
+            (
+                requirement.objective_id,
+                tuple(sorted((requirement.candidate_a_id, requirement.candidate_b_id))),
+            ): requirement
+            for requirement in campaign.sensitivity
+        }
+        if set(sensitivity_by_key) != set(expected_sensitivity):
+            raise ValueError('campaign sensitivity checks do not match preregistration')
+        for key, requirement in expected_sensitivity.items():
+            check = sensitivity_by_key[key]
+            if (
+                abs(
+                    check.max_observed_sensitivity_per_m
+                    - requirement.max_observed_sensitivity_per_m
+                ) > 1e-12
+                or abs(check.max_model_error_per_m - requirement.max_model_error_per_m)
+                > 1e-12
+            ):
+                raise ValueError('campaign sensitivity threshold mismatch')
+
+        measured_plans = [
+            plan
+            for plan in plans
+            if plan.status == 'measured'
+            and plan.candidate_set_sha256 == campaign.candidate_set_sha256
+        ]
+        plan_by_measurement = {
+            measurement_id: plan
+            for plan in measured_plans
+            for measurement_id in plan.measurement_ids
+        }
+        repeatability_by_candidate = {}
+        for check in record.repeatability_checks:
+            candidate_ids = {
+                plan_by_measurement[measurement_id].candidate_id
+                for measurement_id in check.measurement_ids
+                if measurement_id in plan_by_measurement
+            }
+            if len(candidate_ids) != 1:
+                raise ValueError('campaign repeatability measurements do not map to one candidate')
+            candidate_id = next(iter(candidate_ids))
+            if candidate_id in repeatability_by_candidate:
+                raise ValueError('campaign repeatability candidate has duplicate checks')
+            repeatability_by_candidate[candidate_id] = check
+
+        expected_repeatability = {
+            requirement.candidate_id: requirement
+            for requirement in campaign.repeatability
+        }
+        if set(repeatability_by_candidate) != set(expected_repeatability):
+            raise ValueError('campaign repeatability checks do not match preregistration')
+        for candidate_id, requirement in expected_repeatability.items():
+            check = repeatability_by_candidate[candidate_id]
+            if (
+                len(check.measurement_ids) < requirement.min_measurements
+                or check.reference_band_hz != requirement.reference_band_hz
+                or check.requested_band_hz != campaign.requested_band_hz
+            ):
+                raise ValueError('campaign repeatability requirement mismatch')
+
+        separation_by_key = {
+            tuple(sorted((check.candidate_a_id, check.candidate_b_id))): check
+            for check in record.separation_checks
+        }
+        expected_separation = {
+            tuple(sorted((requirement.candidate_a_id, requirement.candidate_b_id))): requirement
+            for requirement in campaign.separation
+        }
+        if set(separation_by_key) != set(expected_separation):
+            raise ValueError('campaign candidate separation checks do not match preregistration')
+        for key, requirement in expected_separation.items():
+            check = separation_by_key[key]
+            repeatability = repeatability_by_candidate[requirement.repeatability_candidate_id]
+            if (
+                abs(check.min_repeatability_multiple - requirement.min_repeatability_multiple)
+                > 1e-12
+                or abs(check.repeatability_floor_db - repeatability.rms_floor_db) > 1e-12
+                or check.requested_band_hz != campaign.requested_band_hz
+            ):
+                raise ValueError('campaign candidate separation requirement mismatch')
+
+        codes = {check.code for check in record.applicability_checks}
+        if codes != set(campaign.required_applicability_codes):
+            raise ValueError('campaign applicability checks do not match preregistration')
+
+        campaign_time = self._aware_timestamp(campaign.created_at_utc)
+        if campaign_time is None:
+            raise ValueError('campaign timestamp must be timezone-aware')
+        measurement_ids = {pair.measurement_id for pair in record.pairs}
+        for check in record.repeatability_checks:
+            measurement_ids.update(check.measurement_ids)
+        for measurement_id in measurement_ids:
+            measurement = self.measurement_repository.get_measurement(measurement_id)
+            captured = None if measurement is None else self._aware_timestamp(measurement.captured_at)
+            if captured is None or captured < campaign_time:
+                raise ValueError(
+                    'owned-room campaign measurement must be captured after preregistration'
+                )
+
     def save(self, record: CadModelValidationRecord) -> None:
         if not isinstance(record, CadModelValidationRecord):
             raise TypeError('record must be CadModelValidationRecord')
@@ -370,6 +561,7 @@ class CadModelValidationRepository:
         self._validate_sensitivity(record, spec)
         self._validate_repeatability_and_separation(record, plans)
         self._validate_evidence_scope(record)
+        self._validate_campaign_binding(record, plans)
 
         with self._connect() as connection:
             connection.execute(
@@ -414,6 +606,8 @@ class CadModelValidationRepository:
         record = CadModelValidationRecord.model_validate_json(row['payload_json'])
         if record.evidence_scope != 'owned_room':
             raise ValueError('eligible validation record is not owned-room evidence')
+        plans = self.measurement_repository.list_measurement_plans(record.search_spec_id)
+        self._validate_campaign_binding(record, plans)
         return record
 
     def list_for_search_spec(self, search_spec_id: str) -> tuple[CadModelValidationRecord, ...]:
