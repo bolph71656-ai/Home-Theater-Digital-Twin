@@ -219,26 +219,44 @@ Acoustics:
 - prediction overlay
 - reflection/field layer controls
 
-### Direct interaction
+### Direct interaction / CAD shortcut contract
+
+3D navigationは**一般的なCAD操作に寄せた中ボタン中心の既定値**を採用する。初期defaultはFusion系の操作感を基準にし、右buttonをcamera navigationとcontext menuで競合させない。
 
 | 入力 | 動作 |
 |---|---|
-| 左click | 物体選択。空白clickで解除 |
+| 左click | 選択。空白clickで解除 |
 | Ctrl＋左click | 選択を追加/解除 |
-| 選択後の左drag | handle/active planeで変形 |
-| 中button drag | pan |
-| 右button drag | orbit |
-| wheel | cursor近傍を基準にzoom |
-| 右click | context menu。active edit中はcancel optionを優先 |
-| Esc | active操作をcancel。Idleではselection/toolを安全な状態へ |
-| Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y | Undo / Redo |
-| Ctrl+S / Delete / Ctrl+D | Save / Delete / Duplicate |
-| F / Home | selection fit / scene fit |
-| X/Y/Z | transform axis constraint |
-| Shift | precision move |
-| Alt | snap一時反転。Windows menu競合があれば再割当 |
+| 選択対象のhandle drag | active plane/axisで変形 |
+| **中button drag** | **pan / 画面移動** |
+| **Shift＋中button drag** | **orbit / 視点回転** |
+| **wheel** | **cursor近傍を基準にzoom** |
+| Shift＋中button開始位置 | orbit pivotの候補。selectionがある場合はselection中心を優先 |
+| 右click | context menu。camera操作には使わない |
+| Esc | active操作をcancel。Idleでは安全なSelect状態へ |
+| Enter | sketch / numeric edit等、現在操作を確定できる場合にcommit |
+| Ctrl+Z | 元に戻す |
+| Ctrl+Y / Ctrl+Shift+Z | やり直す |
+| Ctrl+S | 保存 |
+| Ctrl+O / Ctrl+N | 開く / 新規project |
+| Delete | 選択対象を削除 |
+| Ctrl+D | 複製 |
+| F | 選択対象へfit |
+| Home | scene全体へfit |
+| M | 移動tool |
+| R | 回転tool |
+| D | Room sketchで寸法入力/寸法tool |
+| I | 距離・寸法の計測tool |
+| X / Y / Z | transform中のaxis constraint |
+| Shift | transform中のprecision modifier |
+| Alt | snap一時反転。Windows menu競合が残る場合は別modifierへ変更 |
+| Ctrl+K | コマンド検索 |
 
-textbox focus中は文字入力を優先する。
+既存実装の `W=Move` や `right-drag=orbit` は新UIの既定契約にはしない。必要なら移行期間のaliasにできるが、tooltip/help上のprimary shortcutは上表へ統一する。
+
+Autodesk Fusion等と同様に、将来Settingsへnavigation presetを追加できる構造は許容する。ただし初期releaseではshortcut customization自体を目的にせず、まず一つの一貫したdefaultを完成させる。
+
+keyboard shortcutはmouse cursor/focusのあるworkspaceで作用する。textbox・numeric field・検索fieldにfocusがある間は文字入力を優先し、`M/R/D/I/X/Y/Z/Delete` 等をscene commandへ流さない。shortcut実行時はstatus/tool hintで現在commandを短く表示する。
 
 ### Feedback
 
@@ -532,7 +550,88 @@ Inspectorはselection-dependentで、同じ位置に留まりcontentだけ更新
 
 これらはWindows上でApple UIを再現する仕様ではなく、content priority、hierarchy、feedback、navigation densityの判断材料として使う。
 
-## 12. Layout stability
+## 12. GUI language / terminology
+
+user-facing GUIは**日本語を基本言語**とする。内部code/domainで英語を使うことと、画面へ英語をそのまま露出することを分離する。
+
+### 12.1 日本語優先
+
+上位navigation、button、menu、状態、warning、empty state、tooltip、設定項目は原則日本語にする。
+
+推奨:
+- Overview -> **概要**
+- Room -> **部屋**
+- Measurements -> **測定**
+- Optimize -> **最適化**
+- Settings -> **設定**
+- Help -> **ヘルプ**
+- Save -> **保存**
+- Undo / Redo -> **元に戻す / やり直す**
+- Move / Rotate -> **移動 / 回転**
+- Import -> **読み込み**
+- Compare -> **比較**
+- Advanced -> **詳細設定**
+- stale -> **要再計算** または文脈に応じた短い日本語
+
+translation keyは内部IDとして英語でもよいが、表示文字列へ内部class/entity名を流用しない。
+
+### 12.2 英語を残す例外
+
+日本語化すると不自然・冗長・意味が曖昧になる、または業界で記号/英語表記が標準である場合は無理に訳さない。
+
+例:
+- REW
+- FR
+- SPL
+- RT60 / EDT / C50 / C80
+- EQ
+- CPU / GPU
+- CAD / 3D
+- dB / Hz / ms
+- Atmos / DTS:X / Auro-3D
+- USB / ASIO / WASAPI
+- algorithm/model固有名、製品名、format名
+
+一般的な英単語でも、日本語より短く意味が明確でユーザー層に自然な場合は例外を許す。ただし同じ概念を画面ごとに日本語/英語で揺らさない。
+
+### 12.3 直訳禁止
+
+内部technical termを機械的に一語ずつ訳さない。
+
+悪い例:
+- `prediction stale` -> 「予測が古い」
+- `measurement capability` -> 「測定能力」
+- `constraint violation` -> 「制約違反」
+
+画面ではuser actionに結び付く自然な表現を優先する。
+
+例:
+- 「条件が変更されています。再計算してください」
+- 「この測定では位相比較を利用できません」
+- 「壁からの必要距離を満たしていません」
+
+messageは「何が起きたか -> 必要なら理由 -> 次にできること」の順で短くする。
+
+### 12.4 Terminology authority
+
+UX100でuser-facing terminology inventoryを作り、一つの概念につき代表表記を1つ決める。最低限、navigation、Room/CAD操作、測定、予測、最適化、validation、material/source/receiver、保存/復元について揺れを除く。
+
+shortcut名はmenu/tooltipへ日本語名とkeyを併記する。
+
+例:
+- 「移動　M」
+- 「回転　R」
+- 「画面移動　中ボタン」
+- 「視点回転　Shift + 中ボタン」
+- 「選択範囲に合わせる　F」
+
+### 12.5 Copy density
+
+短くできるところを説明文で埋めない。通常画面では名詞label＋短い状態＋actionを中心とし、詳細説明はtooltip / help / Advancedへ退避する。
+
+日本語化によってbutton幅やform高さが不安定にならないよう、UX150で実際の日本語文字列を使ってDPI/layout acceptanceを行う。英語placeholderでvisual gateを通さない。
+
+## 13. Layout stability
 
 - fixed/minimum heightを常用しない。
 - nested scrollを最小化する。
@@ -545,7 +644,7 @@ Inspectorはselection-dependentで、同じ位置に留まりcontentだけ更新
 - saved dock/splitter stateが壊れた場合はsafe defaultへ戻せる。
 - current screen geometryを超えるwindow stateを復元しない。
 
-## 13. Precision input / geometry
+## 14. Precision input / geometry
 
 寸法はmm/cm/mを入力可能とし内部mへ変換する。未丸め値を保存する。
 
@@ -553,7 +652,7 @@ Inspectorは対象ごとに必要最小限のfieldを表示する。multi-select
 
 Room editではvertex / edge midpoint handle、live dimension、opening/wall relationをscene内で扱う。CSV頂点列やID入力を主要導線にしない。
 
-## 14. Constraints / evidence semantics
+## 15. Constraints / evidence semantics
 
 UI簡略化のためにdomain authorityを弱めない。
 
@@ -563,12 +662,14 @@ UI簡略化のためにdomain authorityを弱めない。
 - phase/timing capabilityが無いmeasurementから強いclaimへ昇格しない。
 - old measurementは元SceneRevisionへbindingしたまま表示する。
 
-## 15. Issue #118 implementation slices
+## 16. Issue #118 implementation slices
 
 ### UX100 — information architecture freeze
 - current task/control inventory
 - top-level/sub-context/deep-link schema
 - primary/contextual/advanced分類
+- user-facing Japanese terminology inventory / glossary
+- CAD navigation/shortcut map
 - current UI screenshot inventoryとlayout failure catalog
 
 ### UX110 — shell
@@ -585,6 +686,8 @@ UI簡略化のためにdomain authorityを弱めない。
 - contextual tools
 - selection Inspector
 - object palette
+- standard CAD mouse/keyboard shortcut implementation
+- MMB pan / Shift+MMB orbit / wheel zoom / RMB context menu
 - neutral scene lighting / low-contrast grid / selection outline
 - overlay layer/focus mode
 - permanent toolbar/dock削減
@@ -597,8 +700,9 @@ UI簡略化のためにdomain authorityを弱めない。
 - Setup / Candidates / Compare / Measure-Validate
 - current monolithic right scroll panelを廃止
 
-### UX150 — visual / motion / perceived-quality polish
+### UX150 — visual / motion / language / perceived-quality polish
 - dark-first appearanceをauthoritativeにfreeze
+- Japanese-first copy/tooltip/menu terminologyをfreeze
 - spacing/alignment/typography/surface/accent token統一
 - 3D lighting/grid/material/overlay visual tuning
 - hover/pressed/focus/disabled/selected feedback
@@ -616,7 +720,7 @@ UI簡略化のためにdomain authorityを弱めない。
 
 R100B solver bakeoffはUI非依存なので並行可能。**R110以降で新しいacoustic inputを旧dock architectureへ追加しない。**
 
-## 16. Visual QA
+## 17. Visual QA
 
 visual approvalは「綺麗に見える」だけで合格にしない。
 
