@@ -85,8 +85,14 @@ def build_model_validation(*, model_id: str, model_version: str,
     if hold is None: reasons.append('holdout evidence is required')
     elif hold > max_holdout_rms_db: reasons.append(f'holdout RMS {hold:.3f} dB exceeds {max_holdout_rms_db:.3f} dB gate')
     gate='eligible' if not reasons else 'disabled'
-    payload={'model_id':model_id,'model_version':model_version,'requested_band_hz':[low_hz,high_hz],
-        'pairs':[p.model_dump(mode='json') for p in pairs],'holdout_rms_db':hold,'calibration_rms_db':cal,
+    payload={'model_id':model_id,'model_version':model_version,'requested_band_hz':(low_hz,high_hz),
+        'pairs':tuple(pairs),'holdout_rms_db':hold,'calibration_rms_db':cal,
         'recommendation_gate':gate,'gate_reasons':tuple(reasons),'algorithm_version':VALIDATION_ALGORITHM_VERSION}
-    return CadModelValidationRecord(validation_id=str(uuid4()), created_at_utc=datetime.now(timezone.utc).isoformat(),
-        validation_sha256=_hash(payload), **payload)
+    provisional = CadModelValidationRecord.model_construct(
+        validation_id=str(uuid4()), created_at_utc=datetime.now(timezone.utc).isoformat(),
+        validation_sha256='0' * 64, **payload
+    )
+    return CadModelValidationRecord(
+        **provisional.model_dump(exclude={'validation_sha256'}),
+        validation_sha256=_hash(provisional.identity_payload()),
+    )
