@@ -1,6 +1,6 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N80a・O20〜O40実装/受入済み・PR #74でN80c/O50/O60継続
+> 更新: 2026-09-18 / N80c・O50 owned-Windows acceptance PASS / O60継続
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
@@ -161,3 +161,19 @@ N70で外部solverを暗黙採用しなかった方針を維持する。REW Room
 - O60 validationはcalibration/holdoutを候補単位で分離し、exact SearchSpec/candidate-set/model version/prediction attempt/Measurement Planへcross-evidence bindingする。
 - holdout residualは `pass/fail/insufficient` として保存するが、これだけでrecommendationを有効化しない。trend/rank、sensitivity、repeatabilityの独立検証が未成立ならrecommendation gateはdisabledのまま。
 - O70 adaptive plannerはO60の実データgate未通過のため自動推薦としては未実装・無効化を維持する。
+
+
+## N80c / O50 acceptance
+
+PR #74 product head `2a891dbc1796d3cfdaebbe762d0d6e0d2636563f` はCI #397 / run `35294094501`をPASSし、gate head `44628a1e51c199c10b883ed8accba452578bb1eb`でowned-Windows受入もPASSした。
+
+- Pareto比較・evidence provenance・semantic snapshot de-dup: PASS
+- candidate apply/save → exact SceneRevision Measurement Plan: PASS
+- exact revisionのN60 measured evidence関連付け: PASS
+- planned→measured append-only history: PASS
+- stale SearchSpecでのPareto再計算拒否: PASS
+- gate後のローカルcheckout復元/clean status: PASS
+
+詳細は [N80c/O50 Windows acceptance](N80C_ACCEPTANCE_2026-09-18.md)。
+
+N80 workspaceのIssue #65完了条件はこの受入で満たす。残るO60 full validationはIssue #75で独立継続し、trend/rank・sensitivity・repeatabilityと実データgateが成立するまでO70 automatic recommendationはdisabledを維持する。
