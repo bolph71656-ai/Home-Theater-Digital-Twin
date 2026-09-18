@@ -531,8 +531,8 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(
             _heading(
                 "測定・検証",
-                "候補を実測へ結び付け、事前登録した検証条件で検証します。"
-                " ProductionとSyntheticのevidence境界は既存O60〜O80 authorityに従います。",
+                "候補を実測へ結び付け、事前登録した検証条件で評価します。"
+                " 本番データと合成データの根拠区分は既存の検証ルールに従います。",
             )
         )
 
@@ -738,8 +738,8 @@ class OptimizationWorkflowWorkspace(QWidget):
         layout.addWidget(
             _advanced_block(
                 "詳細: 次の測定候補",
-                "O70 / O80Aの既存plannerを使います。Synthetic developmentは本番推薦を解放せず、"
-                " Productionはcurrent campaign-backed eligible O60 evidenceを要求します。",
+                "既存の次候補探索ロジックを使います。合成データでの開発検証は本番推薦を解放せず、"
+                " 本番利用には現在の検証条件に基づく適格な実室データが必要です。",
                 adaptive_content,
             )
         )
