@@ -46,6 +46,7 @@ class CommandShortcutBinder(QObject):
         registry: CommandRegistry,
         *,
         command_ids: Iterable[str],
+        shortcut_context: Qt.ShortcutContext = Qt.ShortcutContext.WindowShortcut,
     ) -> None:
         super().__init__(window)
         self._window = window
@@ -64,7 +65,7 @@ class CommandShortcutBinder(QObject):
             )
             for sequence in sequences:
                 shortcut = QShortcut(QKeySequence(sequence), window)
-                shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+                shortcut.setContext(shortcut_context)
                 shortcut.activated.connect(
                     lambda command_id=command_id: self._registry.execute(command_id)
                 )
