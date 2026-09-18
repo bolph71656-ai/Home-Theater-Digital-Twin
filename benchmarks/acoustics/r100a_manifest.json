@@ -1,0 +1,3410 @@
+{
+  "schema_version": "r100a-1",
+  "manifest_id": "htdt-issue-101-r100a-benchmark-authority",
+  "revision": 1,
+  "purpose": "Freeze solver-neutral geometry, boundary/material, source/receiver/environment, numerical comparison, observable/tolerance and resource contracts before R100B solver bakeoff.",
+  "hard_gates": [
+    {
+      "gate_id": "physics-correctness",
+      "category": "physics_correctness",
+      "applies_to": "both",
+      "requirement": "Required observables must satisfy their fixture-specific tolerances against analytical, closed-form, invariant, peer or independent reference evidence."
+    },
+    {
+      "gate_id": "cpu-correctness-baseline",
+      "category": "cpu_baseline",
+      "applies_to": "candidate",
+      "requirement": "Production candidates must pass correctness on CPU without requiring GPU acceleration."
+    },
+    {
+      "gate_id": "windows-packaging",
+      "category": "windows_packaging",
+      "applies_to": "candidate",
+      "requirement": "Production candidates must be reproducibly installable/embeddable on Windows 11 x64 with Python 3.12 or an explicitly packaged native adapter."
+    },
+    {
+      "gate_id": "license-redistribution",
+      "category": "license_redistribution",
+      "applies_to": "candidate",
+      "requirement": "License and redistribution terms must permit the intended personal Windows distribution; evidence is recorded in R100B."
+    },
+    {
+      "gate_id": "required-capabilities",
+      "category": "required_capability",
+      "applies_to": "candidate",
+      "requirement": "A candidate is scored only for roles whose declared capabilities and compiled representations cover the fixture; unsupported outputs remain unsupported."
+    },
+    {
+      "gate_id": "reproducible-authority",
+      "category": "reproducible_authority",
+      "applies_to": "both",
+      "requirement": "Backend/version, precision, source normalization, frequency/time grid, seed and all approximation controls must be recorded so an accepted result can be replayed."
+    }
+  ],
+  "fixtures": [
+    {
+      "fixture_id": "wave-rigid-rectangular-modes-v1",
+      "description": "4 x 5 x 2.5 m rigid rectangular room analytical eigenfrequencies.",
+      "benchmark_role": "wave",
+      "required_capabilities": [
+        "wave_rigid"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 4,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 4,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 4,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 4,
+                "y_m": 5,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-rigid"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 1,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 3,
+            "y_m": 3,
+            "z_m": 1.2
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "none",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "not_applicable",
+          "start_hz": null,
+          "stop_hz": null,
+          "step_hz": null,
+          "values_hz": []
+        },
+        "time_step_s": null,
+        "observation_time_s": null
+      },
+      "observables": [
+        {
+          "observable_id": "m010",
+          "kind": "eigenfrequency_hz",
+          "unit": "Hz",
+          "reference_kind": "analytical",
+          "reference_description": "f=c/2*sqrt((nx/Lx)^2+(ny/Ly)^2+(nz/Lz)^2)",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.05,
+            "relative": 0.001,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "mode(0,1,0)",
+              "scalar_value": 34.3
+            }
+          ],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "m100",
+          "kind": "eigenfrequency_hz",
+          "unit": "Hz",
+          "reference_kind": "analytical",
+          "reference_description": "rectangular rigid-room eigenfrequency",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.05,
+            "relative": 0.001,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "mode(1,0,0)",
+              "scalar_value": 42.875
+            }
+          ],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "m110",
+          "kind": "eigenfrequency_hz",
+          "unit": "Hz",
+          "reference_kind": "analytical",
+          "reference_description": "rectangular rigid-room eigenfrequency",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.08,
+            "relative": 0.0015,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "mode(1,1,0)",
+              "scalar_value": 54.90679033598668
+            }
+          ],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "m001",
+          "kind": "eigenfrequency_hz",
+          "unit": "Hz",
+          "reference_kind": "analytical",
+          "reference_description": "rectangular rigid-room eigenfrequency",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.08,
+            "relative": 0.0015,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "mode(0,0,1)",
+              "scalar_value": 68.6
+            }
+          ],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 120,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "Lossless eigenmode validation is not an FR/RT60 claim."
+      ]
+    },
+    {
+      "fixture_id": "wave-rectangular-convergence-v1",
+      "description": "6 x 4 x 2.5 m rigid room convergence fixture for grid/mesh refinement and transfer comparison.",
+      "benchmark_role": "wave",
+      "required_capabilities": [
+        "wave_rigid"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-rigid"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 1,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 5,
+            "y_m": 3,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "linear_complex",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "uniform",
+          "start_hz": 20,
+          "stop_hz": 300,
+          "step_hz": 1,
+          "values_hz": []
+        },
+        "time_step_s": 0.00016666666666666666,
+        "observation_time_s": 2
+      },
+      "observables": [
+        {
+          "observable_id": "convergence",
+          "kind": "field_pressure_pa",
+          "unit": "Pa",
+          "reference_kind": "invariant",
+          "reference_description": "Error against the finest accepted/reference representation must decrease under declared refinement.",
+          "acceptance_relation": "monotonic_convergence",
+          "tolerance": {
+            "absolute": 0.02,
+            "relative": 0.02,
+            "phase_deg": 0,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 300,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "Refinement parameter and interpolation location must be recorded by the adapter.",
+        "Finite-time/FR postprocessing must use the declared source normalization and time reference."
+      ]
+    },
+    {
+      "fixture_id": "wave-normal-incidence-impedance-v1",
+      "description": "Normal-incidence reflection from Z=2*rho*c, giving closed-form complex R=1/3.",
+      "benchmark_role": "wave",
+      "required_capabilities": [
+        "wave_rigid",
+        "wave_impedance"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-impedance"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        },
+        {
+          "material_id": "z-2z0",
+          "provenance": "R100A closed-form normal-incidence impedance, rho=1.2 kg/m3, c=343 m/s",
+          "version": "1",
+          "wave_model": "specific_impedance_table",
+          "specific_impedance": [
+            {
+              "frequency_hz": 100,
+              "resistance_pa_s_m": 823.2,
+              "reactance_pa_s_m": 0
+            },
+            {
+              "frequency_hz": 200,
+              "resistance_pa_s_m": 823.2,
+              "reactance_pa_s_m": 0
+            },
+            {
+              "frequency_hz": 300,
+              "resistance_pa_s_m": 823.2,
+              "reactance_pa_s_m": 0
+            }
+          ],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        },
+        {
+          "boundary_id": "b-impedance",
+          "material_id": "z-2z0"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 4,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 3,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "linear_complex",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "explicit",
+          "start_hz": null,
+          "stop_hz": null,
+          "step_hz": null,
+          "values_hz": [
+            100,
+            200,
+            300
+          ]
+        },
+        "time_step_s": null,
+        "observation_time_s": null
+      },
+      "observables": [
+        {
+          "observable_id": "reflection-r",
+          "kind": "complex_reflection_coefficient",
+          "unit": "1",
+          "reference_kind": "closed_form",
+          "reference_description": "For normal incidence, R=(Z-rho*c)/(Z+rho*c)=1/3 with zero phase.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.01,
+            "relative": 0.02,
+            "phase_deg": 1,
+            "null_mask_below_db": -80,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "R@100Hz",
+              "frequency_hz": 100,
+              "real_value": 0.3333333333333333,
+              "imag_value": 0
+            },
+            {
+              "sample_key": "R@200Hz",
+              "frequency_hz": 200,
+              "real_value": 0.3333333333333333,
+              "imag_value": 0
+            },
+            {
+              "sample_key": "R@300Hz",
+              "frequency_hz": 300,
+              "real_value": 0.3333333333333333,
+              "imag_value": 0
+            }
+          ],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 120,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "Scalar absorption must not be converted to phase-bearing impedance."
+      ]
+    },
+    {
+      "fixture_id": "wave-concave-l-room-v1",
+      "description": "Concave L-shaped polygon prism for independent-reference arbitrary-room wave comparison.",
+      "benchmark_role": "wave",
+      "required_capabilities": [
+        "wave_rigid"
+      ],
+      "regions": [
+        {
+          "region_id": "lroom",
+          "vertices": [
+            {
+              "vertex_id": "lroom-b0",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b1",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b2",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b3",
+              "position": {
+                "x_m": 4,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b4",
+              "position": {
+                "x_m": 4,
+                "y_m": 2,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b5",
+              "position": {
+                "x_m": 2,
+                "y_m": 2,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b6",
+              "position": {
+                "x_m": 2,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-b7",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "lroom-t0",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t1",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t2",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t3",
+              "position": {
+                "x_m": 4,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t4",
+              "position": {
+                "x_m": 4,
+                "y_m": 2,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t5",
+              "position": {
+                "x_m": 2,
+                "y_m": 2,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t6",
+              "position": {
+                "x_m": 2,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "lroom-t7",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "lroom-bottom",
+              "vertex_ids": [
+                "lroom-b0",
+                "lroom-b1",
+                "lroom-b2",
+                "lroom-b3",
+                "lroom-b4",
+                "lroom-b5",
+                "lroom-b6",
+                "lroom-b7"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-top",
+              "vertex_ids": [
+                "lroom-t7",
+                "lroom-t6",
+                "lroom-t5",
+                "lroom-t4",
+                "lroom-t3",
+                "lroom-t2",
+                "lroom-t1",
+                "lroom-t0"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side0",
+              "vertex_ids": [
+                "lroom-b0",
+                "lroom-b1",
+                "lroom-t1",
+                "lroom-t0"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side1",
+              "vertex_ids": [
+                "lroom-b1",
+                "lroom-b2",
+                "lroom-t2",
+                "lroom-t1"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side2",
+              "vertex_ids": [
+                "lroom-b2",
+                "lroom-b3",
+                "lroom-t3",
+                "lroom-t2"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side3",
+              "vertex_ids": [
+                "lroom-b3",
+                "lroom-b4",
+                "lroom-t4",
+                "lroom-t3"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side4",
+              "vertex_ids": [
+                "lroom-b4",
+                "lroom-b5",
+                "lroom-t5",
+                "lroom-t4"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side5",
+              "vertex_ids": [
+                "lroom-b5",
+                "lroom-b6",
+                "lroom-t6",
+                "lroom-t5"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side6",
+              "vertex_ids": [
+                "lroom-b6",
+                "lroom-b7",
+                "lroom-t7",
+                "lroom-t6"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "lroom-side7",
+              "vertex_ids": [
+                "lroom-b7",
+                "lroom-b0",
+                "lroom-t0",
+                "lroom-t7"
+              ],
+              "boundary_id": "b-rigid"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "lroom",
+          "position": {
+            "x_m": 1,
+            "y_m": 1,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "lroom",
+          "position": {
+            "x_m": 5,
+            "y_m": 1,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "linear_complex",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "uniform",
+          "start_hz": 20,
+          "stop_hz": 300,
+          "step_hz": 1,
+          "values_hz": []
+        },
+        "time_step_s": null,
+        "observation_time_s": 2
+      },
+      "observables": [
+        {
+          "observable_id": "lroom-fr",
+          "kind": "transfer_magnitude_db",
+          "unit": "dB",
+          "reference_kind": "independent_solver",
+          "reference_description": "Compare against an independently implemented/reference discretization on the exact concave prism.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.75,
+            "relative": 0.05,
+            "phase_deg": null,
+            "null_mask_below_db": -60,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "lroom-phase",
+          "kind": "transfer_phase_deg",
+          "unit": "deg",
+          "reference_kind": "independent_solver",
+          "reference_description": "Phase comparison uses the same source, Fourier sign, time zero and null mask.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0,
+            "relative": 0,
+            "phase_deg": 8,
+            "null_mask_below_db": -40,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 300,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "No rectangular approximation is permitted."
+      ]
+    },
+    {
+      "fixture_id": "wave-portal-split-room-v1",
+      "description": "Two 3 m regions forming the same 6 m room, connected by an explicit full-height Portal.",
+      "benchmark_role": "wave",
+      "required_capabilities": [
+        "wave_rigid",
+        "portal_continuity"
+      ],
+      "regions": [
+        {
+          "region_id": "left",
+          "vertices": [
+            {
+              "vertex_id": "left-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "left-v100",
+              "position": {
+                "x_m": 3,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "left-v110",
+              "position": {
+                "x_m": 3,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "left-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "left-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "left-v101",
+              "position": {
+                "x_m": 3,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "left-v111",
+              "position": {
+                "x_m": 3,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "left-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "left-zmin",
+              "vertex_ids": [
+                "left-v000",
+                "left-v100",
+                "left-v110",
+                "left-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "left-zmax",
+              "vertex_ids": [
+                "left-v001",
+                "left-v011",
+                "left-v111",
+                "left-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "left-ymin",
+              "vertex_ids": [
+                "left-v000",
+                "left-v001",
+                "left-v101",
+                "left-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "left-ymax",
+              "vertex_ids": [
+                "left-v010",
+                "left-v110",
+                "left-v111",
+                "left-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "left-xmin",
+              "vertex_ids": [
+                "left-v000",
+                "left-v010",
+                "left-v011",
+                "left-v001"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "left-xmax",
+              "vertex_ids": [
+                "left-v100",
+                "left-v101",
+                "left-v111",
+                "left-v110"
+              ],
+              "boundary_id": "b-interface"
+            }
+          ]
+        },
+        {
+          "region_id": "right",
+          "vertices": [
+            {
+              "vertex_id": "right-v000",
+              "position": {
+                "x_m": 3,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "right-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "right-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "right-v010",
+              "position": {
+                "x_m": 3,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "right-v001",
+              "position": {
+                "x_m": 3,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "right-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "right-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "right-v011",
+              "position": {
+                "x_m": 3,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "right-zmin",
+              "vertex_ids": [
+                "right-v000",
+                "right-v100",
+                "right-v110",
+                "right-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "right-zmax",
+              "vertex_ids": [
+                "right-v001",
+                "right-v011",
+                "right-v111",
+                "right-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "right-ymin",
+              "vertex_ids": [
+                "right-v000",
+                "right-v001",
+                "right-v101",
+                "right-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "right-ymax",
+              "vertex_ids": [
+                "right-v010",
+                "right-v110",
+                "right-v111",
+                "right-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "right-xmin",
+              "vertex_ids": [
+                "right-v000",
+                "right-v010",
+                "right-v011",
+                "right-v001"
+              ],
+              "boundary_id": "b-interface"
+            },
+            {
+              "face_id": "right-xmax",
+              "vertex_ids": [
+                "right-v100",
+                "right-v101",
+                "right-v111",
+                "right-v110"
+              ],
+              "boundary_id": "b-rigid"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [
+        {
+          "portal_id": "portal-mid",
+          "region_a_id": "left",
+          "region_b_id": "right",
+          "aperture": [
+            {
+              "x_m": 3,
+              "y_m": 0,
+              "z_m": 0
+            },
+            {
+              "x_m": 3,
+              "y_m": 4,
+              "z_m": 0
+            },
+            {
+              "x_m": 3,
+              "y_m": 4,
+              "z_m": 2.5
+            },
+            {
+              "x_m": 3,
+              "y_m": 0,
+              "z_m": 2.5
+            }
+          ],
+          "continuity_model": "pressure_velocity_continuity"
+        }
+      ],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        },
+        {
+          "material_id": "portal-interface-placeholder",
+          "provenance": "R100A semantic aperture placeholder; Portal or BoundaryTermination owns the opening physics",
+          "version": "1",
+          "wave_model": "unsupported",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        },
+        {
+          "boundary_id": "b-interface",
+          "material_id": "portal-interface-placeholder"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "left",
+          "position": {
+            "x_m": 1,
+            "y_m": 1,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "right",
+          "position": {
+            "x_m": 5,
+            "y_m": 3,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "linear_complex",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "uniform",
+          "start_hz": 20,
+          "stop_hz": 300,
+          "step_hz": 1,
+          "values_hz": []
+        },
+        "time_step_s": 0.00016666666666666666,
+        "observation_time_s": 2
+      },
+      "observables": [
+        {
+          "observable_id": "portal-fr-invariance",
+          "kind": "transfer_magnitude_db",
+          "unit": "dB",
+          "reference_kind": "cross_fixture",
+          "reference_description": "Splitting an acoustically identical volume by an internal continuity portal must preserve transfer within discretization tolerance.",
+          "acceptance_relation": "matches_peer",
+          "tolerance": {
+            "absolute": 0.5,
+            "relative": 0.03,
+            "phase_deg": null,
+            "null_mask_below_db": -60,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": "wave-rectangular-convergence-v1"
+        },
+        {
+          "observable_id": "portal-phase-invariance",
+          "kind": "transfer_phase_deg",
+          "unit": "deg",
+          "reference_kind": "cross_fixture",
+          "reference_description": "Internal region partitioning must not introduce a physical phase discontinuity.",
+          "acceptance_relation": "matches_peer",
+          "tolerance": {
+            "absolute": 0,
+            "relative": 0,
+            "phase_deg": 6,
+            "null_mask_below_db": -40,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": "wave-rectangular-convergence-v1"
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 300,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "The interface placeholder is not a material model; Portal semantics own the opening."
+      ]
+    },
+    {
+      "fixture_id": "wave-explicit-radiation-termination-v1",
+      "description": "Single region with an explicitly declared radiation termination instead of an invented adjacent room.",
+      "benchmark_role": "wave",
+      "required_capabilities": [
+        "wave_rigid"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 4,
+                "z_m": 2.5
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-interface"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [
+        {
+          "termination_id": "open-right",
+          "region_id": "room",
+          "aperture": [
+            {
+              "x_m": 6,
+              "y_m": 0,
+              "z_m": 0
+            },
+            {
+              "x_m": 6,
+              "y_m": 0,
+              "z_m": 2.5
+            },
+            {
+              "x_m": 6,
+              "y_m": 4,
+              "z_m": 2.5
+            },
+            {
+              "x_m": 6,
+              "y_m": 4,
+              "z_m": 0
+            }
+          ],
+          "kind": "radiation",
+          "boundary_id": null
+        }
+      ],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        },
+        {
+          "material_id": "portal-interface-placeholder",
+          "provenance": "R100A semantic aperture placeholder; Portal or BoundaryTermination owns the opening physics",
+          "version": "1",
+          "wave_model": "unsupported",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        },
+        {
+          "boundary_id": "b-interface",
+          "material_id": "portal-interface-placeholder"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 5,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "linear_complex",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "uniform",
+          "start_hz": 20,
+          "stop_hz": 300,
+          "step_hz": 1,
+          "values_hz": []
+        },
+        "time_step_s": null,
+        "observation_time_s": 2
+      },
+      "observables": [
+        {
+          "observable_id": "termination-fr",
+          "kind": "transfer_magnitude_db",
+          "unit": "dB",
+          "reference_kind": "independent_solver",
+          "reference_description": "Reference adapter must implement the same explicit radiation termination; unknown exterior is not silently anechoic.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 1,
+            "relative": 0.08,
+            "phase_deg": null,
+            "null_mask_below_db": -60,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 300,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "Changing termination kind is a semantic fixture change and must change benchmark identity."
+      ]
+    },
+    {
+      "fixture_id": "geometric-direct-first-reflection-v1",
+      "description": "Closed-form direct path and first specular reflection in a 6 x 5 x 3 m room.",
+      "benchmark_role": "geometric",
+      "required_capabilities": [
+        "geometric_specular"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 3
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-geo"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "geo-specular",
+          "provenance": "R100A geometric reference bands",
+          "version": "1",
+          "wave_model": "unsupported",
+          "specific_impedance": [],
+          "geometric_model": "banded",
+          "geometric_bands": [
+            {
+              "center_hz": 125,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 250,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 500,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 1000,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 2000,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 4000,
+              "absorption": 0.1,
+              "scattering": 0
+            }
+          ]
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-geo",
+          "material_id": "geo-specular"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "normalization": "unit_energy_j",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 4,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "none",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "not_applicable",
+          "start_hz": null,
+          "stop_hz": null,
+          "step_hz": null,
+          "values_hz": []
+        },
+        "time_step_s": null,
+        "observation_time_s": null
+      },
+      "observables": [
+        {
+          "observable_id": "direct-length",
+          "kind": "direct_path_length_m",
+          "unit": "m",
+          "reference_kind": "analytical",
+          "reference_description": "Euclidean source-receiver distance.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.000001,
+            "relative": 0.000001,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "src->rx",
+              "scalar_value": 3
+            }
+          ],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "direct-delay",
+          "kind": "arrival_time_s",
+          "unit": "s",
+          "reference_kind": "analytical",
+          "reference_description": "Direct arrival is path_length/c.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.000001,
+            "relative": 0.000001,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "src->rx",
+              "scalar_value": 0.008746355685131196
+            }
+          ],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "first-reflection-point-ymin",
+          "kind": "reflection_point_m",
+          "unit": "m",
+          "reference_kind": "analytical",
+          "reference_description": "Image source across y=0 gives the specular point (2.5,0,1).",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.000001,
+            "relative": 0.000001,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "ymin",
+              "vector_value": [
+                2.5,
+                0,
+                1
+              ]
+            }
+          ],
+          "peer_fixture_id": null
+        },
+        {
+          "observable_id": "first-reflection-length-ymin",
+          "kind": "reflected_path_length_m",
+          "unit": "m",
+          "reference_kind": "analytical",
+          "reference_description": "Image-source reflected path length across y=0.",
+          "acceptance_relation": "matches_reference",
+          "tolerance": {
+            "absolute": 0.000001,
+            "relative": 0.000001,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [
+            {
+              "sample_key": "ymin",
+              "scalar_value": 5
+            }
+          ],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 60,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "Path geometry alone does not authorize a coherent broadband complex response."
+      ]
+    },
+    {
+      "fixture_id": "geometric-reflecting-counter-v1",
+      "description": "Specular box obstacle representing a kitchen counter in the same reference room.",
+      "benchmark_role": "geometric",
+      "required_capabilities": [
+        "geometric_specular"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 3
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-geo"
+            }
+          ]
+        }
+      ],
+      "obstacles": [
+        {
+          "obstacle_id": "counter",
+          "host_region_id": "room",
+          "representation": "solid_volume",
+          "vertices": [
+            {
+              "vertex_id": "counter-v000",
+              "position": {
+                "x_m": 2.6,
+                "y_m": 1.6,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "counter-v100",
+              "position": {
+                "x_m": 3.4,
+                "y_m": 1.6,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "counter-v110",
+              "position": {
+                "x_m": 3.4,
+                "y_m": 3.4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "counter-v010",
+              "position": {
+                "x_m": 2.6,
+                "y_m": 3.4,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "counter-v001",
+              "position": {
+                "x_m": 2.6,
+                "y_m": 1.6,
+                "z_m": 1.1
+              }
+            },
+            {
+              "vertex_id": "counter-v101",
+              "position": {
+                "x_m": 3.4,
+                "y_m": 1.6,
+                "z_m": 1.1
+              }
+            },
+            {
+              "vertex_id": "counter-v111",
+              "position": {
+                "x_m": 3.4,
+                "y_m": 3.4,
+                "z_m": 1.1
+              }
+            },
+            {
+              "vertex_id": "counter-v011",
+              "position": {
+                "x_m": 2.6,
+                "y_m": 3.4,
+                "z_m": 1.1
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "counter-zmin",
+              "vertex_ids": [
+                "counter-v000",
+                "counter-v100",
+                "counter-v110",
+                "counter-v010"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "counter-zmax",
+              "vertex_ids": [
+                "counter-v001",
+                "counter-v011",
+                "counter-v111",
+                "counter-v101"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "counter-ymin",
+              "vertex_ids": [
+                "counter-v000",
+                "counter-v001",
+                "counter-v101",
+                "counter-v100"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "counter-ymax",
+              "vertex_ids": [
+                "counter-v010",
+                "counter-v110",
+                "counter-v111",
+                "counter-v011"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "counter-xmin",
+              "vertex_ids": [
+                "counter-v000",
+                "counter-v010",
+                "counter-v011",
+                "counter-v001"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "counter-xmax",
+              "vertex_ids": [
+                "counter-v100",
+                "counter-v101",
+                "counter-v111",
+                "counter-v110"
+              ],
+              "boundary_id": "b-geo"
+            }
+          ]
+        }
+      ],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "geo-specular",
+          "provenance": "R100A geometric reference bands",
+          "version": "1",
+          "wave_model": "unsupported",
+          "specific_impedance": [],
+          "geometric_model": "banded",
+          "geometric_bands": [
+            {
+              "center_hz": 125,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 250,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 500,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 1000,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 2000,
+              "absorption": 0.1,
+              "scattering": 0
+            },
+            {
+              "center_hz": 4000,
+              "absorption": 0.1,
+              "scattering": 0
+            }
+          ]
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-geo",
+          "material_id": "geo-specular"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "normalization": "unit_energy_j",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 4,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "none",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "not_applicable",
+          "start_hz": null,
+          "stop_hz": null,
+          "step_hz": null,
+          "values_hz": []
+        },
+        "time_step_s": null,
+        "observation_time_s": null
+      },
+      "observables": [
+        {
+          "observable_id": "counter-path-change",
+          "kind": "reflected_path_length_m",
+          "unit": "m",
+          "reference_kind": "cross_fixture",
+          "reference_description": "Adding a participating reflecting obstacle must change the deterministic path set; it must not be ignored as visual-only furniture.",
+          "acceptance_relation": "must_differ_from_peer",
+          "tolerance": {
+            "absolute": null,
+            "relative": null,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": null,
+            "minimum_difference": 0.001
+          },
+          "samples": [],
+          "peer_fixture_id": "geometric-direct-first-reflection-v1"
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 60,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "Object acoustic participation is explicit and independent of editor hide/lock state."
+      ]
+    },
+    {
+      "fixture_id": "geometric-seed-repeatability-v1",
+      "description": "Stochastic-ray identity and estimator repeatability fixture with explicit scattering, seed and resource controls.",
+      "benchmark_role": "geometric",
+      "required_capabilities": [
+        "geometric_specular",
+        "geometric_scattering",
+        "stochastic_rays"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 3
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-geo"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-geo"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "geo-scattering",
+          "provenance": "R100A stochastic geometric reference bands",
+          "version": "1",
+          "wave_model": "unsupported",
+          "specific_impedance": [],
+          "geometric_model": "banded",
+          "geometric_bands": [
+            {
+              "center_hz": 125,
+              "absorption": 0.15,
+              "scattering": 0.2
+            },
+            {
+              "center_hz": 250,
+              "absorption": 0.15,
+              "scattering": 0.2
+            },
+            {
+              "center_hz": 500,
+              "absorption": 0.15,
+              "scattering": 0.2
+            },
+            {
+              "center_hz": 1000,
+              "absorption": 0.15,
+              "scattering": 0.2
+            },
+            {
+              "center_hz": 2000,
+              "absorption": 0.15,
+              "scattering": 0.2
+            },
+            {
+              "center_hz": 4000,
+              "absorption": 0.15,
+              "scattering": 0.2
+            }
+          ]
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-geo",
+          "material_id": "geo-scattering"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "normalization": "unit_energy_j",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 4,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "none",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "explicit",
+          "start_hz": null,
+          "stop_hz": null,
+          "step_hz": null,
+          "values_hz": [
+            500,
+            1000,
+            2000
+          ]
+        },
+        "time_step_s": null,
+        "observation_time_s": null
+      },
+      "observables": [
+        {
+          "observable_id": "same-seed-repeatability",
+          "kind": "energy_decay_db",
+          "unit": "dB",
+          "reference_kind": "statistical",
+          "reference_description": "Same declared seed and estimator settings must reproduce the same stochastic estimate within numerical tolerance.",
+          "acceptance_relation": "repeatable_same_seed",
+          "tolerance": {
+            "absolute": 0.05,
+            "relative": 0.005,
+            "phase_deg": null,
+            "null_mask_below_db": null,
+            "statistical_stddev_max": 0.05,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 1,
+        "max_compile_s": 60,
+        "max_solve_s": 120,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": 20260918,
+      "notes": [
+        "R150 must additionally refine ray count, receiver estimator/radius, time-bin width and termination; seed repeatability alone is insufficient."
+      ]
+    },
+    {
+      "fixture_id": "hybrid-overlap-continuity-v1",
+      "description": "Typed wave/geometric overlap contract; only compatible quantities may be stitched.",
+      "benchmark_role": "hybrid",
+      "required_capabilities": [
+        "hybrid_overlap"
+      ],
+      "regions": [
+        {
+          "region_id": "room",
+          "vertices": [
+            {
+              "vertex_id": "room-v000",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v100",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v110",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v010",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 0
+              }
+            },
+            {
+              "vertex_id": "room-v001",
+              "position": {
+                "x_m": 0,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v101",
+              "position": {
+                "x_m": 6,
+                "y_m": 0,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v111",
+              "position": {
+                "x_m": 6,
+                "y_m": 5,
+                "z_m": 3
+              }
+            },
+            {
+              "vertex_id": "room-v011",
+              "position": {
+                "x_m": 0,
+                "y_m": 5,
+                "z_m": 3
+              }
+            }
+          ],
+          "faces": [
+            {
+              "face_id": "room-zmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v100",
+                "room-v110",
+                "room-v010"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-zmax",
+              "vertex_ids": [
+                "room-v001",
+                "room-v011",
+                "room-v111",
+                "room-v101"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v001",
+                "room-v101",
+                "room-v100"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-ymax",
+              "vertex_ids": [
+                "room-v010",
+                "room-v110",
+                "room-v111",
+                "room-v011"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmin",
+              "vertex_ids": [
+                "room-v000",
+                "room-v010",
+                "room-v011",
+                "room-v001"
+              ],
+              "boundary_id": "b-rigid"
+            },
+            {
+              "face_id": "room-xmax",
+              "vertex_ids": [
+                "room-v100",
+                "room-v101",
+                "room-v111",
+                "room-v110"
+              ],
+              "boundary_id": "b-rigid"
+            }
+          ]
+        }
+      ],
+      "obstacles": [],
+      "portals": [],
+      "terminations": [],
+      "materials": [
+        {
+          "material_id": "rigid",
+          "provenance": "R100A analytical rigid reference",
+          "version": "1",
+          "wave_model": "rigid",
+          "specific_impedance": [],
+          "geometric_model": "unsupported",
+          "geometric_bands": []
+        }
+      ],
+      "boundaries": [
+        {
+          "boundary_id": "b-rigid",
+          "material_id": "rigid"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "src",
+          "region_id": "room",
+          "position": {
+            "x_m": 1,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "normalization": "volume_velocity_m3_s",
+          "amplitude": 1,
+          "phase_deg": 0,
+          "directivity": "omnidirectional"
+        }
+      ],
+      "receivers": [
+        {
+          "receiver_id": "rx",
+          "region_id": "room",
+          "position": {
+            "x_m": 4,
+            "y_m": 2,
+            "z_m": 1
+          },
+          "forward": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "calibration_state": "ideal_flat",
+          "calibration_profile_id": null,
+          "timing_reference": "source_t0"
+        }
+      ],
+      "environment": {
+        "temperature_c": 20,
+        "sound_speed_m_s": 343,
+        "relative_humidity_percent": 50,
+        "pressure_pa": 101325
+      },
+      "comparison": {
+        "coordinate_system": "x_right_y_rear_z_up",
+        "length_unit": "m",
+        "pressure_unit": "Pa",
+        "fourier_sign": "exp(-i*omega*t)",
+        "phase_wrap": "[-180,180)",
+        "time_zero_reference": "source_excitation_t0",
+        "floating_point": "float64",
+        "interpolation": "linear_complex",
+        "window": "none",
+        "filter": "none",
+        "frequency_grid": {
+          "kind": "uniform",
+          "start_hz": 180,
+          "stop_hz": 320,
+          "step_hz": 2,
+          "values_hz": []
+        },
+        "time_step_s": null,
+        "observation_time_s": null
+      },
+      "observables": [
+        {
+          "observable_id": "overlap-level-continuity",
+          "kind": "hybrid_overlap_level_db",
+          "unit": "dB",
+          "reference_kind": "invariant",
+          "reference_description": "Validated overlap must remain level-continuous; a gap remains a gap instead of fabricated broadband data.",
+          "acceptance_relation": "continuous_overlap",
+          "tolerance": {
+            "absolute": 1,
+            "relative": 0.05,
+            "phase_deg": null,
+            "null_mask_below_db": -60,
+            "statistical_stddev_max": null,
+            "minimum_difference": null
+          },
+          "samples": [],
+          "peer_fixture_id": null
+        }
+      ],
+      "resource_budget": {
+        "cpu_thread_budget": 4,
+        "ram_budget_mb": 8192,
+        "disk_budget_mb": 2048,
+        "workload_candidates": 16,
+        "max_compile_s": 60,
+        "max_solve_s": 120,
+        "max_postprocess_s": 60,
+        "max_output_mb": 512
+      },
+      "random_seed": null,
+      "notes": [
+        "No stochastic late-field phase may be invented.",
+        "FR acceptance does not imply IR/decay acceptance; frequency-domain IR synthesis has a separate gate."
+      ]
+    }
+  ]
+}
