@@ -12,6 +12,7 @@ from .cad_constraint_models import (
     CadAllowedRegionConstraint,
     CadConstraintPoint2D,
     CadConstraintSet,
+    CadExclusionRegionConstraint,
 )
 from .cad_constraints import build_g10_constraint_request, scene_to_g10_context
 from .cad_extended_search import (
@@ -105,6 +106,14 @@ class PlacementAngleAxis(BaseModel):
         return self
 
 
+class ProposedExclusionRegion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    region_id: str = Field(min_length=1)
+    vertices: tuple[CadConstraintPoint2D, ...] = Field(min_length=3)
+    region_role: Literal['exclusion', 'walkway'] = 'exclusion'
+
+
 class ProposedPlacementSpec(BaseModel):
     """Role-bound installation zone and search axes for one proposed speaker."""
 
@@ -114,6 +123,7 @@ class ProposedPlacementSpec(BaseModel):
     role_id: str = Field(min_length=1)
     zone_id: str = Field(min_length=1)
     allowed_region: tuple[CadConstraintPoint2D, ...] = Field(min_length=3)
+    exclusion_regions: tuple[ProposedExclusionRegion, ...] = ()
     min_z_m: float | None = None
     max_z_m: float | None = None
     xyz_axes: tuple[CadSearchAxis, ...] = ()
@@ -132,6 +142,9 @@ class ProposedPlacementSpec(BaseModel):
             for value in (self.min_z_m, self.max_z_m)
         ):
             raise ValueError('placement zone height bounds must be finite')
+        exclusion_ids = [item.region_id for item in self.exclusion_regions]
+        if len(exclusion_ids) != len(set(exclusion_ids)):
+            raise ValueError('placement exclusion region IDs must be unique')
         if any(axis.entity_id != self.entity_id for axis in self.xyz_axes):
             raise ValueError('placement XYZ axes must target their ProposedPlacementSpec entity')
         xyz_keys = [axis.axis for axis in self.xyz_axes]
@@ -331,6 +344,18 @@ def _zone_constraint_id(item: ProposedPlacementSpec) -> str:
     })[:20]
 
 
+def _exclusion_constraint_id(
+    item: ProposedPlacementSpec,
+    region: ProposedExclusionRegion,
+) -> str:
+    return 'o100b-exclusion-' + _digest({
+        'entity_id': item.entity_id,
+        'role_id': item.role_id,
+        'zone_id': item.zone_id,
+        'region_id': region.region_id,
+    })[:20]
+
+
 def _height_constraint_id(item: ProposedPlacementSpec) -> str:
     return 'o100b-height-' + _digest({
         'entity_id': item.entity_id,
@@ -342,7 +367,7 @@ def _effective_constraint_set(
     base: CadConstraintSet,
     placement_specs: Sequence[ProposedPlacementSpec],
 ) -> CadConstraintSet:
-    additions = tuple(
+    additions = [
         CadAllowedRegionConstraint(
             constraint_id=_zone_constraint_id(item),
             name=f'O100B {item.role_id} installation zone {item.zone_id}',
@@ -350,10 +375,24 @@ def _effective_constraint_set(
             vertices=item.allowed_region,
         )
         for item in placement_specs
-    )
+    ]
+    for item in placement_specs:
+        additions.extend(
+            CadExclusionRegionConstraint(
+                constraint_id=_exclusion_constraint_id(item, region),
+                name=(
+                    f'O100B {item.role_id} exclusion '
+                    f'{item.zone_id}/{region.region_id}'
+                ),
+                entity_ids=(item.entity_id,),
+                vertices=region.vertices,
+                region_role=region.region_role,
+            )
+            for region in item.exclusion_regions
+        )
     return CadConstraintSet(
         document_id=base.document_id,
-        constraints=tuple(base.constraints) + additions,
+        constraints=tuple(base.constraints) + tuple(additions),
     )
 
 
