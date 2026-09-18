@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Event
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -121,6 +121,7 @@ class RoomPredictionController(QObject):
         self._tokens: dict[str, PredictionJobToken] = {}
         self._specs: dict[str, RoomPredictionRunSpec] = {}
         self._tasks: dict[str, tuple[QThread, _PredictionWorker]] = {}
+        self._completion_states: dict[str, RoomPredictionRunState] = {}
         self._current_job_id: str | None = None
         self._selected_run_id: str | None = None
 
@@ -243,6 +244,9 @@ class RoomPredictionController(QObject):
         thread.started.connect(worker.run)
         worker.completed.connect(self._task_completed)
         worker.completed.connect(thread.quit)
+        thread.finished.connect(
+            lambda job_id=spec.token.job_id: self._task_finished(job_id)
+        )
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         self._tokens[spec.token.job_id] = spec.token
@@ -327,44 +331,68 @@ class RoomPredictionController(QObject):
         job_id = str(key)
         token = self._tokens.pop(job_id, None)
         spec = self._specs.pop(job_id, None)
-        self._tasks.pop(job_id, None)
         if self._current_job_id == job_id:
             self._current_job_id = None
         if token is None or spec is None:
+            self._completion_states[job_id] = RoomPredictionRunState(
+                False,
+                "予測処理を終了しました",
+            )
             return
+
+        final_state: RoomPredictionRunState
         if self.job_guard.is_cancelled(token) or error == "cancelled":
-            self.stateChanged.emit(
-                RoomPredictionRunState(False, "予測はキャンセルされました")
+            final_state = RoomPredictionRunState(False, "予測はキャンセルされました")
+        elif error is not None:
+            final_state = RoomPredictionRunState(
+                False,
+                f"予測に失敗しました · {error}",
+                error=True,
             )
-            return
-        if error is not None:
-            self.stateChanged.emit(
-                RoomPredictionRunState(False, f"予測に失敗しました · {error}", error=True)
-            )
-            return
-        try:
-            accepted = self.accept_results(spec, result)
-        except ValueError as exc:
-            self.stateChanged.emit(
-                RoomPredictionRunState(False, f"予測結果を拒否しました · {exc}", error=True)
-            )
-            return
-        if accepted is None:
-            self.stateChanged.emit(
-                RoomPredictionRunState(
-                    False,
-                    "条件が変更されたため古い予測結果を破棄しました",
-                )
-            )
-            return
-        self.resultsChanged.emit()
-        self.runSelected.emit(accepted)
-        compatibility = accepted[0].geometry_compatibility
-        if compatibility == "unsupported":
-            message = "現在の部屋形状は矩形幾何modelの対象外です"
         else:
-            message = "予測を保存しました"
-        self.stateChanged.emit(RoomPredictionRunState(False, message))
+            try:
+                accepted = self.accept_results(spec, result)
+            except ValueError as exc:
+                final_state = RoomPredictionRunState(
+                    False,
+                    f"予測結果を拒否しました · {exc}",
+                    error=True,
+                )
+            else:
+                if accepted is None:
+                    final_state = RoomPredictionRunState(
+                        False,
+                        "条件が変更されたため古い予測結果を破棄しました",
+                    )
+                else:
+                    self.resultsChanged.emit()
+                    self.runSelected.emit(accepted)
+                    compatibility = accepted[0].geometry_compatibility
+                    final_state = RoomPredictionRunState(
+                        False,
+                        (
+                            "現在の部屋形状は矩形幾何modelの対象外です"
+                            if compatibility == "unsupported"
+                            else "予測を保存しました"
+                        ),
+                    )
+
+        # Keep the worker visible as busy until QThread has actually emitted
+        # finished. This prevents workspace disposal/restore/new-run races in the
+        # short interval after the worker result signal but before thread teardown.
+        self._completion_states[job_id] = final_state
+        self.stateChanged.emit(
+            RoomPredictionRunState(True, "予測処理を終了しています…")
+        )
+
+    def _task_finished(self, job_id: str) -> None:
+        self._tasks.pop(job_id, None)
+        final_state = self._completion_states.pop(
+            job_id,
+            RoomPredictionRunState(False, "予測処理を終了しました"),
+        )
+        self.stateChanged.emit(final_state)
+
 
     def list_run_ids(self) -> tuple[str, ...]:
         run_ids: list[str] = []
@@ -418,6 +446,7 @@ class RoomPredictionController(QObject):
         self._tokens.clear()
         self._specs.clear()
         self._tasks.clear()
+        self._completion_states.clear()
         self._current_job_id = None
 
 
@@ -530,7 +559,7 @@ class RoomPredictionPanel(QWidget):
             item = QTreeWidgetItem(
                 [f"予測 {index}", "現在" if current else "要再計算"]
             )
-            item.setData(0, 0x0100, run_id)
+            item.setData(0, Qt.ItemDataRole.UserRole, run_id)
             item.setToolTip(0, compatibility)
             self.runs.addTopLevelItem(item)
             if run_id == previous:
@@ -559,7 +588,11 @@ class RoomPredictionPanel(QWidget):
 
     def _selected(self) -> None:
         item = self.runs.currentItem()
-        run_id = None if item is None else item.data(0, 0x0100)
+        run_id = (
+            None
+            if item is None
+            else item.data(0, Qt.ItemDataRole.UserRole)
+        )
         results = self.controller.select_run(None if run_id is None else str(run_id))
         self._show_results(results)
 
