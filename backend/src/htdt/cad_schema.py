@@ -155,8 +155,7 @@ def _migrate_1_to_2(connection: sqlite3.Connection) -> None:
             objective_id TEXT NOT NULL,
             observation_sha256 TEXT NOT NULL UNIQUE,
             payload_json TEXT NOT NULL,
-            created_at_utc TEXT NOT NULL,
-            UNIQUE(extended_search_id, candidate_id, objective_id)
+            created_at_utc TEXT NOT NULL
         )
         """,
         """
