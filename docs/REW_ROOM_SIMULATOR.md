@@ -77,3 +77,32 @@ HTDT `(1.0, 1.0, 1.0)`へ変換され、既存HTDT fixtureの向きと一致し�
 - REW API: https://www.roomeqwizard.com/help/help/html/api.html
 - REW Room Simulator: https://www.roomeqwizard.com/help/help_en-GB/html/modalsim.html
 - pyroomacoustics Room: https://pyroomacoustics.readthedocs.io/en/stable/pyroomacoustics.room.html
+
+
+## N80 O20 production transaction boundary
+
+N80でwriteを無条件解禁するのではなく、`RewRoomSimControlClient`をO20 transaction専用として追加する。通常の`RewApiClient`はGET-only運用を維持する。
+
+初期write範囲:
+
+- POST `/roomsim/head-position`
+- POST `/roomsim/{src}/position`
+
+REW公式APIはRoom SimulatorをAPIからread/setできる対象として記載し、データmodel設定にはPOST/PUTが利用できる。HTDT初期O20は既存実機probeで確認したposition変更だけへ範囲を限定する。
+
+production batchは以下を必須とする。
+
+- exact rectangular native roomとREW room dimensionsの一致
+- explicit native speaker acoustic reference
+- native entity -> REW source mapping
+- combined response時のactive-source完全coverage
+- full-state pre hash
+- write後full-state一致
+- FR取得後full-state不変
+- `finally`相当のrestore
+- exact pre-state復元確認
+- external change / restore failure時は結果破棄
+
+左右連動等でAPI writeが指定外source positionを動かした場合も、write直後のsnapshotをtransaction-owned stateとして記録し、安全に復元する。transaction中にユーザー/外部processがさらに変更したfieldは上書きせずhard errorにする。
+
+この契約がCIと実機gateを通るまで、O20 batch resultを自動推薦へ使用しない。
