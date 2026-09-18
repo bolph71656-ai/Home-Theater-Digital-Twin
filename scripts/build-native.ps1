@@ -22,7 +22,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Locked dependency install failed with exit code $LASTEXITCODE"
     }
-    & $Python -m pip install --disable-pip-version-check --no-deps "$RepoRoot\backend"
+    & $Python -m pip install --disable-pip-version-check --no-deps --no-build-isolation "$RepoRoot\backend"
     if ($LASTEXITCODE -ne 0) {
         throw "HTDT package install failed with exit code $LASTEXITCODE"
     }
