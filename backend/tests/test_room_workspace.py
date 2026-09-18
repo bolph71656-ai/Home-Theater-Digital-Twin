@@ -541,6 +541,7 @@ def test_room_workspace_compact_layout_prioritizes_viewport_and_toggles_palette(
     workspace.resize(680, 520)
     app.processEvents()
     assert workspace.width() < 720
+    assert workspace.object_palette.isHidden()
     assert workspace.right_stack.width() == 260
 
     workspace.set_context("geometry")
