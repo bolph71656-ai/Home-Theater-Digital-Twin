@@ -142,7 +142,12 @@ def _asset_rows(database_path: Path) -> tuple[tuple[str, str, int], ...]:
         rows = connection.execute(
             'SELECT sha256, relative_path, size_bytes FROM cad_measurement_assets ORDER BY sha256'
         ).fetchall()
-    return tuple((str(row[0]), str(row[1]), int(row[2])) for row in rows)
+    normalized: list[tuple[str, str, int]] = []
+    for row in rows:
+        relative_path = str(row[1]).replace('\\\\', '/')
+        _safe_archive_path(relative_path)
+        normalized.append((str(row[0]), relative_path, int(row[2])))
+    return tuple(normalized)
 
 
 def _validate_asset_contract(
