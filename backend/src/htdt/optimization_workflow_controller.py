@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QTreeWidget,
@@ -294,6 +295,7 @@ class OptimizationWorkflowController(
         for thread, _worker in tuple(self._rew_tasks.values()):
             thread.quit()
             thread.wait(1800)
+        self.scene.close()
 
     def refresh_pareto_comparison(self) -> None:
         spec_id = self.search_selected_spec_id
@@ -353,12 +355,9 @@ class OptimizationWorkflowController(
         }
         self.objective_list.clear()
         for objective_id in available:
-            item = QTreeWidgetItem([objective_id])
-            # QListWidget requires QListWidgetItem; create below via addItem for compatibility.
-            del item
-            self.objective_list.addItem(objective_id)
-            list_item = self.objective_list.item(self.objective_list.count() - 1)
+            list_item = QListWidgetItem(objective_id)
             list_item.setData(Qt.ItemDataRole.UserRole, objective_id)
+            self.objective_list.addItem(list_item)
             if not previous or objective_id in previous:
                 list_item.setSelected(True)
         selected = tuple(
