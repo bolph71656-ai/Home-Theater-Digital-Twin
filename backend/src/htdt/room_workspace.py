@@ -222,6 +222,14 @@ class RoomWorkspaceController:
             self._sync_recovery()
         return changed
 
+    def replace_room_topology(self, room, topology) -> bool:
+        if self.recovery_candidate is not None:
+            raise EditStateError("復旧データを処理してから壁・開口を編集してください")
+        changed = self.working.replace_room_topology(room, topology)
+        if changed:
+            self._sync_recovery()
+        return changed
+
     def update_selected(
         self,
         *,
