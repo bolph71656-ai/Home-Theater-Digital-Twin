@@ -271,3 +271,17 @@ No broader write authority is implied: room size, absorptions, options, source c
 - Repository helper returns the latest immutable evaluation per candidate without mutating historical evaluations.
 
 No RDC is used for this slice yet. GitHub Actions is the first verification authority; owned-Windows interaction will be consolidated only after the remaining measurement-loop/native UI work is CI-green.
+
+
+## 2026-09-18 — O50 measurement-loop authority started
+
+Roadmap O50 is now implemented at the immutable authority boundary before adding more UI:
+
+- `CadMeasurementPlan` binds one SearchSpec/candidate/candidate-set hash to the exact SceneRevision created after the human applies that candidate.
+- completing a plan accepts only `measured` evidence whose document/revision/content hash exactly matches that applied revision;
+- predicted evidence is never reclassified as measured;
+- completed measurement IDs convert to explicit O30 `CadObjectiveInputRef(evidence_class='measured')`;
+- measurement plans are append-only rows in the native CAD database, so planned and completed history is not overwritten;
+- a focused invariant test covers candidate -> applied revision binding.
+
+This follows the roadmap safety boundary: HTDT does not autonomously move speakers, change AVR settings, or trigger REW playback. Existing N60 ingestion remains the measurement authority. O60 validation will consume these immutable links; O70 adaptive planning remains gated on O60 evidence.
