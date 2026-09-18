@@ -41,6 +41,8 @@ from .cad_search_models import CadCandidate, CadCandidateSetPage, CadSearchAxis,
 from .cad_search_repository import CadSearchRepository
 from .measurement_workspace import _MeasurementScrollArea
 from .cad_measurement_repository import CadMeasurementRepository
+from .cad_model_validation_repository import CadModelValidationRepository
+from .cad_roomsim_repository import CadRoomSimRepository
 from .cad_measurement_loop import build_measurement_plan, complete_measurement_plan
 from .native_editor import ROLE
 from .prediction_workspace import PredictionWorkspaceWindow
@@ -109,6 +111,13 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.search_repository = CadSearchRepository(repository)
         self.objective_repository = CadObjectiveRepository(repository, self.search_repository)
         self.measurement_repository = CadMeasurementRepository(repository)
+        self.roomsim_repository = CadRoomSimRepository(repository, self.search_repository)
+        self.validation_repository = CadModelValidationRepository(
+            self.search_repository,
+            self.roomsim_repository,
+            self.measurement_repository,
+            self.objective_repository,
+        )
         self.search_selected_spec_id: str | None = None
         self.search_selected_candidate_id: str | None = None
         self.search_preview_candidate_id: str | None = None
@@ -142,6 +151,9 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.pareto_tree: QTreeWidget | None = None
         self.pareto_summary_label: QLabel | None = None
         self.pareto_refresh_button: QPushButton | None = None
+        self.validation_tree: QTreeWidget | None = None
+        self.validation_detail_label: QLabel | None = None
+        self.validation_refresh_button: QPushButton | None = None
         self._search_actor_names: set[str] = set()
         self._search_tasks: dict[str, tuple[QThread, _SearchTask]] = {}
         self._search_task_spec_ids: dict[str, str] = {}
@@ -312,6 +324,28 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.pareto_tree.setMinimumHeight(180)
         self.pareto_tree.itemSelectionChanged.connect(self._pareto_candidate_selected)
         layout.addWidget(self.pareto_tree)
+
+        validation_label = QLabel(
+            'モデル検証 · residual / trend / sensitivity / repeatabilityを独立表示'
+        )
+        validation_label.setWordWrap(True)
+        layout.addWidget(validation_label)
+
+        self.validation_refresh_button = QPushButton('保存済みValidationRecordを更新')
+        self.validation_refresh_button.clicked.connect(self.refresh_model_validations)
+        layout.addWidget(self.validation_refresh_button)
+
+        self.validation_tree = QTreeWidget()
+        self.validation_tree.setHeaderLabels([
+            'validation', 'scope', 'residual', 'trend', 'sensitivity', 'repeatability', 'gate'
+        ])
+        self.validation_tree.setMinimumHeight(150)
+        self.validation_tree.itemSelectionChanged.connect(self._validation_selected)
+        layout.addWidget(self.validation_tree)
+
+        self.validation_detail_label = QLabel('ValidationRecord未選択')
+        self.validation_detail_label.setWordWrap(True)
+        layout.addWidget(self.validation_detail_label)
         layout.addStretch(1)
 
         dock = QDockWidget('最適化', self)
