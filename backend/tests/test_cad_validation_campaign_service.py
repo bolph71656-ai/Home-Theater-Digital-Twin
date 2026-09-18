@@ -16,6 +16,7 @@ from htdt.cad_validation_campaign import (
     CadValidationCampaignRepeatability,
     CadValidationCampaignSensitivity,
     CadValidationCampaignSeparation,
+    CadValidationTargetResponse,
     build_validation_campaign,
 )
 from htdt.cad_validation_campaign_repository import CadValidationCampaignRepository
@@ -111,10 +112,18 @@ def _fixture(tmp_path):
     candidates = page.candidates[:3]
     candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
 
+    target_response = CadValidationTargetResponse(
+        frequency_hz=(20.0, 40.0, 80.0, 160.0),
+        level_db=(0.0, 0.0, 0.0, 0.0),
+    )
     evaluation_spec = {
         'algorithm_version': 'objective-vector-1',
+        'objective_method': 'target_response',
         'objectives': ['response.shape_rms_db'],
         'response_band_hz': [20.0, 160.0],
+        'reference_band_hz': [20.0, 160.0],
+        'excluded_bands': [],
+        'target_response': target_response.model_dump(mode='json'),
     }
     campaign = build_validation_campaign(
         document_id=document.document_id,
@@ -131,7 +140,8 @@ def _fixture(tmp_path):
             CadValidationCampaignCandidate(candidate_id=candidate_ids[2], split='calibration'),
         ),
         objective_ids=('response.shape_rms_db',),
-        objective_evaluation_spec=evaluation_spec,
+        target_response=target_response,
+        reference_band_hz=(20.0, 160.0),
         sensitivity=(
             CadValidationCampaignSensitivity(
                 objective_id='response.shape_rms_db',
