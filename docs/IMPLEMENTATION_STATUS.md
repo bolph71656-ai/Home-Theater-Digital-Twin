@@ -1,17 +1,17 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N90 stable Windows 0.1.0 A15 PASS / O60 software validation main反映済み・実室model gate未通過
+> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path main反映済み / synthetic acceptance PASS / 実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05〜N90のnative CAD release pathとO10〜O60 software authorityは実装済み。O60はPR #78 merge `b0b56497255425b5b343c6f5f52763d11dbf5ee6`でmain反映済み。N90 stable Windows 0.1.0はproduct CI #458、release artifact #23、owned-Windows A15をPASSした。実室の独立validation evidenceはまだ無いため、O70/O80 automatic recommendation/extended searchはdisabledのまま。**
+**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。実室の独立validation evidenceはまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityだけはIssue #83のreal-data gate成立までdisabledを維持する。**
 
 N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N05〜N90 stable releaseとO10〜O60 software authorityをmerge済み**。N90 PR #79 merge `d1f0f7cf1bf24e4590954071d78c9ac281fc15b9` |
+| main | **N05〜N90 stable releaseとO10〜O80 software pathをmerge済み**。O80 PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` / CI #548 PASS / Windows Release Artifact #93 PASS |
 | N80 tracking | Issue #65（closed） / Issue #67（O20 closed） / PR #74 merged |
 | O60 tracking | Issue #75 / PR #76（implementation history） / PR #78 merged。final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3`、CI #427 PASS |
 | O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **Issue #90でO70/O80をsynthetic development laneまで実装してソフトウェアを完成させる。production recommendationはeligible campaign-backed ValidationRecord + O60R audit PASSまでdisabledを維持** |
+| 次工程 | **software implementationは完了。残るauthority gateはIssue #83のowned-room campaign実測・O60R auditのみ。これがPASSするまで`production_owned_room` recommendationとowned-room directional capabilityはdisabled** |
 
 ## N90 — stable Windows release / A15 PASS
 
@@ -254,10 +254,10 @@ Issue #83 / PR #85で、実室campaign完了後に使うread-only監査harness�
 - CI preflightはPASS済み。実室PASSはまだ主張しない。
 - `inventory_o60_owned_room.py`でcampaign/readiness/REW read-only状態を1コマンド確認できる。
 - owned-Windows inventory preflightで検出したtemp SQLite `WinError 32`に対し、Search/RoomSim/Objective/ModelValidation repositoryの接続を明示closeへ統一し、DB存在時のinventory cleanup回帰testを追加した。
-- 残る作業は人手のspeaker/setup移動とREW実測を伴うowned-room campaign実行のみ。これを満たすまでO70/O80はdisabled。
-## O70 — synthetic-first Adaptive Planner 実装中
+- 残る作業は人手のspeaker/setup移動とREW実測を伴うowned-room campaign実行のみ。O70/O80のsoftware実装は完了済みだが、これを満たすまで`production_owned_room` recommendationとowned-room directional capabilityはdisabled。
+## O70 — Adaptive Planner software実装完了 / synthetic acceptance PASS
 
-Issue #90で、実測待ちをソフトウェア完成のblockerにしないdevelopment laneを開始した。
+Issue #90 / PR #92・#93で、実測待ちをソフトウェア完成のblockerにしないdevelopment laneを実装した。
 
 - `development_synthetic`: O60のresidual/trend/sensitivity/repeatability/separation/applicabilityが全PASSし、唯一のstop reasonがowned-room evidence不足であるsynthetic ValidationRecordを許可する。
 - `production_owned_room`: current campaign-backed `eligible` ValidationRecordだけを許可する。
@@ -266,7 +266,7 @@ Issue #90で、実測待ちをソフトウェア完成のblockerにしないdeve
 - SearchSpec SHA、candidate-set SHA、ValidationRecord SHA、algorithm/version、length scale、training/measured candidate、全proposalをimmutable保存する。
 - synthetic planはproduction recommendationを開かず、実室妥当性の主張に使わない。
 - native最適化dockにAdaptive Planner UIを統合し、ValidationRecord選択→scope/length scale/proposal上限→immutable plan保存→proposalの補正値/不確実性表示→candidate選択同期まで接続した。
-## O80 — Extended Search / synthetic software completion
+## O80 — Extended Search software実装完了 / synthetic acceptance PASS
 
 Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended-search layerを実装した。
 
@@ -282,3 +282,15 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 
 詳細: [O70/O80 Synthetic Software Completion](O70_O80_SYNTHETIC_COMPLETION.md)
 
+
+
+## O70/O80 final software acceptance
+
+- O70 core: PR #92。synthetic/production authority分離、objective別residual GP、uncertainty acquisition、immutable persistence。
+- O70 native UI: PR #93。ValidationRecord→Adaptive Plan→proposal表示/候補同期をnative最適化workspaceへ統合。
+- O80 + synthetic completion: PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8`。
+- final product CI: #548 / run `35313405578` **PASS**。backend tests、CLI、N60/N70/N80/N80c/N90/O60R preflightを含む。
+- Windows Release Artifact: #93 / run `35313405629` **PASS**。locked native package、packaged synthetic demo seed、Inno Setup installer、install/uninstall data-retention smoke、artifact uploadを含む。
+- synthetic fixtureは通常repositoryを通るが、常に `synthetic_fixture` / `physical_measurement=false`。owned-room recommendationへ昇格しない。
+- O80 owned-room capabilityはexact document/SearchSpec SHA/candidate-set SHA/O60 eligible ValidationRecord/model versionへ再照合する。
+- このsoftware completionではRDCを使用していない。既存native stackのowned-Windows N90/A15受入は維持されるが、O70/O80の実室音響妥当性はIssue #83が未完了のため未主張。
