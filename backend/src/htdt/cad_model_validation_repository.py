@@ -55,6 +55,9 @@ class CadModelValidationRepository:
             )
 
     def save(self, record: CadModelValidationRecord) -> None:
+        if not isinstance(record, CadModelValidationRecord):
+            raise TypeError('record must be CadModelValidationRecord')
+        record = CadModelValidationRecord.model_validate(record.model_dump(mode='python'))
         spec = self.search_repository.get(record.search_spec_id)
         if spec is None:
             raise ValueError('model validation SearchSpec does not exist')
