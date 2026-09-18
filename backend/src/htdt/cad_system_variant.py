@@ -353,6 +353,27 @@ def build_system_variant(
     missing_removals = set(removals) - set(baseline_entities)
     if missing_removals:
         raise ValueError(f'cannot remove missing baseline entities: {sorted(missing_removals)}')
+    non_speaker_removals = {
+        entity_id
+        for entity_id in removals
+        if baseline_entities[entity_id].kind != 'speaker'
+    }
+    if non_speaker_removals:
+        raise ValueError(
+            'SystemVariant remove operations are limited to speakers: '
+            f'{sorted(non_speaker_removals)}'
+        )
+    invalid_replacements = {
+        entity_id
+        for entity_id in proposal_by_id
+        if entity_id in baseline_entities
+        and baseline_entities[entity_id].kind != 'speaker'
+    }
+    if invalid_replacements:
+        raise ValueError(
+            'SystemVariant replace operations are limited to speakers: '
+            f'{sorted(invalid_replacements)}'
+        )
 
     role_by_id = {item.role_id: item for item in roles}
     if len(role_by_id) != len(roles):
