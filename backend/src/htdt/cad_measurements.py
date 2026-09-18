@@ -50,10 +50,12 @@ def normalize_rew_capture_timestamp(
     if parsed.tzinfo is not None:
         return parsed.isoformat(), 'source_timezone'
 
-    local_timezone = host_timezone or datetime.now().astimezone().tzinfo
-    if local_timezone is None:
-        return None, 'host_timezone_unavailable'
-    return parsed.replace(tzinfo=local_timezone).isoformat(), 'host_local_timezone'
+    if host_timezone is None:
+        try:
+            return parsed.astimezone().isoformat(), 'host_local_timezone'
+        except (OSError, ValueError):
+            return None, 'host_timezone_unavailable'
+    return parsed.replace(tzinfo=host_timezone).isoformat(), 'host_local_timezone'
 
 def measurement_record_for_revision(
     revision: SceneRevision,
