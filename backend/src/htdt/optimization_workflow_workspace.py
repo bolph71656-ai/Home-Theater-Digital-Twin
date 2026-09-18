@@ -183,9 +183,7 @@ class OptimizationWorkflowWorkspace(OptimizationWorkspaceWindow):
     def select_section(self, section_id: str) -> None:
         page_id = normalize_optimization_page(section_id)
         self._optimization_stack.setCurrentWidget(self._optimization_pages[page_id])
-        if page_id == "comparison":
-            self.refresh_pareto_comparison()
-        elif page_id == "validation":
+        if page_id == "validation":
             self.refresh_measurement_plans()
             self.refresh_validation_campaigns()
             self.refresh_model_validations()
@@ -204,8 +202,6 @@ class OptimizationWorkflowWorkspace(OptimizationWorkspaceWindow):
         self.refresh_model_validations()
         self.refresh_adaptive_plans()
         self.refresh_adaptive_extended_plans()
-        if self.current_page_id == "comparison":
-            self.refresh_pareto_comparison()
 
     def _install_workflow_surface(self) -> None:
         viewport_widget = self.takeCentralWidget()
