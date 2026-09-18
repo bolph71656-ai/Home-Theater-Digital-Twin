@@ -92,6 +92,7 @@ Issue #118は既存A01〜A15のdomain/editor correctnessを置き換えない。
 | UX-A12 / UX120 | 3D viewportで中button drag→Shift+中button drag→wheel→右click、M/R/F/Home、Esc/Enter、Ctrl+Z/Y/S/Dを連続実行 | MMB=pan、Shift+MMB=orbit、wheel=zoom、RMB=contextが競合なく成立。shortcutはtextbox focus中にsceneへ誤発火せず、tool hint/menuの表示と一致 |
 | UX-A13 / UX150 | 概要/部屋/測定/最適化、menu、tooltip、empty/blocked/error stateを巡回 | GUIは日本語が基本。内部class/job/schema名や不要な英語labelを露出しない。REW/FR/SPL/RT60/CPU/GPU/CAD/3D/dB/Hz等の合理的な英語・略語例外は一貫して使用 |
 | UX-A14 / UX160 | 初見ユーザーにshortcut一覧を事前提示せず、部屋でpan/orbit/zoom/move/rotate/fitを実施 | 主要操作はtoolbar tooltip/context hintから発見でき、MMB navigationは一般CAD操作として自然に完遂できる。shortcutを知らなくてもUI操作でも同じcommandへ到達できる |
+| UX-A15 / O90D | 最適化で同じ候補のnominalと設置誤差評価を開き、±位置/aimの感度・sampled envelope・3D tolerance overlayを確認 | nominalとrobustnessが別指標として見える。bounded intervalだけでpercentileを表示しない。infeasible sampleを隠さない。3D envelopeはsampled evidenceか近似かを識別でき、overall scoreでA/Bを勝手に一本化しない |
 
 ### UX visual evidence
 
@@ -127,3 +128,6 @@ headless screenshotは補助資料にできるが、Windows実機mouse/focus/DPI
 - button/menu/navigationに不要な英語が残り、日本語と英語が無規則に混在する
 - 直訳調の長い日本語でbutton/panelが肥大化する
 - 英語placeholderでlayout gateを通し、日本語実文字列でclippingする
+- O90のbounded toleranceを確率分布として表示する
+- nominalとrobustnessを一つの不透明な総合scoreへ縮約する
+- O90のinfeasible perturbationやsampling不足をUIから隠す

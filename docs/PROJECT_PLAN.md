@@ -10,7 +10,7 @@ HTDTは、部屋とホームシアター配置を3D CADのように直接構築�
 
 Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、移動/回転、snap、寸法入力で精密化する。3D navigationはMMB pan、Shift+MMB orbit、wheel zoomを既定とする一般CAD型の操作契約を持つ。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
 
-成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。「概要」は次に行う作業とblockerを示し、「部屋 / 測定 / 最適化」の少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
+成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。「概要」は次に行う作業とblockerを示し、「部屋 / 測定 / 最適化」の少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。さらにO90では、nominal性能だけでなくspeaker/seat位置やaim等の現実的な設置誤差に対する感度・性能分布・feasible fractionを独立objectiveとして扱い、施工誤差に強い候補とのtrade-offをParetoで比較する。
 
 ## 2. 利用条件
 
@@ -37,7 +37,8 @@ global navigationの表示は「概要 / 部屋 / 測定 / 最適化」を基本
 5. REWで手動測定し、text/API出力と原本をHTDTへ取り込む。
 6. scene上の対象からFR・比較を確認する。配置変更は新revisionにする。
 7. 制約内の候補をpreviewし、対応するモデルで予測、必要なら多目的比較する。
-8. 候補を実際に試し、再測定と残差で仮説を評価する。
+8. 必要に応じてO90で設置誤差・aim誤差等へのばらつき耐性を評価し、nominal性能とのtrade-offを比較する。
+9. 候補を実際に試し、再測定と残差で仮説を評価する。
 
 未測定でもCAD編集はできる。高度なCAD操作を覚えないと測定を登録できない設計にもせず、templateとInspectorによる入力経路を用意する。
 
@@ -94,4 +95,4 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 
 native GUIをWindowsのDPI/mouse/keyboardで確認する。headless CIを操作品質の証拠にしない。仕様上の目標、過去のPoC報告、今回の再検証を分ける。
 
-変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済み。現在はIssue #101のR100B solver bakeoffと、Issue #118のUX100〜UX160 UI/UX overhaulを独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
+変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済み。O90 robust/tolerance-aware optimizationはplannedで未実装。現在はIssue #101のR100B solver bakeoff、Issue #118のUX100〜UX160 UI/UX overhaul、O90を独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
