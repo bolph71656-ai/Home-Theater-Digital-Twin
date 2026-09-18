@@ -156,7 +156,7 @@ class CommandRegistry:
         if command.execute is None and command.definition.deep_link is not None:
             if self._deep_link_handler is None:
                 return CommandAvailability.unavailable(
-                    'ワークスペース切替は新しいシェルのrouter接続後に利用できます'
+                    '画面切替の準備が完了すると利用できます'
                 )
         return CommandAvailability.available()
 
