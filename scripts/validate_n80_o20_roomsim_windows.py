@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+import gc
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -246,17 +247,27 @@ def run_gate(base_url: str) -> bool:
         print('N80_O20_APPLIED_STATE_SHA256', attempt.applied_state_sha256, flush=True)
         print('N80_O20_CANDIDATE_FR_SHA256', attempt.response_sha256, flush=True)
 
-    restored = client.get_roomsim_snapshot()
-    restored_state_sha = roomsim_state_sha256(restored)
-    restored_response = client.get_roomsim_frequency_response(
-        mic_position='Main',
-        source_name=source_name,
-    )
-    restored_response_sha = canonical_sha256(asdict(restored_response))
+        # Verify live restore before the temporary persistence database is torn down.
+        # On Windows, sqlite finalizers may otherwise run after TemporaryDirectory
+        # starts deletion and turn a successful Room Simulator transaction into a
+        # harness-only WinError 32.
+        restored = client.get_roomsim_snapshot()
+        restored_state_sha = roomsim_state_sha256(restored)
+        restored_response = client.get_roomsim_frequency_response(
+            mic_position='Main',
+            source_name=source_name,
+        )
+        restored_response_sha = canonical_sha256(asdict(restored_response))
+        candidate_response_sha = attempt.response_sha256
+
+        # Drop repository/result references and collect sqlite finalizers before
+        # TemporaryDirectory removes acceptance.sqlite3.
+        del attempts, attempt, result_repository, search_repository, scene_repository
+        gc.collect()
 
     state_restored = restored_state_sha == baseline_state_sha
     fr_restored = restored_response_sha == baseline_response_sha
-    candidate_fr_changed = attempt.response_sha256 != baseline_response_sha
+    candidate_fr_changed = candidate_response_sha != baseline_response_sha
     print('N80_O20_RESTORED_STATE_SHA256', restored_state_sha, flush=True)
     print('N80_O20_RESTORED_FR_SHA256', restored_response_sha, flush=True)
     print('N80_O20_STATE_RESTORE_MATCH', state_restored, flush=True)
