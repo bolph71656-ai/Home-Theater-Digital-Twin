@@ -321,8 +321,8 @@ class RoomGeometryPanel(QFrame):
     def _opening_selected(self) -> None:
         opening = self._selected_opening()
         enabled = opening is not None
+        self.opening_kind.setEnabled(self.add_opening_button.isEnabled())
         for field in (
-            self.opening_kind,
             self.opening_offset,
             self.opening_width,
             self.opening_sill,
@@ -439,7 +439,8 @@ class RoomGeometryPanel(QFrame):
             return
         length = wall_length(room, wall)
         if length <= 0.12:
-            self._run(lambda: (_ for _ in ()).throw(ValueError("壁が短すぎます")), "")
+            self.notice.setText("壁が短すぎるため開口を追加できません")
+            set_semantic_state(self.notice, SemanticState.ERROR)
             return
         width = min(0.9, max(0.10, length - 0.10))
         kind = str(self.opening_kind.currentData() or "door")
