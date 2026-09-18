@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from threading import Event
 
+from htdt.cad_constraint_models import CadConstraintSet, CadPairDistanceConstraint
+from htdt.cad_constraint_repository import CadConstraintRepository
 from htdt.cad_scene import F1_DOCUMENT_ID, acoustic_reference_position
 from htdt.room_prediction import RoomPredictionController
 from htdt.room_workspace import RoomWorkspaceController
@@ -87,4 +89,53 @@ def test_cancelled_room_prediction_token_cannot_be_persisted(tmp_path) -> None:
     assert prediction.accept_results(spec, results) is None
     assert prediction.prediction_repository.list_results(F1_DOCUMENT_ID) == ()
 
+    prediction.dispose()
+
+
+def test_room_prediction_rejects_result_after_constraint_workspace_changes(tmp_path) -> None:
+    repository, room, prediction, receiver = _controller(tmp_path)
+
+    spec = prediction.prepare_run(receiver)
+    results = prediction._analyze(spec, Event())
+    assert results is not None
+
+    entity_ids = tuple(entity.entity_id for entity in room.committed_document.entities)
+    assert len(entity_ids) >= 2
+    constraints = CadConstraintSet(
+        document_id=F1_DOCUMENT_ID,
+        constraints=(
+            CadPairDistanceConstraint(
+                constraint_id="test-pair-distance",
+                name="テスト離隔",
+                entity_a=entity_ids[0],
+                entity_b=entity_ids[1],
+                min_m=0.10,
+            ),
+        ),
+    )
+    CadConstraintRepository(repository.path).save(constraints)
+
+    assert prediction.accept_results(spec, results) is None
+    assert prediction.prediction_repository.list_results(F1_DOCUMENT_ID) == ()
+
+    prediction.dispose()
+
+
+def test_room_prediction_remains_busy_until_worker_thread_finishes(tmp_path) -> None:
+    _repository, _room, prediction, _receiver = _controller(tmp_path)
+
+    class _RunningThread:
+        @staticmethod
+        def isRunning() -> bool:
+            return True
+
+    prediction._current_job_id = None
+    prediction._tasks["finishing-job"] = (_RunningThread(), object())  # type: ignore[assignment]
+
+    assert prediction.is_busy is True
+    allowed, reason = prediction.before_deactivate()
+    assert allowed is False
+    assert reason is not None and "予測" in reason
+
+    prediction._tasks.clear()
     prediction.dispose()
