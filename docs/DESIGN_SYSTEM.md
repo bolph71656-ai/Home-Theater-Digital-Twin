@@ -111,7 +111,7 @@ app = QApplication(...)
 apply_dark_theme(app)
 ~~~
 
-既存 native launcher はこの integration point を持つ。新 shell へ composition root を移す場合も `apply_dark_theme(app)` を維持する。
+`ui_theme` 自体は import 時に global state を変更しない。native launcher / new shell の composition root が `QApplication` 作成直後に `apply_dark_theme(app)` を一度だけ呼ぶ。
 
 QSS は標準 control に以下を共通定義する。
 
