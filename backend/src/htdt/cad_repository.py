@@ -9,6 +9,7 @@ import sqlite3
 from uuid import uuid4
 
 from .cad_scene import SceneDocument, canonical_scene_json, scene_content_hash
+from .cad_schema import ensure_native_schema
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class SceneRepository:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_native_schema(self.path)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
