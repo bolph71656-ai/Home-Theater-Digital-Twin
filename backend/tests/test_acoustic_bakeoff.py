@@ -272,6 +272,7 @@ def test_passing_observable_cannot_exceed_r100a_tolerance() -> None:
     pyroom = _candidate(candidates, 'pyroomacoustics-v0.10.1-f02b01d')
     run = _run(pyroom.candidate_id, ('geometric-direct-first-reflection-v1',))
     payload = run.model_dump(mode='python')
+    payload['fixture_evidence'] = list(payload['fixture_evidence'])
     payload['fixture_evidence'][0] = _passing_geometric_evidence(
         direct_length_absolute_error=2e-6
     ).model_dump(mode='python')
@@ -286,6 +287,7 @@ def test_passing_fixture_cannot_exceed_r100a_resource_budget() -> None:
     pyroom = _candidate(candidates, 'pyroomacoustics-v0.10.1-f02b01d')
     run = _run(pyroom.candidate_id, ('geometric-direct-first-reflection-v1',))
     payload = run.model_dump(mode='python')
+    payload['fixture_evidence'] = list(payload['fixture_evidence'])
     payload['fixture_evidence'][0] = _passing_geometric_evidence(
         solve_s=61.0
     ).model_dump(mode='python')
