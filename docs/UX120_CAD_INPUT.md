@@ -84,9 +84,11 @@ Ctrl+Z/Ctrl+Y は sceneへ誤発火しない。
 
 `Ctrl+S` は既存の global document command として維持する。
 
-shortcutのavailabilityは focus transition にキャッシュしない。
-QShortcutはfocusだけをgateし、実行直前に `CommandRegistry.execute()` が現在の
-selection / transform state に対する availability provider を再評価する。
+QShortcutはfocusと現在のcommand availabilityの両方でgateする。selection、transform、
+preview等の状態をprogrammaticに変更した後は Room workspace から
+`CadInputController.refresh_shortcuts()` を呼び、shortcut enablementを即時同期する。
+実行時にも `CommandRegistry.execute()` がavailabilityを再評価するため、input layerが
+domain stateの第二authorityにはならない。
 
 ## Axis constraint lifecycle
 
