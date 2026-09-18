@@ -34,7 +34,7 @@ FIXTURE_ID = 'wave-rigid-rectangular-modes-v1'
 PROBE_SCHEMA = 'r100b-platform-probe-artifact-1'
 PROBE_ID = 'pffdtd-python-numba-windows-execution-smoke'
 ADAPTER_ID = 'htdt-r100b-pffdtd-python-smoke'
-ADAPTER_VERSION = '3'
+ADAPTER_VERSION = '4'
 FMAX_HZ = 100.0
 PPW = 7.5
 DURATION_S = 0.03
@@ -127,6 +127,21 @@ def _apply_compatibility_patches(upstream_root: Path) -> dict[str, object]:
                 '            Ntris_vox_shm.unlink()\n\n'
                 '            N_tribox_tests_shm.close()\n'
                 '            N_tribox_tests_shm.unlink()'
+            ),
+        },
+        {
+            'patch_id': 'python312-vox-scene-shared-memory-view-cleanup-v1',
+            'path': 'python/voxelizer/vox_scene.py',
+            'before': (
+                '        #clean up shared memory\n'
+                '        Nb_proc_shm.close()\n'
+                '        Nb_proc_shm.unlink()'
+            ),
+            'after': (
+                '        #clean up shared memory\n'
+                '        del Nb_proc\n'
+                '        Nb_proc_shm.close()\n'
+                '        Nb_proc_shm.unlink()'
             ),
         },
     )
@@ -456,7 +471,7 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         'diagnostics': [
             'The smoke uses R100A geometry/source/receiver authority but does not evaluate the analytical eigenfrequency observables.',
             'PFFDTD derives its simulation sound speed from temperature/humidity; the computed value is recorded instead of being silently treated as the R100A 343 m/s comparison authority.',
-            'Two exact-source-checked runtime compatibility patches are applied and recorded; no FDTD or voxel numerical algorithm is changed.',
+            'Three exact-source-checked runtime compatibility patches are applied and recorded; no FDTD or voxel numerical algorithm is changed.',
             'Successful source-checkout execution is not a Windows product packaging PASS and is not a CPU correctness baseline PASS.',
         ],
     }
