@@ -5,7 +5,7 @@
 
 ## Native CAD — 現在地
 
-**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100AをPR #110 / merge `1714c078d4063f59da93f0d733171547f7eb486d` でmain反映済み。R100Bは `feat/issue-101-r100b-bakeoff` でversion-pinned candidate authority、evidence/decision schema、fail-closed selection gate、CI preflightを実装中。数値candidate runとsolver selectionは未完了。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
+**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100AをPR #110 / merge `1714c078d4063f59da93f0d733171547f7eb486d` でmain反映済み。R100B authority基盤はPR #111 / merge `7be0127fb352c7073d4a686f2e77cc22bc06eac3` でmain反映済み。現在は `feat/issue-101-r100b-observation-probe` でraw observation共通判定器とpyroomacoustics v0.10.1 Windows direct/first-reflection probeを実装中。production solver selectionは未完了。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
 
 N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
@@ -35,7 +35,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
 | R100A tracking | PR #110 merged `1714c078d4063f59da93f0d733171547f7eb486d`。CI #582 / Windows Release Artifact #109 PASS。solver-neutral authority + 10 canonical fixturesをmain反映済み |
-| R100B tracking | `feat/issue-101-r100b-bakeoff` — pinned PFFDTD/MFEM/pyroomacoustics candidate authority、run evidence/decision gate、repeatable preflightを実装中。numerical run/ADRは未完了 |
+| R100B tracking | PR #111 merged `7be0127fb352c7073d4a686f2e77cc22bc06eac3` / CI #588 PASS。`feat/issue-101-r100b-observation-probe` でraw observation evaluator + pyroomacoustics Windows reference probe実装中。ADRは未完了 |
 | 次工程 | **R100Bのcommon adapter/evidence pathをGitHub Actions上で検証し、PFFDTD Windows reuse/port probe、MFEM independent reference、pyroomacoustics geometric referenceを同一R100A authorityで実行する。hard gate前にproduction solverを選定しない。Issue #83 owned-room gateも別trackで未完了** |
 
 ## R100B — solver bakeoff authority / implementation in progress
@@ -45,7 +45,10 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 - `.github/workflows/ci.yml`: Windows CIでR100B authority preflightを実行。
 - `backend/tests/test_acoustic_bakeoff.py`: source pin、coverage gap、semantic hash、unknown fixture、capability mismatch、hard-gate selection block、reference-only selection blockを検証。
 - 現時点では `wave-portal-split-room-v1` と `hybrid-overlap-continuity-v1` は意図的にcandidate未割当。未実装capabilityを黙ってclaimしない。
-- 数値solver run、runtime/RAM実測、Windows candidate package probe、production stack ADRは未完了。R100B完了とは扱わない。
+- PR #111でcandidate/run/selection authorityはmain反映済み（CI #588 PASS）。
+- `backend/src/htdt/acoustic_bakeoff_observation.py`: backend raw sample→R100A expected sample/tolerance比較を中央化。scalar/complex/vectorのabsolute/relative/phase errorを共通評価し、unsampled observableはspecialized evaluator必須。
+- `scripts/run_r100b_pyroomacoustics_probe.py` + dedicated Actions workflow: official v0.10.1 Windows wheel SHA-256を記録し、direct/first-reflection fixtureをimage-source raw observationから評価する。wheel不可はblocked evidence化。
+- PFFDTD/MFEM数値run、pyroom stochastic convergence、production stack ADRは未完了。R100B完了とは扱わない。
 - RDCは使用しない。
 
 ## R100A — solver-neutral benchmark authority / merged
