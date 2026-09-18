@@ -258,6 +258,8 @@ class _ActiveOperation:
     thread: QThread
     worker: '_OperationWorker'
     lifecycle_mode: str
+    result: object | None = None
+    failure_payload: tuple[DataOperationPhase, Exception] | None = None
 
 
 class _OperationWorker(QObject):
@@ -433,10 +435,11 @@ class DataManagementController(QObject):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self.progress_changed)
-        worker.succeeded.connect(self._operation_succeeded)
-        worker.failed.connect(self._operation_failed)
+        worker.succeeded.connect(self._capture_success)
+        worker.failed.connect(self._capture_failure)
         worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._thread_finished)
+        thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
 
         self._active = _ActiveOperation(
@@ -451,11 +454,30 @@ class DataManagementController(QObject):
         return operation_id
 
     @Slot(object)
-    def _operation_succeeded(self, result: object) -> None:
+    def _capture_success(self, result: object) -> None:
+        active = self._active
+        if active is not None:
+            active.result = result
+
+    @Slot(object)
+    def _capture_failure(self, payload: object) -> None:
         active = self._active
         if active is None:
             return
+        phase, exc = payload
+        active.failure_payload = (phase, exc)
 
+    @Slot()
+    def _thread_finished(self) -> None:
+        active = self._active
+        if active is None:
+            return
+        if active.failure_payload is not None:
+            self._complete_failure(active)
+        else:
+            self._complete_success(active)
+
+    def _complete_success(self, active: _ActiveOperation) -> None:
         lifecycle_error: Exception | None = None
         try:
             if active.lifecycle_mode == 'backup':
@@ -473,14 +495,20 @@ class DataManagementController(QObject):
         except Exception as exc:
             lifecycle_error = exc
 
+        result = active.result
         self._finish_active()
         if lifecycle_error is not None:
+            message = (
+                'データは復元されましたが、画面の再読み込みに失敗しました'
+                if active.kind is DataOperationKind.RESTORE
+                else 'バックアップは作成されましたが、編集状態の復帰に失敗しました'
+            )
             self.operation_failed.emit(
                 DataOperationFailure(
                     operation_id=active.operation_id,
                     kind=active.kind,
                     phase=DataOperationPhase.RELOADING,
-                    message_ja='データは復元されましたが、画面の再読み込みに失敗しました',
+                    message_ja=message,
                     detail=str(lifecycle_error),
                     exception_type=type(lifecycle_error).__name__,
                     restart_required=self.lifecycle.restart_required,
@@ -496,12 +524,11 @@ class DataManagementController(QObject):
         else:
             self.restore_completed.emit(result)
 
-    @Slot(object)
-    def _operation_failed(self, payload: object) -> None:
-        active = self._active
-        if active is None:
-            return
-        phase, exc = payload
+    def _complete_failure(self, active: _ActiveOperation) -> None:
+        phase, exc = active.failure_payload or (
+            DataOperationPhase.PREPARING,
+            RuntimeError('data management worker stopped without a result'),
+        )
         restart_required = False
         lifecycle_detail = ''
         try:
