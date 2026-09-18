@@ -661,7 +661,7 @@ class OptimizationWorkflowController(
         self.search_binding_label = QLabel("保存済みの部屋状態から探索設定を作成します")
         self.search_binding_label.setWordWrap(True)
         self.search_name_field = QLineEdit()
-        self.search_name_field.setPlaceholderText("例: FL 前後 sweep")
+        self.search_name_field.setPlaceholderText("例: FL 前後移動")
         self.search_entity_combo = QComboBox()
         self.search_entity_combo.currentIndexChanged.connect(self._seed_search_axis_range)
         self.search_axis_combo = QComboBox()
