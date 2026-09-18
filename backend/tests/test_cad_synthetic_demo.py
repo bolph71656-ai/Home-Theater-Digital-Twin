@@ -6,6 +6,8 @@ import pytest
 
 from htdt.cad_adaptive_repository import CadAdaptivePlanRepository
 from htdt.cad_adaptive_service import CadAdaptivePlannerService
+from htdt.cad_adaptive_extended_repository import CadAdaptiveExtendedRepository
+from htdt.cad_adaptive_extended_service import CadAdaptiveExtendedPlannerService
 from htdt.cad_extended_search import generate_extended_candidates
 from htdt.cad_extended_search_repository import CadExtendedSearchRepository
 from htdt.cad_measurement_repository import CadMeasurementRepository
@@ -34,7 +36,17 @@ def _repositories(scene_repository):
     )
     adaptive = CadAdaptivePlanRepository(search, validation)
     extended = CadExtendedSearchRepository(search, validation)
-    return search, measurements, roomsim, objectives, validation, adaptive, extended
+    adaptive_extended = CadAdaptiveExtendedRepository(extended, validation)
+    return (
+        search,
+        measurements,
+        roomsim,
+        objectives,
+        validation,
+        adaptive,
+        extended,
+        adaptive_extended,
+    )
 
 
 def test_synthetic_demo_persists_o10_through_o80_without_owned_room_promotion(tmp_path):
@@ -51,6 +63,7 @@ def test_synthetic_demo_persists_o10_through_o80_without_owned_room_promotion(tm
         validation_repository,
         adaptive_repository,
         extended_repository,
+        adaptive_extended_repository,
     ) = _repositories(scene_repository)
 
     spec = search.get(result.search_spec_id)
@@ -123,6 +136,43 @@ def test_synthetic_demo_persists_o10_through_o80_without_owned_room_promotion(tm
         == result.extended_candidate_set_sha256
     )
 
+    adaptive_extended_plan = adaptive_extended_repository.get_plan(
+        result.adaptive_extended_plan_id
+    )
+    assert adaptive_extended_plan is not None
+    assert adaptive_extended_plan.execution_scope == 'development_synthetic'
+    assert adaptive_extended_plan.source_evidence_scope == 'synthetic_fixture'
+    assert adaptive_extended_plan.selected_candidate_id == (
+        result.adaptive_extended_selected_candidate_id
+    )
+    feature_ids = tuple(
+        feature.feature_id for feature in adaptive_extended_plan.features
+    )
+    assert feature_ids == (
+        'base:synthetic-fl:x',
+        'extended:synthetic-fl:aim_yaw_deg',
+    )
+    assert tuple(feature.unit for feature in adaptive_extended_plan.features) == (
+        'm',
+        'deg',
+    )
+    assert tuple(
+        feature.scale for feature in adaptive_extended_plan.features
+    ) == pytest.approx((1.0, 30.0))
+    measured_ids = set(
+        adaptive_extended_plan.excluded_measured_candidate_ids
+    )
+    assert measured_ids
+    assert not measured_ids.intersection(
+        proposal.candidate_id
+        for proposal in adaptive_extended_plan.proposals
+    )
+    observations = adaptive_extended_repository.list_observations(
+        result.extended_search_id
+    )
+    assert len(observations) == 18
+    assert sum(item.measured_value is not None for item in observations) == 4
+
     service = CadAdaptivePlannerService(
         search,
         objectives,
@@ -134,6 +184,21 @@ def test_synthetic_demo_persists_o10_through_o80_without_owned_room_promotion(tm
         match='production adaptive planning requires',
     ):
         service.build_and_save(
+            validation_id=result.validation_id,
+            execution_scope='production_owned_room',
+        )
+
+    adaptive_extended_service = CadAdaptiveExtendedPlannerService(
+        extended_repository,
+        validation_repository,
+        adaptive_extended_repository,
+    )
+    with pytest.raises(
+        ValueError,
+        match='production adaptive planning requires',
+    ):
+        adaptive_extended_service.build_and_save(
+            extended_search_id=result.extended_search_id,
             validation_id=result.validation_id,
             execution_scope='production_owned_room',
         )
