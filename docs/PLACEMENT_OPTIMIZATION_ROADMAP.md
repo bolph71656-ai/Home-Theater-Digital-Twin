@@ -83,8 +83,8 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 | O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | **ソフトウェア実装済み**。objective vectorを保持したPareto集合、semantic snapshot de-dup、native比較UIを実装 |
 | O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | **ソフトウェア実装・owned-Windows受入済み**。candidate→exact applied SceneRevision→Measurement Plan→N60 measured evidenceをappend-only追跡 |
 | O60 | Model Validation | 保留配置、感度分析、予測対実測の比較 | **software authority実装済み / real-data gate未通過**。実室ではmeasurement前のValidation Campaign preregistrationを必須とし、calibration/holdout、共通target response、objective条件、sensitivity、repeatability、candidate separation、applicabilityを固定する。post-hoc splitやcampaign以前のmeasurementでは推薦gateを開かない |
-| O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **software実装中 / synthetic development lane有効**。O60 calibration残差のobjective別GP補正と不確実性から次測定候補を決定し、SearchSpec/candidate-set/ValidationRecordへimmutable保存する。`development_synthetic`は完全PASS synthetic fixtureを許可するがproduction gateを開かない。`production_owned_room`はcurrent campaign-backed eligible ValidationRecordを必須とする |
-| O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | **software実装中 / synthetic toe-in lane実装済み**。既存O10が扱う複数entity XYZ/高さは再実装せず、feasible base candidateへmodel-dependent parameterを追加する。最初は`aim_yaw_deg`。明示capabilityが必須で、REW Room Simulatorへtoe-in capabilityを付与することは拒否する。synthetic directional fixtureでUI/保存/apply/Undoまで受入し、owned-room有効化は方向性modelの独立O60 gate後だけ |
+| O70 | Adaptive Planner | surrogate model、uncertainty、次測定候補の選択 | **software実装済み / synthetic acceptance PASS**。O60 calibration残差のobjective別GP補正と不確実性から次測定候補を決定し、SearchSpec/candidate-set/ValidationRecordへimmutable保存する。`development_synthetic`は完全PASS synthetic fixtureを許可するがproduction gateを開かない。`production_owned_room`はcurrent campaign-backed eligible ValidationRecordを必須とする |
+| O80 | Extended Search | 多席、多チャンネル、toe-in、高さ等 | **software実装済み / synthetic toe-in acceptance PASS**。既存O10が扱う複数entity XYZ/高さは再実装せず、feasible base candidateへmodel-dependent parameterを追加する。最初は`aim_yaw_deg`。明示capabilityが必須で、REW Room Simulatorへtoe-in capabilityを付与することは拒否する。synthetic directional fixtureでUI/保存/apply/Undoまで受入し、owned-room有効化は方向性modelの独立O60 gate後だけ |
 
 O10以降の拡張は安定個人版の必須条件にしない。まずCAD基盤を成立させ、その後はCAD-firstロードマップのN50/N60/N70/N80の依存に従って進める。
 
@@ -162,6 +162,8 @@ prediction/measured objectiveはcampaignに保存した同一target response・e
 O70の `development_synthetic` は、O60の唯一のstop reasonがowned-room evidence不足であるsynthetic ValidationRecordだけを入力にできる。production側の `production_owned_room` は従来どおりcampaign-backed `eligible` recordを要求する。この2経路を同じフラグや暗黙fallbackで混ぜない。
 
 synthetic laneの目的はUI、保存、stale guard、adaptive algorithm、extended search、package/CIを最後まで完成させることであり、実室model妥当性の主張ではない。
+
+2026-09-18、PR #92/#93/#94でこのsoftware-completion laneを完了した。final authorityはPR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8`、CI #548 / run `35313405578` PASS、Windows Release Artifact #93 / run `35313405629` PASS。以後の未完了事項はIssue #83の実室owned-room evidence gateであり、software実装不足ではない。
 
 ## 9. 適応探索の導入条件
 
