@@ -242,42 +242,71 @@ def materialize_system_variant(
     """Derive the exact proposed scene without mutating the baseline revision."""
 
     _validate_baseline(variant, baseline)
-    entities = list(baseline.document.entities)
-    by_id = {entity.entity_id: entity for entity in entities}
+    baseline_by_id = {
+        entity.entity_id: entity
+        for entity in baseline.document.entities
+    }
+    baseline_index = {
+        entity.entity_id: index
+        for index, entity in enumerate(baseline.document.entities)
+    }
+    removed: set[str] = set()
+    replacements: dict[str, SceneEntity] = {}
 
     for change in variant.diff:
         if change.kind == 'add':
             continue
-        existing = by_id.get(change.entity_id)
+        existing = baseline_by_id.get(change.entity_id)
         if existing is None:
             raise ValueError(f'variant diff references missing baseline entity: {change.entity_id}')
         if existing != change.before_entity:
             raise ValueError(f'variant diff before_entity mismatch: {change.entity_id}')
-        index = entities.index(existing)
-        if index != change.insertion_index:
+        if baseline_index[change.entity_id] != change.insertion_index:
             raise ValueError(f'variant diff baseline index mismatch: {change.entity_id}')
         if change.kind == 'remove':
-            entities.pop(index)
-            del by_id[change.entity_id]
+            removed.add(change.entity_id)
         else:
             assert change.after_entity is not None
-            entities[index] = change.after_entity
-            by_id[change.entity_id] = change.after_entity
+            replacements[change.entity_id] = change.after_entity
+
+    entities = [
+        replacements.get(entity.entity_id, entity)
+        for entity in baseline.document.entities
+        if entity.entity_id not in removed
+    ]
+    final_ids = {entity.entity_id for entity in entities}
 
     for change in variant.diff:
         if change.kind != 'add':
             continue
-        if change.entity_id in by_id:
+        if change.entity_id in final_ids:
             raise ValueError(f'variant add duplicates entity_id: {change.entity_id}')
         if change.after_entity is None:
             raise ValueError('variant add is missing after_entity')
         if change.insertion_index != len(entities):
             raise ValueError('variant add insertion index no longer matches exact derivation')
         entities.append(change.after_entity)
-        by_id[change.entity_id] = change.after_entity
+        final_ids.add(change.entity_id)
+
+    proposed_by_id = {
+        item.entity.entity_id: item.entity
+        for item in variant.proposed_entities
+    }
+    final_by_id = {entity.entity_id: entity for entity in entities}
+    for entity_id, proposed in proposed_by_id.items():
+        if final_by_id.get(entity_id) != proposed:
+            raise ValueError(f'proposed entity does not match exact variant diff: {entity_id}')
+
+    final_speaker_ids = {
+        entity.entity_id
+        for entity in entities
+        if entity.kind == 'speaker'
+    }
+    lifecycle_ids = {item.entity_id for item in variant.entity_lifecycle}
+    if lifecycle_ids != final_speaker_ids:
+        raise ValueError('SystemVariant lifecycle bindings must cover the exact final speaker set')
 
     return baseline.document.model_copy(update={'entities': tuple(entities)})
-
 
 def build_system_variant(
     *,
