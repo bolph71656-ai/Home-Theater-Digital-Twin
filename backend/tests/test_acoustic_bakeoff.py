@@ -233,6 +233,7 @@ def _passing_geometric_evidence(*, direct_length_absolute_error: float = 0.0, so
         solve_s=solve_s,
         postprocess_s=1.0,
         peak_ram_mb=128.0,
+        disk_mb=2.0,
         output_mb=1.0,
         observables=(
             BakeoffObservableEvidence(
@@ -294,4 +295,19 @@ def test_passing_fixture_cannot_exceed_r100a_resource_budget() -> None:
 
     altered = BakeoffRun.model_validate(payload)
     with pytest.raises(ValueError, match='exceeds resource budget'):
+        validate_bakeoff_run(benchmark, candidates, altered)
+
+
+def test_passing_fixture_cannot_exceed_r100a_disk_budget() -> None:
+    benchmark, candidates = _authorities()
+    pyroom = _candidate(candidates, 'pyroomacoustics-v0.10.1-f02b01d')
+    run = _run(pyroom.candidate_id, ('geometric-direct-first-reflection-v1',))
+    payload = run.model_dump(mode='python')
+    payload['fixture_evidence'] = list(payload['fixture_evidence'])
+    evidence = _passing_geometric_evidence().model_dump(mode='python')
+    evidence['disk_mb'] = 2049.0
+    payload['fixture_evidence'][0] = evidence
+
+    altered = BakeoffRun.model_validate(payload)
+    with pytest.raises(ValueError, match='disk_mb'):
         validate_bakeoff_run(benchmark, candidates, altered)
