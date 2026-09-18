@@ -606,7 +606,7 @@
           "tolerance": {
             "absolute": 0.02,
             "relative": 0.02,
-            "phase_deg": 0,
+            "phase_deg": null,
             "null_mask_below_db": null,
             "statistical_stddev_max": null,
             "minimum_difference": null
@@ -628,7 +628,8 @@
       "random_seed": null,
       "notes": [
         "Refinement parameter and interpolation location must be recorded by the adapter.",
-        "Finite-time/FR postprocessing must use the declared source normalization and time reference."
+        "Finite-time/FR postprocessing must use the declared source normalization and time reference.",
+        "Complex field convergence uses complex RMS absolute/relative error; phase is not double-scored as a separate zero-degree tolerance."
       ]
     },
     {
