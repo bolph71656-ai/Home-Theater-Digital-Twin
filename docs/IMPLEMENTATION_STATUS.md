@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **O60Eでowned-room validation campaignを測定前に事前登録し、実室evidenceを収集する。O70/O80はeligible campaign-backed ValidationRecord成立までdisabled** |
+| 次工程 | **実室でpreregistered O60E campaignを作成し、human-operated配置変更/REW測定でowned-room evidenceを収集する。O70/O80はeligible campaign-backed ValidationRecord成立までdisabled** |
 
 ## N90 — stable Windows release / A15 PASS
 
@@ -220,18 +220,25 @@ PR #76 final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3` はCI #427 / run `3
 このCI PASSは算法・authority実装の検証であり、REW Room Simulator等の特定modelが実室で妥当と証明されたことを意味しない。現時点ではowned-roomのcalibration/holdout/repeatability evidenceが無いため、O70 recommendation gateはdisabled。
 
 
-## O60E — owned-room validation campaign / 実装中
+## O60E — owned-room validation campaign / software authority完了
 
-Issue #81 / PR #82で、O60 real-data gateを実測後の恣意的splitから保護するpreregistration authorityを追加中。
+Issue #81 / PR #82。product head `e3bdd111cfb2ed0487cdf98d93adfa58e759532b` は
+CI #512 / run `35305119035` PASS。O60 real-data gateを実測後の恣意的splitから保護する
+preregistration authorityとnative workflowを実装した。実室campaignそのものはまだ実施していない。
 
 - calibration / holdout candidateを測定前にimmutable固定する。
 - exact SearchSpec / candidate-set SHA / model version / target response / evaluation band / thresholdをcampaign hashへ含める。
+- stale SearchSpec/current constraint mismatch、SearchSpec SHA mismatch、candidate-set SHA mismatchをfail-closedする。
 - sensitivity / repeatability / candidate separation / applicability requirementsを事前固定する。
 - 対象candidateにmeasured Measurement Planが存在した後のcampaign新規登録を拒否する。
 - campaign作成時刻より前にcapturedされたmeasurementをowned-room validation evidenceへ使わない。
+- REW APIのtimezoneなしlegacy日時はhost local timezone ruleでoffset-aware ISOへ正規化し、raw値/解釈元をprovenanceへ残す。
+- generic N60 importはvalidation evidenceへ自動昇格しない。明示的なCampaign REW読込だけが
+  `measured + validation_scope=owned_room + validation_campaign_id` を保存する。
 - O20 prediction / O50-N60 measured evidenceから、campaignと完全一致するO30 objective vectorを同じtarget responseでmaterializeする。
 - readinessはmissing/ambiguous evidenceをcandidate単位で表示し、自動測定や自動推薦を行わない。
+- applicabilityはgeometry/band/routingを未確認/PASS/FAILで明示し、PASSには確認根拠を必須とする。
 - owned-room ValidationRecordはcampaign ID/SHAへbindingし、repository saveとO70 entry取得時に再検証する。
-- O70/O80はgenuine owned-room campaignがO60全gateを通過するまでdisabledを維持する。
+- synthetic fixtureはeligibleにならず、O70/O80はgenuine owned-room campaignがO60全gateを通過するまでdisabledを維持する。
 
-N90 stable 0.1.0のacceptanceは完了済みで、O60EのためにN90実機gateを再実行しない。
+N90 stable 0.1.0のacceptanceは完了済みで、O60E software authorityのためにRDC/N90実機gateは再実行していない。
