@@ -149,6 +149,7 @@ def _fixture(tmp_path):
     objective_repo = CadObjectiveRepository(scene_repo, search_repo)
     objective_samples = []
     for index, candidate in enumerate(candidates, start=1):
+        split = 'calibration' if index == 3 else 'holdout'
         for evidence_class, value, prefix in (
             ('predicted', float(index), 'pred-eval'),
             ('measured', float(index) + 0.1, 'meas-eval'),
@@ -189,7 +190,7 @@ def _fixture(tmp_path):
                 measured_id = evaluation.evaluation_id
                 objective_samples.append(CadObjectiveValidationSample(
                     candidate_id=candidate.candidate_id,
-                    split='holdout',
+                    split=split,
                     objective_id='response.shape_rms_db',
                     unit='dB',
                     predicted_evaluation_id=predicted_id,
@@ -255,7 +256,7 @@ def _fixture(tmp_path):
         response_samples=tuple(
             (
                 candidate_id,
-                'holdout',
+                'calibration' if index == 2 else 'holdout',
                 f'pred:{candidate_id}',
                 f'meas:{candidate_id}',
                 _fr(float(index) * 2.0),
