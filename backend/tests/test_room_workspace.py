@@ -8,7 +8,8 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QDockWidget, QFrame
 
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import F1_DOCUMENT_ID
+from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex
+from htdt.room_geometry_input import RoomGeometryInputController
 from htdt.room_viewport import RoomOverlayState
 from htdt.room_workspace import (
     RoomWorkspace,
@@ -45,6 +46,24 @@ class FakeRoomViewport(QFrame):
 
     def focus_entity(self, entity_id: str) -> None:
         self.focused.append(entity_id)
+
+
+class _FakePlotter:
+    def remove_actor(self, *_args, **_kwargs) -> None:
+        pass
+
+    def render(self) -> None:
+        pass
+
+    def add_mesh(self, *_args, **_kwargs):
+        return None
+
+
+class GeometryFakeViewport(FakeRoomViewport):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.interactor = self
+        self.plotter = _FakePlotter()
 
 
 def test_room_controller_reuses_repository_working_document_and_recovery(tmp_path) -> None:
@@ -175,6 +194,45 @@ def test_room_workspace_mount_matches_ux110_shell_contract(tmp_path) -> None:
     assert mount.before_deactivate is not None
     assert mount.before_deactivate() == (True, None)
 
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+def test_room_geometry_sketch_commits_through_working_document_and_recovery(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: GeometryFakeViewport(parent),
+    )
+    original = repository.latest(F1_DOCUMENT_ID)
+    assert original is not None
+    original_room = workspace.controller.document.room
+
+    geometry = RoomGeometryInputController(workspace, workspace.viewport)
+    workspace.attach_geometry_input(geometry)
+    geometry.mode = "sketch"
+    geometry._sketch = [
+        RoomVertex(vertex_id="v1", x_m=0.0, y_m=0.0),
+        RoomVertex(vertex_id="v2", x_m=5.0, y_m=0.0),
+        RoomVertex(vertex_id="v3", x_m=5.0, y_m=3.0),
+        RoomVertex(vertex_id="v4", x_m=0.0, y_m=3.0),
+    ]
+
+    assert geometry.commit() is True
+    assert workspace.controller.is_dirty
+    assert workspace.controller.document.room != original_room
+    assert repository.latest(F1_DOCUMENT_ID).revision_id == original.revision_id
+    recovery = repository.recovery(F1_DOCUMENT_ID)
+    assert recovery is not None
+    assert recovery.document.room == workspace.controller.document.room
+
+    assert workspace.undo() is True
+    assert workspace.controller.document.room == original_room
+
+    geometry.dispose()
     workspace.close()
     workspace.deleteLater()
     app.processEvents()
