@@ -575,3 +575,19 @@ def test_o90b_uses_o40_for_separate_nominal_and_sampled_worst_pareto() -> None:
     )
     assert result.non_dominated_candidate_ids == ('a', 'b')
     assert result.dominated_by == {'a': (), 'b': ()}
+
+
+def test_o90b_requires_nominal_and_both_corner_anchors(tmp_path) -> None:
+    from htdt.optimization_robustness_multidimensional import (
+        derive_multidimensional_robustness_spec,
+    )
+
+    _revision, _constraints, _search_spec, _nominal, base_spec = _fixture(tmp_path)
+
+    with pytest.raises(ValueError, match='at least three samples'):
+        derive_multidimensional_robustness_spec(
+            base_spec,
+            sample_count=2,
+            seed=1,
+            created_at_utc='2026-09-19T00:02:00+00:00',
+        )
