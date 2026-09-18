@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -30,7 +31,7 @@ class CadRoomSimRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_roomsim_batch_specs (
@@ -93,7 +94,7 @@ class CadRoomSimRepository:
         if search_spec.search_spec_sha256 != spec.search_spec_sha256:
             raise ValueError('Room Simulator batch SearchSpec hash mismatch')
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''INSERT INTO cad_roomsim_batch_specs(
                     batch_run_id, document_id, scene_revision_id, scene_content_hash,
@@ -115,7 +116,7 @@ class CadRoomSimRepository:
             )
 
     def get_batch_spec(self, batch_run_id: str) -> CadRoomSimBatchSpec | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_roomsim_batch_specs WHERE batch_run_id=?',
                 (batch_run_id,),
@@ -123,7 +124,7 @@ class CadRoomSimRepository:
         return None if row is None else CadRoomSimBatchSpec.model_validate_json(row['payload_json'])
 
     def list_batch_specs(self, search_spec_id: str) -> tuple[CadRoomSimBatchSpec, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_roomsim_batch_specs WHERE search_spec_id=? ORDER BY seq ASC',
                 (search_spec_id,),
@@ -147,7 +148,7 @@ class CadRoomSimRepository:
         if any(item.status == 'completed' for item in prior):
             raise ValueError('Room Simulator candidate already has a completed attempt')
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''INSERT INTO cad_roomsim_candidate_attempts(
                     attempt_id, batch_run_id, candidate_id, attempt_index, status,
@@ -166,7 +167,7 @@ class CadRoomSimRepository:
             )
 
     def get_attempt(self, attempt_id: str) -> CadRoomSimCandidateAttempt | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_roomsim_candidate_attempts WHERE attempt_id=?',
                 (attempt_id,),
@@ -174,7 +175,7 @@ class CadRoomSimRepository:
         return None if row is None else CadRoomSimCandidateAttempt.model_validate_json(row['payload_json'])
 
     def list_attempts(self, batch_run_id: str) -> tuple[CadRoomSimCandidateAttempt, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_roomsim_candidate_attempts '
                 'WHERE batch_run_id=? ORDER BY seq ASC',
@@ -187,7 +188,7 @@ class CadRoomSimRepository:
         batch_run_id: str,
         candidate_id: str,
     ) -> tuple[CadRoomSimCandidateAttempt, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT payload_json FROM cad_roomsim_candidate_attempts '
                 'WHERE batch_run_id=? AND candidate_id=? ORDER BY attempt_index ASC',
@@ -196,7 +197,7 @@ class CadRoomSimRepository:
         return tuple(CadRoomSimCandidateAttempt.model_validate_json(row['payload_json']) for row in rows)
 
     def completed_candidate_ids(self, batch_run_id: str) -> frozenset[str]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT DISTINCT candidate_id FROM cad_roomsim_candidate_attempts "
                 "WHERE batch_run_id=? AND status='completed'",
