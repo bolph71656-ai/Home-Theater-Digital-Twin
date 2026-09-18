@@ -1,0 +1,163 @@
+name: Windows Release Artifact
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "scripts/build-native.ps1"
+      - "scripts/build-installer.ps1"
+      - "scripts/native_entry.py"
+      - "installer/**"
+      - ".github/workflows/windows-release.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build locked native package
+        shell: pwsh
+        run: |
+          .\scripts\build-native.ps1 -OutputDir "$env:RUNNER_TEMP\htdt-package"
+
+      - name: Smoke packaged maintenance CLI
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP "htdt-package\HTDT\HTDT.exe"
+          if (-not (Test-Path $exe)) { throw "Missing packaged executable: $exe" }
+          $version = Start-Process -FilePath $exe -ArgumentList @("--version") -Wait -PassThru
+          if ($version.ExitCode -ne 0) {
+            throw "Packaged --version failed with exit code $($version.ExitCode)"
+          }
+
+          $dataRoot = Join-Path $env:RUNNER_TEMP "htdt-maintenance-data"
+          $database = Join-Path $dataRoot "cad-scenes.sqlite3"
+          $backup = Join-Path $env:RUNNER_TEMP "htdt-maintenance.htdt-backup"
+          New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
+          @'
+          import sqlite3, sys
+          path = sys.argv[1]
+          with sqlite3.connect(path) as connection:
+              connection.execute("CREATE TABLE ci_marker(value TEXT NOT NULL)")
+              connection.execute("INSERT INTO ci_marker(value) VALUES ('baseline')")
+          '@ | python - $database
+
+          $backupProcess = Start-Process -FilePath $exe -ArgumentList @(
+            "--data-dir", $dataRoot,
+            "--backup", $backup
+          ) -Wait -PassThru
+          if ($backupProcess.ExitCode -ne 0 -or -not (Test-Path $backup)) {
+            throw "Packaged backup failed with exit code $($backupProcess.ExitCode)"
+          }
+
+          @'
+          import sqlite3, sys
+          with sqlite3.connect(sys.argv[1]) as connection:
+              connection.execute("UPDATE ci_marker SET value='modified'")
+          '@ | python - $database
+
+          $restoreProcess = Start-Process -FilePath $exe -ArgumentList @(
+            "--data-dir", $dataRoot,
+            "--restore", $backup
+          ) -Wait -PassThru
+          if ($restoreProcess.ExitCode -ne 0) {
+            throw "Packaged restore failed with exit code $($restoreProcess.ExitCode)"
+          }
+
+          $restored = @'
+          import sqlite3, sys
+          with sqlite3.connect(sys.argv[1]) as connection:
+              print(connection.execute("SELECT value FROM ci_marker").fetchone()[0])
+          '@ | python - $database
+          if ($restored.Trim() -ne "baseline") {
+            throw "Packaged restore did not recover the baseline database"
+          }
+
+      - name: Install pinned Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --version=6.7.1 --no-progress -y
+          if ($LASTEXITCODE -notin @(0, 1641, 3010)) {
+            throw "Chocolatey Inno Setup install failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Build per-user installer
+        shell: pwsh
+        run: |
+          .\scripts\build-installer.ps1 `
+            -PackageDir "$env:RUNNER_TEMP\htdt-package\HTDT" `
+            -OutputDir "$env:RUNNER_TEMP\htdt-installer"
+
+      - name: Smoke install and uninstall without deleting user data
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "$env:RUNNER_TEMP\htdt-installer\HTDT-Setup-*.exe" |
+            Select-Object -First 1
+          if (-not $installer) { throw "Installer artifact missing" }
+
+          $installRoot = Join-Path $env:RUNNER_TEMP "HTDT-Installed"
+          $dataRoot = Join-Path $env:LOCALAPPDATA "HomeTheaterDigitalTwin"
+          New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
+          $sentinel = Join-Path $dataRoot "n90-ci-user-data-sentinel.txt"
+          Set-Content -Path $sentinel -Value "retain-me" -NoNewline
+
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/DIR=$installRoot"
+          ) -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Installer failed with exit code $($install.ExitCode)"
+          }
+
+          $exe = Join-Path $installRoot "HTDT\HTDT.exe"
+          if (-not (Test-Path $exe)) { throw "Installed executable missing: $exe" }
+          $version = Start-Process -FilePath $exe -ArgumentList @("--version") -Wait -PassThru
+          if ($version.ExitCode -ne 0) {
+            throw "Installed --version failed with exit code $($version.ExitCode)"
+          }
+
+          $uninstaller = Join-Path $installRoot "unins000.exe"
+          if (-not (Test-Path $uninstaller)) { throw "Uninstaller missing: $uninstaller" }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART"
+          ) -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "Uninstall failed with exit code $($uninstall.ExitCode)"
+          }
+          if (Test-Path $exe) {
+            throw "Application executable remains after uninstall"
+          }
+          if (-not (Test-Path $sentinel)) {
+            throw "User data was removed by uninstall"
+          }
+          Remove-Item -Recurse -Force $dataRoot
+
+      - name: Upload native package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HTDT-windows-package
+          path: ${{ runner.temp }}\htdt-package\HTDT
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: HTDT-windows-installer
+          path: ${{ runner.temp }}\htdt-installer\HTDT-Setup-*.exe
+          if-no-files-found: error

@@ -6,12 +6,14 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from . import __version__
 from .cad_composition import CadEditorWindow
 from .cad_repository import SceneRepository
 from .cad_scene import F1_DOCUMENT_ID
 from .constraint_editor import ConstraintEditorWindow
 from .measurement_editor import MeasurementEditorWindow
 from .measurement_workspace import MeasurementWorkspaceWindow
+from .native_backup import create_backup, restore_backup
 from .native_editor import default_data_dir
 from .optimization_workspace import OptimizationWorkspaceWindow
 from .prediction_workspace import PredictionWorkspaceWindow
@@ -38,7 +40,38 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='HTDT native CAD editor')
     parser.add_argument('--data-dir', type=Path, default=default_data_dir())
     parser.add_argument('--document-id', default=F1_DOCUMENT_ID)
+    maintenance = parser.add_mutually_exclusive_group()
+    maintenance.add_argument(
+        '--backup',
+        type=Path,
+        metavar='ARCHIVE',
+        help='create a validated .htdt-backup archive and exit',
+    )
+    maintenance.add_argument(
+        '--restore',
+        type=Path,
+        metavar='ARCHIVE',
+        help='restore a validated .htdt-backup archive and exit',
+    )
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     args = parser.parse_args(argv)
+
+    if args.backup is not None:
+        manifest = create_backup(args.data_dir, args.backup)
+        print(
+            f'backup created: {args.backup} '
+            f'(schema={manifest.schema_version}, files={len(manifest.files)})'
+        )
+        return 0
+    if args.restore is not None:
+        manifest, pre_restore = restore_backup(args.data_dir, args.restore)
+        suffix = '' if pre_restore is None else f' · pre-restore backup: {pre_restore}'
+        print(
+            f'backup restored: {args.restore} '
+            f'(schema={manifest.schema_version}, files={len(manifest.files)}){suffix}'
+        )
+        return 0
+
     app = QApplication([sys.argv[0]])
     repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
     window = OptimizationWorkspaceWindow(repository, args.document_id)

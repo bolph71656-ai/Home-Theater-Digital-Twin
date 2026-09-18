@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -32,7 +36,7 @@ jobs:
         run: python -m htdt.native_cad --help
 
       - name: Compile Windows CAD acceptance harnesses
-        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py scripts\validate_n30b_windows.py scripts\validate_n40_windows.py scripts\validate_n40_windows_gate.py scripts\validate_n40_precision_windows.py scripts\validate_n50_windows.py scripts\validate_n60_a12_windows.py scripts\validate_n60_a13_windows.py scripts\validate_n70_windows_base.py scripts\validate_n70_windows.py scripts\benchmark_n70_f5_windows.py scripts\validate_n80_windows.py scripts\validate_n80_o20_roomsim_windows.py scripts\validate_n80c_windows.py
+        run: python -m py_compile scripts\validate_n20b_windows.py scripts\validate_n30a_windows.py scripts\validate_n30b_windows.py scripts\validate_n40_windows.py scripts\validate_n40_windows_gate.py scripts\validate_n40_precision_windows.py scripts\validate_n50_windows.py scripts\validate_n60_a12_windows.py scripts\validate_n60_a13_windows.py scripts\validate_n70_windows_base.py scripts\validate_n70_windows.py scripts\benchmark_n70_f5_windows.py scripts\validate_n80_windows.py scripts\validate_n80_o20_roomsim_windows.py scripts\validate_n80c_windows.py scripts\validate_n90_a15_windows.py
 
       - name: Validate PowerShell scripts syntax
         shell: pwsh
@@ -67,19 +71,6 @@ jobs:
         shell: pwsh
         run: .\scripts\run-n80c-hardware-gate.ps1 -RepoRoot $PWD -PreflightOnly
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      - name: Smoke test built local app
-        run: python -m pytest backend\tests\test_built_frontend.py -q
+      - name: Preflight N90 hardware gate runner
+        shell: pwsh
+        run: .\scripts\run-n90-hardware-gate.ps1 -RepoRoot $PWD -PreflightOnly

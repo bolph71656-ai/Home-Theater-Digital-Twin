@@ -1,19 +1,19 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N80c・O50 main反映済み / O60 full validation実装 CI PASS・実室model gate未通過
+> 更新: 2026-09-18 / N90 stable Windows 0.1.0 A15 PASS / O60 software validation main反映済み・実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05〜N80 workspaceとO20〜O50はmainへmerge済み。N80c/O50はowned-Windows acceptance PASS。PR #76でO60 full validation（holdout trend・sensitivity・repeatability・applicability）を実装し、CI #425 PASS。実室の独立validation evidenceはまだ無いため、O70 automatic recommendationはdisabledのまま。**
+**N05〜N90のnative CAD release pathとO10〜O60 software authorityは実装済み。O60はPR #78 merge `b0b56497255425b5b343c6f5f52763d11dbf5ee6`でmain反映済み。N90 stable Windows 0.1.0はproduct CI #458、release artifact #23、owned-Windows A15をPASSした。実室の独立validation evidenceはまだ無いため、O70/O80 automatic recommendation/extended searchはdisabledのまま。**
 
-N70はIssue #63 / PR #64で完了済み。N80 workspaceはIssue #65 / PR #74で完了し、merge commit `171f30a25ef322b09046adfee5f8eabe76e8c51b` でmain反映済み。残るmodel validation実装はIssue #75 / PR #76で独立追跡する。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
+N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **N80c/O50までmerge済み**。PR #74 merge `171f30a25ef322b09046adfee5f8eabe76e8c51b` |
+| main | **O60 software validationまでmerge済み**。PR #78 merge `b0b56497255425b5b343c6f5f52763d11dbf5ee6`。N90はPR #79でA15受入済み・merge待ち |
 | N80 tracking | Issue #65（closed） / Issue #67（O20 closed） / PR #74 merged |
-| O60 tracking | Issue #75（open） / PR #76（draft） / code CI #425 PASS |
+| O60 tracking | Issue #75 / PR #76（implementation history） / PR #78 merged。final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3`、CI #427 PASS |
 | O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
 | N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
 | N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |
@@ -30,8 +30,30 @@ N70はIssue #63 / PR #64で完了済み。N80 workspaceはIssue #65 / PR #74で�
 | A14 | 8頂点L-room、rectangular-only model=`unsupported`、無silent approximation、overlayなし、scalar control gated PASS |
 | F5 | 50 editable objects＋10,000 markers、1 non-pickable actor、初回11.406 ms、orbit p95 27.963 ms PASS |
 | native entry | `htdt-native` / `run-native.ps1` / `python -m htdt.native_cad` はN80a `OptimizationWorkspaceWindow` compositionを起動 |
-| browser UI | 新CAD機能は凍結。二重実装しない |
-| 次工程 | **O60文書確定・merge。O70は実室gate待ち。独立してN90安定releaseを進行可能** |
+| browser UI | 新CAD機能は凍結。native release CIからfrontend buildを除外済み。二重実装しない |
+| N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
+| N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
+| stable version | `0.1.0` |
+| 次工程 | **PR #79を文書確定してmerge。O70/O80はowned-room O60 evidenceが成立するまで有効化しない** |
+
+## N90 — stable Windows release / A15 PASS
+
+詳細: [N90 Windows acceptance](N90_ACCEPTANCE_2026-09-18.md)
+
+- stable product version: `0.1.0`
+- product/artifact head: `968a9461435ac37138ddd15526140c06613fccb8`
+- final A15 gate head: `3ee2fb91b4976d7b0cac7b13718222cd6e359b76`
+- CI #458 / run `35299355927`: PASS
+- Windows Release Artifact #23 / run `35299355977`: PASS
+- gate-harness fix CI #459 / run `35300374434`: PASS
+- SQLite backup API + version/hash manifest + measurement asset verificationを実装。
+- packaged `--backup` / `--restore` / `--version` はQApplication生成前に実行する。
+- committed Windows dependency lockからPyInstaller onedir packageを再現する。
+- stable AppIdのper-user Inno Setup installerを採用し、program rootとuser-data rootを分離する。
+- uninstallはuser dataを削除しない。
+- native release CIを正本とし、frontend buildはnative releaseの必須gateから外した。
+- owned Windowsで `0.1.0.dev0 -> 0.1.0` update、backup/restore、reopen、uninstall/reinstall、data retentionを一連でPASS。
+- gate後はowned-PC repoを元のdetached SHA `5ede848e8e0b0967a50c04c83ff679a649ca439b`へ戻し、clean statusを確認した。
 
 ## N70 — 完了内容
 
@@ -183,7 +205,7 @@ N80 workspaceのIssue #65完了条件はこの受入で満たす。残るO60 ful
 
 ## O60 — full model-validation implementation
 
-PR #76 head `a8898bb1bbd919b95245f6298f7c999164dfab50` はCI #425 / run `35295505049` PASS。
+PR #76 final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3` はCI #427 / run `35295833407` PASS。connector上のdraft状態を解除できなかったため、同一headをnon-draft merge-only PR #78でmainへmergeし、merge commitは `b0b56497255425b5b343c6f5f52763d11dbf5ee6`。
 
 - calibration / holdout candidateを分離し、両方が無ければrecommendation gateを開かない。
 - objectiveごとのholdout pairwise-ordering agreementを保存し、tie/insufficient/failを独立表示する。
