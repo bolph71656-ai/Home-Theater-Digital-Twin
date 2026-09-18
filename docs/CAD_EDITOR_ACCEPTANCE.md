@@ -79,7 +79,7 @@ Issue #118は既存A01〜A15のdomain/editor correctnessを置き換えない。
 | Gate | 手順 | 合格条件 |
 |---|---|---|
 | UX-A01 / UX110 | 新規projectを開きOverviewだけを見る | Room作成、既存project確認、REW importへの入口をmanual説明なしで発見できる。current workspaceとsave stateが明確 |
-| UX-A02 / UX110 | `Ctrl+K` で Draw room / Add speaker / Import REW / Run prediction / candidate compareを検索 | commandまたは該当workspaceへ到達。利用不可なら短い理由を表示。内部class/job名は出さない |
+| UX-A02 / UX110 | `Ctrl+K` で「部屋を作図 / スピーカーを追加 / REWを読み込む / 予測を実行 / 候補を比較」を検索 | commandまたは該当workspaceへ到達。利用不可なら短い理由を表示。内部class/job名は出さない |
 | UX-A03 / UX120 | F2をRoomで作図→speaker/seat配置→選択/寸法/aim編集 | viewportが主領域。Geometry/Objects/Speakers context以外の不要controlを常設しない。selection Inspectorが一致 |
 | UX-A04 / UX130 | REW fixtureをimport→speaker/seatへassignment→quality確認→prediction比較 | import/assignment/quality/compareの順が画面上で理解でき、巨大right dockや複数nested scrollを必要としない |
 | UX-A05 / UX140 | SearchSpec作成→candidate生成→objective/Pareto比較→MeasurementPlan→validation | Setup/Candidates/Compare/Measure-Validateの現在地が明確。internal IDsを知らずに完遂できる |
