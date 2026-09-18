@@ -71,22 +71,36 @@ CANONICAL_WORKSPACE_CONTEXTS: dict[WorkspaceId, tuple[WorkspaceContext, ...]] = 
     WorkspaceId.OPTIMIZATION: (
         WorkspaceContext("setup", "探索設定"),
         WorkspaceContext("candidates", "候補"),
-        WorkspaceContext("objectives", "目的"),
-        WorkspaceContext("measurement-plan", "測定計画"),
-        WorkspaceContext("validation", "検証"),
+        WorkspaceContext("comparison", "比較"),
+        WorkspaceContext("validation", "測定・検証"),
     ),
 }
+
+WORKSPACE_CONTEXT_ALIASES: dict[WorkspaceId, dict[str, str]] = {
+    WorkspaceId.OPTIMIZATION: {
+        "objectives": "comparison",
+        "measurement-plan": "validation",
+    },
+}
+
 
 
 def normalize_workspace_id(value: WorkspaceId | str) -> WorkspaceId:
     return value if isinstance(value, WorkspaceId) else WorkspaceId(value)
 
 
+def normalize_workspace_context(workspace: WorkspaceId | str, context_id: str) -> str:
+    workspace_id = normalize_workspace_id(workspace)
+    return WORKSPACE_CONTEXT_ALIASES.get(workspace_id, {}).get(context_id, context_id)
+
+
 __all__ = [
     "CANONICAL_WORKSPACE_CONTEXTS",
     "CANONICAL_WORKSPACE_LABELS",
+    "WORKSPACE_CONTEXT_ALIASES",
     "WorkspaceContext",
     "WorkspaceDeepLink",
     "WorkspaceId",
+    "normalize_workspace_context",
     "normalize_workspace_id",
 ]
