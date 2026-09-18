@@ -347,3 +347,28 @@ def test_roomsim_batch_spec_freezes_exact_candidate_request(tmp_path) -> None:
         'y_m': 1.0,
         'z_m': 1.0,
     }
+
+
+def test_roomsim_batch_identity_is_reproducible_for_same_exact_inputs(tmp_path) -> None:
+    revision, spec, _ = _repositories(tmp_path)
+    first = build_cad_roomsim_batch_spec(
+        revision,
+        spec,
+        candidate_set_sha256='e' * 64,
+        candidates=_candidates(),
+        binding=_binding(),
+    )
+    second = build_cad_roomsim_batch_spec(
+        revision,
+        spec,
+        candidate_set_sha256='e' * 64,
+        candidates=_candidates(),
+        binding=_binding(),
+    )
+
+    assert first.batch_run_id != second.batch_run_id
+    assert first.created_at_utc != ''
+    assert second.created_at_utc != ''
+    assert first.batch_spec_sha256 == second.batch_spec_sha256
+    assert first.binding_sha256 == second.binding_sha256
+    assert first.requests == second.requests
