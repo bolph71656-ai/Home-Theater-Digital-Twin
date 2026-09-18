@@ -197,6 +197,15 @@ class CadObjectiveRepository:
                 ),
             )
 
+    def find_pareto_set_by_sha(self, search_spec_id: str, pareto_sha256: str) -> CadParetoSet | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT payload_json FROM cad_pareto_sets WHERE search_spec_id=? AND pareto_sha256=? '
+                'ORDER BY seq DESC LIMIT 1',
+                (search_spec_id, pareto_sha256),
+            ).fetchone()
+        return None if row is None else CadParetoSet.model_validate_json(row['payload_json'])
+
     def get_pareto_set(self, pareto_set_id: str) -> CadParetoSet | None:
         with self._connect() as connection:
             row = connection.execute(
