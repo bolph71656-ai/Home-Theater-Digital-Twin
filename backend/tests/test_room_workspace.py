@@ -10,14 +10,14 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QDockWidget, QFrame
 
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex
+from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex, make_f1_scene
 from htdt.cad_wall_models import WallOpening
 from htdt.cad_walls import add_opening
 from htdt.cad_input import CadAxis
 from htdt.room_geometry_input import RoomGeometryInputController
 from htdt.room_geometry_panel import RoomGeometryPanel
 from htdt.room_transform_input import RoomEntityTransformController
-from htdt.room_viewport import RoomOverlayState
+from htdt.room_viewport import RoomOverlayState, _grid_mesh, _room_floor_mesh
 from htdt.room_workspace import (
     RoomWorkspace,
     RoomWorkspaceController,
@@ -545,3 +545,18 @@ def test_room_workspace_compact_layout_prioritizes_viewport_and_toggles_palette(
     workspace.close()
     workspace.deleteLater()
     app.processEvents()
+
+
+
+def test_room_viewport_visual_foundation_has_floor_and_major_minor_grid() -> None:
+    document = make_f1_scene()
+    floor = _room_floor_mesh(document)
+    minor = _grid_mesh(document, step_m=0.5)
+    major = _grid_mesh(document, step_m=2.0, z_m=0.004)
+
+    assert floor is not None
+    assert floor.n_cells >= 2
+    assert minor is not None and major is not None
+    assert minor.n_lines > major.n_lines
+    assert minor.bounds[4] == pytest.approx(0.003)
+    assert major.bounds[4] == pytest.approx(0.004)
