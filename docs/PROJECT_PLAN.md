@@ -10,7 +10,7 @@ HTDTは、部屋とホームシアター配置を3D CADのように直接構築�
 
 Room/Placementでは大きなviewportを中心に、mouseで壁を描き、スピーカー・座席・スクリーン・家具を置き、移動/回転、snap、寸法入力で精密化する。3D navigationはMMB pan、Shift+MMB orbit、wheel zoomを既定とする一般CAD型の操作契約を持つ。一方、Measurements/Optimizeは3D viewportへ全機能を押し込まず、taskに適したpage/table/plot workspaceを使う。設定表や内部IDを読むことを最初の作業にしない。数値入力は直接操作と同じcommand/validationへ接続する。
 
-成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。Overviewは次に行う作業とblockerを示し、Room / Measurements / Optimizeの少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
+成功は「見た目が3D」だけではなく、**どこで何をできるかを初見で理解できること**、部屋と配置を迷わず作れ、誤操作を戻せ、保存した条件に対する測定・比較を再現できること。「概要」は次に行う作業とblockerを示し、「部屋 / 測定 / 最適化」の少数workspaceへdeep-linkする。UIはdark-firstで、contentをchromeより優先し、直接操作・即時feedback・一貫したsurface hierarchy・限定的なaccent・目的のある短いmotionを共通原則とする。Room 3Dもdark appearanceとし、neutral lighting、低contrast grid、明確なselection、整理されたoverlayで空間理解を優先する。最適配置は制約・複数目的・モデルの適用範囲を伴う候補として扱い、シミュレーションだけで音質を断定しない。
 
 ## 2. 利用条件
 
@@ -30,7 +30,7 @@ Room/Placementでは大きなviewportを中心に、mouseで壁を描き、ス�
 
 global navigationの表示は「概要 / 部屋 / 測定 / 最適化」を基本とし、内部N/O/R milestoneやrepository/job構造をnavigationへ露出しない。機能検索から主要taskへ到達できるようにする。
 
-1. Overviewから次の作業を選び、Roomでroom footprintと高さをmouseで構築する。
+1. 「概要」から次の作業を選び、「部屋」でroom footprintと高さをmouseで構築する。
 2. speaker、seat、screen、furniture、measurement pointを配置する。
 3. snap/寸法で調整し、SceneRevisionを保存する。
 4. 測定点と音源・AVR・マイク条件を選び、AcquisitionContextを固定する。
