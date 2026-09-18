@@ -154,6 +154,8 @@ class CadRoomSimCandidateAttempt(BaseModel):
                 raise ValueError('completed Room Simulator attempt requires model/state/response provenance')
             if self.error_type is not None or self.error_message is not None:
                 raise ValueError('completed Room Simulator attempt must not contain an error')
+            if self.pre_state_sha256 != self.restored_state_sha256:
+                raise ValueError('completed Room Simulator attempt requires exact pre-state restoration')
             assert self.response_json is not None
             assert self.response_sha256 is not None
             try:
