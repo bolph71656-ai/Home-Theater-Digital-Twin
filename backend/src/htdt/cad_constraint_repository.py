@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
 
 from .cad_constraint_models import CadConstraintSet
+from .cad_schema import ensure_native_schema
 
 
 class CadConstraintRepository:
@@ -14,15 +16,17 @@ class CadConstraintRepository:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_native_schema(self.path)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA foreign_keys=ON')
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_constraint_workspaces (
@@ -37,7 +41,7 @@ class CadConstraintRepository:
     def load(self, document_id: str) -> CadConstraintSet:
         if not document_id:
             raise ValueError('document_id must not be empty')
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT payload_json FROM cad_constraint_workspaces WHERE document_id=?',
                 (document_id,),
@@ -54,7 +58,7 @@ class CadConstraintRepository:
             separators=(',', ':'),
         )
         updated_at = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 INSERT INTO cad_constraint_workspaces(document_id, schema_version, updated_at_utc, payload_json)
@@ -73,7 +77,7 @@ class CadConstraintRepository:
             )
 
     def delete(self, document_id: str) -> bool:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 'DELETE FROM cad_constraint_workspaces WHERE document_id=?',
                 (document_id,),

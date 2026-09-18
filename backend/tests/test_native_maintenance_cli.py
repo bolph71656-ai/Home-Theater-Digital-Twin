@@ -6,6 +6,7 @@ from htdt.cad_document import WorkingDocument
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, make_f1_scene
 from htdt.native_backup import create_backup, validate_backup
+from htdt.runtime_instance import SingleInstanceGuard
 import htdt.native_cad as native_cad
 from htdt.cad_synthetic_demo import SYNTHETIC_DEMO_DOCUMENT_ID
 
@@ -76,3 +77,23 @@ def test_synthetic_demo_cli_runs_before_qapplication(tmp_path: Path, monkeypatch
         SYNTHETIC_DEMO_DOCUMENT_ID
     )
     assert seeded is not None
+
+
+def test_native_cli_rejects_data_dir_already_in_use(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    data_dir = tmp_path / 'data'
+    guard = SingleInstanceGuard(data_dir)
+    assert guard.acquire()
+    try:
+        assert native_cad.main([
+            '--data-dir', str(data_dir),
+            '--seed-synthetic-demo',
+        ]) == 2
+    finally:
+        guard.release()
+
+    captured = capsys.readouterr()
+    assert 'already in use by another process' in captured.err
+    assert not (data_dir / 'cad-scenes.sqlite3').exists()

@@ -18,6 +18,7 @@ from .native_backup import create_backup, restore_backup
 from .native_editor import default_data_dir
 from .optimization_workspace import OptimizationWorkspaceWindow
 from .prediction_workspace import PredictionWorkspaceWindow
+from .runtime_instance import SingleInstanceGuard
 from .theater_workflow import TheaterWorkflowWindow
 
 # Preserve the public theater-editor alias while the concrete product composition
@@ -62,40 +63,52 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     args = parser.parse_args(argv)
 
-    if args.backup is not None:
-        manifest = create_backup(args.data_dir, args.backup)
+    guard = SingleInstanceGuard(args.data_dir)
+    if not guard.acquire():
         print(
-            f'backup created: {args.backup} '
-            f'(schema={manifest.schema_version}, files={len(manifest.files)})'
+            'HTDT data directory is already in use by another process: '
+            f'{args.data_dir}',
+            file=sys.stderr,
         )
-        return 0
-    if args.restore is not None:
-        manifest, pre_restore = restore_backup(args.data_dir, args.restore)
-        suffix = '' if pre_restore is None else f' · pre-restore backup: {pre_restore}'
-        print(
-            f'backup restored: {args.restore} '
-            f'(schema={manifest.schema_version}, files={len(manifest.files)}){suffix}'
-        )
-        return 0
-    if args.seed_synthetic_demo:
-        repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
-        result = seed_synthetic_optimization_demo(repository)
-        print(
-            'synthetic demo seeded: '
-            f'document={result.document_id} '
-            f'search={result.search_spec_id} '
-            f'validation={result.validation_id} '
-            f'adaptive={result.adaptive_plan_id} '
-            f'extended={result.extended_search_id}'
-        )
-        print('synthetic demo is development-only and does not unlock owned-room recommendation')
-        return 0
+        return 2
 
-    app = QApplication([sys.argv[0]])
-    repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
-    window = OptimizationWorkspaceWindow(repository, args.document_id)
-    window.show()
-    return int(app.exec())
+    try:
+        if args.backup is not None:
+            manifest = create_backup(args.data_dir, args.backup)
+            print(
+                f'backup created: {args.backup} '
+                f'(schema={manifest.schema_version}, files={len(manifest.files)})'
+            )
+            return 0
+        if args.restore is not None:
+            manifest, pre_restore = restore_backup(args.data_dir, args.restore)
+            suffix = '' if pre_restore is None else f' · pre-restore backup: {pre_restore}'
+            print(
+                f'backup restored: {args.restore} '
+                f'(schema={manifest.schema_version}, files={len(manifest.files)}){suffix}'
+            )
+            return 0
+        if args.seed_synthetic_demo:
+            repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
+            result = seed_synthetic_optimization_demo(repository)
+            print(
+                'synthetic demo seeded: '
+                f'document={result.document_id} '
+                f'search={result.search_spec_id} '
+                f'validation={result.validation_id} '
+                f'adaptive={result.adaptive_plan_id} '
+                f'extended={result.extended_search_id}'
+            )
+            print('synthetic demo is development-only and does not unlock owned-room recommendation')
+            return 0
+
+        app = QApplication([sys.argv[0]])
+        repository = SceneRepository(args.data_dir / 'cad-scenes.sqlite3')
+        window = OptimizationWorkspaceWindow(repository, args.document_id)
+        window.show()
+        return int(app.exec())
+    finally:
+        guard.release()
 
 
 if __name__ == '__main__':

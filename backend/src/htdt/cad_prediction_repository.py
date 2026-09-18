@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -30,7 +31,7 @@ class CadPredictionRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 CREATE TABLE IF NOT EXISTS cad_prediction_results (
@@ -79,7 +80,7 @@ class CadPredictionRepository:
         if prediction_input_hash(result.input_snapshot_json) != result.input_hash:
             raise ValueError('prediction input hash mismatch')
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 '''
                 INSERT INTO cad_prediction_results(
@@ -117,7 +118,7 @@ class CadPredictionRepository:
             )
 
     def get(self, prediction_id: str) -> CadPredictionResult | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 'SELECT * FROM cad_prediction_results WHERE prediction_id=?',
                 (prediction_id,),
@@ -125,7 +126,7 @@ class CadPredictionRepository:
         return None if row is None else self._row_to_result(row)
 
     def list_results(self, document_id: str) -> tuple[CadPredictionResult, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT * FROM cad_prediction_results WHERE document_id=? ORDER BY seq ASC',
                 (document_id,),
@@ -133,7 +134,7 @@ class CadPredictionRepository:
         return tuple(self._row_to_result(row) for row in rows)
 
     def list_run(self, run_id: str) -> tuple[CadPredictionResult, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT * FROM cad_prediction_results WHERE run_id=? ORDER BY seq ASC',
                 (run_id,),

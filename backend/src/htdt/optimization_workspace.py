@@ -646,7 +646,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         layout.addWidget(self.adaptive_detail_label)
 
         extended_label = QLabel(
-            'Extended Search · toe-inは明示model capabilityがある場合だけ探索します'
+            'Extended Search · acoustic aim yawは明示model capabilityがある場合だけ探索します'
         )
         extended_label.setWordWrap(True)
         layout.addWidget(extended_label)
@@ -666,8 +666,8 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         capability_actions.addWidget(synthetic_capability)
         owned_capability = QPushButton('選択O60→本番capability')
         owned_capability.setToolTip(
-            'owned-room eligible ValidationRecordがtoe-inを扱うmodelの場合だけ保存できます。'
-            'REW Room Simulatorはtoe-in非対応なので拒否されます'
+            'owned-room eligible ValidationRecordがspeaker aimを扱うmodelの場合だけ保存できます。'
+            'REW Room Simulatorはspeaker aim非対応なので拒否されます'
         )
         owned_capability.clicked.connect(
             self.create_owned_room_extended_capability
@@ -680,7 +680,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.extended_entity_combo.currentIndexChanged.connect(
             self._seed_extended_aim_range
         )
-        extended_form.addRow('toe-in speaker', self.extended_entity_combo)
+        extended_form.addRow('aim yaw speaker', self.extended_entity_combo)
 
         self.extended_min_field = QDoubleSpinBox()
         self.extended_min_field.setRange(-180.0, 180.0)
@@ -711,10 +711,10 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         layout.addLayout(extended_form)
 
         extended_axis_actions = QHBoxLayout()
-        add_extended_axis = QPushButton('toe-in軸を追加 / 更新')
+        add_extended_axis = QPushButton('aim yaw軸を追加 / 更新')
         add_extended_axis.clicked.connect(self.add_or_update_extended_axis)
         extended_axis_actions.addWidget(add_extended_axis)
-        remove_extended_axis = QPushButton('選択toe-in軸を削除')
+        remove_extended_axis = QPushButton('選択aim yaw軸を削除')
         remove_extended_axis.clicked.connect(self.remove_selected_extended_axis)
         extended_axis_actions.addWidget(remove_extended_axis)
         layout.addLayout(extended_axis_actions)
@@ -741,7 +741,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         layout.addWidget(self.extended_spec_tree)
 
         extended_generation = QHBoxLayout()
-        self.extended_generate_button = QPushButton('toe-in候補を生成')
+        self.extended_generate_button = QPushButton('aim yaw候補を生成')
         self.extended_generate_button.clicked.connect(
             self.generate_extended_candidates_async
         )
@@ -768,7 +768,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
 
         self.extended_candidate_tree = QTreeWidget()
         self.extended_candidate_tree.setHeaderLabels([
-            '候補', 'base', '位置', 'toe-in'
+            '候補', 'base', '位置', 'aim yaw'
         ])
         self.extended_candidate_tree.setMinimumHeight(170)
         self.extended_candidate_tree.itemSelectionChanged.connect(
@@ -777,7 +777,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         layout.addWidget(self.extended_candidate_tree)
 
         extended_candidate_actions = QHBoxLayout()
-        self.extended_preview_button = QPushButton('toe-in候補をpreview')
+        self.extended_preview_button = QPushButton('aim yaw候補をpreview')
         self.extended_preview_button.clicked.connect(
             self.preview_selected_extended_candidate
         )
@@ -787,7 +787,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             self.clear_extended_preview
         )
         extended_candidate_actions.addWidget(self.extended_clear_preview_button)
-        self.extended_apply_button = QPushButton('toe-in候補を適用')
+        self.extended_apply_button = QPushButton('aim yaw候補を適用')
         self.extended_apply_button.setToolTip(
             '位置とaimを1 commandで適用し、1回のUndoで両方を復元します'
         )
@@ -1859,7 +1859,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             select_capability_id=capability.capability_id
         )
         self.statusBar().showMessage(
-            'Synthetic toe-in capabilityを保存しました · 開発受入専用です'
+            'Synthetic acoustic-aim capabilityを保存しました · 開発受入専用です'
         )
 
     def create_owned_room_extended_capability(self) -> None:
@@ -1915,7 +1915,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         entity_id = self.extended_entity_combo.currentData()
         if not isinstance(entity_id, str):
             self.statusBar().showMessage(
-                'toe-in軸へ追加するexplicit-aim speakerを選択してください'
+                'aim yaw軸へ追加するexplicit-aim speakerを選択してください'
             )
             return
         try:
@@ -1926,12 +1926,12 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 step=float(self.extended_step_field.value()),
             )
         except Exception as exc:
-            self.statusBar().showMessage(f'toe-in軸が不正です · {exc}')
+            self.statusBar().showMessage(f'aim yaw軸が不正です · {exc}')
             return
         self.extended_axes[entity_id] = axis
         self._refresh_extended_axis_tree()
         self.statusBar().showMessage(
-            f'toe-in軸を追加/更新しました · {entity_id}'
+            f'aim yaw軸を追加/更新しました · {entity_id}'
         )
 
     def remove_selected_extended_axis(self) -> None:
@@ -1945,7 +1945,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.extended_axes.pop(entity_id, None)
         self._refresh_extended_axis_tree()
         self.statusBar().showMessage(
-            f'toe-in軸を削除しました · {entity_id}'
+            f'aim yaw軸を削除しました · {entity_id}'
         )
 
     def _refresh_extended_axis_tree(self) -> None:
@@ -2017,7 +2017,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             return
         if not self.extended_axes:
             self.statusBar().showMessage(
-                '1つ以上のtoe-in軸を追加してからExtended SearchSpecを保存してください'
+                '1つ以上のaim yaw軸を追加してからExtended SearchSpecを保存してください'
             )
             return
         try:
@@ -2444,7 +2444,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self._refresh_extended_binding_state()
         self._render_extended_overlay()
         self.statusBar().showMessage(
-            'toe-in候補preview · Scene/Undo履歴は変更していません'
+            'acoustic aim候補preview · Scene/Undo履歴は変更していません'
         )
 
     def clear_extended_preview(self) -> None:
@@ -2453,7 +2453,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.extended_preview_candidate_id = None
         self._refresh_extended_binding_state()
         self._render_extended_overlay()
-        self.statusBar().showMessage('toe-in previewを解除しました')
+        self.statusBar().showMessage('acoustic aim previewを解除しました')
 
     def apply_selected_extended_candidate(self) -> None:
         base = self._selected_search_spec()
@@ -2477,13 +2477,13 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             )
         except Exception as exc:
             self.statusBar().showMessage(
-                f'toe-in候補を適用できません · {exc}'
+                f'acoustic aim候補を適用できません · {exc}'
             )
             self._refresh_extended_binding_state()
             return
         if not changed:
             self.statusBar().showMessage(
-                'toe-in候補は現在の配置/aimと同一です'
+                'acoustic aim候補は現在の配置/aimと同一です'
             )
             return
 
@@ -2503,7 +2503,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self._refresh_search_specs()
         self._refresh_extended_specs()
         self.statusBar().showMessage(
-            '位置+toe-inを1 commandで適用しました · '
+            '位置+acoustic aimを1 commandで適用しました · '
             'Undoで両方を復元できます'
         )
 
@@ -2613,7 +2613,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
                 label_name = 'extended-preview-label'
                 self._extended_actor_names.add(label_name)
                 self.viewport.add_text(
-                    'toe-in preview · Scene未変更',
+                    'acoustic aim preview · Scene未変更',
                     position='upper_left',
                     font_size=9,
                     name=label_name,

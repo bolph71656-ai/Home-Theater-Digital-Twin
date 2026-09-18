@@ -214,3 +214,18 @@ def test_restore_swap_failure_rolls_back_original_database_and_assets(tmp_path: 
     reopened = SceneRepository(data_dir / 'cad-scenes.sqlite3')
     assert reopened.latest(first.document_id).revision_id == second.revision_id
     assert (data_dir / 'measurement-assets' / digest).read_bytes() == raw
+
+
+def test_backup_validation_rejects_excessive_expanded_size(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_dir = tmp_path / 'data'
+    _seed_data(data_dir)
+    archive = tmp_path / 'bounded.htdt-backup'
+    create_backup(data_dir, archive)
+
+    monkeypatch.setattr(native_backup, 'MAX_NATIVE_BACKUP_EXPANDED_BYTES', 1)
+
+    with pytest.raises(ValueError, match='expanded size exceeds limit'):
+        validate_backup(archive)

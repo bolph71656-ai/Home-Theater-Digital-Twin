@@ -22,8 +22,8 @@ stable personal Windows releaseは **0.1.0** です。
 - O60 holdout trend / sensitivity / repeatability / applicability validation authority
 - stable Windows package / installer / update / backup / restore / uninstall data retention
 
-N05〜N90のnative release pathとO10〜O60のsoftware authorityは実装済みです。  
-O70 Adaptive PlannerとO80 Extended Searchは、**owned-roomの独立O60 validation evidenceが成立するまで自動推薦・拡張探索として有効化しません**。
+N05〜N90のnative release pathとO10〜O80のsoftware pathは実装済みです。  
+O70 Adaptive Plannerは `development_synthetic` で、O80 Extended Searchはsynthetic directional capabilityでsoftware pathを最後まで確認できます。一方、`production_owned_room` recommendationとowned-room directional capabilityは、**独立した実室O60 validation evidenceが成立するまでfail-closed**です。
 
 実装済み・未検証項目の事実は [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)、今後の実装順とgateは [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) を正本とします。
 
@@ -99,7 +99,11 @@ python -m htdt.native_cad --restore "D:\Backups\home-theater.htdt-backup"
 
 backupはlive SQLite fileの単純copyではなくSQLite backup APIでconsistent snapshotを作り、N60 measurement raw assetsもSHA-256で検証してarchiveへ含めます。restoreはarchive traversal、manifest/hash、SQLite integrity/foreign key、asset hashを全検証してからstagingし、現在dataをpre-restore backupへ退避して置換します。
 
-restoreはHTDT GUIを終了した状態で実行してください。WindowsでDBがopenされている場合は部分上書きせずfailします。
+native GUI / backup / restore / synthetic seedはdata directory単位のOS lockを共有します。同じuser-data directoryを別プロセスが使用中の場合は起動・maintenance処理を開始せずfailします。
+
+native `cad-scenes.sqlite3` は中央schema versionを持ちます。0.1.0以前のpre-versioned native DBはintegrity/foreign-key検証後にbaseline v1へadoptし、このアプリより新しいschemaはdowngradeせずfail-closedで拒否します。
+
+restoreはarchive/member/総展開量/member数を上限付きで検証し、各memberをstreaming SHA-256検証してからstagingします。
 
 ## CAD / analysis architecture
 
@@ -129,6 +133,8 @@ HTDTの中心は、数値フォームを先に埋める方式ではなく、同�
 - N70: immutable prediction authority / geometry compatibility / prediction overlays / bulk marker rendering
 - N80: SearchSpec / candidate preview+apply / O20 batch prediction / objective / Pareto / Measurement Plan
 - O60: calibration/holdout分離 / trend / sensitivity / repeatability / applicability / recommendation gate
+- O70: objective別residual GP / uncertainty / adaptive measurement proposal / synthetic・owned-room scope分離
+- O80: capability-gated Extended Search / acoustic aim yaw (`aim_yaw_deg`) / preview+apply+Undo
 - N90: reproducible package / per-user installer / backup+restore / update+uninstall data retention
 
 ## 対象環境

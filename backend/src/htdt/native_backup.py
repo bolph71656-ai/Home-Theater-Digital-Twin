@@ -17,6 +17,15 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import __version__
+from .cad_schema import NativeSchemaError, check_native_schema_compatibility
+from .limits import (
+    MAX_NATIVE_BACKUP_ARCHIVE_BYTES,
+    MAX_NATIVE_BACKUP_COMPRESSION_RATIO,
+    MAX_NATIVE_BACKUP_EXPANDED_BYTES,
+    MAX_NATIVE_BACKUP_MANIFEST_BYTES,
+    MAX_NATIVE_BACKUP_MEMBER_BYTES,
+    MAX_NATIVE_BACKUP_MEMBERS,
+)
 
 
 BACKUP_SCHEMA_VERSION = 1
@@ -129,6 +138,10 @@ def _sqlite_health(path: Path) -> None:
             foreign_keys = connection.execute('PRAGMA foreign_key_check').fetchall()
             if foreign_keys:
                 raise ValueError(f'SQLite foreign-key check failed: {foreign_keys!r}')
+        try:
+            check_native_schema_compatibility(path)
+        except NativeSchemaError as exc:
+            raise ValueError(f'native backup database schema is incompatible: {exc}') from exc
     except sqlite3.DatabaseError as exc:
         raise ValueError(f'native backup database is invalid: {exc}') from exc
 
@@ -288,9 +301,16 @@ def create_backup(data_dir: Path, destination: Path) -> BackupManifest:
 
 def _zip_entries(archive: ZipFile) -> dict[str, ZipInfo]:
     infos = archive.infolist()
+    if len(infos) > MAX_NATIVE_BACKUP_MEMBERS:
+        raise ValueError(
+            f'backup archive has too many members: {len(infos)} '
+            f'(limit={MAX_NATIVE_BACKUP_MEMBERS})'
+        )
     names = [info.filename for info in infos]
     if len(names) != len(set(names)):
         raise ValueError('backup archive contains duplicate member names')
+
+    expanded_total = 0
     entries: dict[str, ZipInfo] = {}
     for info in infos:
         _safe_archive_path(info.filename)
@@ -299,21 +319,73 @@ def _zip_entries(archive: ZipFile) -> dict[str, ZipInfo]:
             raise ValueError(f'backup archive contains a symlink: {info.filename}')
         if info.is_dir():
             raise ValueError(f'backup archive contains an unexpected directory entry: {info.filename}')
+        if info.file_size > MAX_NATIVE_BACKUP_MEMBER_BYTES:
+            raise ValueError(
+                f'backup member is too large: {info.filename} '
+                f'({info.file_size} bytes)'
+            )
+        expanded_total += info.file_size
+        if expanded_total > MAX_NATIVE_BACKUP_EXPANDED_BYTES:
+            raise ValueError(
+                'backup expanded size exceeds limit: '
+                f'{expanded_total} > {MAX_NATIVE_BACKUP_EXPANDED_BYTES}'
+            )
+        if (
+            info.file_size >= 1024 * 1024
+            and info.file_size / max(1, info.compress_size)
+            > MAX_NATIVE_BACKUP_COMPRESSION_RATIO
+        ):
+            raise ValueError(
+                f'backup member compression ratio is excessive: {info.filename}'
+            )
         entries[info.filename] = info
     return entries
 
 
 def _read_manifest(archive: ZipFile, entries: dict[str, ZipInfo]) -> BackupManifest:
-    if MANIFEST_NAME not in entries:
+    info = entries.get(MANIFEST_NAME)
+    if info is None:
         raise ValueError('backup manifest is missing')
+    if info.file_size > MAX_NATIVE_BACKUP_MANIFEST_BYTES:
+        raise ValueError('backup manifest exceeds size limit')
     try:
-        payload = archive.read(MANIFEST_NAME)
+        with archive.open(info, 'r') as source:
+            payload = source.read(MAX_NATIVE_BACKUP_MANIFEST_BYTES + 1)
+        if len(payload) > MAX_NATIVE_BACKUP_MANIFEST_BYTES:
+            raise ValueError('backup manifest exceeds size limit')
         return BackupManifest.model_validate_json(payload)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(f'backup manifest is invalid: {exc}') from exc
 
 
+def _extract_verified_member(
+    archive: ZipFile,
+    info: ZipInfo,
+    entry: BackupFileEntry,
+    target: Path,
+) -> None:
+    digest = sha256()
+    written = 0
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with archive.open(info, 'r') as source, target.open('xb') as output:
+        while chunk := source.read(1024 * 1024):
+            written += len(chunk)
+            if written > entry.size_bytes:
+                raise ValueError(f'backup member decoded size mismatch: {entry.path}')
+            digest.update(chunk)
+            output.write(chunk)
+    if written != entry.size_bytes:
+        raise ValueError(f'backup member decoded size mismatch: {entry.path}')
+    if digest.hexdigest() != entry.sha256:
+        raise ValueError(f'backup member SHA-256 mismatch: {entry.path}')
+
+
 def _stage_backup(backup_path: Path, stage_root: Path) -> BackupManifest:
+    if backup_path.stat().st_size > MAX_NATIVE_BACKUP_ARCHIVE_BYTES:
+        raise ValueError(
+            'backup archive exceeds size limit: '
+            f'{backup_path.stat().st_size} > {MAX_NATIVE_BACKUP_ARCHIVE_BYTES}'
+        )
     try:
         with ZipFile(backup_path, 'r') as archive:
             entries = _zip_entries(archive)
@@ -330,15 +402,8 @@ def _stage_backup(backup_path: Path, stage_root: Path) -> BackupManifest:
                 info = entries[entry.path]
                 if info.file_size != entry.size_bytes:
                     raise ValueError(f'backup member size mismatch: {entry.path}')
-                payload = archive.read(info)
-                if len(payload) != entry.size_bytes:
-                    raise ValueError(f'backup member decoded size mismatch: {entry.path}')
-                if _sha256_bytes(payload) != entry.sha256:
-                    raise ValueError(f'backup member SHA-256 mismatch: {entry.path}')
                 target = _safe_data_path(stage_root, entry.path)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open('xb') as output:
-                    output.write(payload)
+                _extract_verified_member(archive, info, entry, target)
     except BadZipFile as exc:
         raise ValueError(f'backup archive is not a valid ZIP container: {exc}') from exc
 
