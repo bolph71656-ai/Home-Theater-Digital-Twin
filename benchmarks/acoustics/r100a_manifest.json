@@ -325,7 +325,7 @@
           "samples": [
             {
               "sample_key": "mode(1,1,0)",
-              "scalar_value": 54.91189033895648
+              "scalar_value": 54.90679033598668
             }
           ],
           "peer_fixture_id": null
@@ -1708,7 +1708,7 @@
           "step_hz": 1,
           "values_hz": []
         },
-        "time_step_s": null,
+        "time_step_s": 0.00016666666666666666,
         "observation_time_s": 2
       },
       "observables": [
