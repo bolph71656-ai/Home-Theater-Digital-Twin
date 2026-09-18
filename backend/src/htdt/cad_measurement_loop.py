@@ -130,7 +130,13 @@ def complete_measurement_plan(plan: CadMeasurementPlan, measurement_repository: 
     payload = plan.identity_payload()
     payload['status'] = 'measured'
     payload['measurement_ids'] = list(measurement_ids)
-    return plan.model_copy(update={'status':'measured','measurement_ids':measurement_ids,'plan_sha256':_hash(payload)})
+    base = plan.model_dump(exclude={'status', 'measurement_ids', 'plan_sha256'})
+    return CadMeasurementPlan(
+        **base,
+        status='measured',
+        measurement_ids=measurement_ids,
+        plan_sha256=_hash(payload),
+    )
 
 
 def measured_input_refs(plan: CadMeasurementPlan) -> tuple[CadObjectiveInputRef, ...]:
