@@ -145,7 +145,7 @@ def _migrate_0_to_1(connection: sqlite3.Connection) -> None:
 
 
 def _migrate_1_to_2(connection: sqlite3.Connection) -> None:
-    connection.executescript(
+    statements = (
         """
         CREATE TABLE IF NOT EXISTS cad_adaptive_extended_observations (
             seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,10 +157,13 @@ def _migrate_1_to_2(connection: sqlite3.Connection) -> None:
             payload_json TEXT NOT NULL,
             created_at_utc TEXT NOT NULL,
             UNIQUE(extended_search_id, candidate_id, objective_id)
-        );
+        )
+        """,
+        """
         CREATE INDEX IF NOT EXISTS idx_adaptive_extended_observation_search_seq
-            ON cad_adaptive_extended_observations(extended_search_id, seq ASC);
-
+            ON cad_adaptive_extended_observations(extended_search_id, seq ASC)
+        """,
+        """
         CREATE TABLE IF NOT EXISTS cad_adaptive_extended_plans (
             seq INTEGER PRIMARY KEY AUTOINCREMENT,
             plan_id TEXT NOT NULL UNIQUE,
@@ -172,11 +175,15 @@ def _migrate_1_to_2(connection: sqlite3.Connection) -> None:
             adaptive_extended_sha256 TEXT NOT NULL UNIQUE,
             payload_json TEXT NOT NULL,
             created_at_utc TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_adaptive_extended_plan_search_seq
-            ON cad_adaptive_extended_plans(extended_search_id, seq ASC);
+        )
+        """,
         """
+        CREATE INDEX IF NOT EXISTS idx_adaptive_extended_plan_search_seq
+            ON cad_adaptive_extended_plans(extended_search_id, seq ASC)
+        """,
     )
+    for statement in statements:
+        connection.execute(statement)
 
 
 _MIGRATIONS = {
