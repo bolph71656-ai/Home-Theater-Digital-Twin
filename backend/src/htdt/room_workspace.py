@@ -148,6 +148,10 @@ class RoomWorkspaceController:
     def before_deactivate(self) -> tuple[bool, str | None]:
         if self.working.has_preview:
             return False, "操作中のプレビューを確定またはキャンセルしてから画面を切り替えてください"
+        if self.working.is_dirty:
+            return False, "未保存の変更を保存または元に戻してから画面を切り替えてください"
+        if self.recovery_candidate is not None:
+            return False, "復旧データを復元または破棄してから画面を切り替えてください"
         return True, None
 
     def set_selection(self, entity_id: str | None) -> None:
