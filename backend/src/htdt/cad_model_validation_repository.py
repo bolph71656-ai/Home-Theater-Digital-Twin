@@ -514,6 +514,18 @@ class CadModelValidationRepository:
                 raise ValueError(
                     'owned-room campaign measurement must be captured after preregistration'
                 )
+            try:
+                provenance = json.loads(measurement.provenance_json)
+            except (AttributeError, json.JSONDecodeError):
+                provenance = None
+            if (
+                not isinstance(provenance, dict)
+                or provenance.get('validation_scope') != 'owned_room'
+                or provenance.get('validation_campaign_id') != campaign.campaign_id
+            ):
+                raise ValueError(
+                    'owned-room measurement does not match preregistered campaign provenance'
+                )
 
     def save(self, record: CadModelValidationRecord) -> None:
         if not isinstance(record, CadModelValidationRecord):
