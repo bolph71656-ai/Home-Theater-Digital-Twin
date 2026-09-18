@@ -457,6 +457,13 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         campaign_materialize = QPushButton('O30 objective evidence生成')
         campaign_materialize.clicked.connect(self.materialize_selected_campaign_objectives)
         campaign_actions.addWidget(campaign_materialize)
+        campaign_rew_read = QPushButton('選択REW→Campaign実測')
+        campaign_rew_read.setToolTip(
+            '選択中のCampaign・planned Measurement Plan・現在SceneRevisionが一致する場合だけ、'
+            'REW API測定をowned-room campaign evidenceとして読み込みます'
+        )
+        campaign_rew_read.clicked.connect(self.read_selected_rew_for_campaign_async)
+        campaign_actions.addWidget(campaign_rew_read)
         layout.addLayout(campaign_actions)
 
         self.campaign_detail_label = QLabel('Campaign未選択')
@@ -750,6 +757,52 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self.statusBar().showMessage(
             f'O30 objective evidenceを確認/保存しました · {len(evaluation_ids)}件'
         )
+
+
+    def read_selected_rew_for_campaign_async(self) -> None:
+        campaign = self._selected_campaign()
+        plan = self._selected_measurement_plan()
+        if campaign is None:
+            self.statusBar().showMessage('Campaignを選択してください')
+            return
+        if plan is None:
+            self.statusBar().showMessage('Campaign候補のMeasurement Planを選択してください')
+            return
+        if plan.status != 'planned':
+            self.statusBar().showMessage('REW読込にはplanned状態のMeasurement Planが必要です')
+            return
+        if (
+            plan.search_spec_id != campaign.search_spec_id
+            or plan.search_spec_sha256 != campaign.search_spec_sha256
+            or plan.candidate_set_sha256 != campaign.candidate_set_sha256
+        ):
+            self.statusBar().showMessage('Measurement PlanとCampaignの探索authorityが一致しません')
+            return
+        if not any(
+            assignment.candidate_id == plan.candidate_id
+            for assignment in campaign.candidates
+        ):
+            self.statusBar().showMessage('Measurement Plan候補は選択Campaignに含まれていません')
+            return
+        if (
+            self.working is None
+            or self.working.is_dirty
+            or self.working.source_revision_id != plan.applied_scene_revision_id
+        ):
+            self.statusBar().showMessage(
+                '現在SceneをMeasurement Planのapplied revisionへ戻し、未保存編集を無くしてください'
+            )
+            return
+
+        try:
+            self._start_selected_rew_read(
+                validation_scope='owned_room',
+                validation_campaign_id=campaign.campaign_id,
+                evidence_type_override='measured',
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f'Campaign REW読込を開始できません · {exc}')
+            return
 
     def create_measurement_plan_for_selected_candidate(self) -> None:
         if self.search_selected_spec_id is None or self.search_selected_candidate_id is None:
