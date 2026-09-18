@@ -52,7 +52,28 @@ def _room_wireframe(document: SceneDocument) -> pv.PolyData | None:
     return mesh
 
 
-def _grid_mesh(document: SceneDocument, *, step_m: float = 0.5) -> pv.PolyData | None:
+def _room_floor_mesh(document: SceneDocument) -> pv.PolyData | None:
+    room = document.room
+    if room is None:
+        return None
+    vertices = room_vertices(room)
+    if len(vertices) < 3:
+        return None
+    points = np.asarray(
+        [(vertex.x_m, -vertex.y_m, 0.0) for vertex in vertices],
+        dtype=float,
+    )
+    faces = np.asarray((len(vertices), *range(len(vertices))), dtype=np.int64)
+    mesh = pv.PolyData(points, faces)
+    return mesh.triangulate()
+
+
+def _grid_mesh(
+    document: SceneDocument,
+    *,
+    step_m: float = 0.5,
+    z_m: float = 0.003,
+) -> pv.PolyData | None:
     room = document.room
     if room is None:
         return None
@@ -71,13 +92,18 @@ def _grid_mesh(document: SceneDocument, *, step_m: float = 0.5) -> pv.PolyData |
         lines.extend((2, index, index + 1))
 
     for x_m in np.arange(x0, x1 + step_m * 0.5, step_m):
-        add_line((float(x_m), float(-y0), 0.0), (float(x_m), float(-y1), 0.0))
+        add_line(
+            (float(x_m), float(-y0), z_m),
+            (float(x_m), float(-y1), z_m),
+        )
     for y_m in np.arange(y0, y1 + step_m * 0.5, step_m):
-        add_line((float(x0), float(-y_m), 0.0), (float(x1), float(-y_m), 0.0))
+        add_line(
+            (float(x0), float(-y_m), z_m),
+            (float(x1), float(-y_m), z_m),
+        )
     mesh = pv.PolyData(np.asarray(points, dtype=float))
     mesh.lines = np.asarray(lines, dtype=np.int64)
     return mesh
-
 
 def _entity_mesh(entity: SceneEntity) -> pv.PolyData:
     if entity.size_m is None:
@@ -151,16 +177,37 @@ class RoomViewport3D(QFrame):
         self.plotter.clear()
         self.plotter.set_background(DARK_THEME.viewport.background.hex)
 
+        floor = _room_floor_mesh(document)
+        if floor is not None:
+            self.plotter.add_mesh(
+                floor,
+                color=DARK_THEME.viewport.floor.hex,
+                opacity=0.72,
+                lighting=False,
+                pickable=False,
+                name="room-floor",
+            )
+
         if overlays.grid:
-            grid = _grid_mesh(document)
-            if grid is not None:
+            minor_grid = _grid_mesh(document, step_m=0.5)
+            if minor_grid is not None:
                 self.plotter.add_mesh(
-                    grid,
+                    minor_grid,
                     color=DARK_THEME.viewport.grid_minor.hex,
                     line_width=1,
-                    opacity=0.55,
+                    opacity=0.34,
                     pickable=False,
-                    name="room-grid",
+                    name="room-grid-minor",
+                )
+            major_grid = _grid_mesh(document, step_m=2.0, z_m=0.004)
+            if major_grid is not None:
+                self.plotter.add_mesh(
+                    major_grid,
+                    color=DARK_THEME.viewport.grid_major.hex,
+                    line_width=2,
+                    opacity=0.58,
+                    pickable=False,
+                    name="room-grid-major",
                 )
 
         room_mesh = _room_wireframe(document)
@@ -169,7 +216,7 @@ class RoomViewport3D(QFrame):
                 room_mesh,
                 color=DARK_THEME.viewport.geometry_edge.hex,
                 line_width=2,
-                opacity=0.62,
+                opacity=0.78,
                 pickable=False,
                 name="room-shell",
             )
@@ -190,7 +237,11 @@ class RoomViewport3D(QFrame):
                     else DARK_THEME.viewport.geometry_edge.hex
                 ),
                 line_width=3 if entity.entity_id == selected_id else 1,
-                opacity=0.10 if focused_out else 0.90,
+                opacity=0.12 if focused_out else 0.90,
+                ambient=0.32,
+                diffuse=0.62,
+                specular=0.10,
+                specular_power=12.0,
                 pickable=True,
                 name=f"entity-{entity.entity_id}",
             )
