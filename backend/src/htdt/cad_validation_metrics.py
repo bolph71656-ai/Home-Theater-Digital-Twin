@@ -139,6 +139,7 @@ class CadRepeatabilityCheck(BaseModel):
     scene_revision_id: str = Field(min_length=1)
     measurement_ids: tuple[str, ...] = Field(min_length=2)
     requested_band_hz: tuple[float, float]
+    reference_band_hz: tuple[float, float] | None = None
     pairs: tuple[CadRepeatabilityPair, ...] = Field(min_length=1)
     rms_floor_db: float = Field(ge=0)
     shape_floor_db: float | None = Field(default=None, ge=0)
@@ -154,6 +155,10 @@ class CadRepeatabilityCheck(BaseModel):
         low_hz, high_hz = self.requested_band_hz
         if low_hz <= 0 or high_hz <= low_hz:
             raise ValueError('repeatability frequency band is invalid')
+        if self.reference_band_hz is not None:
+            ref_low, ref_high = self.reference_band_hz
+            if ref_low <= 0 or ref_high <= ref_low:
+                raise ValueError('repeatability reference band is invalid')
         expected_rms = sqrt(
             sum(pair.rms_difference_db ** 2 for pair in self.pairs) / len(self.pairs)
         )
@@ -178,6 +183,7 @@ class CadCandidateSeparationCheck(BaseModel):
     candidate_b_id: str = Field(min_length=1)
     measurement_a_id: str = Field(min_length=1)
     measurement_b_id: str = Field(min_length=1)
+    requested_band_hz: tuple[float, float]
     response_difference_rms_db: float = Field(ge=0)
     repeatability_floor_db: float = Field(ge=0)
     min_repeatability_multiple: float = Field(gt=0)
@@ -188,6 +194,9 @@ class CadCandidateSeparationCheck(BaseModel):
     def valid_separation(self) -> 'CadCandidateSeparationCheck':
         if self.candidate_a_id == self.candidate_b_id:
             raise ValueError('candidate separation requires two candidates')
+        low_hz, high_hz = self.requested_band_hz
+        if low_hz <= 0 or high_hz <= low_hz:
+            raise ValueError('candidate separation frequency band is invalid')
         if self.repeatability_floor_db == 0:
             expected_ratio = None
             expected_gate = 'pass' if self.response_difference_rms_db > 0 else 'fail'
@@ -370,6 +379,7 @@ def build_repeatability_check(
         scene_revision_id=scene_revision_id,
         measurement_ids=tuple(ids),
         requested_band_hz=(float(low_hz), float(high_hz)),
+        reference_band_hz=reference_band_hz,
         pairs=tuple(pairs),
         rms_floor_db=rms_floor,
         shape_floor_db=shape_floor,
@@ -409,6 +419,7 @@ def build_candidate_separation_check(
         candidate_b_id=candidate_b_id,
         measurement_a_id=measurement_a_id,
         measurement_b_id=measurement_b_id,
+        requested_band_hz=(float(low_hz), float(high_hz)),
         response_difference_rms_db=result.rms_difference_db,
         repeatability_floor_db=floor,
         min_repeatability_multiple=multiple,
