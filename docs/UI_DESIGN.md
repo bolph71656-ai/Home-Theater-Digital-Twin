@@ -57,34 +57,34 @@ Official screenshots:
 HTDTのuser-facing navigationはdomain/service境界ではなくtaskで構成する。
 
 ~~~text
-Project
-├─ Overview
-│   ├─ current room/system summary
-│   ├─ readiness / blockers
-│   ├─ recent measurement / prediction
-│   └─ next actions -> deep link
+プロジェクト
+├─ 概要
+│   ├─ 部屋・システムの要約
+│   ├─ 準備状況 / 要対応
+│   ├─ 最近の測定 / 予測
+│   └─ 次の操作 -> 該当画面へ
 │
-├─ Room
-│   ├─ Geometry
-│   ├─ Objects
-│   ├─ Speakers & seats
-│   ├─ Materials / acoustic participation
-│   └─ Acoustics / spatial overlays
+├─ 部屋
+│   ├─ 形状
+│   ├─ 物体
+│   ├─ スピーカー・座席
+│   ├─ 材料 / 音響への反映
+│   └─ 音響 / 空間表示
 │
-├─ Measurements
-│   ├─ Import / acquire
-│   ├─ Assignment
-│   ├─ Quality / timing capability
-│   └─ Predicted vs measured
+├─ 測定
+│   ├─ 読み込み / 測定
+│   ├─ 割り当て
+│   ├─ 品質 / タイミング
+│   └─ 予測との比較
 │
-├─ Optimize
-│   ├─ Search setup
-│   ├─ Candidates
-│   ├─ Objectives / Pareto
-│   ├─ Measurement plan
-│   └─ Validation / adaptive
+├─ 最適化
+│   ├─ 探索設定
+│   ├─ 候補
+│   ├─ 目的 / パレート
+│   ├─ 測定計画
+│   └─ 検証 / 適応
 │
-└─ Help / Settings
+└─ ヘルプ / 設定
 ~~~
 
 Predictionを単独global destinationとして固定しない。
@@ -103,11 +103,11 @@ Predictionを単独global destinationとして固定しない。
 
 - project selector + save state
 - feature search / `Ctrl+K`
-- Overview
-- Room
-- Measurements
-- Optimize
-- Help / Settings at bottom
+- 概要
+- 部屋
+- 測定
+- 最適化
+- 下端にヘルプ / 設定
 
 global destinationは原則4〜5個以内。icon-onlyを既定にせず、short labelを併記する。必要ならrail自体をcollapseできる。
 
@@ -117,9 +117,9 @@ global destinationは原則4〜5個以内。icon-onlyを既定にせず、short 
 
 例:
 
-- Room: Geometry / Objects / Speakers / Acoustics
-- Measurements: Import / Assign / Compare
-- Optimize: Setup / Candidates / Pareto / Validate
+- 部屋: 形状 / 物体 / スピーカー / 音響
+- 測定: 読み込み / 割り当て / 比較
+- 最適化: 設定 / 候補 / パレート / 検証
 
 Editor / Room / Wall / Object / Audio等の複数toolbarを常時併置しない。
 
@@ -160,22 +160,22 @@ Overviewはnavigation authorityを持つ。
 
 表示例:
 
-- Room geometry incomplete -> Complete room geometry
-- Speaker role unknown -> Assign speaker roles
-- No measurement -> Import REW measurement
-- Measurement is magnitude-only -> Timing/phase validation unavailable
-- Prediction stale -> Re-run prediction
-- Validation blocked -> reason + deep link
+- 部屋形状が未完成 -> 「部屋を完成させる」
+- スピーカー役割が未設定 -> 「役割を設定」
+- 測定がない -> 「REWを読み込む」
+- magnitude-only measurement -> 「この測定ではタイミング/位相比較を利用できません」
+- 予測条件が変更済み -> 「再計算」
+- 検証が停止中 -> 短い理由 + 該当画面への操作
 
 各actionはworkspace/entity/subsectionへdeep-linkする。
 
 初回projectの軽いguided path:
 
-1. Room
-2. Speakers / seats
-3. Measurements (optional)
-4. Predict / analyze
-5. Optimize
+1. 部屋
+2. スピーカー / 座席
+3. 測定（任意）
+4. 予測 / 解析
+5. 最適化
 
 wizardで入力を強制せず、常にOverviewへ戻れる。
 
@@ -186,8 +186,8 @@ wizardで入力を強制せず、常にOverviewへ戻れる。
 - navigation destination
 - common command
 - entity
-- task: Draw room / Add speaker / Import REW / Run prediction / Compare candidates
-- settings / help
+- task: 部屋を作図 / スピーカーを追加 / REWを読み込む / 予測を実行 / 候補を比較
+- 設定 / ヘルプ
 
 検索結果はcurrent contextとavailabilityを反映し、disabledの場合は短い理由を表示する。
 
