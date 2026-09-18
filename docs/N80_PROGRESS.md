@@ -285,3 +285,14 @@ Roadmap O50 is now implemented at the immutable authority boundary before adding
 - a focused invariant test covers candidate -> applied revision binding.
 
 This follows the roadmap safety boundary: HTDT does not autonomously move speakers, change AVR settings, or trigger REW playback. Existing N60 ingestion remains the measurement authority. O60 validation will consume these immutable links; O70 adaptive planning remains gated on O60 evidence.
+
+
+## 2026-09-18 — O50 native composition + O60 holdout gate
+
+- Native Optimization workspace can now create an immutable Measurement Plan from the selected candidate and the current saved applied SceneRevision. Dirty/unsaved working state is rejected.
+- The action explicitly records a plan only; physical movement and REW measurement remain human-controlled.
+- Added `CadModelValidationRecord` with explicit calibration/holdout split, prediction/measurement IDs, per-pair residual RMS, aggregate calibration/holdout RMS, model ID/version, band, algorithm version and immutable hash.
+- Recommendation eligibility cannot become enabled without holdout evidence and remains disabled when holdout RMS exceeds the explicit validation threshold.
+- Focused O60 tests verify that calibration fit cannot substitute for independent holdout evidence.
+
+O70 adaptive planning is intentionally not implemented as an automatic recommendation yet: the roadmap requires real O60 holdout evidence and stability evidence, not merely the existence of the validation code. Until such evidence exists, the product remains a Pareto comparison and measurement-planning tool.
