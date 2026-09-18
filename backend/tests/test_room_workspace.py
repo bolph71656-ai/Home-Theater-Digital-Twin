@@ -11,8 +11,11 @@ from PySide6.QtWidgets import QApplication, QDockWidget, QFrame
 
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import F1_DOCUMENT_ID, RoomVertex
+from htdt.cad_wall_models import WallOpening
+from htdt.cad_walls import add_opening
 from htdt.cad_input import CadAxis
 from htdt.room_geometry_input import RoomGeometryInputController
+from htdt.room_geometry_panel import RoomGeometryPanel
 from htdt.room_transform_input import RoomEntityTransformController
 from htdt.room_viewport import RoomOverlayState
 from htdt.room_workspace import (
@@ -347,6 +350,155 @@ def test_room_rotate_respects_axis_constraint_and_escape_cancels(tmp_path) -> No
     assert not workspace.controller.working.has_preview
 
     transform.dispose()
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+
+def test_room_geometry_midpoint_split_preserves_opening_references_and_undo(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: GeometryFakeViewport(parent),
+    )
+    geometry = RoomGeometryInputController(workspace, workspace.viewport)
+    workspace.attach_geometry_input(geometry)
+    geometry.mode = "edit"
+    geometry.select_edge(0)
+
+    assert geometry.ensure_wall_topology() is True
+    room = workspace.controller.committed_document.room
+    topology = workspace.controller.committed_document.wall_topology
+    assert room is not None and topology is not None
+    wall = geometry.selected_wall
+    assert wall is not None
+
+    with_opening = add_opening(
+        room,
+        topology,
+        WallOpening(
+            opening_id="window-before-split",
+            wall_id=wall.wall_id,
+            offset_m=0.5,
+            width_m=1.0,
+            sill_m=0.8,
+            height_m=1.0,
+            kind="window",
+        ),
+    )
+    assert workspace.controller.replace_room_topology(room, with_opening)
+    geometry.select_edge(0)
+
+    assert geometry.insert_selected_edge_midpoint() is True
+    split = workspace.controller.committed_document
+    assert split.wall_topology is not None
+    assert len(split.wall_topology.walls) == len(with_opening.walls) + 1
+    migrated = next(
+        item
+        for item in split.wall_topology.openings
+        if item.opening_id == "window-before-split"
+    )
+    assert migrated.wall_id != wall.wall_id
+    assert migrated.offset_m == pytest.approx(0.5)
+
+    assert workspace.undo() is True
+    restored = workspace.controller.committed_document
+    assert restored.room == room
+    assert restored.wall_topology == with_opening
+
+    geometry.dispose()
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+def test_room_numeric_edge_edit_fails_closed_when_opening_would_exceed_wall(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: GeometryFakeViewport(parent),
+    )
+    geometry = RoomGeometryInputController(workspace, workspace.viewport)
+    workspace.attach_geometry_input(geometry)
+    geometry.mode = "edit"
+    geometry.select_edge(0)
+    assert geometry.ensure_wall_topology() is True
+
+    room = workspace.controller.committed_document.room
+    topology = workspace.controller.committed_document.wall_topology
+    assert room is not None and topology is not None
+    wall = geometry.selected_wall
+    assert wall is not None
+    topology = add_opening(
+        room,
+        topology,
+        WallOpening(
+            opening_id="door-near-end",
+            wall_id=wall.wall_id,
+            offset_m=4.7,
+            width_m=1.0,
+            height_m=2.0,
+        ),
+    )
+    assert workspace.controller.replace_room_topology(room, topology)
+    geometry.select_edge(0)
+    before = workspace.controller.committed_document
+
+    with pytest.raises(ValueError):
+        geometry.set_selected_edge_length(5.0)
+
+    assert workspace.controller.committed_document == before
+
+    geometry.dispose()
+    workspace.close()
+    workspace.deleteLater()
+    app.processEvents()
+
+
+def test_geometry_context_panel_mounts_and_adds_opening_through_wall_authority(tmp_path) -> None:
+    app = _app()
+    repository = SceneRepository(tmp_path / "scenes.sqlite3")
+    workspace = RoomWorkspace(
+        repository,
+        F1_DOCUMENT_ID,
+        viewport_factory=lambda parent: GeometryFakeViewport(parent),
+    )
+    geometry = RoomGeometryInputController(workspace, workspace.viewport)
+    workspace.attach_geometry_input(geometry)
+    panel = RoomGeometryPanel(geometry)
+    workspace.attach_geometry_panel(panel)
+
+    geometry.mode = "edit"
+    geometry.select_edge(0)
+    workspace.set_context("geometry")
+    panel.refresh()
+
+    assert workspace.right_stack.currentWidget() is panel
+    assert not panel.ensure_walls_button.isHidden()
+    panel.ensure_walls_button.click()
+    app.processEvents()
+
+    assert workspace.controller.committed_document.wall_topology is not None
+    panel.refresh()
+    assert panel.add_opening_button.isEnabled()
+    assert panel.opening_kind.isEnabled()
+
+    window_index = panel.opening_kind.findData("window")
+    panel.opening_kind.setCurrentIndex(window_index)
+    panel.add_opening_button.click()
+    app.processEvents()
+
+    topology = workspace.controller.committed_document.wall_topology
+    assert topology is not None
+    assert len(topology.openings) == 1
+    assert topology.openings[0].kind == "window"
+
+    geometry.dispose()
     workspace.close()
     workspace.deleteLater()
     app.processEvents()
