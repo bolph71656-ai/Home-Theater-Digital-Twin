@@ -1,11 +1,11 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path実装済み / Issue #101 R-seriesは計画済み・未着手 / O80P physical toe-in + O80A Adaptive Extended追加 / synthetic acceptance対象 / 実室model gate未通過
+> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path実装済み / Issue #101 R100A benchmark authority実装中 / O80P physical toe-in + O80A Adaptive Extended追加 / synthetic acceptance対象 / 実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesは計画/調査のみで、R100A以降のsolver実装は未着手。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
+**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100A実装へ着手し、solver-neutral benchmark authority/schema・canonical fixture manifest・fail-closed contractを `feat/issue-101-r100a-benchmark-authority` で追加中。solver kernelとR100B数値bakeoffはまだ未着手。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
 
 N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
@@ -34,7 +34,20 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **既存v0.1/O-series software pathは完了。未着手software featureはIssue #101 R100A→R180。別trackとしてIssue #83のowned-room campaign実測・O60R auditも未完了で、これがPASSするまで`production_owned_room` recommendationとowned-room directional capabilityはdisabled** |
+| R100A tracking | `feat/issue-101-r100a-benchmark-authority` — solver-neutral authority model + 10 canonical fixtures + focused fail-closed tests。CI/merge前 |
+| 次工程 | **R100AをGitHub Actionsで検証・merge後、同一manifest authorityを入力としてR100B solver bakeoff/ADRへ進む。別trackとしてIssue #83のowned-room campaign実測・O60R auditも未完了で、これがPASSするまで`production_owned_room` recommendationとowned-room directional capabilityはdisabled** |
+
+## R100A — solver-neutral benchmark authority / branch implementation
+
+Issue #101の最初の実装slice。solver選定やkernel実装より先に、R100Bで全候補を同一条件比較するauthorityを固定する。
+
+- `backend/src/htdt/acoustic_benchmark.py`: immutable Pydantic authority。AcousticRegion / AcousticObstacle / Portal / BoundaryTermination、wave/geometric material capability、source/receiver/environment、numerical comparison、observable/tolerance、resource budget、hard gate、canonical JSON/SHA-256 identityを実装。
+- `benchmarks/acoustics/r100a_manifest.json`: 10 fixture。rigid analytical modes、convergence、complex impedance reflection、concave L-room、Portal split、explicit radiation termination、direct/first reflection、reflecting counter、stochastic seed repeatability、hybrid overlapをsolver-neutralに固定。
+- `backend/tests/test_acoustic_benchmark.py`: manifestのcanonical round-trip、必須fixture網羅、Portal/termination明示、wave impedanceのfail-closed、obstacle participation、未知peer fixture拒否を検証。
+- `docs/R100A_BENCHMARK_AUTHORITY.md`: authority境界、hard gate、resource contract、R100Bへの引継ぎを記録。
+- scalar absorption/scatteringからphase-bearing impedanceを無言で生成しない。未知openingをanecoic扱いしない。performance budgetとphysics toleranceを分離する。
+- この段階は数値solver精度やowned-room validityの証拠ではない。R100B/R130/R180のgateを迂回しない。
+- RDCは使用しない。Windows実機操作はR100Aに不要。
 
 ## N90 — stable Windows release / A15 PASS
 
