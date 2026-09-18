@@ -62,7 +62,10 @@ class CadValidationCampaignReadiness(BaseModel):
 def _parse_aware_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
-    parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
     if parsed.tzinfo is None:
         return None
     return parsed
