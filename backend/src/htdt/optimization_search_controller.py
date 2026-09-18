@@ -270,8 +270,7 @@ class SearchControllerMixin:
         self._refresh_search_specs()
         self._remove_search_overlays()
         self.statusBar().showMessage(
-            f'探索仕様を保存しました · 総候補 {estimate["raw_candidate_count"]} · '
-            f'revision {spec.scene_revision_id[:8]}'
+            f'探索設定を保存しました · 総候補 {estimate["raw_candidate_count"]}'
         )
 
     def _refresh_search_specs(self) -> None:
