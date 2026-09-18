@@ -9,6 +9,7 @@ from PySide6.QtCore import QPointF, Signal
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
+from .cad_prediction_models import CadPredictionResult
 from .cad_scene import (
     SceneDocument,
     SceneEntity,
@@ -16,6 +17,7 @@ from .cad_scene import (
     domain_pose_to_render_matrix,
     domain_to_render,
     room_vertices,
+    scene_content_hash,
 )
 from .ui_theme import DARK_THEME, SurfaceRole, set_surface_role
 
@@ -235,6 +237,80 @@ class RoomViewport3D(QFrame):
                 pickable=False,
                 name=f"aim-{entity.entity_id}",
             )
+
+    def render_prediction_results(
+        self,
+        results: tuple[CadPredictionResult, ...],
+    ) -> None:
+        """Render current N70 geometry evidence without becoming prediction authority."""
+
+        document = self._document
+        if document is None or not results:
+            return
+        first = results[0]
+        if (
+            first.scene_content_hash != scene_content_hash(document)
+            or first.geometry_compatibility != "exact_for_model_geometry"
+        ):
+            return
+        reflection_result = next(
+            (item for item in results if item.result_kind == "geometry_reflections"),
+            None,
+        )
+        if reflection_result is None:
+            return
+
+        direct_seen: set[str] = set()
+        for index, reflection in enumerate(reflection_result.reflections):
+            source = domain_to_render(reflection.source_position)
+            receiver = domain_to_render(reflection.receiver_position)
+            point = domain_to_render(reflection.reflection_position)
+            if reflection.speaker_entity_id not in direct_seen:
+                direct_seen.add(reflection.speaker_entity_id)
+                self.plotter.add_mesh(
+                    pv.Line(source, receiver),
+                    color=DARK_THEME.scientific.primary_trace.hex,
+                    line_width=2,
+                    opacity=0.64,
+                    pickable=False,
+                    name=f"prediction-direct-{reflection.speaker_entity_id}",
+                    render=False,
+                )
+            self.plotter.add_mesh(
+                pv.Line(source, point),
+                color=DARK_THEME.scientific.predicted.hex,
+                line_width=2,
+                opacity=0.80,
+                pickable=False,
+                name=f"prediction-reflection-a-{index}",
+                render=False,
+            )
+            self.plotter.add_mesh(
+                pv.Line(point, receiver),
+                color=DARK_THEME.scientific.predicted.hex,
+                line_width=2,
+                opacity=0.80,
+                pickable=False,
+                name=f"prediction-reflection-b-{index}",
+                render=False,
+            )
+            self.plotter.add_mesh(
+                pv.Sphere(radius=0.035, center=point),
+                color=DARK_THEME.scientific.cursor.hex,
+                pickable=False,
+                name=f"prediction-reflection-point-{index}",
+                render=False,
+            )
+        if reflection_result.reflections:
+            self.plotter.add_text(
+                "予測幾何 · 実測ではありません",
+                name="prediction-overlay-label",
+                position="lower_left",
+                font_size=9,
+                color=DARK_THEME.text.secondary.hex,
+                render=False,
+            )
+        self.plotter.render()
 
     def _render_labels(self, document: SceneDocument, selected_id: str | None) -> None:
         visible = [
