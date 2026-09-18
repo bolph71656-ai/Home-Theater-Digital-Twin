@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from math import isfinite
 from typing import Any, Literal, Mapping, Sequence
 from uuid import uuid4
 
@@ -18,6 +19,50 @@ class CadValidationCampaignCandidate(BaseModel):
 
     candidate_id: str = Field(min_length=1)
     split: Literal['calibration', 'holdout']
+
+
+class CadValidationTargetResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    frequency_hz: tuple[float, ...] = Field(min_length=2)
+    level_db: tuple[float, ...] = Field(min_length=2)
+
+    @model_validator(mode='after')
+    def valid_response(self) -> 'CadValidationTargetResponse':
+        if len(self.frequency_hz) != len(self.level_db):
+            raise ValueError('validation target frequency and level arrays must match')
+        previous = 0.0
+        for frequency in self.frequency_hz:
+            value = float(frequency)
+            if not isfinite(value) or value <= 0:
+                raise ValueError('validation target frequencies must be finite and positive')
+            if previous and value <= previous:
+                raise ValueError('validation target frequencies must be strictly increasing')
+            previous = value
+        if any(not isfinite(float(value)) for value in self.level_db):
+            raise ValueError('validation target levels must be finite')
+        return self
+
+
+def _evaluation_spec(
+    *,
+    objective_ids: Sequence[str],
+    requested_band_hz: tuple[float, float],
+    target_response: CadValidationTargetResponse,
+    reference_band_hz: tuple[float, float] | None,
+    excluded_bands: Sequence[tuple[float, float]],
+) -> dict[str, Any]:
+    return {
+        'algorithm_version': 'objective-vector-1',
+        'objective_method': 'target_response',
+        'objectives': list(objective_ids),
+        'response_band_hz': list(requested_band_hz),
+        'reference_band_hz': (
+            None if reference_band_hz is None else list(reference_band_hz)
+        ),
+        'excluded_bands': [list(item) for item in excluded_bands],
+        'target_response': target_response.model_dump(mode='json'),
+    }
 
 
 class CadValidationCampaignSensitivity(BaseModel):
@@ -74,6 +119,9 @@ class CadValidationCampaign(BaseModel):
 
     candidates: tuple[CadValidationCampaignCandidate, ...] = Field(min_length=2)
     objective_ids: tuple[str, ...] = Field(min_length=1)
+    target_response: CadValidationTargetResponse
+    reference_band_hz: tuple[float, float] | None = None
+    excluded_bands: tuple[tuple[float, float], ...] = ()
     objective_evaluation_spec_json: str = Field(min_length=2)
     objective_evaluation_spec_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
@@ -111,6 +159,33 @@ class CadValidationCampaign(BaseModel):
 
         if len(self.objective_ids) != len(set(self.objective_ids)):
             raise ValueError('validation campaign objective ids must be unique')
+        supported_objectives = {
+            'response.rms_difference_db',
+            'response.peak_excess_db',
+            'response.dip_deficit_db',
+            'response.shape_rms_db',
+        }
+        if not set(self.objective_ids).issubset(supported_objectives):
+            raise ValueError('validation campaign contains unsupported acoustic objectives')
+        if (
+            'response.shape_rms_db' in self.objective_ids
+            and self.reference_band_hz is None
+        ):
+            raise ValueError('response.shape_rms_db requires a reference band')
+        if self.target_response.frequency_hz[0] > low or self.target_response.frequency_hz[-1] < high:
+            raise ValueError('validation target response must cover the requested band')
+        if self.reference_band_hz is not None:
+            ref_low, ref_high = self.reference_band_hz
+            if ref_low <= 0 or ref_high <= ref_low:
+                raise ValueError('validation campaign reference band is invalid')
+            if (
+                self.target_response.frequency_hz[0] > ref_low
+                or self.target_response.frequency_hz[-1] < ref_high
+            ):
+                raise ValueError('validation target response must cover the reference band')
+        for excluded_low, excluded_high in self.excluded_bands:
+            if excluded_low <= 0 or excluded_high < excluded_low:
+                raise ValueError('validation campaign excluded band is invalid')
         if any(value < 0 for value in self.trend_tolerance_by_objective.values()):
             raise ValueError('validation campaign trend tolerances must be non-negative')
         if not set(self.trend_tolerance_by_objective).issubset(self.objective_ids):
@@ -124,9 +199,15 @@ class CadValidationCampaign(BaseModel):
             raise ValueError('campaign objective evaluation spec must be canonical JSON')
         if canonical_objective_sha256(evaluation_spec) != self.objective_evaluation_spec_sha256:
             raise ValueError('campaign objective evaluation spec hash mismatch')
-        if isinstance(evaluation_spec, dict) and 'objectives' in evaluation_spec:
-            if tuple(evaluation_spec['objectives']) != self.objective_ids:
-                raise ValueError('campaign objective ids do not match evaluation spec')
+        expected_evaluation_spec = _evaluation_spec(
+            objective_ids=self.objective_ids,
+            requested_band_hz=self.requested_band_hz,
+            target_response=self.target_response,
+            reference_band_hz=self.reference_band_hz,
+            excluded_bands=self.excluded_bands,
+        )
+        if evaluation_spec != expected_evaluation_spec:
+            raise ValueError('campaign objective evaluation spec does not match preregistration')
 
         sensitivity_keys: set[tuple[str, tuple[str, str]]] = set()
         for requirement in self.sensitivity:
@@ -190,6 +271,11 @@ class CadValidationCampaign(BaseModel):
             'max_holdout_rms_db': self.max_holdout_rms_db,
             'candidates': [item.model_dump(mode='json') for item in self.candidates],
             'objective_ids': list(self.objective_ids),
+            'target_response': self.target_response.model_dump(mode='json'),
+            'reference_band_hz': (
+                None if self.reference_band_hz is None else list(self.reference_band_hz)
+            ),
+            'excluded_bands': [list(item) for item in self.excluded_bands],
             'objective_evaluation_spec': json.loads(self.objective_evaluation_spec_json),
             'objective_evaluation_spec_sha256': self.objective_evaluation_spec_sha256,
             'trend_tolerance_by_objective': dict(sorted(self.trend_tolerance_by_objective.items())),
@@ -214,7 +300,9 @@ def build_validation_campaign(
     max_holdout_rms_db: float,
     candidates: Sequence[CadValidationCampaignCandidate],
     objective_ids: Sequence[str],
-    objective_evaluation_spec: Any,
+    target_response: CadValidationTargetResponse,
+    reference_band_hz: tuple[float, float] | None = None,
+    excluded_bands: Sequence[tuple[float, float]] = (),
     trend_tolerance_by_objective: Mapping[str, float] | None = None,
     trend_min_comparable_pairs: int = 1,
     trend_min_agreement_ratio: float = 0.75,
@@ -223,6 +311,13 @@ def build_validation_campaign(
     separation: Sequence[CadValidationCampaignSeparation] = (),
     required_applicability_codes: Sequence[str] = (),
 ) -> CadValidationCampaign:
+    objective_evaluation_spec = _evaluation_spec(
+        objective_ids=objective_ids,
+        requested_band_hz=requested_band_hz,
+        target_response=target_response,
+        reference_band_hz=reference_band_hz,
+        excluded_bands=excluded_bands,
+    )
     spec_json = canonical_objective_json(objective_evaluation_spec)
     spec_sha = canonical_objective_sha256(objective_evaluation_spec)
     payload = {
@@ -236,6 +331,9 @@ def build_validation_campaign(
         'max_holdout_rms_db': float(max_holdout_rms_db),
         'candidates': tuple(candidates),
         'objective_ids': tuple(objective_ids),
+        'target_response': target_response,
+        'reference_band_hz': reference_band_hz,
+        'excluded_bands': tuple(excluded_bands),
         'objective_evaluation_spec_json': spec_json,
         'objective_evaluation_spec_sha256': spec_sha,
         'trend_tolerance_by_objective': dict(trend_tolerance_by_objective or {}),
