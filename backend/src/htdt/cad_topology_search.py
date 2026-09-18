@@ -988,6 +988,18 @@ def topology_candidate_document(
     ):
         raise ValueError('topology placement candidate identity mismatch')
 
+    membership = generate_topology_placement_candidates(
+        baseline=baseline,
+        template_variant=template_variant,
+        spec=spec,
+        offset=candidate.feasible_index,
+        limit=1,
+    )
+    if not membership.candidates or membership.candidates[0] != candidate:
+        raise ValueError(
+            'topology placement candidate is not an exact deterministic search member'
+        )
+
     g10_evaluation = evaluate_constraint_set(
         scene_to_g10_context(virtual_scene),
         json.loads(spec.g10_constraint_spec_json),
