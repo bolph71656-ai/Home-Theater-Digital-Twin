@@ -53,6 +53,7 @@ def _advanced_gate_reasons(
     *,
     evidence_scope: EvidenceScope,
     residual_gate: Literal['pass', 'fail', 'insufficient'],
+    objective_samples: Sequence[CadObjectiveValidationSample],
     trend_checks: Sequence[CadTrendCheck],
     sensitivity_checks: Sequence[CadSensitivityCheck],
     repeatability_checks: Sequence[CadRepeatabilityCheck],
@@ -65,8 +66,18 @@ def _advanced_gate_reasons(
     if residual_gate != 'pass':
         reasons.append(f'holdout residual gate is {residual_gate}')
 
-    if not trend_checks:
+    holdout_by_objective: dict[str, set[str]] = {}
+    for sample in objective_samples:
+        if sample.split == 'holdout':
+            holdout_by_objective.setdefault(sample.objective_id, set()).add(sample.candidate_id)
+    if not holdout_by_objective:
         reasons.append('holdout objective trend evidence is required')
+    trend_ids = {check.objective_id for check in trend_checks}
+    for objective_id, candidate_ids in holdout_by_objective.items():
+        if len(candidate_ids) < 2:
+            reasons.append(f'objective trend {objective_id} has fewer than two holdout candidates')
+        elif objective_id not in trend_ids:
+            reasons.append(f'objective trend {objective_id} check is missing')
     for check in trend_checks:
         if check.gate != 'pass':
             reasons.append(f'objective trend {check.objective_id} is {check.gate}')
@@ -173,6 +184,20 @@ class CadModelValidationRecord(BaseModel):
         if len(applicability_codes) != len(set(applicability_codes)):
             raise ValueError('model applicability check codes must be unique')
 
+        for check in self.trend_checks:
+            matching = tuple(
+                sample for sample in self.objective_samples
+                if sample.split == 'holdout' and sample.objective_id == check.objective_id
+            )
+            rebuilt = build_trend_checks(
+                matching,
+                tie_tolerance_by_objective={check.objective_id: check.tie_tolerance},
+                min_comparable_pairs=check.min_comparable_pairs,
+                min_agreement_ratio=check.min_agreement_ratio,
+            )
+            if len(rebuilt) != 1 or rebuilt[0] != check:
+                raise ValueError('trend check does not match objective validation samples')
+
         if self.holdout_rms_db is None and self.residual_gate != 'insufficient':
             raise ValueError('missing holdout evidence requires residual_gate=insufficient')
         if self.holdout_rms_db is not None:
@@ -183,6 +208,7 @@ class CadModelValidationRecord(BaseModel):
         advanced_reasons = _advanced_gate_reasons(
             evidence_scope=self.evidence_scope,
             residual_gate=self.residual_gate,
+            objective_samples=self.objective_samples,
             trend_checks=self.trend_checks,
             sensitivity_checks=self.sensitivity_checks,
             repeatability_checks=self.repeatability_checks,
@@ -311,6 +337,7 @@ def _build_record(payload: dict[str, Any]) -> CadModelValidationRecord:
     reasons = _advanced_gate_reasons(
         evidence_scope=payload['evidence_scope'],
         residual_gate=payload['residual_gate'],
+        objective_samples=payload.get('objective_samples', ()),
         trend_checks=payload.get('trend_checks', ()),
         sensitivity_checks=payload.get('sensitivity_checks', ()),
         repeatability_checks=payload.get('repeatability_checks', ()),
