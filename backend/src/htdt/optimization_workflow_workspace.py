@@ -326,7 +326,7 @@ class OptimizationWorkflowWorkspace(QWidget):
         capability_row = QHBoxLayout()
         capability_row.addWidget(_required(self.extended_capability_combo, "extended_capability_combo"), 1)
         capability_row.addWidget(
-            _button("Synthetic capability", self.create_synthetic_extended_capability)
+            _button("Synthetic capability（開発）", self.create_synthetic_extended_capability)
         )
         capability_row.addWidget(
             _button("選択O60から本番capability", self.create_owned_room_extended_capability)
@@ -335,11 +335,11 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         extended_form = QFormLayout()
         extended_form.addRow(
-            "parameter",
+            "パラメータ",
             _required(self.extended_parameter_combo, "extended_parameter_combo"),
         )
         extended_form.addRow(
-            "speaker",
+            "スピーカー",
             _required(self.extended_entity_combo, "extended_entity_combo"),
         )
         extended_form.addRow("最小", _required(self.extended_min_field, "extended_min_field"))
@@ -477,11 +477,13 @@ class OptimizationWorkflowWorkspace(QWidget):
         side.addStretch(1)
 
         side_scroll = _scroll_page(side_body)
-        side_scroll.setMinimumWidth(430)
+        side_scroll.setMinimumWidth(300)
+        side_scroll.setMaximumWidth(460)
         side_scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         splitter.addWidget(side_scroll)
-        splitter.setStretchFactor(0, 4)
+        splitter.setStretchFactor(0, 5)
         splitter.setStretchFactor(1, 2)
+        splitter.setSizes([760, 340])
         layout.addWidget(splitter, 1)
         return page
 
@@ -576,7 +578,7 @@ class OptimizationWorkflowWorkspace(QWidget):
 
         campaign_form = QFormLayout()
         campaign_form.addRow(
-            "model version",
+            "モデル版",
             _required(self.campaign_model_version_field, "campaign_model_version_field"),
         )
         campaign_form.addRow(
