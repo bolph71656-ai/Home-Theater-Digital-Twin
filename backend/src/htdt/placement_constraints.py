@@ -453,8 +453,8 @@ def evaluate_constraint_set(
                 position = require_position(constraint.constraint_id, constraint.kind, entity_id)
                 if position is None:
                     continue
-                radius = profiles.get(entity_id).effective_radius_m if entity_id in profiles else 0.0
-                envelope = _envelope(Point(position[0], position[1]), radius)
+                profile = profiles.get(entity_id)
+                envelope = _entity_envelope(Point(position[0], position[1]), profile)
                 intersects = bool(region.intersects(envelope))
                 observations.append({
                     'constraint_id': constraint.constraint_id, 'kind': constraint.kind, 'entity_ids': [entity_id],
