@@ -25,7 +25,7 @@ class WorkspaceDeepLink:
     """Transport-only navigation target shared by shell, commands and Overview."""
 
     workspace: WorkspaceId
-    subsection: str | None = None
+    section: str | None = None
     entity_id: str | None = None
 
     def __post_init__(self) -> None:
@@ -33,14 +33,14 @@ class WorkspaceDeepLink:
             object.__setattr__(self, "workspace", WorkspaceId(self.workspace))
 
     @property
-    def section(self) -> str | None:
-        """Compatibility spelling used by the command layer."""
-        return self.subsection
+    def subsection(self) -> str | None:
+        """Overview/readiness spelling for the canonical command-layer section."""
+        return self.section
 
     def as_uri(self) -> str:
         base = f"htdt://workspace/{self.workspace.value}"
-        if self.subsection is not None:
-            base += f"/{quote(self.subsection, safe='')}"
+        if self.section is not None:
+            base += f"/{quote(self.section, safe='')}"
         if self.entity_id is not None:
             base += f"?entity={quote(self.entity_id, safe='')}"
         return base
