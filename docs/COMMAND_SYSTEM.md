@@ -74,7 +74,7 @@ window.command_palette_controller.registry.set_deep_link_handler(
 ~~~
 
 deep-link handler未接続時、navigation commandはpaletteに残るがdisabledになり、
-「ワークスペース切替は新しいシェルのrouter接続後に利用できます」と理由を表示する。
+「画面切替の準備が完了すると利用できます」と理由を表示する。
 これは旧dock構造へnavigation authorityを二重実装しないための意図的な境界。
 
 task commandにもdeep-link metadataを持たせる。Agent Aは必要に応じて該当workspaceを開いてから
