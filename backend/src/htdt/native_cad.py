@@ -248,7 +248,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         app = QApplication([sys.argv[0]])
-        apply_dark_theme(app)
+        if args.workflow_shell:
+            apply_dark_theme(app)
         repository = SceneRepository(args.data_dir / "cad-scenes.sqlite3")
         window = (
             build_workflow_shell(repository, args.document_id)
