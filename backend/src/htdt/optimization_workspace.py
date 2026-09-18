@@ -480,6 +480,113 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
             f'実測候補をcompletedにしました · measured evidence {len(completed.measurement_ids)}件'
         )
 
+    @staticmethod
+    def _validation_gate_summary(checks) -> str:
+        if not checks:
+            return '—'
+        passed = sum(getattr(check, 'gate', None) == 'pass' for check in checks)
+        failed = sum(getattr(check, 'gate', None) == 'fail' for check in checks)
+        insufficient = sum(getattr(check, 'gate', None) == 'insufficient' for check in checks)
+        parts = [f'pass {passed}']
+        if failed:
+            parts.append(f'fail {failed}')
+        if insufficient:
+            parts.append(f'insufficient {insufficient}')
+        return ' / '.join(parts)
+
+    def refresh_model_validations(self) -> None:
+        tree = self.validation_tree
+        if tree is None:
+            return
+        tree.clear()
+        if self.validation_detail_label is not None:
+            self.validation_detail_label.setText('ValidationRecord未選択')
+        spec_id = self.search_selected_spec_id
+        if spec_id is None:
+            return
+        try:
+            records = self.validation_repository.list_for_search_spec(spec_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f'ValidationRecordを読めません · {exc}')
+            return
+        for record in records:
+            repeatability = '—'
+            if record.repeatability_checks:
+                floors = ', '.join(
+                    f'{check.rms_floor_db:.3g} dB'
+                    for check in record.repeatability_checks
+                )
+                repeatability = f'{len(record.repeatability_checks)} group · {floors}'
+            item = QTreeWidgetItem([
+                record.validation_id[:8],
+                record.evidence_scope,
+                record.residual_gate,
+                self._validation_gate_summary(record.trend_checks),
+                self._validation_gate_summary(record.sensitivity_checks),
+                repeatability,
+                record.recommendation_gate,
+            ])
+            item.setData(0, ROLE, record.validation_id)
+            tree.addTopLevelItem(item)
+
+    def _validation_selected(self) -> None:
+        tree = self.validation_tree
+        label = self.validation_detail_label
+        if tree is None or label is None:
+            return
+        item = tree.currentItem()
+        validation_id = None if item is None else item.data(0, ROLE)
+        if not isinstance(validation_id, str):
+            label.setText('ValidationRecord未選択')
+            return
+        record = self.validation_repository.get(validation_id)
+        if record is None:
+            label.setText('ValidationRecordが見つかりません')
+            return
+
+        calibration_count = sum(pair.split == 'calibration' for pair in record.pairs)
+        holdout_count = sum(pair.split == 'holdout' for pair in record.pairs)
+        lines = [
+            f'model {record.model_id} / {record.model_version}',
+            f'calibration {calibration_count} · holdout {holdout_count} · '
+            f'band {record.requested_band_hz[0]:g}–{record.requested_band_hz[1]:g} Hz',
+            f'residual {record.residual_gate} · holdout RMS '
+            f'{record.holdout_rms_db if record.holdout_rms_db is not None else "—"} dB',
+        ]
+        for check in record.trend_checks:
+            agreement = '—' if check.agreement_ratio is None else f'{check.agreement_ratio:.3f}'
+            lines.append(
+                f'trend {check.objective_id}: {check.gate} · agreement {agreement} · '
+                f'comparable {check.comparable_pairs}'
+            )
+        for check in record.sensitivity_checks:
+            lines.append(
+                f'sensitivity {check.objective_id} {check.candidate_a_id[:8]}/{check.candidate_b_id[:8]}: '
+                f'{check.gate} · observed {check.observed_sensitivity_per_m:.3g} '
+                f'{check.unit}/m · model error {check.model_error_per_m:.3g} {check.unit}/m'
+            )
+        for check in record.repeatability_checks:
+            lines.append(
+                f'repeatability Scene {check.scene_revision_id[:8]}: '
+                f'{check.rms_floor_db:.3g} dB · {len(check.measurement_ids)} repeats'
+            )
+        for check in record.separation_checks:
+            ratio = '∞' if check.separation_ratio is None and check.response_difference_rms_db > 0 else (
+                '—' if check.separation_ratio is None else f'{check.separation_ratio:.3g}×'
+            )
+            lines.append(
+                f'separation {check.candidate_a_id[:8]}/{check.candidate_b_id[:8]}: '
+                f'{check.gate} · {ratio} repeatability'
+            )
+        for check in record.applicability_checks:
+            lines.append(
+                f'applicability {check.code}: {"pass" if check.passed else "fail"} · {check.detail}'
+            )
+        lines.append(f'recommendation {record.recommendation_gate}')
+        if record.gate_reasons:
+            lines.extend(f'stop: {reason}' for reason in record.gate_reasons)
+        label.setText('\n'.join(lines))
+
     def refresh_pareto_comparison(self) -> None:
         spec_id = self.search_selected_spec_id
         if spec_id is None or self.objective_list is None or self.pareto_tree is None:
@@ -821,6 +928,7 @@ class OptimizationWorkspaceWindow(PredictionWorkspaceWindow):
         self._refresh_search_binding_state()
         self._refresh_search_candidate_tree()
         self.refresh_measurement_plans()
+        self.refresh_model_validations()
         self._render_search_overlay()
 
     def _selected_search_spec(self) -> CadSearchSpec | None:
