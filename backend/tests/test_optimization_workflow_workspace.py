@@ -202,8 +202,8 @@ def test_ux140_workflow_application_binds_commands_without_legacy_qactions(monke
 
     assert mount.on_deactivate is not None
     mount.on_deactivate()
-    assert not composition.registry.is_bound("project.save")
-    assert not composition.registry.is_bound("optimization.compare_candidates")
+    assert not composition.registry.availability("project.save").enabled
+    assert not composition.registry.availability("optimization.compare_candidates").enabled
 
     workspace.close()
     workspace.deleteLater()
