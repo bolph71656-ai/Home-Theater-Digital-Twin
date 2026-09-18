@@ -11,7 +11,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 
 | 区分 | 現在の状態 |
 |---|---|
-| main | **O60 software validationまでmerge済み**。PR #78 merge `b0b56497255425b5b343c6f5f52763d11dbf5ee6`。N90はPR #79でA15受入済み・merge待ち |
+| main | **N05〜N90 stable releaseとO10〜O60 software authorityをmerge済み**。N90 PR #79 merge `d1f0f7cf1bf24e4590954071d78c9ac281fc15b9` |
 | N80 tracking | Issue #65（closed） / Issue #67（O20 closed） / PR #74 merged |
 | O60 tracking | Issue #75 / PR #76（implementation history） / PR #78 merged。final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3`、CI #427 PASS |
 | O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **PR #79を文書確定してmerge。O70/O80はowned-room O60 evidenceが成立するまで有効化しない** |
+| 次工程 | **O60Eでowned-room validation campaignを測定前に事前登録し、実室evidenceを収集する。O70/O80はeligible campaign-backed ValidationRecord成立までdisabled** |
 
 ## N90 — stable Windows release / A15 PASS
 
@@ -218,3 +218,20 @@ PR #76 final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3` はCI #427 / run `3
 - O70向けには永続化済み `eligible` recordだけを取得するAPIを設けたが、Adaptive Planner自体は実室O60 gate通過まで実装・有効化しない。
 
 このCI PASSは算法・authority実装の検証であり、REW Room Simulator等の特定modelが実室で妥当と証明されたことを意味しない。現時点ではowned-roomのcalibration/holdout/repeatability evidenceが無いため、O70 recommendation gateはdisabled。
+
+
+## O60E — owned-room validation campaign / 実装中
+
+Issue #81 / PR #82で、O60 real-data gateを実測後の恣意的splitから保護するpreregistration authorityを追加中。
+
+- calibration / holdout candidateを測定前にimmutable固定する。
+- exact SearchSpec / candidate-set SHA / model version / target response / evaluation band / thresholdをcampaign hashへ含める。
+- sensitivity / repeatability / candidate separation / applicability requirementsを事前固定する。
+- 対象candidateにmeasured Measurement Planが存在した後のcampaign新規登録を拒否する。
+- campaign作成時刻より前にcapturedされたmeasurementをowned-room validation evidenceへ使わない。
+- O20 prediction / O50-N60 measured evidenceから、campaignと完全一致するO30 objective vectorを同じtarget responseでmaterializeする。
+- readinessはmissing/ambiguous evidenceをcandidate単位で表示し、自動測定や自動推薦を行わない。
+- owned-room ValidationRecordはcampaign ID/SHAへbindingし、repository saveとO70 entry取得時に再検証する。
+- O70/O80はgenuine owned-room campaignがO60全gateを通過するまでdisabledを維持する。
+
+N90 stable 0.1.0のacceptanceは完了済みで、O60EのためにN90実機gateを再実行しない。
