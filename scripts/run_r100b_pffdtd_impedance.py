@@ -147,7 +147,7 @@ def _directory_size_mb(path: Path) -> float:
 
 def _runtime_versions() -> dict[str, str]:
     result: dict[str, str] = {}
-    for name in ('numpy', 'scipy', 'h5py', 'matplotlib', 'psutil'):
+    for name in ('numpy', 'scipy', 'h5py', 'matplotlib', 'psutil', 'pydantic', 'pytest'):
         try:
             result[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
@@ -405,7 +405,7 @@ def _execute(
         'provenance': {
             'candidate_source_commit_sha': candidate.source_commit_sha,
             'candidate_source_actual_sha': actual_head,
-            'htdt_source_commit_sha': _htdt_git_head(),
+            'htdt_source_commit_sha': os.environ.get('HTDT_PROBE_SOURCE_SHA', _htdt_git_head()),\n            'htdt_checkout_commit_sha': _htdt_git_head(),
             'adapter_id': ADAPTER_ID,
             'adapter_version': ADAPTER_VERSION,
             'adapter_sha256': _file_sha256(root / 'backend' / 'src' / 'htdt' / 'acoustic_pffdtd_impedance_adapter.py'),
