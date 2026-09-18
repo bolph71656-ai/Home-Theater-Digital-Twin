@@ -436,7 +436,7 @@ motionは装飾ではなく**因果関係とcontinuityの説明**に限定する
 - warning / completion feedback.
 
 使わない:
--常時 pulsing/glowing;
+- 常時pulsing/glowing;
 - bounce/springを標準feedbackにする;
 - large plot/3D objectを意味なくanimateする;
 - compute待ちで画面全体をblockする.
@@ -465,7 +465,7 @@ motionは装飾ではなく**因果関係とcontinuityの説明**に限定する
 空panelを置かない。
 
 empty stateは:
--何が無いか;
+- 何が無いか;
 - なぜ必要か（必要な場合のみ）;
 - primary next action 1個;
 - optional secondary action.
