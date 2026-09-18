@@ -57,7 +57,7 @@ HTDTの配置探索は、部屋・スピーカー・MLPの可動範囲から候�
 - footprint vertexは順序付きで保存し、自己交差を拒否する。
 - 外接`reference_box`は座標参照や矩形モデルへの近似入力に使ってよいが、実室境界そのものとは扱わない。
 - speaker/MLPはfootprint内かつ0〜heightの範囲に存在することを検証する。
-- 開口、家具、通路、設置不能領域はroom boundaryへ無理に混ぜず、別のconstraint geometryとして保存する。
+- 家具、通路、設置不能領域はroom boundaryへ無理に混ぜず、別のconstraint geometryとして保存する。壁のopeningはCAD上のwall/opening authorityを保ち、R120 acoustic compile時にexplicit PortalまたはBoundaryTerminationへ解釈する。
 - Context revisionには正確なpolygonと、矩形近似を使った場合の近似規則・誤差・用途を別々に保存する。
 
 REW Room Simulatorは公式にrectangular room用なので、8頂点実室のexact predictorとしては使わない。REWモデルは`rectangular_approximation`として明示し、実室polygonと混同しない。
@@ -70,10 +70,12 @@ S03のpyroomacoustics評価は**geometrical-acoustics reference/PoC**へ位置�
 
 Issue #101のarbitrary-room modelはR-seriesで追加する。
 
-- R130: 20–300 Hz low-band wave predictor。first PoCはdeterministic CPU structured-grid/FDTDで、独立FEM/referenceと収束比較する。
+- R100A: solver-neutral benchmark authority。region/portal/source/receiver/boundary/environmentとreference observableを先に固定する。
+- R100B: FDTD/FEM/geometric referenceを同じfixtureで比較してproduction stackを決める。
+- R130A/B/C: 20–300 Hz low-band wave predictorをrigid core → independently verified lossy boundary → causal frequency-dependent boundaryの順で構築する。
 - R150: direct/early specular＋general-polyhedral ray tracing。pyroomacoustics/Embree等をreference/candidateとして比較する。
-- R160: wave/geometricのoverlap/crossoverを明示したhybrid predictor。
-- R170: multi-fidelity batch predictionとしてO20/O30/O40/O50/O60/O70へ接続する。
+- R160: CoherentTransfer / DeterministicPathSet / LateEnergyDecayを区別し、double-countingを避けたoverlap/crossoverを実装する。
+- R170: multi-fidelity batch predictionとしてO20/O30/O40/O50/O60/O70へ接続し、receiver batching / source grouping / reciprocity等の再利用を成立条件付きで優先する。
 
 REW baseline、geometric reference、wave predictor、hybrid predictorは別model ID/versionとして保存し、結果を上書き・暗黙昇格しない。
 
@@ -86,10 +88,12 @@ REW側を安全かつ再現可能に自動駆動できない場合は、無理�
 R-series predictionでは、少なくとも次をPredictionRunへimmutable bindingする。
 
 - exact SceneRevision/content hash
-- acoustic geometry hash
-- material/boundary configuration hash
-- source/directivity dataset hash
-- receiver set
+- semantic acoustic geometry hash
+- compiled representation hash + acoustic compiler version/tolerance
+- material/boundary configuration hash + material capability state
+- source excitation/directivity dataset hash
+- receiver model/calibration hash + receiver set
+- environment/air-state hash
 - solver/model ID + version
 - CPU/GPU backend/device
 - grid/mesh/BVH resolution
@@ -115,7 +119,7 @@ scalar absorption coefficientから一意なphase-bearing impedanceを無言で�
 4. Pareto/uncertainty候補だけhigh-resolution hybrid。
 5. MeasurementPlanへ落とし、O60/O70で実測価値を更新。
 
-fixed geometry/materialではwave-grid、ray BVH、FEM matrix/preconditioner等のsetupを再利用し、receiver batch・reciprocity等が成立する場合はcandidateごとの重複solveを避ける。
+fixed geometry/materialではwave-grid、ray BVH、FEM matrix/preconditioner等のsetupを再利用する。さらにreceiver batching、source-equivalence grouping、Green's-function/transfer reuse、reciprocity等が**選択したsource/receiver modelと境界条件で成立する場合に限り**利用し、candidateごとの重複solveを避ける。
 ## 5. 正式マイルストーン
 
 | ID | 段階 | 主な成果 | 完了条件 |
@@ -124,7 +128,7 @@ fixed geometry/materialではwave-grid、ray BVH、FEM matrix/preconditioner等�
 | G10 | Placement Constraint Engine | entity別allowed region、禁止領域、壁離隔、相互離隔、連動拘束 | hard constraint違反候補を生成せず、拒否理由を機械的に説明できる |
 | O00 | 探索前提 | 同条件再測定、配置A/B、S01モデル契約、G00 | 測定ばらつきと予測モデルの適用条件を表示できる |
 | O10 | Search Space | O00、G10 | **ソフトウェア実装済み**。同一feasible候補集合を再生成可能。実測運用はO00の測定前提が満たされるまで推薦へ使わない |
-| O20 | Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはS03通過後 | **ソフトウェア実装済み**。中断・再開可能で、予測を実測として保存せず、同一入力で再現する。REW Room Simulatorのowned-Windows position transactionも受入済み。非矩形exact modelは別gate |
+| O20 | Batch Prediction | O10 + 使用モデル契約。非矩形exact predictionはIssue #101 R-seriesの該当model gate通過後 | **ソフトウェア実装済み**。中断・再開可能で、予測を実測として保存せず、同一入力で再現する。REW Room Simulatorのowned-Windows position transactionも受入済み。非矩形exact modelは別gate |
 | O30 | Objective Vector | 帯域別偏差、ピーク/谷、左右差、席間差、移動量などの独立指標 | **ソフトウェア実装済み**。独立指標・算法版・評価条件・evidence provenanceをimmutable保存 |
 | O40 | Pareto Search | 非劣解抽出、粗探索→局所探索、候補多様性 | **ソフトウェア実装済み**。objective vectorを保持したPareto集合、semantic snapshot de-dup、native比較UIを実装 |
 | O50 | Measurement Loop | 測定候補キュー、Context複製、REW実測との対応 | **ソフトウェア実装・owned-Windows受入済み**。candidate→exact applied SceneRevision→Measurement Plan→N60 measured evidenceをappend-only追跡 |
