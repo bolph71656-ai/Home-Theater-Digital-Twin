@@ -34,7 +34,7 @@ FIXTURE_ID = 'wave-rigid-rectangular-modes-v1'
 PROBE_SCHEMA = 'r100b-platform-probe-artifact-1'
 PROBE_ID = 'pffdtd-python-numba-windows-execution-smoke'
 ADAPTER_ID = 'htdt-r100b-pffdtd-python-smoke'
-ADAPTER_VERSION = '4'
+ADAPTER_VERSION = '5'
 FMAX_HZ = 100.0
 PPW = 7.5
 DURATION_S = 0.03
@@ -404,14 +404,40 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
         raise RuntimeError('PFFDTD did not produce sim_outs.h5')
     with h5py.File(output_path, 'r') as handle:
         output = np.asarray(handle['u_out'][...], dtype=np.float64)
-    if output.ndim != 2 or output.shape[0] != len(fixture.receivers):
-        raise RuntimeError(f'unexpected PFFDTD output shape: {output.shape}')
+    if output.ndim != 2 or output.shape != (int(engine.Nr), int(engine.Nt)):
+        raise RuntimeError(
+            f'unexpected PFFDTD raw output shape: {output.shape}; '
+            f'expected {(int(engine.Nr), int(engine.Nt))}'
+        )
     if not np.all(np.isfinite(output)):
-        raise RuntimeError('PFFDTD output contains non-finite values')
-    max_abs = float(np.max(np.abs(output))) if output.size else 0.0
-    nonzero_samples = int(np.count_nonzero(output))
-    if max_abs <= 0.0 or nonzero_samples == 0:
-        raise RuntimeError('PFFDTD output contains no propagated signal')
+        raise RuntimeError('PFFDTD raw output contains non-finite values')
+    if engine.out_alpha.ndim != 2 or engine.out_alpha.size != int(engine.Nr):
+        raise RuntimeError(
+            f'unexpected PFFDTD interpolation weights shape: {engine.out_alpha.shape}; '
+            f'Nr={int(engine.Nr)}'
+        )
+
+    # PFFDTD stores one raw grid trace per trilinear interpolation corner.
+    # Recombine exactly as upstream ProcessOutputs.initial_process() before
+    # interpreting the result as one physical receiver trace.
+    recombined = np.sum(
+        (output * engine.out_alpha.flat[:][:, None]).reshape((*engine.out_alpha.shape, -1)),
+        axis=1,
+    )
+    if recombined.shape != (len(fixture.receivers), int(engine.Nt)):
+        raise RuntimeError(
+            f'unexpected recombined PFFDTD receiver shape: {recombined.shape}; '
+            f'expected {(len(fixture.receivers), int(engine.Nt))}'
+        )
+    if not np.all(np.isfinite(recombined)):
+        raise RuntimeError('PFFDTD recombined receiver output contains non-finite values')
+
+    raw_max_abs = float(np.max(np.abs(output))) if output.size else 0.0
+    raw_nonzero_samples = int(np.count_nonzero(output))
+    receiver_max_abs = float(np.max(np.abs(recombined))) if recombined.size else 0.0
+    receiver_nonzero_samples = int(np.count_nonzero(recombined))
+    if receiver_max_abs <= 0.0 or receiver_nonzero_samples == 0:
+        raise RuntimeError('PFFDTD recombined receiver output contains no propagated signal')
 
     expected_dims = np.ptp(
         np.asarray([_position(vertex.position) for vertex in fixture.regions[0].vertices]),
@@ -463,15 +489,23 @@ def _execute(upstream_root: Path, work_dir: Path, benchmark, candidates) -> dict
             'sim_outs_mb': output_path.stat().st_size / (1024.0 * 1024.0),
         },
         'output_verification': {
-            'shape': list(output.shape),
-            'max_abs': max_abs,
-            'nonzero_samples': nonzero_samples,
+            'raw_grid_shape': list(output.shape),
+            'interpolation_weights_shape': list(engine.out_alpha.shape),
+            'recombined_receiver_shape': list(recombined.shape),
+            'raw_max_abs': raw_max_abs,
+            'raw_nonzero_samples': raw_nonzero_samples,
+            'receiver_max_abs': receiver_max_abs,
+            'receiver_nonzero_samples': receiver_nonzero_samples,
             'finite': True,
+            'recombination_contract': (
+                'sum((u_out * out_alpha.flat[:,None]).reshape((*out_alpha.shape,-1)), axis=1)'
+            ),
         },
         'diagnostics': [
             'The smoke uses R100A geometry/source/receiver authority but does not evaluate the analytical eigenfrequency observables.',
             'PFFDTD derives its simulation sound speed from temperature/humidity; the computed value is recorded instead of being silently treated as the R100A 343 m/s comparison authority.',
             'Three exact-source-checked runtime compatibility patches are applied and recorded; no FDTD or voxel numerical algorithm is changed.',
+            'Raw receiver-grid traces are recombined with upstream out_alpha trilinear weights before receiver-level signal verification.',
             'Successful source-checkout execution is not a Windows product packaging PASS and is not a CPU correctness baseline PASS.',
         ],
     }
