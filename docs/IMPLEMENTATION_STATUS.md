@@ -1,11 +1,11 @@
 # 実装ステータス
 
-> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path実装済み / O80P physical toe-in + O80A Adaptive Extended追加 / synthetic acceptance対象 / 実室model gate未通過
+> 更新: 2026-09-18 / N05〜N90 + O10〜O80 software path実装済み / Issue #101 R-seriesは計画済み・未着手 / O80P physical toe-in + O80A Adaptive Extended追加 / synthetic acceptance対象 / 実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
 
-**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。実室の独立validation evidenceはまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityだけはIssue #83のreal-data gate成立までdisabledを維持する。**
+**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesは計画/調査のみで、R100A以降のsolver実装は未着手。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
 
 N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
@@ -34,7 +34,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 stable product head | `968a9461435ac37138ddd15526140c06613fccb8` / CI #458 PASS / Windows Release Artifact #23 PASS |
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
-| 次工程 | **software implementationは完了。残るauthority gateはIssue #83のowned-room campaign実測・O60R auditのみ。これがPASSするまで`production_owned_room` recommendationとowned-room directional capabilityはdisabled** |
+| 次工程 | **既存v0.1/O-series software pathは完了。未着手software featureはIssue #101 R100A→R180。別trackとしてIssue #83のowned-room campaign実測・O60R auditも未完了で、これがPASSするまで`production_owned_room` recommendationとowned-room directional capabilityはdisabled** |
 
 ## N90 — stable Windows release / A15 PASS
 
