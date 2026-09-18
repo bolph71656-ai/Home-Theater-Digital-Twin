@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion反映
+> 改訂: 2026-09-18 / N05〜N90・O10〜O80 software completion＋Issue #101 arbitrary-room acoustics計画反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -21,6 +21,7 @@ PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持�
 | [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) | main、branch、報告済みPoC、未検証の区別 |
 | [DATA_AND_ANALYSIS](DATA_AND_ANALYSIS.md) / [MEASUREMENT_WORKFLOW](MEASUREMENT_WORKFLOW.md) | 不変測定・比較・REW連携契約 |
 | [PLACEMENT_OPTIMIZATION_ROADMAP](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 予測・最適化の算法詳細。作業順は本書に従う |
+| [ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101の数値手法/OSS調査、hybrid solver方針、R100〜R180の技術根拠 |
 | [PLAN_REVIEW](PLAN_REVIEW.md) | 指摘・修正・検証記録 |
 
 Issue/PRは本書を具体的な作業へ落とす追跡票とし、本書と矛盾する独立仕様にしない。仕様変更は対応する正本文書も同じPRで更新する。
@@ -41,7 +42,10 @@ Issue/PRは本書を具体的な作業へ落とす追跡票とし、本書と矛
 - N05でWindows用の再現可能な依存lockと起動entry pointをcommitする。過去PoCの版はlockの代用にしない。
 - 主GUIはnative application。自分自身へのHTTP、WebView、Node runtimeは必須にしない。
 - domain/serviceはQt/VTK非依存。renderはGUI thread、長いI/O/計算は取消可能なjob。
-- full CAD kernel、汎用solver、engine全体のfork、独自描画engineを初期に作らない。
+- full CAD kernel、engine全体のfork、独自描画engineを初期に作らない。
+- Issue #101の任意形状音響は、20–300 Hz wave acoustics＋中高域geometrical acousticsのhybridを基本とする。full-wave 20 Hz–20 kHzを標準経路にしない。
+- solver correctnessはCPU baselineで成立させ、GPUはoptional acceleratorとする。CUDA/NVIDIAをprediction authorityへ埋め込まず、backend/device/resolutionをprovenanceへ保存する。
+- 材料はgeometric用のbanded absorption/scatteringとwave用のcomplex impedance/admittanceを区別し、scalar吸音率から位相情報を無言で捏造しない。
 
 ```mermaid
 flowchart TD
@@ -80,6 +84,24 @@ N番号は既存PRとの追跡用に維持する。N05を追加し、N20/N30を�
 
 N30aの単純頂点操作にN20b全機能は不要。N50とN60はN40後に独立して進められる。保存と配布の重大リスクはN90まで待たずN05/N10で確認する。
 
+### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
+
+R-seriesはN05〜N90/O10〜O80の完成済みauthorityを置き換えず、その上に任意形状音響predictionを追加する。研究根拠と採否条件は[Arbitrary-room acoustics research](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md)を正本とする。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| R100 — solver bakeoff | N70 prediction authority | FDTD CPU PoC、独立FEM/reference、geometric reference、license/package matrix、共通benchmark。Windows/CIの実測でfirst production stackを選定 |
+| R110 — acoustic authority | R100 interface決定 | immutable AcousticSceneSnapshot、surface/object material、source/directivity、solver/backend provenance。scalar absorptionとcomplex impedanceを区別 |
+| R120 — geometry compiler | R110 | exact SceneRevision→canonical acoustic surfaces→wave grid / ray BVH / optional FEM mesh。non-manifold/open/degenerate/thin unresolvedをfail-closed |
+| R130 — low-band wave | R120 | 20–300 Hzを初期targetにCPU correctness baseline。FR/phase/IR/spatial field、frequency-dependent boundary、分析解＋convergence＋cross-solver gate |
+| R140 — hardware-aware execution | R130 baseline | CPU/GPU検出、RAM/VRAM estimate、candidate/solver二階層scheduler、oversubscription回避、cache/resume/cancel、silent quality downgrade禁止 |
+| R150 — geometric acoustics | R120 | direct/early specular、general-polyhedral ray tracing、banded absorption/scattering、source directivity、deterministic seed/provenance |
+| R160 — hybrid broadband | R130/R150 | explicit overlap/crossover、低域coherent wave＋上域geometric result統合。unsupported phase/metricを生成しない |
+| R170 — optimization integration | R140/R160 + O10〜O70 | multi-fidelity candidate prediction→ObjectiveVector→Pareto→MeasurementPlan→N60/O60/O70。geometry/BVH/grid再利用とsemantic cache |
+| R180 — owned-room validation | R170 | target roomでREW/UMIK-1 validation。新solver/model versionごとにO60 applicability/holdout gate。simulationだけでproduction recommendationを開かない |
+
+R100では「候補ライブラリを先に製品依存へ固定」しない。FDTDをfirst PoCとするが、staircase/thin-surface/material-boundary精度またはWindows packagingがgate未達なら、MFEM等のFEM pathを同じfixtureで比較して決める。BEM/FMMはsecondary referenceとし、初期production dependencyにはしない。
+
 ### N05 / N10の実装slice
 
 1. 旧ContextDraftと別に最小Scene/WorkingDocumentを作り、sampleを表示する。
@@ -117,13 +139,13 @@ N05のために一般plugin frameworkや全entity型を実装しない。N10で�
 |---|---|---|
 | N50 | G00/G10（現行実装あり） | new Sceneからのadapterとwall参照を検証 |
 | N80の候補preview最小部 | O10（現行実装あり） | 順位を付けず幾何的候補として表示 |
-| N70の予測結果表示 | S01等のmodel＋O20 | source revision、適用形状/帯域、再現性、取消を満たす |
+| N70の予測結果表示 | S01等のmodel＋O20 / R130〜R160 | source revision、適用形状/帯域、材料/source/solver/backend provenance、再現性、取消を満たす |
 | N80のPareto比較 | O30/O40 | 目的vector・制約を維持。音質総合点にしない |
 | N80の実測loop / 推薦 | O50/O60、必要ならO70 | 独立した実測検証前に自動推薦へ昇格しない |
 
 開発・受入ではsynthetic fixtureによるO70/O80 end-to-endを許可する。ただし、synthetic結果は`development_synthetic`として明示し、owned-room evidenceとして保存・表示・production推薦へ昇格しない。これにより物理測定を待たずソフトウェア実装を完成できる一方、実室妥当性gateは独立して維持する。
 
-GUI上で非矩形室を編集できても、REW Room Simulatorが非矩形を正確に予測できることにはならない。解析layerは実測/予測/仮説と入力revisionを表示し、編集で古くなった結果をstaleにする。
+GUI上で非矩形室を編集できても、REW Room Simulatorやgeometrical-acoustics-only modelが非矩形室の低域wave behaviorを正確に予測できることにはならない。REWはrectangular baseline、pyroomacoustics等はgeometric PoC/referenceとして扱い、R130のwave authorityと混同しない。解析layerは実測/予測/仮説と入力revisionを表示し、編集で古くなった結果をstaleにする。
 
 ## 4. 実装資産・切替
 
@@ -155,6 +177,8 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
-現在の未完了gateは [Issue #83 — O60R owned-room campaign execution / hardware evidence](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/83) のみ。これはsoftware実装ではなく、実際のspeaker/setup移動とREW測定を伴う実室model validationである。eligible campaign-backed owned-room ValidationRecordとO60R audit PASSが成立するまで、O70 `production_owned_room` recommendationとO80 owned-room directional capabilityはfail-closedを維持する。
+現行O10〜O80 modelをproduction-owned-roomへ昇格させる未完了gateは [Issue #83 — O60R owned-room campaign execution / hardware evidence](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/83)。これはsoftware実装ではなく、実際のspeaker/setup移動とREW測定を伴う実室model validationである。eligible campaign-backed owned-room ValidationRecordとO60R audit PASSが成立するまで、O70 `production_owned_room` recommendationとO80 owned-room directional capabilityはfail-closedを維持する。
+
+新規software feature trackとして [Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101) と [Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
 
 旧Issue #41等の初期milestoneは履歴としてclose済みであり、今後の再開点として扱わない。追加機能を実装する場合は、この完成済みmainを起点に新しいIssue/PRを作り、既存authority契約を弱めない。
