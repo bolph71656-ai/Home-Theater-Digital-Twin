@@ -1,7 +1,7 @@
 param(
     [string]$RepoRoot = "",
     [string]$Branch = "main",
-    [string]$ExpectedProductHead = "252647a7c4757c420151049a7f729d8157f5243b",
+    [string]$ExpectedProductHead = "65677dce950527ad643da8d798bfe0438283cba4",
     [string]$DataDir = "",
     [string]$CampaignId = "",
     [string]$ValidationId = "",
