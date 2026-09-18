@@ -57,6 +57,10 @@ def test_workflow_shell_routes_canonical_workspaces_lazily() -> None:
     assert window.current_workspace_id is WorkspaceId.MEASUREMENT
     assert context_events[WorkspaceId.MEASUREMENT][-1] == "quality"
 
+    assert window.navigate(WorkspaceId.OPTIMIZATION)
+    assert window.context_labels == ("探索設定", "候補", "比較", "測定・検証")
+    assert context_events[WorkspaceId.OPTIMIZATION][-1] == "setup"
+
     window.close()
     window.deleteLater()
     app.processEvents()
