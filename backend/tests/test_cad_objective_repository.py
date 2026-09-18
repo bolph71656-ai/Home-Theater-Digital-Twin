@@ -123,6 +123,7 @@ def test_pareto_set_round_trip_recomputes_from_immutable_evaluations(tmp_path) -
         candidates[1].candidate_id,
     )
     assert repository.get_pareto_set(pareto_set.pareto_set_id) == pareto_set
+    assert repository.find_pareto_set_by_sha(spec.search_spec_id, pareto_set.pareto_sha256) == pareto_set
     assert repository.list_pareto_sets(spec.search_spec_id) == (pareto_set,)
 
 
