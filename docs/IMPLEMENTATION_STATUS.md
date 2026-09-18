@@ -5,7 +5,7 @@
 
 ## Native CAD — 現在地
 
-**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100AをPR #110 / merge `1714c078d4063f59da93f0d733171547f7eb486d` でmain反映済み。R100B authority基盤はPR #111 / merge `7be0127fb352c7073d4a686f2e77cc22bc06eac3` でmain反映済み。raw observation evaluator / pyroomacoustics reference probeはPR #112 / merge `5725f8f2eecb150773202bf324132a34a40ba492`、PFFDTD Windows Python/Numba platform smokeはPR #113 / merge `ea5f5b8631e5097d37788210b2652b3089a28807` でmain反映済み。PR #115 / run `35349358027` でPFFDTD R100A rigid rectangular eigenfrequency fixtureは3段階grid convergence + p=2 Richardson extrapolationにより4 observableすべてPASS。accepted evidence summaryを `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json` に固定済み。candidate-wide physics / transfer convergence / impedance / independent FEM / Windows product packaging / production solver selectionは未完了。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
+**N05〜N90のnative CAD release pathとO10〜O80のsoftware pathは実装済み。O70はPR #92/#93、O80はPR #94でmain反映済み。PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` はCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629`をPASSし、real-repository synthetic O10→O80 laneとpackaged seed/installerまで検証した。Issue #101のpost-0.1 arbitrary-room R-seriesはR100AをPR #110 / merge `1714c078d4063f59da93f0d733171547f7eb486d` でmain反映済み。R100B authority基盤はPR #111 / merge `7be0127fb352c7073d4a686f2e77cc22bc06eac3` でmain反映済み。raw observation evaluator / pyroomacoustics reference probeはPR #112 / merge `5725f8f2eecb150773202bf324132a34a40ba492`、PFFDTD Windows Python/Numba platform smokeはPR #113 / merge `ea5f5b8631e5097d37788210b2652b3089a28807` でmain反映済み。PR #115 / run `35349358027` でPFFDTD R100A rigid rectangular eigenfrequency fixtureは3段階grid convergence + p=2 Richardson extrapolationにより4 observableすべてPASS。accepted evidence summaryを `benchmarks/acoustics/evidence/r100b_pffdtd_rigid_modes_2026-09-18.json` に固定済み。MFEM rigid-room independent referenceはPR #114 / merge `245a3efc66144b81742d65c62ad99ba081fe7426` でmain反映済み。PR #116ではpressure authority欠落を修正するR100A-2（density明示）とPFFDTD complex-pressure convergenceを実装中。R100A hash変更により旧R100B artifactはcurrent selectionにはstaleとなり、専用workflowで再実行する。candidate-wide physics / impedance / Windows product packaging / production solver selectionは未完了。実室の独立validation evidenceもまだ無いため、`production_owned_room` recommendationとowned-room directional capabilityはIssue #83のreal-data gate成立までdisabledを維持する。**
 
 N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software validationはIssue #75 / PR #76・#78で完了済み。N90はIssue #77 / PR #79でstable Windows releaseを実装し、A15を通過した。N80a最終製品コード変更は `c6cc15e76edbc1ac263911ee084803ca1e32b42c`、accepted gate/headは `ff4dc8078eb9ca0b3effaed66b523cff175fea1a`。
 
@@ -35,8 +35,8 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
 | R100A tracking | PR #110 merged `1714c078d4063f59da93f0d733171547f7eb486d`。CI #582 / Windows Release Artifact #109 PASS。solver-neutral authority + 10 canonical fixturesをmain反映済み |
-| R100B tracking | PR #111 authority / #112 pyroom reference / #113 PFFDTD Windows platform smokeまでmain反映済み。PR #115 run `35349358027` でPFFDTD rigid-mode fixture PASS、merge前。ADRは未完了 |
-| 次工程 | **PFFDTD rectangular transfer/grid convergence fixtureとexplicit complex-impedance fixtureへ進み、MFEM independent referenceも実装する。単一modal PASSではproduction solverを選定しない。Issue #83 owned-room gateも別trackで未完了** |
+| R100B tracking | PR #111 authority / #112 pyroom / #113 PFFDTD platform / #114 MFEM rigid reference / #115 PFFDTD rigid modesまでmain反映済み。PR #116でR100A-2 density authority + complex-pressure convergence実装中。ADRは未完了 |
+| 次工程 | **PR #116でR100A-2 pressure authorityとPFFDTD rectangular complex-pressure convergenceを検証し、旧hash evidenceを再実行する。その後explicit complex-impedance fixtureへ進む。単一modal/reference PASSではproduction solverを選定しない。Issue #83 owned-room gateも別trackで未完了** |
 
 ## R100B — solver bakeoff authority / implementation in progress
 
@@ -52,7 +52,10 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 - `backend/src/htdt/acoustic_pffdtd_adapter.py`: 上記compatibility shim、R100A rigid geometry compiler、upstream trilinear receiver recombinationを共通化。
 - R100B fixture evidenceに `disk_mb` を追加し、R100A `disk_budget_mb` をfail-closed enforcement対象へ追加。
 - `scripts/run_r100b_pffdtd_modes.py`: h=0.5/0.25/0.125 mの3段階Cartesian gridでrigid rectangular impulse responseを実行。run `35349358027` でm010/m100/m110/m001の4 observableがabs error 0.0108/0.0276/0.0314/0.0404 Hzで全PASS。delta ratio 3.93–4.12、compile 6.014 s、solve 0.586 s、peak RSS 202.66 MiB、disk 1.238 MiB。durable evidence summaryとraw signal archive hashを記録済み。
-- PFFDTD remaining wave fixtures、MFEM independent reference、pyroom stochastic convergence、production stack ADRは未完了。R100B完了とは扱わない。
+- PR #114 / merge `245a3efc66144b81742d65c62ad99ba081fe7426`: MFEM v4.10 serial H1 FEM Neumann referenceをWindows Actionsで実行。order 5 / 216 DOFで4 rigid-mode observableを最大9.06e-6 Hz errorでPASS。latest run `35350707920` はdisk/RAM/runtime evidence込みでPASS。
+- PR #116: R100Aをschema `r100a-2` / revision 2へ更新し、`density_kg_m3=1.2` を全fixtureの環境authorityへ追加。complex pressure convergenceはabsolute/relative complex RMSで評価し、重複したexact-zero phase gateを削除。旧R100B artifactは新semantic hashのcurrent selection evidenceには流用しない。
+- PR #116: PFFDTD velocity potential→pressure変換と3-level/full-2s complex-pressure convergence probeを実装中。
+- PFFDTD impedance/remaining wave fixtures、pyroom stochastic convergence、production stack ADRは未完了。R100B完了とは扱わない。
 - RDCは使用しない。
 
 ## R100A — solver-neutral benchmark authority / merged
