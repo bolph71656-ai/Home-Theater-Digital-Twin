@@ -99,11 +99,42 @@ def test_radiation_termination_rejects_implicit_or_mismatched_model() -> None:
     fixture = _fixture(manifest, 'wave-explicit-radiation-termination-v1')
     termination = fixture.terminations[0]
 
-    missing = termination.model_copy(
-        update={'helmholtz_robin_equation': None}
-    ).model_dump(mode='python')
-    with pytest.raises(ValueError, match='explicit model/sign/normal authority'):
-        type(termination).model_validate(missing)
+    legacy_termination_payload = termination.model_dump(mode='python')
+    legacy_termination_payload['boundary_id'] = None
+    for key in (
+        'radiation_model',
+        'normal_convention',
+        'characteristic_impedance_model',
+        'pressure_velocity_equation',
+        'wavenumber_equation',
+        'helmholtz_robin_equation',
+    ):
+        legacy_termination_payload[key] = None
+    legacy_termination = type(termination).model_validate(legacy_termination_payload)
+    assert legacy_termination.kind == 'radiation'
+
+    current_payload = manifest.model_dump(mode='python')
+    current_fixture = next(
+        item
+        for item in current_payload['fixtures']
+        if item['fixture_id'] == 'wave-explicit-radiation-termination-v1'
+    )
+    current_fixture['terminations'][0] = legacy_termination_payload
+    with pytest.raises(ValueError, match='requires explicit boundary/model/sign/normal authority'):
+        AcousticBenchmarkManifest.model_validate(current_payload)
+
+    legacy_manifest_payload = manifest.model_dump(mode='python')
+    legacy_manifest_payload['schema_version'] = 'r100a-2'
+    legacy_manifest_payload['revision'] = 2
+    legacy_fixture = next(
+        item
+        for item in legacy_manifest_payload['fixtures']
+        if item['fixture_id'] == 'wave-explicit-radiation-termination-v1'
+    )
+    legacy_fixture['required_capabilities'] = ['wave_rigid']
+    legacy_fixture['terminations'][0] = legacy_termination_payload
+    reparsed_legacy = AcousticBenchmarkManifest.model_validate(legacy_manifest_payload)
+    assert reparsed_legacy.schema_version == 'r100a-2'
 
     non_radiation = termination.model_copy(
         update={'kind': 'rigid'}
