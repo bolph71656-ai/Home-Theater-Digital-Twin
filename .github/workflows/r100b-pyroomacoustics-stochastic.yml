@@ -19,6 +19,7 @@ jobs:
     runs-on: windows-latest
     env:
       PYTHONUTF8: '1'
+      PYTHONPATH: backend/src
       PROBE_OUTPUT: artifacts/r100b/pyroomacoustics_stochastic.json
       RAW_OUTPUT: artifacts/r100b/pyroomacoustics_stochastic_raw.npz
     steps:
