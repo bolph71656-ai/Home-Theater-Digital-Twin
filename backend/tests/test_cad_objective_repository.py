@@ -11,7 +11,12 @@ from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity, Siz
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates
 from htdt.cad_search_models import CadSearchAxis
 from htdt.cad_search_repository import CadSearchRepository
-from htdt.optimization_objectives import ObjectiveMetric, ObjectiveVector
+from htdt.optimization_objectives import (
+    ObjectiveDefinition,
+    ObjectiveMetric,
+    ObjectiveValidDomain,
+    ObjectiveVector,
+)
 
 
 DOCUMENT_ID = 'objective-repository-fixture'
@@ -199,3 +204,78 @@ def test_objective_input_ref_order_is_canonical(tmp_path) -> None:
 
     assert first.input_refs == second.input_refs
     assert first.evaluation_sha256 == second.evaluation_sha256
+
+
+
+def test_explicit_objective_definition_identity_survives_repository_reopen(tmp_path) -> None:
+    scene_repository, revision, spec, candidates, repository = _fixture(tmp_path)
+    candidate_id = candidates[0].candidate_id
+    definition = ObjectiveDefinition(
+        objective_id='fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        valid_domain=ObjectiveValidDomain(
+            kind='bounded_real',
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        comparison_model_id='fixture-coverage-model',
+        comparison_model_version='1',
+    )
+    vector = ObjectiveVector(
+        candidate_id=candidate_id,
+        metrics=(
+            ObjectiveMetric(
+                objective_id=definition.objective_id,
+                value=0.75,
+                unit=definition.unit,
+                direction=definition.direction,
+                definition=definition,
+            ),
+        ),
+    )
+    refs = (
+        CadObjectiveInputRef(
+            evidence_class='predicted',
+            source_kind='prediction_fixture',
+            source_id=f'prediction:{candidate_id}',
+        ),
+    )
+    first = build_objective_evaluation(
+        revision,
+        spec,
+        candidate_id,
+        vector,
+        evaluation_spec={
+            'algorithm_version': 'fixture-maximize-1',
+            'objectives': ['fixture.coverage'],
+        },
+        input_refs=refs,
+    )
+    second = build_objective_evaluation(
+        revision,
+        spec,
+        candidate_id,
+        vector,
+        evaluation_spec={
+            'algorithm_version': 'fixture-maximize-1',
+            'objectives': ['fixture.coverage'],
+        },
+        input_refs=refs,
+    )
+    assert first.evaluation_sha256 == second.evaluation_sha256
+
+    repository.save_evaluation(first)
+    reopened_repository = CadObjectiveRepository(
+        scene_repository,
+        CadSearchRepository(scene_repository),
+    )
+    reopened = reopened_repository.get_evaluation(first.evaluation_id)
+
+    assert reopened == first
+    assert reopened is not None
+    reopened_metric = reopened.vector.metric(definition.objective_id)
+    assert reopened_metric.definition is not None
+    assert reopened_metric.definition.definition_id == definition.definition_id
+    assert reopened_metric.direction == 'maximize'
