@@ -76,10 +76,11 @@ Capabilities use `ALLOWED | BLOCKED | UNKNOWN` and are stored per claim. `gate_m
 | `common_timing` | AcquisitionContext binding plus complete explicit timing-reference evidence | explicit invalid timing reference | missing context/reference metadata |
 | `arrival_time` | IR exists, IR window passes, and common timing is allowed | no IR, explicit timing failure, or bad/truncated IR | partial timing/window evidence |
 | `decay` | IR exists and IR window passes | no IR or explicit bad/truncated IR | incomplete IR-window evidence |
-| `calibrated_response` | matching applied/expected calibration provenance and AcquisitionContext binding | explicit calibration mismatch | missing/incomplete provenance or context |
+| `calibrated_response` | no clipping, passing SNR, explicit usable band, matching calibration provenance, and AcquisitionContext binding | explicit clipping/SNR/band/calibration failure | missing capture-quality, calibration, band, or context evidence |
 | `repeatability` | explicit repeated measurements and passing repeatability metric | explicit repeatability failure | insufficient repeatability evidence |
+| `polarity` | explicit correct polarity with confidence meeting the profile threshold | explicit reversed polarity | missing/low-confidence polarity evidence |
 
-Magnitude inspection remains available for legacy FR-only imports. That does not open phase, arrival, decay, timing, calibration, or repeatability claims.
+Magnitude inspection remains available for legacy FR-only imports. That does not open phase, arrival, decay, timing, calibrated-response, repeatability, or polarity claims. `calibrated_response` is intentionally stricter than raw magnitude inspection so #173/#174 cannot recommend filters from a calibration-file match while clipping/SNR/band evidence is still missing.
 
 ## Retake lineage
 
