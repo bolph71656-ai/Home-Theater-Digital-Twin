@@ -126,9 +126,12 @@ class CadRobustnessRepository:
                 existing = RobustnessSpec.model_validate_json(
                     str(row['payload_json'])
                 )
-                if existing != spec:
+                if (
+                    existing.robustness_spec_sha256
+                    != spec.robustness_spec_sha256
+                ):
                     raise ValueError('RobustnessSpec immutable identity conflict')
-                return spec
+                return existing
             connection.execute(
                 """
                 INSERT INTO cad_robustness_specs (
@@ -194,9 +197,9 @@ class CadRobustnessRepository:
                 existing = PerturbationSample.model_validate_json(
                     str(row['payload_json'])
                 )
-                if existing != sample:
+                if existing.sample_sha256 != sample.sample_sha256:
                     raise ValueError('PerturbationSample immutable identity conflict')
-                return sample
+                return existing
             connection.execute(
                 """
                 INSERT INTO cad_perturbation_samples (
@@ -258,7 +261,7 @@ class CadRobustnessRepository:
         """Return cache evidence only for the exact immutable O90 spec."""
 
         persisted = self.get_spec(spec.robustness_spec_id)
-        if persisted != spec:
+        if persisted.robustness_spec_sha256 != spec.robustness_spec_sha256:
             raise ValueError('robustness cache spec identity mismatch')
         samples = self.list_samples(spec.robustness_spec_id)
         if any(
@@ -293,9 +296,9 @@ class CadRobustnessRepository:
                 existing = RobustnessEvaluation.model_validate_json(
                     str(row['payload_json'])
                 )
-                if existing != evaluation:
+                if existing.evaluation_sha256 != evaluation.evaluation_sha256:
                     raise ValueError('RobustnessEvaluation immutable identity conflict')
-                return evaluation
+                return existing
             connection.execute(
                 """
                 INSERT INTO cad_robustness_evaluations (
