@@ -220,6 +220,7 @@ def _histogram_digest(array: np.ndarray) -> str:
 def _extract_decay(
     selected_histogram: np.ndarray,
     authority,
+    histogram_bin_size_s: float,
 ) -> tuple[str, tuple[float, ...], str]:
     if np.any(~np.isfinite(selected_histogram)):
         raise RuntimeError('ray histogram contains non-finite energy')
@@ -237,7 +238,7 @@ def _extract_decay(
                 f'frequency {frequency:g} Hz has no positive cumulative ray energy',
             )
         for sample_time in authority.sample_times_s:
-            bin_index = int(round(sample_time / authority.histogram_bin_size_s))
+            bin_index = int(round(sample_time / histogram_bin_size_s))
             if bin_index >= cumulative.shape[1]:
                 return (
                     'insufficient_support',
@@ -274,6 +275,9 @@ def _run_observation(
     archive_member: str,
 ) -> tuple[PyroomStochasticObservation, np.ndarray]:
     dimensions, _lower, source, receiver, centers, absorption, scattering = mapping
+    level_index = authority.ray_budgets.index(ray_budget)
+    receiver_radius_m = authority.receiver_radius_sequence_m[level_index]
+    histogram_bin_size_s = authority.histogram_bin_size_sequence_s[level_index]
 
     monitor = PeakRssMonitor()
     monitor.start()
@@ -309,16 +313,16 @@ def _run_observation(
         room.add_microphone(receiver.tolist())
         room.set_ray_tracing(
             n_rays=ray_budget,
-            receiver_radius=authority.receiver_radius_m,
+            receiver_radius=receiver_radius_m,
             energy_thres=authority.energy_threshold,
             time_thres=authority.time_threshold_s,
-            hist_bin_size=authority.histogram_bin_size_s,
+            hist_bin_size=histogram_bin_size_s,
         )
         actual_bin_size = float(room.rt_args['hist_bin_size'])
-        if abs(actual_bin_size - authority.histogram_bin_size_s) > 1e-12:
+        if abs(actual_bin_size - histogram_bin_size_s) > 1e-12:
             raise RuntimeError(
                 'pyroom histogram bin quantization changed the frozen estimator: '
-                f'{actual_bin_size} != {authority.histogram_bin_size_s}'
+                f'{actual_bin_size} != {histogram_bin_size_s}'
             )
         if float(room.c) != float(fixture.environment.sound_speed_m_s):
             raise RuntimeError(
@@ -355,7 +359,9 @@ def _run_observation(
             selected_indices.append(index)
         selected = np.ascontiguousarray(histogram[selected_indices, :], dtype=np.float64)
 
-        status, values_db, diagnostic = _extract_decay(selected, authority)
+        status, values_db, diagnostic = _extract_decay(
+            selected, authority, histogram_bin_size_s
+        )
         digest = _histogram_digest(selected)
         postprocess_s = time.perf_counter() - post_started
     finally:
@@ -365,6 +371,8 @@ def _run_observation(
         observation_id=observation_id,
         seed=seed,
         ray_budget=ray_budget,
+        receiver_radius_m=receiver_radius_m,
+        histogram_bin_size_s=histogram_bin_size_s,
         replicate=replicate,
         status=status,
         sample_keys=stochastic_sample_keys(authority),
