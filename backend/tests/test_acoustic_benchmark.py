@@ -123,7 +123,7 @@ def test_r100a4_finite_record_transfer_authority_is_explicit() -> None:
         assert contract.sample_zero_reference == 'source_t0'
         assert contract.record_interval == 'half_open_0_T'
         assert contract.solver_time_step_policy == 'solver_native_recorded'
-        assert contract.dtft_kernel == 'exp(-i*2*pi*f*n*dt)'
+        assert contract.dtft_kernel == 'exp(+i*2*pi*f*n*dt)'
         assert contract.dtft_measure == 'dt_weighted_sum'
         assert contract.numerator_quantity == 'physical_pressure'
         assert (
