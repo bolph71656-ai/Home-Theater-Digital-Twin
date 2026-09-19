@@ -1241,16 +1241,17 @@ def test_cad_robustness_repository_closes_every_connection_without_gc(
         evaluator=_o90b_linear_evaluator,
         created_at_utc='2026-09-19T00:35:00+00:00',
     )
-    repository = CadRobustnessRepository(tmp_path / 'close.sqlite3')
-    real_connect = repository._connect
+    db_path = tmp_path / 'close.sqlite3'
+    real_connect = CadRobustnessRepository._connect
     opened = []
 
-    def tracked_connect():
-        connection = real_connect()
+    def tracked_connect(self):
+        connection = real_connect(self)
         opened.append(connection)
         return connection
 
-    monkeypatch.setattr(repository, '_connect', tracked_connect)
+    monkeypatch.setattr(CadRobustnessRepository, '_connect', tracked_connect)
+    repository = CadRobustnessRepository(db_path)
     repository.save_spec(spec)
     repository.save_samples(samples)
     repository.save_evaluations(evaluations)
@@ -1273,6 +1274,10 @@ def test_cad_robustness_repository_closes_every_connection_without_gc(
     for connection in opened:
         with pytest.raises(sqlite3.ProgrammingError, match='closed'):
             connection.execute('SELECT 1')
+
+    renamed = tmp_path / 'close-renamed.sqlite3'
+    db_path.rename(renamed)
+    renamed.unlink()
 
 
 @pytest.mark.parametrize('case', ('future', 'invalid_metadata', 'unrelated'))
