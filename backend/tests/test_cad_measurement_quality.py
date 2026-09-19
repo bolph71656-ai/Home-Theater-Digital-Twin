@@ -194,6 +194,7 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
     profile = build_measurement_quality_profile(
         required_usable_band_hz=(20.0, 80.0),
         minimum_snr_db=20.0,
+        minimum_polarity_confidence=0.9,
         maximum_repeatability_rms_db=1.0,
     )
     report = build_measurement_quality_report(
