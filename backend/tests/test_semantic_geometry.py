@@ -131,6 +131,7 @@ def test_semantic_geometry_round_trip_preserves_exact_identity() -> None:
     request = make_semantic_geometry_conversion_request(
         mesh,
         source_scene_revision_id=None,
+        source_to_scene_transform=_identity_transform(),
         surface_assignments=(
             SurfaceSemanticAssignment(
                 surface_key='room-shell',
