@@ -339,7 +339,6 @@ class SemanticAcousticGeometry(BaseModel):
     )
     input_diagnostic_semantic_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     source_scene_revision_id: str | None
-    source_scene_revision_id: str | None
     source_to_scene_transform: SemanticCoordinateTransform
     conversion_request: SemanticGeometryConversionRequest
     conversion_request_id: str = Field(pattern=r'^semantic-geometry-request:[0-9a-f]{64}$')
