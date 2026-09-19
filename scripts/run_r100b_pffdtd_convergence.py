@@ -533,7 +533,7 @@ def _execute(
             'source_normalization': fixture.sources[0].normalization,
             'source_amplitude': fixture.sources[0].amplitude,
             'source_phase_deg': fixture.sources[0].phase_deg,
-            'finite_record_transfer': finite_record.model_dump(mode='json'),
+            'finite_record_transfer': fixture.comparison.finite_record_transfer.model_dump(mode='json'),
             'solver_time_step_policy': 'solver_native_recorded',
             'density_kg_m3': fixture.environment.density_kg_m3,
             'thread_budget': min(THREAD_BUDGET, os.cpu_count() or 1),
