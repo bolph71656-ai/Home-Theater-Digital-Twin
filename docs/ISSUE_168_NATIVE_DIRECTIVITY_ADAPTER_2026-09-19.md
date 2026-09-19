@@ -189,6 +189,19 @@ No `DEFERRED` entry is promoted to `SUPPORTED`.
 
 Focused regression added in `backend/tests/test_cad_directivity_import.py` verifies both CLF and CF2 remain explicitly deferred, advertise no capability, return `UNSUPPORTED`, and preserve the raw submitted-byte SHA-256 in the diagnostic.
 
-GitHub Actions validation is recorded on the pull request for the final branch head. No successful workflow is manually rerun without a new change.
+Validated on code/test head `49fa4e726a1581837eacb7d730b03db47387b47a`:
+
+- GitHub Actions **CI #1083** — **PASS**
+  - backend: **686 passed, 1 skipped, 2 warnings**
+  - R100B / R100A-3 and Windows launcher/script/hardware-gate preflights: **PASS**
+- GitHub Actions **Windows Release Artifact #474** — **PASS**
+  - locked native package build: **PASS**
+  - packaged maintenance smoke: **PASS**
+  - old-PC -> new-PC migration validation: **PASS**
+  - pinned Inno Setup / per-user installer build: **PASS**
+  - install/uninstall user-data retention smoke: **PASS**
+  - package and installer uploads: **PASS**
+
+This final validation-record update changes documentation only and uses `[skip ci]` so the already-successful code-identical workflows are not rerun without cause.
 
 RDC = **0**.
