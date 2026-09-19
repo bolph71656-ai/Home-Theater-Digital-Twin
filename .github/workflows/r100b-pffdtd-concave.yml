@@ -32,7 +32,7 @@ jobs:
 
       - name: Install HTDT and pinned PFFDTD probe runtime
         run: |
-          python -m pip install -e ".\backend"
+          python -m pip install -e ".\backend[dev]"
           python -m pip install "numpy==1.26.4" "numba==0.60.0" "scipy==1.14.1" "h5py==3.12.1" "tqdm==4.67.1" "psutil==6.1.1" "memory_profiler==0.61.0"
 
       - name: Preflight exact-concave probe
