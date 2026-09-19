@@ -223,7 +223,7 @@ def test_stale_r100a_semantic_hash_is_rejected() -> None:
     stale = raw.model_copy(update={'r100a_semantic_hash': '0' * 64})
 
     with pytest.raises(ValueError, match='semantic hash is stale'):
-        evaluate_pyroom_stochastic_fixture(benchmark, fixture, authority, stale)
+        evaluate_pyroom_stochastic_fixture(benchmark, candidates, fixture, authority, stale)
 
 
 def test_stale_candidate_manifest_and_source_commit_are_rejected() -> None:
