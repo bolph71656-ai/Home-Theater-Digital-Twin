@@ -17,6 +17,10 @@ DOLBY_ATMOS_GUIDE_URI = (
     'https://www.dolby.com/siteassets/technologies/dolby-atmos/'
     'atmos-installation-guidelines-121318_r3.1.pdf'
 )
+AURO3D_HOME_GUIDE_URI = (
+    'https://www.auro-3d.com/wp-content/uploads/2024/05/'
+    'Auro-3D-Home-Theater-Setup-Guidelines-v12-20240516.pdf'
+)
 
 
 def _rp22_source(reference: str) -> CriterionSource:
@@ -44,6 +48,20 @@ def _dolby_source(reference: str) -> CriterionSource:
         note=(
             'Public Dolby installation guidance. HTDT evaluates only the explicit '
             'speaker-angle ranges encoded here; no additional tolerance is inferred.'
+        ),
+    )
+
+
+def _auro3d_source(reference: str) -> CriterionSource:
+    return CriterionSource(
+        publisher='NEWAURO BV',
+        document_title='AURO-3D Home Theater Setup — Installation Guidelines',
+        document_version='Rev. 12, 16 May 2024',
+        reference=reference,
+        source_uri=AURO3D_HOME_GUIDE_URI,
+        note=(
+            'Public AURO-3D home-theater guidance. HTDT encodes only explicit '
+            'normative min/max or minimum-angle criteria from the cited sections.'
         ),
     )
 
@@ -284,6 +302,93 @@ def dolby_atmos_home_5_1_2_profile() -> StandardsProfile:
     )
 
 
+def auro3d_home_v12_profile() -> StandardsProfile:
+    """Explicit public AURO-3D Rev.12 elevation/opening-angle criteria.
+
+    Table 3 is titled "Normative Speaker Positions". This profile deliberately
+    avoids horizontal azimuth rows whose published table contains an apparent
+    sign inconsistency for Height Right; HTDT does not silently repair source data.
+    """
+
+    criteria = (
+        CriterionDefinition(
+            criterion_id='auro.v12.lower-layer-max-elevation',
+            name='Maximum lower-layer speaker elevation',
+            source=_auro3d_source('§3.3.1.1 and Table 3, page 26'),
+            quantity='speaker_elevation_from_mlp',
+            unit='deg',
+            applicable_domains=('auro_lower_speaker',),
+            required_inputs=('lower_layer_speaker_elevation_deg',),
+            required_capabilities=('layout-angle-v1',),
+            rule=CriterionRule(operator='max', maximum=10.0),
+            note=(
+                'The source states the Surround layer should not exceed 10° and '
+                'Table 3 gives 10° as the maximum elevation for lower-layer roles. '
+                'No unstated lower bound is inferred.'
+            ),
+        ),
+        CriterionDefinition(
+            criterion_id='auro.v12.height-layer-elevation',
+            name='Height-layer speaker elevation',
+            source=_auro3d_source('Table 3, page 26 — Normative Speaker Positions'),
+            quantity='speaker_elevation_from_mlp',
+            unit='deg',
+            applicable_domains=('auro_height_speaker',),
+            required_inputs=('height_layer_speaker_elevation_deg',),
+            required_capabilities=('layout-angle-v1',),
+            rule=CriterionRule(
+                operator='range',
+                minimum=25.0,
+                maximum=40.0,
+            ),
+        ),
+        CriterionDefinition(
+            criterion_id='auro.v12.top-speaker-elevation',
+            name='Top speaker elevation',
+            source=_auro3d_source('Table 3, page 26 — Normative Speaker Positions'),
+            quantity='speaker_elevation_from_mlp',
+            unit='deg',
+            applicable_domains=('auro_top_speaker',),
+            required_inputs=('top_speaker_elevation_deg',),
+            required_capabilities=('layout-angle-v1',),
+            rule=CriterionRule(
+                operator='range',
+                minimum=65.0,
+                maximum=100.0,
+            ),
+        ),
+        CriterionDefinition(
+            criterion_id='auro.v12.surround-height-opening-angle',
+            name='Minimum opening angle between Surround and Height layers',
+            source=_auro3d_source('§3.3.1.1 and Table 3 note, pages 24 and 26'),
+            quantity='surround_to_height_opening_angle',
+            unit='deg',
+            applicable_domains=('speaker_layout',),
+            required_inputs=('surround_height_opening_angle_deg',),
+            required_capabilities=('layout-angle-v1',),
+            rule=CriterionRule(operator='min', minimum=25.0),
+        ),
+        CriterionDefinition(
+            criterion_id='auro.v12.screen-height-opening-angle',
+            name='Minimum opening angle for Height screen channels',
+            source=_auro3d_source('Table 3 note, page 26'),
+            quantity='screen_to_height_opening_angle',
+            unit='deg',
+            applicable_domains=('speaker_layout',),
+            required_inputs=('screen_height_opening_angle_deg',),
+            required_capabilities=('layout-angle-v1',),
+            rule=CriterionRule(operator='min', minimum=22.0),
+        ),
+    )
+    return build_standards_profile(
+        profile_id='auro3d-home-layout',
+        version='rev12-2024-05-16',
+        name='AURO-3D Home Theater Setup Rev.12 explicit layout criteria',
+        profile_kind='published',
+        criteria=criteria,
+    )
+
+
 def builtin_standards_profiles() -> tuple[StandardsProfile, ...]:
     """Profiles whose pass/fail boundaries are explicit in public source material."""
 
@@ -293,4 +398,5 @@ def builtin_standards_profiles() -> tuple[StandardsProfile, ...]:
         rp22_spatial_profile(3),
         rp22_spatial_profile(4),
         dolby_atmos_home_5_1_2_profile(),
+        auro3d_home_v12_profile(),
     )
