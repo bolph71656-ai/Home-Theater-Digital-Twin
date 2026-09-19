@@ -537,20 +537,26 @@ class LocalPerturbation(BaseModel):
     sample_id: str = Field(min_length=1)
     sample_index: int = Field(ge=0)
     axis_id: str | None = None
-    step: Literal['nominal', 'minus', 'plus', 'multidimensional']
+    step: Literal['nominal', 'minus', 'plus', 'multidimensional', 'uncertainty']
     parameter_deltas: dict[str, float]
+    uncertainty_model_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    uncertainty_item_id: str | None = Field(default=None, min_length=1)
+    probability_weight: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @model_validator(mode='after')
     def valid_delta(self) -> 'LocalPerturbation':
         if self.step == 'nominal':
             if self.axis_id is not None or self.parameter_deltas:
                 raise ValueError('nominal perturbation must not contain an axis delta')
-        elif self.step == 'multidimensional':
+        elif self.step in {'multidimensional', 'uncertainty'}:
             if self.axis_id is not None:
                 raise ValueError(
-                    'multidimensional perturbation must not name one local axis'
+                    'multi-axis perturbation must not name one local axis'
                 )
-            if not self.parameter_deltas:
+            if self.step == 'multidimensional' and not self.parameter_deltas:
                 raise ValueError(
                     'multidimensional perturbation requires parameter deltas'
                 )
@@ -585,8 +591,14 @@ class PerturbationSample(BaseModel):
     candidate_id: str = Field(min_length=1)
     sample_index: int = Field(ge=0)
     axis_id: str | None = None
-    step: Literal['nominal', 'minus', 'plus', 'multidimensional']
+    step: Literal['nominal', 'minus', 'plus', 'multidimensional', 'uncertainty']
     parameter_deltas: dict[str, float]
+    uncertainty_model_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    uncertainty_item_id: str | None = Field(default=None, min_length=1)
+    probability_weight: float | None = Field(default=None, ge=0.0, le=1.0)
     perturbed_scene_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     feasible: bool
     g10_results: tuple[CadConstraintResult, ...] = ()
@@ -623,13 +635,27 @@ class PerturbationSample(BaseModel):
                 )
         if not self.feasible and self.objective_vector is not None:
             raise ValueError('infeasible perturbations must remain unscored evidence')
+        uncertainty_values = (
+            self.uncertainty_model_sha256,
+            self.uncertainty_item_id,
+            self.probability_weight,
+        )
+        if any(value is not None for value in uncertainty_values):
+            if self.uncertainty_model_sha256 is None or self.uncertainty_item_id is None:
+                raise ValueError(
+                    'uncertainty sample provenance requires model hash and item ID'
+                )
+            if self.step not in {'nominal', 'uncertainty'}:
+                raise ValueError(
+                    'explicit uncertainty provenance requires uncertainty/nominal step'
+                )
         expected = canonical_robustness_sha256(self.identity_payload())
         if expected != self.sample_sha256:
             raise ValueError('perturbation sample evidence hash mismatch')
         return self
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             'schema_version': self.schema_version,
             'sample_id': self.sample_id,
             'robustness_spec_id': self.robustness_spec_id,
@@ -661,6 +687,15 @@ class PerturbationSample(BaseModel):
             ),
             'failure_reason': self.failure_reason,
         }
+        if self.uncertainty_model_sha256 is not None:
+            payload.update(
+                {
+                    'uncertainty_model_sha256': self.uncertainty_model_sha256,
+                    'uncertainty_item_id': self.uncertainty_item_id,
+                    'probability_weight': self.probability_weight,
+                }
+            )
+        return payload
 
 
 class LocalSensitivity(BaseModel):
@@ -739,7 +774,24 @@ class RobustnessEvaluation(BaseModel):
         default=None,
         pattern=r'^[0-9a-f]{64}$',
     )
-    percentile_semantics: Literal['not_available_bounded_interval'] | None = None
+    percentile_semantics: Literal[
+        'not_available_bounded_interval',
+        'not_available_empirical_unweighted',
+        'not_available_discrete_unweighted',
+        'explicit_probability_model',
+    ] | None = None
+    probability_semantics: Literal[
+        'explicit_distribution',
+        'explicit_empirical_weights',
+        'explicit_discrete_weights',
+    ] | None = None
+    mean_value: float | None = None
+    constraint_violation_probability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+    probability_sample_ids: tuple[str, ...] = ()
     evaluation_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     created_at_utc: str = Field(min_length=1)
 
@@ -766,15 +818,50 @@ class RobustnessEvaluation(BaseModel):
                     'multidimensional robustness summary must be complete'
                 )
             assert self.sampled_envelope is not None
-            if self.sampled_envelope.percentile_values is not None:
-                raise ValueError(
-                    'bounded interval sampling cannot expose percentile values'
-                )
             if (
                 self.sampled_envelope.sampled_min_sample_id not in self.sample_ids
                 or self.sampled_envelope.sampled_max_sample_id not in self.sample_ids
             ):
                 raise ValueError('sampled envelope samples must belong to evaluation')
+            unavailable = {
+                'not_available_bounded_interval',
+                'not_available_empirical_unweighted',
+                'not_available_discrete_unweighted',
+            }
+            if self.percentile_semantics in unavailable:
+                if self.sampled_envelope.percentile_values is not None:
+                    raise ValueError(
+                        'non-probabilistic uncertainty cannot expose percentiles'
+                    )
+                if (
+                    self.probability_semantics is not None
+                    or self.mean_value is not None
+                    or self.constraint_violation_probability is not None
+                    or self.probability_sample_ids
+                ):
+                    raise ValueError(
+                        'non-probabilistic uncertainty cannot expose probability outputs'
+                    )
+            else:
+                if self.sampled_envelope.percentile_values is None:
+                    raise ValueError(
+                        'explicit probability summary requires percentile values'
+                    )
+                if (
+                    self.probability_semantics is None
+                    or self.mean_value is None
+                    or self.constraint_violation_probability is None
+                    or not self.probability_sample_ids
+                ):
+                    raise ValueError(
+                        'explicit probability summary requires complete probability outputs'
+                    )
+                if not set(self.probability_sample_ids).issubset(self.sample_ids):
+                    raise ValueError(
+                        'probability samples must belong to robustness evaluation'
+                    )
+        if self.mean_value is not None and not isfinite(float(self.mean_value)):
+            raise ValueError('robustness mean value must be finite')
         expected = canonical_robustness_sha256(self.identity_payload())
         if expected != self.evaluation_sha256:
             raise ValueError('robustness evaluation identity hash mismatch')
@@ -810,6 +897,22 @@ class RobustnessEvaluation(BaseModel):
                     'feasible_fraction': self.feasible_fraction,
                     'sampling_provenance_sha256': self.sampling_provenance_sha256,
                     'percentile_semantics': self.percentile_semantics,
+                }
+            )
+        if (
+            self.probability_semantics is not None
+            or self.mean_value is not None
+            or self.constraint_violation_probability is not None
+            or self.probability_sample_ids
+        ):
+            payload.update(
+                {
+                    'probability_semantics': self.probability_semantics,
+                    'mean_value': self.mean_value,
+                    'constraint_violation_probability': (
+                        self.constraint_violation_probability
+                    ),
+                    'probability_sample_ids': list(self.probability_sample_ids),
                 }
             )
         return payload
