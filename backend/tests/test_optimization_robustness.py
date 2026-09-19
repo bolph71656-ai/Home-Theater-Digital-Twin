@@ -639,18 +639,43 @@ def test_o90b_explicit_distribution_recovers_known_mean_and_percentile(
     tmp_path,
 ) -> None:
     from htdt.optimization_robustness_uncertainty import (
+        build_uncertainty_sampling_plan,
         derive_uncertainty_robustness_spec,
         evaluate_uncertainty_robustness,
     )
 
     revision, constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    model = _o90b_distribution_model(base_spec)
     spec = derive_uncertainty_robustness_spec(
         base_spec,
-        uncertainty_model=_o90b_distribution_model(base_spec),
+        uncertainty_model=model,
         sample_count=65,
         seed=1701,
         created_at_utc='2026-09-19T00:10:00+00:00',
     )
+    replay_spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        sample_count=65,
+        seed=1701,
+        created_at_utc='2026-09-19T00:10:01+00:00',
+    )
+    changed_seed_spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        sample_count=65,
+        seed=1702,
+        created_at_utc='2026-09-19T00:10:01+00:00',
+    )
+    assert replay_spec.robustness_spec_id == spec.robustness_spec_id
+    assert replay_spec.robustness_spec_sha256 == spec.robustness_spec_sha256
+    assert build_uncertainty_sampling_plan(replay_spec) == (
+        build_uncertainty_sampling_plan(spec)
+    )
+    assert changed_seed_spec.robustness_spec_sha256 != spec.robustness_spec_sha256
+    assert tuple(
+        item.sample_id for item in build_uncertainty_sampling_plan(changed_seed_spec)
+    ) != tuple(item.sample_id for item in build_uncertainty_sampling_plan(spec))
 
     result = evaluate_uncertainty_robustness(
         source_revision=revision,
