@@ -58,4 +58,35 @@ The workflow outcome and candidate outcome are printed separately. A workflow PA
 
 ## Numerical result
 
-Pending the dedicated GitHub Actions run for this PR. The result will be recorded here without changing the pre-registered criterion or frozen R100A tolerance.
+Authoritative dedicated workflow: Actions run `35409411713` (`R100B Pyroomacoustics Stochastic Gate`, run #13), conclusion **success**. Artifact `r100b-pyroomacoustics-stochastic` has artifact id `10573279811` and digest `sha256:43b9bb6fbfc6cec0a8518fce47fc932767ada361fbef2f0c21bd38c34eff4239`.
+
+The workflow result and candidate result are intentionally different:
+
+- workflow/harness: **PASS**;
+- candidate fixture `geometric-seed-repeatability-v1`: **FAIL / non-converged**;
+- central `BakeoffRun` id: `pyroom-stochastic-35409411713`;
+- R100A semantic hash: `97d9ff8f4225569f0193d2f4d5e4a3ae011d4c0a67fb612d525eae2287101aae`;
+- frozen fixture semantic hash: `2f542b9293812bdf5ca92d39bafb228c201a69a8e020754df313fc02888d9027`;
+- stochastic-authority semantic hash: `fc77691e12cab20f6d06cae2ccc9eab8bff83faf232e09bfe8973576fe00c80d`;
+- candidate manifest hash: `58314d89ad7a0e462ff49fde67f53d4b235afd920fe5e4b4f651c3cd2684b764`;
+- raw NPZ SHA-256: `114c1d08ce54e3e291946701a3b10ed9471e4fa80698706d3effeb632d519172`.
+
+### Same-seed replay
+
+The two finest-budget runs using seed `20260918` produced the same selected-band raw histogram SHA-256, `460ab2c20e8c11fa6ddd8524048795bbac11ad7232bba151b93f597b99e3d065`. Therefore `exact_histogram_replay=true`. Both runs, however, reached `insufficient_support` at 500 Hz / 240 ms, so no decay-curve value was invented and `exact_curve_replay=false`; the evaluator consequently leaves the curve-level `repeatability_status=fail`. This raw replay identity is not called statistical convergence.
+
+### Independent seeds and convergence
+
+Seeds `20260919`, `20260920`, `20260921`, and `20260922` are preserved independently at every budget. At 8,192 rays all 4/4 observations were supported and the maximum pointwise seed standard deviation was `0.1272795361 dB`. At 32,768 rays all 4/4 observations were supported and the maximum pointwise seed standard deviation was `0.0721816652 dB`. At 131,072 rays all 4/4 independent-seed observations were `insufficient_support` at 500 Hz / 240 ms, so the pre-registered medium→fine convergence criterion could not be evaluated and no zero response was substituted.
+
+Because the fine level is unsupported, the evaluator records `convergence_status=fail`, no final absolute/relative RMS delta, and no finest-budget standard deviation. The coarse and medium seed-to-seed variation remains in `budget_variation`; unavailable fine-level statistics are not fabricated. No tolerance or fixture setting was changed after observing the result.
+
+### Resource and dependency evidence
+
+Environment setup/install time was `17.095633 s`. Aggregate numerical evidence was setup/compile `0.0147098 s`, solve `17.0295824 s`, postprocess `0.0042547 s`, peak RAM `129.41796875 MB`, raw archive/output `0.0115881 MB`. Independent-seed mean solve time scaled from `0.155511175 s` at 8,192 rays to `0.602541125 s` at 32,768 and `2.3386152 s` at 131,072; the fine level had 0/4 supported decay estimates.
+
+The executed wheel was `pyroomacoustics-0.10.1-cp312-cp312-win_amd64.whl` with SHA-256 `421fa320b6ad31465dc59e137a7b0e1033687cb821febcc8cb4d76f67a4c7b57`. Recorded dependencies were `pyroomacoustics==0.10.1`, `numpy==2.5.3`, `scipy==1.18.1`, and `psutil==7.2.2`; the candidate source commit remains `f02b01dd6609709e2089aefa5d1e59c91d3a0601`.
+
+### Remaining boundary
+
+This FAIL is valid R100B bakeoff evidence. It does not justify relaxing the frozen tolerance, changing the fixture to suit pyroomacoustics, or selecting/rejecting a production solver by itself. Candidate-wide physics correctness remains open, and R100B solver selection / ADR remains outside this slice. MFEM, PFFDTD, R110/R150, O90/O100 and GUI scope are unchanged.
