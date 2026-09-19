@@ -675,3 +675,53 @@ def build_measurement_quality_report(
         **payload,
         report_sha256=_hash(provisional.identity_payload()),
     )
+
+
+
+def gate_measurement_claim(
+    report: CadMeasurementQualityReport,
+    claim: MeasurementCapabilityClaim,
+    *,
+    required_band_hz: tuple[float, float] | None = None,
+) -> CadMeasurementCapability:
+    """Return the claim gate, optionally constrained to an explicit frequency band.
+
+    A report may support magnitude inspection while the usable quality band is
+    unknown. Consumers such as #173/#174 can pass their required band and fail
+    closed without inventing coverage from the imported FR grid.
+    """
+
+    capability = report.capability(claim)
+    if capability.decision != 'ALLOWED' or required_band_hz is None:
+        return capability
+
+    low, high = required_band_hz
+    if not isfinite(low) or not isfinite(high) or low <= 0 or high <= low:
+        raise ValueError('required downstream capability band is invalid')
+
+    usable_check = report.usable_frequency_band
+    usable_band = report.evidence.usable_frequency_band_hz
+    if usable_check.status == 'FAIL':
+        return CadMeasurementCapability(
+            claim=claim,
+            decision='BLOCKED',
+            reasons=capability.reasons + (usable_check.reason,),
+        )
+    if usable_check.status != 'PASS' or usable_band is None:
+        return CadMeasurementCapability(
+            claim=claim,
+            decision='UNKNOWN',
+            reasons=capability.reasons + ('usable frequency band is not established',),
+        )
+
+    usable_low, usable_high = usable_band
+    if usable_low > low or usable_high < high:
+        return CadMeasurementCapability(
+            claim=claim,
+            decision='BLOCKED',
+            reasons=capability.reasons + (
+                f'usable frequency band {usable_low:g}-{usable_high:g} Hz '
+                f'does not cover required band {low:g}-{high:g} Hz',
+            ),
+        )
+    return capability
