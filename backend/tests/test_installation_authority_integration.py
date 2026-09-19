@@ -294,8 +294,8 @@ def test_projector_and_standards_are_exact_authority_summaries(tmp_path: Path) -
     )
     output = _build(revision, specification, video, profile, standards)
 
-    assert output.schema_version == 2
-    assert output.authority_version == 'installation-output-2'
+    assert output.schema_version == 3
+    assert output.authority_version == 'installation-output-3'
     assert output.projector is not None
     assert output.projector.status == 'AVAILABLE'
     assert output.projector.specification_id == specification.specification_id
@@ -349,11 +349,21 @@ def test_scene_presence_does_not_promote_missing_authority_from_unknown(
     assert output.projector.status == 'UNKNOWN'
     assert output.standards is not None
     assert output.standards.status == 'UNKNOWN'
+    assert output.treatment is not None
+    assert output.treatment.status == 'UNKNOWN'
+    assert output.calibration is not None
+    assert output.calibration.status == 'UNKNOWN'
     assert next(
         item for item in output.sections if item.section == 'projector_coordinates'
     ).status == 'UNKNOWN'
     assert next(
         item for item in output.sections if item.section == 'standards_profile'
+    ).status == 'UNKNOWN'
+    assert next(
+        item for item in output.sections if item.section == 'treatment_plan'
+    ).status == 'UNKNOWN'
+    assert next(
+        item for item in output.sections if item.section == 'calibration_plan'
     ).status == 'UNKNOWN'
 
 
@@ -446,6 +456,8 @@ def test_csv_html_and_export_timestamp_keep_semantic_identity_deterministic(
     second_csv = render_installation_csv(output)
     assert first_csv == second_csv
     assert 'authority_record,projector,' in first_csv
+    assert 'authority_record,treatment,' in first_csv
+    assert 'authority_record,calibration,' in first_csv
     assert specification.specification_sha256 in first_csv
     assert standards.evaluation_sha256 in first_csv
 
