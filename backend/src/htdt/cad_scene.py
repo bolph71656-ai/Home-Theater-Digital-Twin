@@ -403,6 +403,13 @@ class SceneDocument(BaseModel):
 
 def canonical_scene_json(document: SceneDocument) -> str:
     payload = document.model_dump(mode='json')
+    # Optional raw-mesh repair lineage is omitted when absent so pre-Issue-167
+    # semantic geometry and SceneRevision hashes remain byte-for-byte canonical.
+    semantic_geometry = payload.get('r120_semantic_geometry')
+    if isinstance(semantic_geometry, dict):
+        request = semantic_geometry.get('conversion_request')
+        if isinstance(request, dict) and request.get('raw_mesh_repair_lineage') is None:
+            request.pop('raw_mesh_repair_lineage', None)
     # Preserve hashes of N05/N10 identity-pose revisions: identity orientation is canonical omission.
     for entity in payload['entities']:
         orientation = entity.get('orientation')
