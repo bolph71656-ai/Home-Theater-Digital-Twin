@@ -735,6 +735,7 @@ def _derive_readiness(
     requested_observables: tuple[str, ...],
     treatment_bindings: tuple[TreatmentBoundarySnapshotBinding, ...],
     wave_excitation_bindings: tuple[WaveSourceExcitationBinding, ...],
+    requested_frequency_domain: FrequencyDomain,
     schema_version: int,
 ) -> AcousticSceneReadiness:
     geometry_ready = compiled.readiness.geometry_compiled
@@ -753,7 +754,19 @@ def _derive_readiness(
                 'BLOCKED_FOR_WAVE_EXCITATION',
                 'UNSUPPORTED',
             }
-            or item.r110_compiled_source_sha256 in excitation_by_source_hash
+            or (
+                item.r110_compiled_source_sha256 in excitation_by_source_hash
+                and excitation_by_source_hash[
+                    item.r110_compiled_source_sha256
+                ].valid_frequency_domain.contains(
+                    requested_frequency_domain.minimum_hz
+                )
+                and excitation_by_source_hash[
+                    item.r110_compiled_source_sha256
+                ].valid_frequency_domain.contains(
+                    requested_frequency_domain.maximum_hz
+                )
+            )
         )
         for item in sources
     )
@@ -1171,6 +1184,7 @@ def build_acoustic_scene_snapshot(
         requested_observables=requested_observables,
         treatment_bindings=treatment_bindings,
         wave_excitation_bindings=wave_excitation_bindings,
+        requested_frequency_domain=requested_frequency_domain,
         schema_version=snapshot_schema_version,
     )
 
@@ -1188,6 +1202,20 @@ def build_acoustic_scene_snapshot(
         for item in source_bindings
     ):
         unresolved.append('wave_source_excitation_blocked')
+    if any(
+        (
+            not binding.valid_frequency_domain.contains(
+                requested_frequency_domain.minimum_hz
+            )
+            or not binding.valid_frequency_domain.contains(
+                requested_frequency_domain.maximum_hz
+            )
+        )
+        for binding in wave_excitation_bindings
+    ):
+        unresolved.append(
+            'wave_source_excitation_frequency_domain_unsupported'
+        )
     if not receivers:
         unresolved.append('receiver_set_missing')
     if environment is None:
