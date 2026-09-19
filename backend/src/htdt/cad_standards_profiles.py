@@ -314,7 +314,7 @@ def auro3d_home_v12_profile() -> StandardsProfile:
         CriterionDefinition(
             criterion_id='auro.v12.lower-layer-max-elevation',
             name='Maximum lower-layer speaker elevation',
-            source=_auro3d_source('§3.3.1.1 and Table 3, page 26'),
+            source=_auro3d_source('§3.3.1.1, pages 23–24; §3.3.2 Table 3, page 26'),
             quantity='speaker_elevation_from_mlp',
             unit='deg',
             applicable_domains=('auro_lower_speaker',),
@@ -330,7 +330,7 @@ def auro3d_home_v12_profile() -> StandardsProfile:
         CriterionDefinition(
             criterion_id='auro.v12.height-layer-elevation',
             name='Height-layer speaker elevation',
-            source=_auro3d_source('Table 3, page 26 — Normative Speaker Positions'),
+            source=_auro3d_source('§3.3.2 Table 3, page 26 — Normative Speaker Positions'),
             quantity='speaker_elevation_from_mlp',
             unit='deg',
             applicable_domains=('auro_height_speaker',),
@@ -345,7 +345,7 @@ def auro3d_home_v12_profile() -> StandardsProfile:
         CriterionDefinition(
             criterion_id='auro.v12.top-speaker-elevation',
             name='Top speaker elevation',
-            source=_auro3d_source('Table 3, page 26 — Normative Speaker Positions'),
+            source=_auro3d_source('§3.3.2 Table 3, page 26 — Normative Speaker Positions'),
             quantity='speaker_elevation_from_mlp',
             unit='deg',
             applicable_domains=('auro_top_speaker',),
@@ -360,7 +360,7 @@ def auro3d_home_v12_profile() -> StandardsProfile:
         CriterionDefinition(
             criterion_id='auro.v12.surround-height-opening-angle',
             name='Minimum opening angle between Surround and Height layers',
-            source=_auro3d_source('§3.3.1.1 and Table 3 note, pages 24 and 26'),
+            source=_auro3d_source('§3.3.1.1, page 24; §3.3.2 Table 3 note, page 26'),
             quantity='surround_to_height_opening_angle',
             unit='deg',
             applicable_domains=('speaker_layout',),
@@ -371,7 +371,7 @@ def auro3d_home_v12_profile() -> StandardsProfile:
         CriterionDefinition(
             criterion_id='auro.v12.screen-height-opening-angle',
             name='Minimum opening angle for Height screen channels',
-            source=_auro3d_source('Table 3 note, page 26'),
+            source=_auro3d_source('§3.3.2 Table 3 note, page 26'),
             quantity='screen_to_height_opening_angle',
             unit='deg',
             applicable_domains=('speaker_layout',),
