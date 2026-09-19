@@ -515,7 +515,7 @@ def finite_record_pressure_transfer(
 ) -> np.ndarray:
     """Compute the R100A-4 finite-record P_T/Q_T transfer.
 
-    Both spectra use the exact dt-weighted direct-frequency DTFT over the same
+    Both spectra use the exact dt-weighted direct-frequency analysis transform over the same
     half-open record. The shared dt factor cancels numerically in the ratio,
     but it is included explicitly so units and normalization match authority.
     """
@@ -542,7 +542,7 @@ def finite_record_pressure_transfer(
 
     dt = float(time_step_s)
     times = np.arange(pressure.size, dtype=np.float64) * dt
-    kernel = np.exp(-2j * np.pi * frequencies[:, None] * times[None, :])
+    kernel = np.exp(+2j * np.pi * frequencies[:, None] * times[None, :])
     pressure_spectrum = dt * (kernel @ pressure)
     source_spectrum = dt * (kernel @ source)
 
