@@ -93,7 +93,7 @@ class CadObjectiveEvaluation(BaseModel):
             'candidate_id': self.candidate_id,
             'input_refs': [ref.model_dump(mode='json') for ref in self.input_refs],
             'evaluation_spec': json.loads(self.evaluation_spec_json),
-            'vector': self.vector.model_dump(mode='json'),
+            'vector': self.vector.identity_payload(),
         }
 
 
