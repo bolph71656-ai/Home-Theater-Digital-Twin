@@ -758,18 +758,30 @@ def test_blocked_treatment_result_never_becomes_available_input(
     tmp_path: Path,
 ) -> None:
     fx = _fixture(tmp_path)
-    result, _item = _compile_result(
+    blocked_wave, item = _compile_result(
         fx,
         kind='geometric',
         instance_id='panel-blocked-wave',
         target_domain='wave',
     )
-    snapshot = _snapshot(fx, result)
-    binding = snapshot.treatment_boundary_bindings[0]
+    available_geometric = compile_treatment_boundary_overlays(
+        fx['revision'],
+        fx['compiled'],
+        (item,),
+        target_domain='geometric',
+        base_surface_bindings=(fx['base_binding'],),
+    )[0]
+    snapshot = _snapshot(fx, blocked_wave, available_geometric)
+    by_domain = {
+        binding.target_domain: binding
+        for binding in snapshot.treatment_boundary_bindings
+    }
 
-    assert result.status == 'BLOCKED_WAVE_MODEL_UNAVAILABLE'
-    assert binding.status == 'BLOCKED_WAVE_MODEL_UNAVAILABLE'
-    assert binding.composition_id is None
-    assert binding.selected_treatment_material_authorities == ()
+    assert blocked_wave.status == 'BLOCKED_WAVE_MODEL_UNAVAILABLE'
+    assert available_geometric.status == 'AVAILABLE'
+    assert by_domain['wave'].status == 'BLOCKED_WAVE_MODEL_UNAVAILABLE'
+    assert by_domain['wave'].composition_id is None
+    assert by_domain['wave'].selected_treatment_material_authorities == ()
+    assert by_domain['geometric'].status == 'AVAILABLE'
     assert snapshot.readiness.wave_boundary_ready is False
     assert snapshot.readiness.geometric_boundary_ready is True
