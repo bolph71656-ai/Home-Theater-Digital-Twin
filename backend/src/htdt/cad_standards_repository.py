@@ -150,7 +150,6 @@ class CadStandardsRepository:
             target=evaluation.target,
             observations=evaluation.observations,
             created_at_utc=evaluation.created_at_utc,
-            hard_constraint_ids=evaluation.hard_constraint_ids,
             reevaluation_of_id=evaluation.reevaluation_of_id,
         )
         if regenerated != evaluation:
