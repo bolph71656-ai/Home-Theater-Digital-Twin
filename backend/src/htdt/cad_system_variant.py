@@ -84,7 +84,13 @@ class EquipmentBindingRef(BaseModel):
     entity_id: str = Field(min_length=1)
     equipment_definition_id: str = Field(min_length=1)
     equipment_definition_version: str = Field(min_length=1)
-    equipment_definition_sha256: str = Field(pattern=r'^[0-9a-f]{64}
+    equipment_definition_sha256: str = Field(
+        pattern=r'^[0-9a-f]{64}\\Z',
+    )
+
+
+class ProposedEntitySpec(BaseModel):
+    """Exact hypothetical physical entity payload without measurement evidence."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -93,7 +99,6 @@ class EquipmentBindingRef(BaseModel):
     role_binding_id: str | None = Field(default=None, min_length=1)
     lifecycle: Literal['proposed'] = 'proposed'
     provenance: tuple[VariantProvenanceItem, ...] = ()
-
     @model_validator(mode='after')
     def valid_proposed_entity(self) -> 'ProposedEntitySpec':
         if self.entity.kind not in PHYSICAL_ENTITY_KINDS:
