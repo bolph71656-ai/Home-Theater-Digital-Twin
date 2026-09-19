@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 
-NATIVE_SCHEMA_VERSION = 2
+NATIVE_SCHEMA_VERSION = 3
 
 _METADATA_TABLE = 'native_schema_metadata'
 _MIGRATION_TABLE = 'native_schema_migrations'
@@ -185,10 +185,45 @@ def _migrate_1_to_2(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
+
+def _migrate_2_to_3(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cad_raw_mesh_repair_bundles (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            repaired_mesh_id TEXT NOT NULL UNIQUE,
+            repaired_mesh_semantic_hash TEXT NOT NULL,
+            raw_mesh_id TEXT NOT NULL,
+            raw_mesh_semantic_hash TEXT NOT NULL,
+            repair_plan_id TEXT NOT NULL,
+            repair_plan_semantic_hash TEXT NOT NULL,
+            post_diagnostic_id TEXT NOT NULL,
+            post_diagnostic_semantic_hash TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_raw_mesh_repair_bundle_source
+            ON cad_raw_mesh_repair_bundles(raw_mesh_id, seq ASC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_raw_mesh_repair_bundle_plan
+            ON cad_raw_mesh_repair_bundles(repair_plan_id, seq ASC)
+        """
+    )
+
+
 _MIGRATIONS = {
     1: _migrate_0_to_1,
     2: _migrate_1_to_2,
+    3: _migrate_2_to_3,
 }
+
 
 
 def ensure_native_schema(path: Path) -> int:
