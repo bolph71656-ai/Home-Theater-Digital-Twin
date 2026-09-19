@@ -447,3 +447,15 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - GUI、#173 CalibrationPlan、#174 joint DSP optimization、owned-room physical acceptanceはscope外。
 - 詳細: [Measurement quality authority](MEASUREMENT_QUALITY.md)
 - RDC未使用。
+
+
+### Issue #173 CalibrationPlan foundation — 2026-09-19
+
+- immutable/versioned device-neutral `CalibrationPlan` を exact SceneRevision / SystemVariant / Measurement / Dataset / MeasurementQualityReport hash へ固定。
+- MeasurementQualityReport の magnitude / phase / common timing / arrival / decay / calibrated response / repeatability / polarity / required-band gateを再利用し、absolute delayはcommon timing、polarity inversionはpolarity authorityなしではunsupported。
+- normalized generic biquad authority、deterministic transfer evaluation、device filter-count / boost-cut / gain-delay / sample-rate / crossover / output制約を実装。silent clip/omissionは禁止。
+- `htdt-generic-biquad@1` export snapshotでrequested planとquantized actual settingsを分離し、canonical JSON / deterministic CSV / JSON readbackを提供。
+- export / user-applied / remeasured / validatedをappend-only lifecycleで分離。exportだけでinstalled/as-built/validatedへ進めない。
+- exact exported settingsを参照するVerificationMeasurementPlan foundationとbefore/after Measurement lineageを実装。
+- all-pass correction、coherent inter-channel phase correction、proprietary adapters、advanced PEQ generation、#174 joint optimization、owned-room production recommendation enablementはdeferred。
+- 詳細: [CalibrationPlan authority](CALIBRATION_PLAN.md)
