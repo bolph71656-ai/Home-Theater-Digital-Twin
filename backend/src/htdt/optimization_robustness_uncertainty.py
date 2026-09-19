@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from math import isclose
 from statistics import NormalDist
 from typing import Callable, Literal, Protocol, Sequence
@@ -48,9 +49,9 @@ class RobustnessSampleCache(Protocol):
 
     def save_spec(self, spec: RobustnessSpec) -> RobustnessSpec: ...
 
-    def list_samples(
+    def list_reusable_samples(
         self,
-        robustness_spec_id: str,
+        spec: RobustnessSpec,
     ) -> tuple[PerturbationSample, ...]: ...
 
     def save_sample(self, sample: PerturbationSample) -> PerturbationSample: ...
@@ -638,7 +639,7 @@ def evaluate_uncertainty_robustness(
 
     candidate = _candidate_from_payload(
         spec.candidate_kind,
-        __import__('json').loads(spec.candidate_payload_json),
+        json.loads(spec.candidate_payload_json),
     )
     nominal_document = _candidate_document(source_revision, candidate)
     objective_schema = _metric_schema(nominal_objective.vector)
@@ -648,7 +649,7 @@ def evaluate_uncertainty_robustness(
     cache_samples: tuple[PerturbationSample, ...] = ()
     if cache is not None:
         cache.save_spec(spec)
-        cache_samples = cache.list_samples(spec.robustness_spec_id)
+        cache_samples = cache.list_reusable_samples(spec)
 
     reusable = _merge_reusable_samples(
         spec,
