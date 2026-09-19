@@ -7,6 +7,8 @@ import sqlite3
 from .cad_acoustic_treatment import (
     AcousticTreatmentDefinition,
     AcousticTreatmentPlacement,
+    TreatmentSurfaceBindingEvaluation,
+    evaluate_treatment_surface_binding,
 )
 from .cad_repository import SceneRepository
 from .cad_schema import check_native_schema_compatibility
@@ -141,6 +143,42 @@ class CadAcousticTreatmentRepository:
             for row in rows
         )
 
+    def evaluate_placement_surface_binding(
+        self,
+        placement: AcousticTreatmentPlacement,
+        *,
+        scene_revision_id: str | None = None,
+    ) -> TreatmentSurfaceBindingEvaluation:
+        bound_revision = self.scene_repository.get(placement.scene_revision_id)
+        evaluated_revision_id = (
+            placement.scene_revision_id
+            if scene_revision_id is None
+            else scene_revision_id
+        )
+        evaluated_revision = self.scene_repository.get(evaluated_revision_id)
+        return evaluate_treatment_surface_binding(
+            placement,
+            bound_revision=bound_revision,
+            evaluated_revision=evaluated_revision,
+            evaluated_revision_id=evaluated_revision_id,
+        )
+
+    def _decode_placement(self, payload_json: str) -> AcousticTreatmentPlacement:
+        placement = AcousticTreatmentPlacement.model_validate_json(payload_json)
+        revision = self.scene_repository.get(placement.scene_revision_id)
+        if (
+            placement.host_surface_id is not None
+            and revision is not None
+            and revision.document.r120_semantic_geometry is not None
+        ):
+            evaluation = self.evaluate_placement_surface_binding(placement)
+            if not evaluation.placement_authority_valid:
+                raise ValueError(
+                    'persisted treatment placement semantic host binding is invalid: '
+                    f'{evaluation.binding_state}'
+                )
+        return placement
+
     def _validate_placement_authority(
         self,
         placement: AcousticTreatmentPlacement,
@@ -162,6 +200,17 @@ class CadAcousticTreatmentRepository:
             or revision.content_hash != placement.scene_content_hash
         ):
             raise ValueError('treatment placement SceneRevision authority mismatch')
+
+        if (
+            placement.host_surface_id is not None
+            and revision.document.r120_semantic_geometry is not None
+        ):
+            evaluation = self.evaluate_placement_surface_binding(placement)
+            if not evaluation.placement_authority_valid:
+                raise ValueError(
+                    'treatment placement semantic host binding is invalid: '
+                    f'{evaluation.binding_state}'
+                )
 
         if placement.system_variant_id is not None:
             if self.system_variant_repository is None:
@@ -269,7 +318,7 @@ class CadAcousticTreatmentRepository:
             ).fetchone()
         if row is None:
             return None
-        return AcousticTreatmentPlacement.model_validate_json(row['payload_json'])
+        return self._decode_placement(row['payload_json'])
 
     def latest_placement(
         self,
@@ -283,7 +332,7 @@ class CadAcousticTreatmentRepository:
             ).fetchone()
         if row is None:
             return None
-        return AcousticTreatmentPlacement.model_validate_json(row['payload_json'])
+        return self._decode_placement(row['payload_json'])
 
     def list_placements_for_scene(
         self,
@@ -295,10 +344,7 @@ class CadAcousticTreatmentRepository:
                 'WHERE scene_revision_id=? ORDER BY seq ASC',
                 (scene_revision_id,),
             ).fetchall()
-        return tuple(
-            AcousticTreatmentPlacement.model_validate_json(row['payload_json'])
-            for row in rows
-        )
+        return tuple(self._decode_placement(row['payload_json']) for row in rows)
 
     def list_placements_for_variant(
         self,
@@ -310,7 +356,4 @@ class CadAcousticTreatmentRepository:
                 'WHERE system_variant_id=? ORDER BY seq ASC',
                 (system_variant_id,),
             ).fetchall()
-        return tuple(
-            AcousticTreatmentPlacement.model_validate_json(row['payload_json'])
-            for row in rows
-        )
+        return tuple(self._decode_placement(row['payload_json']) for row in rows)
