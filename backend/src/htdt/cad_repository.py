@@ -46,6 +46,16 @@ class EditorViewRecord:
     locked_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SemanticGeometryBindingRecord:
+    scene_revision_id: str
+    geometry_id: str
+    geometry_semantic_hash: str
+    input_raw_mesh_id: str
+    input_asset_sha256: str
+    conversion_request_id: str
+
+
 class SceneRepository:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -102,6 +112,23 @@ class SceneRepository:
                 )
                 '''
             )
+            connection.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS cad_r120_semantic_geometry_bindings (
+                    scene_revision_id TEXT PRIMARY KEY,
+                    geometry_id TEXT NOT NULL,
+                    geometry_semantic_hash TEXT NOT NULL,
+                    input_raw_mesh_id TEXT NOT NULL,
+                    input_asset_sha256 TEXT NOT NULL,
+                    conversion_request_id TEXT NOT NULL,
+                    FOREIGN KEY(scene_revision_id) REFERENCES scene_revisions(revision_id)
+                )
+                '''
+            )
+            connection.execute(
+                'CREATE INDEX IF NOT EXISTS idx_r120_semantic_geometry_id '
+                'ON cad_r120_semantic_geometry_bindings(geometry_id)'
+            )
             columns = {row['name'] for row in connection.execute('PRAGMA table_info(editor_view_states)')}
             if 'selected_ids_json' not in columns:
                 connection.execute(
@@ -114,7 +141,11 @@ class SceneRepository:
                 'SELECT * FROM scene_revisions WHERE document_id=? ORDER BY seq DESC LIMIT 1',
                 (document_id,),
             ).fetchone()
-        return self._row_to_revision(row) if row else None
+            if row is None:
+                return None
+            revision = self._row_to_revision(row)
+            self._validate_semantic_geometry_binding(connection, revision)
+            return revision
 
     def get(self, revision_id: str) -> SceneRevision | None:
         with closing(self._connect()) as connection, connection:
@@ -122,7 +153,11 @@ class SceneRepository:
                 'SELECT * FROM scene_revisions WHERE revision_id=?',
                 (revision_id,),
             ).fetchone()
-        return self._row_to_revision(row) if row else None
+            if row is None:
+                return None
+            revision = self._row_to_revision(row)
+            self._validate_semantic_geometry_binding(connection, revision)
+            return revision
 
     def save(self, document: SceneDocument, *, parent_revision_id: str | None) -> SaveResult:
         with closing(self._connect()) as connection, connection:
@@ -168,6 +203,22 @@ class SceneRepository:
                 )
                 return SaveResult(self._row_to_revision(parent), created=False)
 
+        geometry = document.r120_semantic_geometry
+        if geometry is not None:
+            if parent is None:
+                if geometry.source_scene_revision_id is not None:
+                    raise ValueError('root SceneRevision semantic geometry must have no source revision')
+            else:
+                parent_document = SceneDocument.model_validate(json.loads(parent['payload_json']))
+                parent_geometry = parent_document.r120_semantic_geometry
+                geometry_changed = (
+                    parent_geometry is None or parent_geometry.geometry_id != geometry.geometry_id
+                )
+                if geometry_changed and geometry.source_scene_revision_id != parent_revision_id:
+                    raise ValueError(
+                        'new R120 semantic geometry must bind to the exact parent SceneRevision'
+                    )
+
         revision_id = revision_id or str(uuid4())
         created_at = created_at_utc or datetime.now(timezone.utc).isoformat()
         connection.execute(
@@ -193,7 +244,92 @@ class SceneRepository:
             'SELECT * FROM scene_revisions WHERE revision_id=?',
             (revision_id,),
         ).fetchone()
-        return SaveResult(self._row_to_revision(row), created=True)
+        revision = self._row_to_revision(row)
+        self._persist_semantic_geometry_binding(connection, revision)
+        return SaveResult(revision, created=True)
+
+    def semantic_geometry_binding(self, revision_id: str) -> SemanticGeometryBindingRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                'SELECT * FROM cad_r120_semantic_geometry_bindings WHERE scene_revision_id=?',
+                (revision_id,),
+            ).fetchone()
+        return self._row_to_semantic_geometry_binding(row) if row else None
+
+    @staticmethod
+    def _persist_semantic_geometry_binding(
+        connection: sqlite3.Connection,
+        revision: SceneRevision,
+    ) -> None:
+        geometry = revision.document.r120_semantic_geometry
+        if geometry is None:
+            return
+        connection.execute(
+            '''
+            INSERT INTO cad_r120_semantic_geometry_bindings(
+                scene_revision_id,
+                geometry_id,
+                geometry_semantic_hash,
+                input_raw_mesh_id,
+                input_asset_sha256,
+                conversion_request_id
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                revision.revision_id,
+                geometry.geometry_id,
+                geometry.semantic_hash_sha256,
+                geometry.input_raw_mesh_id,
+                geometry.input_asset_sha256,
+                geometry.conversion_request_id,
+            ),
+        )
+
+    @staticmethod
+    def _validate_semantic_geometry_binding(
+        connection: sqlite3.Connection,
+        revision: SceneRevision,
+    ) -> None:
+        geometry = revision.document.r120_semantic_geometry
+        row = connection.execute(
+            'SELECT * FROM cad_r120_semantic_geometry_bindings WHERE scene_revision_id=?',
+            (revision.revision_id,),
+        ).fetchone()
+        if geometry is None:
+            if row is not None:
+                raise ValueError(
+                    f'unexpected R120 semantic geometry binding: {revision.revision_id}'
+                )
+            return
+        if row is None:
+            raise ValueError(f'missing R120 semantic geometry binding: {revision.revision_id}')
+        expected = (
+            geometry.geometry_id,
+            geometry.semantic_hash_sha256,
+            geometry.input_raw_mesh_id,
+            geometry.input_asset_sha256,
+            geometry.conversion_request_id,
+        )
+        actual = (
+            row['geometry_id'],
+            row['geometry_semantic_hash'],
+            row['input_raw_mesh_id'],
+            row['input_asset_sha256'],
+            row['conversion_request_id'],
+        )
+        if actual != expected:
+            raise ValueError(f'R120 semantic geometry binding mismatch: {revision.revision_id}')
+
+    @staticmethod
+    def _row_to_semantic_geometry_binding(row: sqlite3.Row) -> SemanticGeometryBindingRecord:
+        return SemanticGeometryBindingRecord(
+            scene_revision_id=row['scene_revision_id'],
+            geometry_id=row['geometry_id'],
+            geometry_semantic_hash=row['geometry_semantic_hash'],
+            input_raw_mesh_id=row['input_raw_mesh_id'],
+            input_asset_sha256=row['input_asset_sha256'],
+            conversion_request_id=row['conversion_request_id'],
+        )
 
     def save_recovery(
         self,
