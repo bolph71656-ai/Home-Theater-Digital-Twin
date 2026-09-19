@@ -142,15 +142,27 @@ def _definition_for_asset(
     definition_id: str,
     kind: str,
     user_label: str | None = None,
+    separate_capability_provenance: bool = False,
 ):
     source = json.loads(source_bytes)
     source_sha256 = sha256(source_bytes).hexdigest()
-    provenance = EquipmentDataProvenance(
+    asset_provenance = EquipmentDataProvenance(
         evidence_kind=source['evidence_kind'],
         source_name=source['source_name'],
         source_version=source['source_version'],
         source_reference=source['source_reference'],
         source_sha256=source_sha256,
+    )
+    capability_provenance = (
+        EquipmentDataProvenance(
+            evidence_kind=source['evidence_kind'],
+            source_name=f"{source['source_name']} metadata",
+            source_version=source['source_version'],
+            source_reference=f"{source['source_reference']}-metadata",
+            source_sha256='9' * 64,
+        )
+        if separate_capability_provenance
+        else asset_provenance
     )
     domain = DirectivityDomain(
         frequency=FrequencyDomain(
@@ -170,20 +182,20 @@ def _definition_for_asset(
         method=source['interpolation_method'],
         implementation=source['interpolation_implementation'],
         implementation_version=source['interpolation_version'],
-        provenance=provenance,
+        provenance=capability_provenance,
     )
     return build_equipment_definition(
         definition_id=definition_id,
         version='1',
         identity_kind='user_defined',
         user_label=user_label or definition_id,
-        provenance=(provenance,),
+        provenance=(capability_provenance,),
         cabinet_envelope_m=Size3(x_m=0.2, y_m=0.25, z_m=0.35),
         acoustic_reference_point_m=Offset3(),
         directivity=DirectivityCapability(
             tier=kind,
             data_format=source['source_format'],
-            provenance=provenance,
+            provenance=capability_provenance,
             data_asset_sha256=source_sha256,
             valid_domain=domain,
             interpolation=interpolation,
@@ -243,6 +255,26 @@ def test_magnitude_and_complex_datasets_import_with_exact_source_provenance() ->
         and sample.horizontal_angle_deg == 30.0
     )
     assert off_axis.magnitude_db == pytest.approx(-6.020599913279624)
+
+
+def test_dataset_binding_allows_separate_equipment_provenance_document() -> None:
+    source_bytes = _asset_bytes()
+    definition = _definition_for_asset(
+        source_bytes,
+        definition_id='separate-provenance',
+        kind='magnitude_only',
+        separate_capability_provenance=True,
+    )
+
+    assert definition.directivity.provenance.source_sha256 != sha256(
+        source_bytes
+    ).hexdigest()
+    dataset = NORMALIZED_JSON_DIRECTIVITY_ADAPTER.parse(
+        source_bytes,
+        definition,
+    )
+    assert dataset.source_asset_sha256 == sha256(source_bytes).hexdigest()
+    assert dataset.equipment_definition_sha256 == definition.semantic_sha256
 
 
 def test_on_grid_interpolation_and_domain_fail_closed() -> None:
