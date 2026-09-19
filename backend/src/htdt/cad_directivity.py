@@ -660,6 +660,11 @@ class NormalizedJsonDirectivityAdapter:
             raise ValueError('malformed normalized directivity JSON source') from exc
 
         source = NormalizedDirectivityJsonV1.model_validate(raw)
+        if source.source_format != 'custom':
+            raise ValueError(
+                'normalized JSON adapter accepts only custom normalized source format; '
+                'native CLF/CF2/SOFA/AES69 require dedicated adapters'
+            )
         if source.interpolation_method not in {
             'none',
             'nearest',
