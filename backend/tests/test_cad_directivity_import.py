@@ -11,6 +11,7 @@ from htdt.cad_coverage import (
 )
 from htdt.cad_direct_level import SeatPopulation
 from htdt.cad_directivity_import import (
+    DIRECTIVITY_ADAPTER_REGISTRY,
     POLAR_TABLE_ADAPTER_ID,
     POLAR_TABLE_ADAPTER_VERSION,
     POLAR_TABLE_SCHEMA,
@@ -534,18 +535,25 @@ def test_imported_dataset_evaluates_directly_through_coverage(
     assert evaluation.aggregates.useful_coverage_fraction.value == 1.0
 
 
-def test_deferred_native_formats_return_explicit_unsupported_result() -> None:
-    raw = b'not parsed as clf'
+@pytest.mark.parametrize('source_format', ('clf', 'cf2'))
+def test_native_clf_and_cf2_remain_explicitly_deferred(source_format: str) -> None:
+    descriptor = DIRECTIVITY_ADAPTER_REGISTRY.deferred_for_format(source_format)
+    assert descriptor is not None
+    assert descriptor.support_state == 'DEFERRED'
+    assert descriptor.supported_capabilities == ()
+
+    raw = f'not parsed as {source_format}'.encode('ascii')
     definition = _definition(_table_bytes())
     result = import_directivity_asset(
         raw_source_bytes=raw,
-        explicit_source_format='clf',
-        declared_schema='unknown-clf-version',
+        explicit_source_format=source_format,
+        declared_schema=f'unknown-{source_format}-version',
         equipment_definition=definition,
-        adapter_id='any-clf-parser',
+        adapter_id=f'any-{source_format}-parser',
         adapter_version='1',
     )
 
     assert result.dataset is None
     assert result.diagnostic.import_state == 'UNSUPPORTED'
+    assert result.diagnostic.source_sha256 == sha256(raw).hexdigest()
     assert 'deferred' in result.diagnostic.rejection_reason.lower()
