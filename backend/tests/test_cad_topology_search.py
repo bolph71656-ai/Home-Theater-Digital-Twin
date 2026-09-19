@@ -661,6 +661,8 @@ def test_body_yaw_can_make_template_infeasible_xyz_feasible_and_round_trip(
         candidate=candidate,
         created_at_utc='2026-09-19T00:02:00+00:00',
     )
+    provenance = {item.key: item.value for item in child.provenance}
+    assert provenance['o100b.algorithm_version'] == 'o100b-o10-o80-grid-2'
     topology_repository = CadTopologySearchRepository(variant_repository)
     topology_repository.save_topology_spec(topology)
     topology_repository.save_spec(spec)
