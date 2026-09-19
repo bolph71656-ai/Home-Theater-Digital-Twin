@@ -248,6 +248,74 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
 
 
 
+
+def test_explicit_quality_failures_block_their_downstream_claims(tmp_path: Path) -> None:
+    revision, measurement_repository, quality_repository = _repositories(tmp_path)
+    first, _ = _save_measurement(
+        measurement_repository,
+        revision,
+        'fail-repeat-a',
+        raw=b'fail-repeat-a',
+        phase_status='valid',
+        phase_deg=(5.0, 10.0, 15.0),
+    )
+    record, dataset = _save_measurement(
+        measurement_repository,
+        revision,
+        'fail-repeat-b',
+        raw=b'fail-repeat-b',
+        phase_status='valid',
+        phase_deg=(6.0, 11.0, 16.0),
+    )
+    report = build_measurement_quality_report(
+        measurement=record,
+        dataset=dataset,
+        evidence=CadMeasurementQualityEvidence(
+            clipping_detected=True,
+            snr_db=10.0,
+            usable_frequency_band_hz=(30.0, 70.0),
+            timing_reference_valid=False,
+            polarity_correct=False,
+            polarity_confidence=0.99,
+            has_impulse_response=True,
+            ir_window_start_s=-0.01,
+            ir_window_end_s=0.5,
+            ir_truncated=True,
+            calibration_file_sha256=sha256(b'wrong-cal').hexdigest(),
+            expected_calibration_file_sha256=sha256(b'expected-cal').hexdigest(),
+            repeat_measurement_ids=(first.measurement_id, record.measurement_id),
+            repeatability_rms_db=2.0,
+            evidence_source='rew_metadata',
+        ),
+        profile=build_measurement_quality_profile(
+            required_usable_band_hz=(20.0, 80.0),
+            minimum_snr_db=20.0,
+            maximum_repeatability_rms_db=1.0,
+        ),
+        acquisition_context=CadAcquisitionContextBinding(
+            acquisition_context_id='acq-fail',
+            acquisition_context_sha256=sha256(b'acq-fail').hexdigest(),
+            source_kind='native',
+        ),
+        report_id='report-failures',
+        created_at_utc='2026-09-19T00:03:15+00:00',
+    )
+
+    assert report.capability('magnitude_response').decision == 'ALLOWED'
+    assert report.capability('phase_response').decision == 'ALLOWED'
+    for claim in (
+        'common_timing',
+        'arrival_time',
+        'decay',
+        'calibrated_response',
+        'repeatability',
+        'polarity',
+    ):
+        assert report.capability(claim).decision == 'BLOCKED'
+    assert report.retake_recommendation == 'RETAKE'
+    quality_repository.save_report(report)
+
+
 def test_calibration_match_does_not_open_calibrated_response_without_capture_quality(tmp_path: Path) -> None:
     revision, measurement_repository, quality_repository = _repositories(tmp_path)
     record, dataset = _save_measurement(
