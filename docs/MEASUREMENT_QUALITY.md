@@ -16,7 +16,7 @@ The quality layer consumes one already-persisted native measurement/dataset and 
 - `FAIL` means contrary evidence exists and remains distinct from missing evidence;
 - quality is not reduced to one score.
 
-`CadAcquisitionContextBinding` is an immutable reference (ID + content hash + source kind) to an acquisition-context authority. It is intentionally not a second AcquisitionContext implementation. When no such binding exists, the report leaves it absent and timing/calibration claims that need it remain unknown rather than fabricating microphone/AVR state.
+`CadAcquisitionContextBinding` is an immutable reference (ID + content hash + source kind) to an acquisition-context authority. It is intentionally not a second AcquisitionContext implementation. A binding with `source_kind=unknown` is not sufficient to open context-dependent claims. When no authoritative binding exists, timing/calibration claims that need it remain unknown rather than fabricating microphone/AVR state.
 
 ## Immutable identity
 
