@@ -439,7 +439,7 @@ Issue #90で、既存O10を壊さずmodel-dependent変数を追加するextended
 - exact Measurement/Dataset/raw asset SHA、SceneRevision/content hash、entity/measurement point、optional AcquisitionContext ID/hash、algorithm/profile hashへ固定。
 - clipping、noise/SNR、usable band、timing reference、polarity、IR window/truncation、calibration provenance、repeatabilityを `PASS/FAIL/UNKNOWN/NOT_EVALUATED` で独立保持。
 - FR-onlyやphase-only evidenceからclipping/SNR/common timing等を推定しない。
-- downstreamを `magnitude_response / phase_response / common_timing / arrival_time / decay / calibrated_response / repeatability` のclaim別 `ALLOWED/BLOCKED/UNKNOWN` でgate。要求bandもfail closedで評価可能。
+- downstreamを `magnitude_response / phase_response / common_timing / arrival_time / decay / calibrated_response / repeatability / polarity` のclaim別 `ALLOWED/BLOCKED/UNKNOWN` でgate。要求bandもfail closedで評価可能。
 - profile変更は新report、retakeは別Measurement + append-only supersedes/selected lineage。旧measurement/reportとO50/O60 calibration/holdout authorityは変更しない。
 - persistenceは既存native DB内のadditive tableで行い、native schema compatibility gateを再利用。
 - GUI、#173 CalibrationPlan、#174 joint DSP optimization、owned-room physical acceptanceはscope外。
