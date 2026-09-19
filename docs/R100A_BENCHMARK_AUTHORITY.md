@@ -44,10 +44,12 @@ R100A-4 applies the finite-record contract **only** to `wave-rectangular-converg
 - solver `dt` is **not** common authority. It remains a discretization/refinement parameter and therefore `comparison.time_step_s` is null for these fixtures;
 - direct scored-frequency DTFT uses `exp(-i*2*pi*f*n*dt)` at the frozen frequency grid, with no window, filter or zero-padding interpolation;
 - finite-record spectra are `X_T(f)=dt*sum_n x[n]*exp(-i*2*pi*f*n*dt)`;
-- normalized transfer is `H_T(f)=P_T(f)/Q_T(f)` from the pressure and the **actual injected source record** on that same solver time grid; the rectangular complex-convergence observable is therefore explicitly typed as `complex_pressure_transfer_pa_per_m3_s` with unit `Pa/(m3/s)`, not pressure `Pa`;
+- the numerator record is **physical pressure**. A solver that stores another primary field may use a declared conversion to physical pressure, but that conversion and its numerical stencil must be recorded as adapter provenance before the DTFT is taken;
+- normalized transfer is `H_T(f)=P_T(f)/Q_T(f)` from the physical pressure record and the **physical volume-velocity source samples on that same solver time grid, before solver-internal numerical scaling**; the rectangular complex-convergence observable is therefore explicitly typed as `complex_pressure_transfer_pa_per_m3_s` with unit `Pa/(m3/s)`, not pressure `Pa`;
+- the concave magnitude observable is absolute transfer level `dB re 1 Pa/(m3/s)`, i.e. `20*log10(|P_T/Q_T|/(1 Pa/(m3/s)))`;
 - `Q_T(f)` must be finite and non-zero at every scored frequency; otherwise evidence is invalid/BLOCKED rather than replaced by an invented response.
 
-The common `dt` factor cancels in `P_T/Q_T`, but it is still part of the written authority so implementations cannot disagree on Fourier/normalization units. This formalizes the existing intent of the PFFDTD pressure adapter while avoiding any dependency on PFFDTD's internal source-grid scaling.
+The common `dt` factor cancels in `P_T/Q_T`, but it is still part of the written authority so implementations cannot disagree on Fourier/normalization units. For PFFDTD specifically, native `u` is treated as velocity potential and HTDT first forms the finite physical pressure record with the declared `p=rho*d(phi)/dt` adapter conversion (second-order centered interior derivative with second-order one-sided endpoints), then applies the common direct DTFT. HTDT does **not** substitute `-i*omega*rho*Phi_T` for the DTFT of a truncated finite pressure record, because finite-window endpoint terms would make those quantities non-equivalent.
 
 Portal continuity and the explicit radiation-termination analytical reference are **not** inferred to be finite-record fixtures merely because they carry timing metadata. Applicability is explicit: a fixture uses finite-record transfer semantics only when `comparison.finite_record_transfer` is present.
 
