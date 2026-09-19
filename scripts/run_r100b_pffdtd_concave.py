@@ -566,6 +566,18 @@ def _run_level(
             f'PFFDTD sound-speed mapping mismatch: {engine.c} != {authority_c}'
         )
 
+    record_last_time_s = float((int(engine.Nt) - 1) * engine.Ts)
+    record_next_time_s = float(int(engine.Nt) * engine.Ts)
+    record_tolerance_s = max(1.0e-12, abs(float(engine.Ts)) * 1.0e-9)
+    if not (
+        record_last_time_s < duration_s
+        and record_next_time_s + record_tolerance_s >= duration_s
+    ):
+        raise RuntimeError(
+            'PFFDTD finite-record samples do not satisfy the frozen [0,T) contract: '
+            f'last={record_last_time_s}, next={record_next_time_s}, T={duration_s}'
+        )
+
     solve_started = time.perf_counter()
     engine.run_all(nsteps=int(engine.Nt))
     solve_s = time.perf_counter() - solve_started
@@ -614,7 +626,9 @@ def _run_level(
         'h_m': float(engine.h),
         'time_step_s': float(engine.Ts),
         'sample_rate_hz': float(1.0 / engine.Ts),
-        'record_last_time_s': float((int(engine.Nt) - 1) * engine.Ts),
+        'record_last_time_s': record_last_time_s,
+        'record_next_time_s': record_next_time_s,
+        'record_interval_authority': '[0,T)',
         'requested_observation_time_s': duration_s,
         'sound_speed_m_s': float(engine.c),
         'authority_temperature_c': float(fixture.environment.temperature_c),
