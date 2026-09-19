@@ -6,7 +6,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any, Literal, Sequence
+from typing import Any, Literal, Protocol, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -44,6 +44,16 @@ FinalClaimState = Literal[
     'PRELIMINARY_BUDGET',
     'BLOCKED_EVIDENCE',
 ]
+
+
+class TopologyComparisonEvaluationResolver(Protocol):
+    path: Path
+
+    def get_evaluation(
+        self,
+        evaluation_id: str,
+    ) -> TopologyComparisonEvaluation | None:
+        ...
 
 
 def _canonical(value: Any) -> str:
@@ -638,9 +648,23 @@ class CadMultiFidelityRepository:
     evaluation authorities remain in their own repositories.
     """
 
-    def __init__(self, scene_repository: SceneRepository) -> None:
+    def __init__(
+        self,
+        scene_repository: SceneRepository,
+        *,
+        topology_comparison_repository: TopologyComparisonEvaluationResolver | None = None,
+    ) -> None:
         self.scene_repository = scene_repository
+        self.topology_comparison_repository = topology_comparison_repository
         self.path = Path(scene_repository.path)
+        if (
+            topology_comparison_repository is not None
+            and Path(topology_comparison_repository.path) != self.path
+        ):
+            raise ValueError(
+                'multi-fidelity and topology comparison repositories must share '
+                'one native CAD database'
+            )
         ensure_native_schema(self.path)
         self._initialize()
 
@@ -688,6 +712,24 @@ class CadMultiFidelityRepository:
                     FOREIGN KEY(plan_id)
                         REFERENCES cad_multifidelity_plans(plan_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS cad_multifidelity_finalizations (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    finalization_id TEXT NOT NULL UNIQUE,
+                    semantic_sha256 TEXT NOT NULL UNIQUE,
+                    screening_evaluation_id TEXT NOT NULL,
+                    final_comparison_evaluation_id TEXT NOT NULL,
+                    claim_state TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    recorded_at_utc TEXT NOT NULL,
+                    FOREIGN KEY(screening_evaluation_id)
+                        REFERENCES cad_multifidelity_screening_evaluations(evaluation_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_multifidelity_finalization_screening_seq
+                    ON cad_multifidelity_finalizations(
+                        screening_evaluation_id,
+                        seq ASC
+                    );
                 """
             )
 
@@ -920,3 +962,129 @@ class CadMultiFidelityRepository:
         if regenerated != evaluation:
             raise ValueError('persisted screening no longer reproduces')
         return evaluation
+
+
+    def _validate_finalization(
+        self,
+        finalization: MultiFidelityFinalization,
+    ) -> MultiFidelityFinalization:
+        finalization = MultiFidelityFinalization.model_validate(
+            finalization.model_dump(mode='python')
+        )
+        screening = self.get_screening(
+            finalization.screening_evaluation_id
+        )
+        if screening is None:
+            raise ValueError(
+                'multi-fidelity finalization references missing screening evaluation'
+            )
+        if screening.semantic_sha256 != finalization.screening_evaluation_sha256:
+            raise ValueError(
+                'multi-fidelity finalization screening hash mismatch'
+            )
+        plan = self.get_plan(screening.plan_id)
+        if plan is None:
+            raise ValueError('multi-fidelity finalization plan disappeared')
+        if plan.domain != 'o100_topology':
+            raise ValueError(
+                'persisted final comparison adapter currently supports '
+                'o100_topology only'
+            )
+        if self.topology_comparison_repository is None:
+            raise ValueError(
+                'O100 multi-fidelity finalization requires a typed '
+                'topology comparison repository'
+            )
+        final_comparison = self.topology_comparison_repository.get_evaluation(
+            finalization.final_comparison_ref.authority_id
+        )
+        if final_comparison is None:
+            raise ValueError(
+                'multi-fidelity finalization references missing final comparison'
+            )
+        if (
+            final_comparison.evaluation_sha256
+            != finalization.final_comparison_ref.semantic_sha256
+        ):
+            raise ValueError(
+                'multi-fidelity final comparison exact hash mismatch'
+            )
+        regenerated = finalize_o100_multifidelity(
+            plan=plan,
+            screening=screening,
+            final_comparison=final_comparison,
+        )
+        if regenerated != finalization:
+            raise ValueError(
+                'multi-fidelity finalization does not reproduce from '
+                'persisted exact authorities'
+            )
+        return finalization
+
+    def save_finalization(
+        self,
+        finalization: MultiFidelityFinalization,
+    ) -> MultiFidelityFinalization:
+        finalization = self._validate_finalization(finalization)
+        with closing(self._connect()) as connection, connection:
+            existing = connection.execute(
+                """
+                SELECT payload_json
+                FROM cad_multifidelity_finalizations
+                WHERE finalization_id=?
+                """,
+                (finalization.finalization_id,),
+            ).fetchone()
+            if existing is not None:
+                persisted = MultiFidelityFinalization.model_validate_json(
+                    existing['payload_json']
+                )
+                if persisted != finalization:
+                    raise ValueError(
+                        'MultiFidelityFinalization id exists with different semantics'
+                    )
+                return self._validate_finalization(persisted)
+            connection.execute(
+                """
+                INSERT INTO cad_multifidelity_finalizations(
+                    finalization_id,
+                    semantic_sha256,
+                    screening_evaluation_id,
+                    final_comparison_evaluation_id,
+                    claim_state,
+                    payload_json,
+                    recorded_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    finalization.finalization_id,
+                    finalization.semantic_sha256,
+                    finalization.screening_evaluation_id,
+                    finalization.final_comparison_ref.authority_id,
+                    finalization.claim_state,
+                    finalization.model_dump_json(),
+                    _utc_now(),
+                ),
+            )
+        return finalization
+
+    def get_finalization(
+        self,
+        finalization_id: str,
+    ) -> MultiFidelityFinalization | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                """
+                SELECT payload_json
+                FROM cad_multifidelity_finalizations
+                WHERE finalization_id=?
+                """,
+                (finalization_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._validate_finalization(
+            MultiFidelityFinalization.model_validate_json(
+                row['payload_json']
+            )
+        )
