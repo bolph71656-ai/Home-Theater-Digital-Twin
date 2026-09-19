@@ -12,6 +12,7 @@ from htdt.cad_measurement_quality import (
     build_measurement_lineage,
     build_measurement_quality_profile,
     build_measurement_quality_report,
+    gate_measurement_claim,
 )
 from htdt.cad_measurement_quality_repository import CadMeasurementQualityRepository
 from htdt.cad_measurement_repository import CadMeasurementRepository
@@ -100,6 +101,9 @@ def test_fr_only_quality_keeps_magnitude_and_does_not_invent_missing_evidence(tm
     assert report.capability('common_timing').decision == 'UNKNOWN'
     assert report.capability('arrival_time').decision == 'BLOCKED'
     assert report.capability('decay').decision == 'BLOCKED'
+    assert gate_measurement_claim(
+        report, 'magnitude_response', required_band_hz=(20.0, 80.0)
+    ).decision == 'UNKNOWN'
 
     quality_repository.save_report(report)
     assert quality_repository.get_report(report.report_id) == report
@@ -210,6 +214,12 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
     } == {'PASS'}
     assert report.retake_recommendation == 'NOT_NEEDED'
     assert all(item.decision == 'ALLOWED' for item in report.capabilities)
+    assert gate_measurement_claim(
+        report, 'phase_response', required_band_hz=(20.0, 80.0)
+    ).decision == 'ALLOWED'
+    assert gate_measurement_claim(
+        report, 'phase_response', required_band_hz=(10.0, 100.0)
+    ).decision == 'BLOCKED'
 
     quality_repository.save_report(report)
     assert quality_repository.latest_report(record.measurement_id) == report
