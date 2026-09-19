@@ -366,7 +366,10 @@ def _wrapped_phase_delta_deg(a: float, b: float) -> float:
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
-def _validate_raw(fixture, raw: dict[str, object]) -> list[dict[str, object]]:
+def _validate_raw(
+    fixture,
+    raw: dict[str, object],
+) -> tuple[list[dict[str, object]], list[str]]:
     if raw.get('schema_version') != 'r100b-mfem-radiation-transfer-raw-1':
         raise ValueError('unexpected MFEM radiation raw schema')
     if raw.get('compiled_geometry') != '6x4x2.5-structured-6x4x2-hex':
@@ -409,6 +412,7 @@ def _validate_raw(fixture, raw: dict[str, object]) -> list[dict[str, object]]:
         raise ValueError(f'expected p-refinement orders {expected_orders}, got {actual_orders}')
 
     previous_ndofs = 0
+    solver_violations: list[str] = []
     for level in orders:
         if int(level.get('elements', 0)) != EXPECTED_ELEMENTS:
             raise ValueError('MFEM radiation mesh element count changed')
@@ -433,12 +437,23 @@ def _validate_raw(fixture, raw: dict[str, object]) -> list[dict[str, object]]:
                     f'MFEM radiation frequency mismatch: {actual_frequency} != {expected_frequency}'
                 )
             residual = float(sample['relative_residual'])
-            if residual > SOLVER_RESIDUAL_LIMIT:
-                raise ValueError(
-                    f'MFEM radiation residual {residual} exceeds fixed '
-                    f'{SOLVER_RESIDUAL_LIMIT} qualification limit'
+            pressure_real = float(sample['pressure_real_pa'])
+            pressure_imag = float(sample['pressure_imag_pa'])
+            converged = bool(sample.get('converged', False))
+            if not math.isfinite(residual) or not math.isfinite(pressure_real) or not math.isfinite(pressure_imag):
+                solver_violations.append(
+                    f'p{int(level["order"])} {actual_frequency:g} Hz produced non-finite solver output'
                 )
-    return orders
+            if not converged:
+                solver_violations.append(
+                    f'p{int(level["order"])} {actual_frequency:g} Hz GMRES did not converge'
+                )
+            if residual > SOLVER_RESIDUAL_LIMIT:
+                solver_violations.append(
+                    f'p{int(level["order"])} {actual_frequency:g} Hz residual {residual} '
+                    f'exceeds fixed {SOLVER_RESIDUAL_LIMIT} qualification limit'
+                )
+    return orders, solver_violations
 
 
 def _pair_metrics(
@@ -737,7 +752,7 @@ def _execute(
         raise RuntimeError('MFEM radiation probe did not produce raw JSON output')
 
     raw = json.loads(raw_path.read_text(encoding='utf-8'))
-    orders = _validate_raw(fixture, raw)
+    orders, solver_violations = _validate_raw(fixture, raw)
     backend_version = str(raw.get('mfem_version', '4.10'))
     compile_s = sum(float(item['assemble_s']) for item in orders)
     solve_s = sum(float(item['solve_s']) for item in orders)
@@ -745,39 +760,78 @@ def _execute(
     output_mb = raw_path.stat().st_size / (1024.0 * 1024.0)
 
     post_started = time.perf_counter()
-    pair_metrics, convergence = _convergence_evidence(fixture, orders)
-    pre_postprocess_s = time.perf_counter() - post_started
+    pair_metrics: list[dict[str, float | int]] = []
+    convergence: dict[str, object] = {
+        'qualified': False,
+        'qualification_fraction_of_frozen_tolerance': CONVERGENCE_QUALIFICATION_FRACTION,
+        'violations': list(solver_violations),
+    }
 
-    raw_finest = _raw_finest_observation(
-        fixture,
-        orders[-1],
-        evidence_ref=evidence_ref,
-        backend_version=backend_version,
-        compile_s=compile_s,
-        solve_s=solve_s,
-        postprocess_s=pre_postprocess_s,
-        peak_ram_mb=peak_ram_mb,
-        disk_mb=disk_mb,
-        output_mb=output_mb,
-    )
-    central_evidence = evaluate_sampled_fixture(fixture, raw_finest)
-    resource_violations = _resource_violations(fixture, raw_finest)
+    if solver_violations:
+        pre_postprocess_s = time.perf_counter() - post_started
+        raw_finest = _raw_finest_observation(
+            fixture,
+            orders[-1],
+            evidence_ref=evidence_ref,
+            backend_version=backend_version,
+            compile_s=compile_s,
+            solve_s=solve_s,
+            postprocess_s=pre_postprocess_s,
+            peak_ram_mb=peak_ram_mb,
+            disk_mb=disk_mb,
+            output_mb=output_mb,
+        )
+        resource_violations = _resource_violations(fixture, raw_finest)
+        fixture_evidence = BakeoffFixtureEvidence(
+            fixture_id=fixture.fixture_id,
+            status='fail',
+            evidence_ref=evidence_ref,
+            adapter_id=ADAPTER_ID,
+            adapter_version=ADAPTER_VERSION,
+            backend_version=backend_version,
+            precision='float64',
+            compile_s=compile_s,
+            solve_s=solve_s,
+            postprocess_s=pre_postprocess_s,
+            peak_ram_mb=peak_ram_mb,
+            disk_mb=disk_mb,
+            output_mb=output_mb,
+            diagnostics=tuple(solver_violations + resource_violations),
+        )
+        central_evidence = None
+    else:
+        pair_metrics, convergence = _convergence_evidence(fixture, orders)
+        pre_postprocess_s = time.perf_counter() - post_started
+        raw_finest = _raw_finest_observation(
+            fixture,
+            orders[-1],
+            evidence_ref=evidence_ref,
+            backend_version=backend_version,
+            compile_s=compile_s,
+            solve_s=solve_s,
+            postprocess_s=pre_postprocess_s,
+            peak_ram_mb=peak_ram_mb,
+            disk_mb=disk_mb,
+            output_mb=output_mb,
+        )
+        central_evidence = evaluate_sampled_fixture(fixture, raw_finest)
+        resource_violations = _resource_violations(fixture, raw_finest)
 
-    extra_diagnostics: list[str] = []
-    status = central_evidence.status
-    if not bool(convergence['qualified']):
-        status = 'fail'
-        extra_diagnostics.extend(str(item) for item in convergence['violations'])
-    if resource_violations:
-        status = 'fail'
-        extra_diagnostics.extend(resource_violations)
+        extra_diagnostics: list[str] = []
+        status = central_evidence.status
+        if not bool(convergence['qualified']):
+            status = 'fail'
+            extra_diagnostics.extend(str(item) for item in convergence['violations'])
+        if resource_violations:
+            status = 'fail'
+            extra_diagnostics.extend(resource_violations)
 
-    fixture_evidence = central_evidence.model_copy(
-        update={
-            'status': status,
-            'diagnostics': tuple(central_evidence.diagnostics) + tuple(extra_diagnostics),
-        }
-    )
+        fixture_evidence = central_evidence.model_copy(
+            update={
+                'status': status,
+                'diagnostics': tuple(central_evidence.diagnostics) + tuple(extra_diagnostics),
+            }
+        )
 
     run = BakeoffRun(
         run_id=f'mfem-radiation-termination-{os.environ.get("GITHUB_RUN_ID", "manual")}',
@@ -804,9 +858,14 @@ def _execute(
         'raw': raw,
         'convergence': pair_metrics,
         'qualification': convergence,
-        'central_observable_evidence': [
-            item.model_dump(mode='json') for item in central_evidence.observables
-        ],
+        'solver_violations': solver_violations,
+        'central_observable_evidence': (
+            [
+                item.model_dump(mode='json') for item in central_evidence.observables
+            ]
+            if central_evidence is not None
+            else None
+        ),
         'resource_evidence': {
             'native_build_s': native_build_s,
             'fem_assembly_s': compile_s,
