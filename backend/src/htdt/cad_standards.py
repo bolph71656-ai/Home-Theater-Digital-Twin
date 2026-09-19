@@ -127,6 +127,15 @@ class CriterionRule(BaseModel):
 class CriterionDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    @field_validator(
+        'applicable_domains',
+        'required_inputs',
+        'required_capabilities',
+    )
+    @classmethod
+    def canonical_string_set(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(sorted(values))
+
     criterion_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     source: CriterionSource
@@ -240,6 +249,11 @@ def build_user_standards_profile(
 class StandardsEvaluationTarget(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    @field_validator('entity_ids', 'applicable_domains')
+    @classmethod
+    def canonical_string_set(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(sorted(values))
+
     document_id: str = Field(min_length=1)
     scene_revision_id: str = Field(min_length=1)
     scene_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
@@ -292,6 +306,19 @@ class CriterionObservation(BaseModel):
     """Exact observed/predicted scalar plus the inputs and capabilities that support it."""
 
     model_config = ConfigDict(frozen=True)
+
+    @field_validator('provided_inputs', 'capabilities')
+    @classmethod
+    def canonical_string_set(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(sorted(values))
+
+    @field_validator('evidence_refs')
+    @classmethod
+    def canonical_evidence_refs(
+        cls,
+        values: tuple[CriterionEvidenceRef, ...],
+    ) -> tuple[CriterionEvidenceRef, ...]:
+        return tuple(sorted(values, key=lambda item: item.evidence_id))
 
     criterion_id: str = Field(min_length=1)
     observed_value: ObservedScalar | None = None
