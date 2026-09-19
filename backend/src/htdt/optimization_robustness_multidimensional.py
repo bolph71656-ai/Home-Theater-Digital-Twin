@@ -21,6 +21,8 @@ from .optimization_robustness import (
     PerturbationObjectiveResult,
     PerturbationSample,
     RobustnessEvaluation,
+    RobustnessExecutionResult,
+    RobustnessSampleCache,
     RobustnessSpec,
     SampledObjectiveEnvelope,
     UncertaintyAxis,
@@ -378,7 +380,57 @@ def _multidimensional_sample(
     )
 
 
-def evaluate_multidimensional_robustness(
+def _validate_bounded_reusable_sample(
+    spec: RobustnessSpec,
+    plan: LocalPerturbation,
+    sample: PerturbationSample,
+) -> None:
+    expected = (
+        sample.sample_id == plan.sample_id
+        and sample.sample_index == plan.sample_index
+        and sample.step == plan.step
+        and sample.parameter_deltas == plan.parameter_deltas
+        and sample.robustness_spec_id == spec.robustness_spec_id
+        and sample.robustness_spec_sha256 == spec.robustness_spec_sha256
+        and sample.candidate_id == spec.candidate_id
+        and sample.model_id == spec.model_id
+        and sample.model_version == spec.model_version
+        and sample.prediction_provider_id == spec.prediction_provider_id
+        and sample.fidelity == spec.fidelity
+        and sample.objective_evaluation_spec_sha256
+        == spec.objective_evaluation_spec_sha256
+        and sample.uncertainty_model_sha256 is None
+        and sample.uncertainty_item_id is None
+        and sample.probability_weight is None
+    )
+    if not expected:
+        raise ValueError(
+            'stale or incompatible completed robustness sample cannot be reused'
+        )
+
+
+def _merge_bounded_reusable_samples(
+    spec: RobustnessSpec,
+    plans: Sequence[LocalPerturbation],
+    sources: Sequence[PerturbationSample],
+) -> dict[str, PerturbationSample]:
+    plan_by_id = {plan.sample_id: plan for plan in plans}
+    reusable: dict[str, PerturbationSample] = {}
+    for sample in sources:
+        plan = plan_by_id.get(sample.sample_id)
+        if plan is None:
+            raise ValueError(
+                'stale or incompatible completed robustness sample cannot be reused'
+            )
+        _validate_bounded_reusable_sample(spec, plan, sample)
+        existing = reusable.get(sample.sample_id)
+        if existing is not None and existing.sample_sha256 != sample.sample_sha256:
+            raise ValueError('conflicting completed robustness sample evidence')
+        reusable[sample.sample_id] = sample
+    return reusable
+
+
+def execute_multidimensional_robustness(
     *,
     source_revision: SceneRevision,
     search_spec: CadSearchSpec,
@@ -386,9 +438,12 @@ def evaluate_multidimensional_robustness(
     constraint_set: CadConstraintSet,
     nominal_objective: CadObjectiveEvaluation,
     evaluator: Callable[[SceneDocument, str], PerturbationObjectiveResult],
+    cache: RobustnessSampleCache | None = None,
+    completed_samples: Sequence[PerturbationSample] = (),
+    cancel_requested: Callable[[], bool] | None = None,
     created_at_utc: str | None = None,
-) -> tuple[tuple[PerturbationSample, ...], tuple[RobustnessEvaluation, ...]]:
-    """Evaluate finite O90B bounded design with G10/O80 reapplied per sample."""
+) -> RobustnessExecutionResult:
+    """Evaluate/resume the PR #149 bounded design without changing its semantics."""
 
     if spec.sampling_strategy != MULTIDIMENSIONAL_SAMPLING_STRATEGY:
         raise ValueError('O90B evaluation requires multidimensional sampling spec')
@@ -408,8 +463,41 @@ def evaluate_multidimensional_robustness(
     plans = build_multidimensional_sampling_plan(spec)
     timestamp = created_at_utc or robustness_timestamp_utc()
     objective_schema = _metric_schema(nominal_objective.vector)
-    samples = tuple(
-        _multidimensional_sample(
+
+    cache_samples: tuple[PerturbationSample, ...] = ()
+    if cache is not None:
+        cache.save_spec(spec)
+        cache_samples = cache.list_reusable_samples(spec)
+    reusable = _merge_bounded_reusable_samples(
+        spec,
+        plans,
+        tuple(completed_samples) + tuple(cache_samples),
+    )
+    finished = dict(reusable)
+    reused_ids: list[str] = []
+    computed_ids: list[str] = []
+
+    for plan in plans:
+        cached = reusable.get(plan.sample_id)
+        if cached is not None:
+            reused_ids.append(plan.sample_id)
+            continue
+        if cancel_requested is not None and cancel_requested():
+            samples = tuple(
+                finished[plan_item.sample_id]
+                for plan_item in plans
+                if plan_item.sample_id in finished
+            )
+            return RobustnessExecutionResult(
+                status='cancelled',
+                robustness_spec_id=spec.robustness_spec_id,
+                robustness_spec_sha256=spec.robustness_spec_sha256,
+                samples=samples,
+                reused_sample_ids=tuple(reused_ids),
+                computed_sample_ids=tuple(computed_ids),
+            )
+
+        sample = _multidimensional_sample(
             spec=spec,
             plan=plan,
             nominal_document=nominal_document,
@@ -419,13 +507,54 @@ def evaluate_multidimensional_robustness(
             objective_schema=objective_schema,
             created_at_utc=timestamp,
         )
-        for plan in plans
-    )
-    return samples, build_multidimensional_robustness_evaluations(
+        finished[plan.sample_id] = sample
+        computed_ids.append(plan.sample_id)
+        if cache is not None:
+            cache.save_sample(sample)
+
+    samples = tuple(finished[plan.sample_id] for plan in plans)
+    evaluations = build_multidimensional_robustness_evaluations(
         spec,
         samples,
         created_at_utc=timestamp,
     )
+    if cache is not None:
+        cache.save_evaluations(evaluations)
+    return RobustnessExecutionResult(
+        status='completed',
+        robustness_spec_id=spec.robustness_spec_id,
+        robustness_spec_sha256=spec.robustness_spec_sha256,
+        samples=samples,
+        evaluations=evaluations,
+        reused_sample_ids=tuple(reused_ids),
+        computed_sample_ids=tuple(computed_ids),
+    )
+
+
+def evaluate_multidimensional_robustness(
+    *,
+    source_revision: SceneRevision,
+    search_spec: CadSearchSpec,
+    spec: RobustnessSpec,
+    constraint_set: CadConstraintSet,
+    nominal_objective: CadObjectiveEvaluation,
+    evaluator: Callable[[SceneDocument, str], PerturbationObjectiveResult],
+    created_at_utc: str | None = None,
+) -> tuple[tuple[PerturbationSample, ...], tuple[RobustnessEvaluation, ...]]:
+    """Preserve the original all-at-once PR #149 evaluation API."""
+
+    result = execute_multidimensional_robustness(
+        source_revision=source_revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraint_set,
+        nominal_objective=nominal_objective,
+        evaluator=evaluator,
+        created_at_utc=created_at_utc,
+    )
+    if result.status != 'completed':
+        raise RuntimeError('non-cancellable O90B evaluation was unexpectedly cancelled')
+    return result.samples, result.evaluations
 
 
 def build_multidimensional_robustness_evaluations(
