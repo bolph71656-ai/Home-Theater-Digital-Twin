@@ -448,6 +448,10 @@ def make_semantic_geometry_conversion_request(
     else:
         assert repaired_diagnostic is not None
         _validate_repair_conversion_inputs(mesh, repaired_mesh, repaired_diagnostic)
+        if repaired_diagnostic.profile != profile.diagnostic_profile:
+            raise SemanticGeometryConversionError(
+                'repaired diagnostic profile must match conversion diagnostic profile'
+            )
         recomputed = diagnose_repaired_raw_mesh(
             mesh,
             repaired_mesh,
@@ -682,6 +686,10 @@ def _validate_request_inputs(
             'conversion request requires exact repaired mesh and diagnostic'
         )
     _validate_repair_conversion_inputs(mesh, repaired_mesh, repaired_diagnostic)
+    if repaired_diagnostic.profile != request.profile.diagnostic_profile:
+        raise SemanticGeometryConversionError(
+            'conversion request repaired diagnostic profile mismatch'
+        )
     if lineage != make_raw_mesh_repair_lineage_ref(repaired_mesh, repaired_diagnostic):
         raise SemanticGeometryConversionError('conversion request raw-mesh repair lineage mismatch')
     if request.input_diagnostic_id != repaired_diagnostic.diagnostic_id:
