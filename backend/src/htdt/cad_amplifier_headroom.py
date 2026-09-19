@@ -269,6 +269,13 @@ def build_amplifier_output_capability(
     provenance_items = tuple(provenance)
     uncertainty_items = tuple(uncertainty)
     missing_items = tuple(missing_unsupported_fields)
+    continuous_duration_value = (
+        None if continuous_duration_s is None else float(continuous_duration_s)
+    )
+    peak_duration_value = (
+        None if peak_duration_s is None else float(peak_duration_s)
+    )
+    gain_value = None if gain_db is None else float(gain_db)
     payload = {
         'schema_version': AMPLIFIER_HEADROOM_SCHEMA_VERSION,
         'authority_version': AMPLIFIER_OUTPUT_AUTHORITY_VERSION,
@@ -291,9 +298,9 @@ def build_amplifier_output_capability(
             if peak_capability is None
             else peak_capability.model_dump(mode='json')
         ),
-        'continuous_duration_s': continuous_duration_s,
-        'peak_duration_s': peak_duration_s,
-        'gain_db': gain_db,
+        'continuous_duration_s': continuous_duration_value,
+        'peak_duration_s': peak_duration_value,
+        'gain_db': gain_value,
         'reference_input': (
             None if reference_input is None else reference_input.model_dump(mode='json')
         ),
@@ -316,9 +323,9 @@ def build_amplifier_output_capability(
         supported_load=supported_load,
         continuous_capability=continuous_capability,
         peak_capability=peak_capability,
-        continuous_duration_s=continuous_duration_s,
-        peak_duration_s=peak_duration_s,
-        gain_db=gain_db,
+        continuous_duration_s=continuous_duration_value,
+        peak_duration_s=peak_duration_value,
+        gain_db=gain_value,
         reference_input=reference_input,
         clipping_reference_definition=clipping_reference_definition,
         valid_frequency_band=valid_frequency_band,
