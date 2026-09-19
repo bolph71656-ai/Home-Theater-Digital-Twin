@@ -211,7 +211,7 @@ def _standards_evaluation(
                 criterion_id='fixture-clearance',
                 observed_value=observed_value,
                 unit='m',
-                evidence_basis='derived',
+                evidence_basis='predicted',
                 evidence_refs=(
                     CriterionEvidenceRef(
                         evidence_id=f'clearance:{variant.variant_id}',
