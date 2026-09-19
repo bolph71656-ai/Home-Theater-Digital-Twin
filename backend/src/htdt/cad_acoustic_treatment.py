@@ -379,6 +379,7 @@ def build_acoustic_treatment_definition(
 ) -> AcousticTreatmentDefinition:
     """Build an immutable definition with a deterministic semantic identity."""
 
+    air_gap_m = float(air_gap_m)
     identity = {
         'schema_version': ACOUSTIC_TREATMENT_SCHEMA_VERSION,
         'authority_version': ACOUSTIC_TREATMENT_AUTHORITY_VERSION,
