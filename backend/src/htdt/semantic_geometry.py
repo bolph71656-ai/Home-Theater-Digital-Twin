@@ -477,18 +477,18 @@ def convert_raw_visual_mesh_to_semantic_geometry(
         'input_diagnostic_id': request.input_diagnostic_id,
         'input_diagnostic_semantic_hash': request.input_diagnostic_semantic_hash,
         'source_scene_revision_id': request.source_scene_revision_id,
-        'source_to_scene_transform': request.source_to_scene_transform.model_dump(mode='json'),
+        'source_to_scene_transform': request.source_to_scene_transform,
         'conversion_request_id': request.request_id,
         'conversion_profile_semantic_hash': request.profile_semantic_hash,
         'lineage_root_geometry_hash': root_hash,
-        'repair_lineage': [step.model_dump(mode='json') for step in lineage],
+        'repair_lineage': tuple(lineage),
         'derived_geometry_hash': derived_hash,
-        'vertices': [vertex.model_dump(mode='json') for vertex in vertices],
-        'triangles': [triangle.model_dump(mode='json') for triangle in triangles],
-        'surfaces': [surface.model_dump(mode='json') for surface in surfaces],
-        'conversion_findings': [finding.model_dump(mode='json') for finding in post_diagnostic.findings],
-        'guided_repair_suggestions': [suggestion.model_dump(mode='json') for suggestion in suggestions],
-        'unresolved_conditions': list(unresolved),
+        'vertices': tuple(vertices),
+        'triangles': tuple(triangles),
+        'surfaces': tuple(surfaces),
+        'conversion_findings': post_diagnostic.findings,
+        'guided_repair_suggestions': suggestions,
+        'unresolved_conditions': unresolved,
         'geometry_compiler_readiness': readiness,
         'solver_ready': False,
         'material_assignment_status': 'not_part_of_this_authority',
@@ -496,7 +496,17 @@ def convert_raw_visual_mesh_to_semantic_geometry(
         'portals_status': 'not_inferred',
         'boundary_terminations_status': 'not_inferred',
     }
-    semantic_hash = _semantic_hash(core)
+    provisional = SemanticAcousticGeometry.model_construct(
+        geometry_id=f"semantic-acoustic-geometry:{'0' * 64}",
+        semantic_hash_sha256='0' * 64,
+        **core,
+    )
+    semantic_hash = _semantic_hash(
+        provisional.model_dump(
+            mode='json',
+            exclude={'geometry_id', 'semantic_hash_sha256'},
+        )
+    )
     return SemanticAcousticGeometry(
         geometry_id=f'semantic-acoustic-geometry:{semantic_hash}',
         semantic_hash_sha256=semantic_hash,
