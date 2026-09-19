@@ -181,6 +181,24 @@ def _validate_fixture_contract(fixture) -> None:
         raise ValueError('PFFDTD convergence probe requires linear_complex comparison')
     if fixture.comparison.observation_time_s is None:
         raise ValueError('PFFDTD convergence probe requires observation_time_s')
+    if fixture.comparison.time_step_s is not None:
+        raise ValueError('R100A-4 convergence time_step_s must remain solver-native')
+    finite_record = fixture.comparison.finite_record_transfer
+    if finite_record is None:
+        raise ValueError('PFFDTD convergence probe requires R100A-4 finite-record transfer authority')
+    if (
+        finite_record.excitation_model != 'causal_discrete_unit_sample_volume_velocity'
+        or finite_record.sample_zero_reference != 'source_t0'
+        or finite_record.record_interval != 'half_open_0_T'
+        or finite_record.solver_time_step_policy != 'solver_native_recorded'
+        or finite_record.dtft_kernel != 'exp(-i*2*pi*f*n*dt)'
+        or finite_record.dtft_measure != 'dt_weighted_sum'
+        or finite_record.transfer_definition != 'pressure_over_volume_velocity'
+        or finite_record.frequency_evaluation != 'direct_scored_frequency_dtft'
+        or finite_record.source_spectrum_requirement != 'finite_nonzero_on_scored_grid'
+        or finite_record.zero_padding != 'none'
+    ):
+        raise ValueError('PFFDTD convergence finite-record transfer authority changed')
     if len(fixture.sources) != 1 or len(fixture.receivers) != 1:
         raise ValueError('PFFDTD convergence probe requires one source and one receiver')
     source = fixture.sources[0]
@@ -515,6 +533,8 @@ def _execute(
             'source_normalization': fixture.sources[0].normalization,
             'source_amplitude': fixture.sources[0].amplitude,
             'source_phase_deg': fixture.sources[0].phase_deg,
+            'finite_record_transfer': finite_record.model_dump(mode='json'),
+            'solver_time_step_policy': 'solver_native_recorded',
             'density_kg_m3': fixture.environment.density_kg_m3,
             'thread_budget': min(THREAD_BUDGET, os.cpu_count() or 1),
             'setup_processes': NPROCS,
