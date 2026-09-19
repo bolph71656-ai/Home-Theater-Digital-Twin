@@ -22,6 +22,7 @@ from htdt.cad_acoustic_treatment import (
 from htdt.cad_acoustic_treatment_repository import CadAcousticTreatmentRepository
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, SceneDocument, SceneEntity
+from htdt.cad_system_variant_repository import CadSystemVariantRepository
 from htdt.r120_geometry_compiler import (
     ExactExternalAuthorityRef,
     SurfaceBoundaryAuthorityBinding,
@@ -231,7 +232,11 @@ def _fixture(tmp_path: Path):
     )
     r120_repository = R120GeometryCompilerRepository(scene_repository)
     r120_repository.save_compiled_geometry(compiled)
-    treatment_repository = CadAcousticTreatmentRepository(scene_repository)
+    variant_repository = CadSystemVariantRepository(scene_repository)
+    treatment_repository = CadAcousticTreatmentRepository(
+        scene_repository,
+        variant_repository,
+    )
     return {
         'scene_repository': scene_repository,
         'treatment_repository': treatment_repository,
@@ -554,7 +559,11 @@ def test_overlay_and_composition_save_reopen_reresolve_all_authorities(
     repository.save_composition(result.composition_request)
 
     reopened_scene = SceneRepository(fixture['scene_repository'].path)
-    reopened_treatments = CadAcousticTreatmentRepository(reopened_scene)
+    reopened_variants = CadSystemVariantRepository(reopened_scene)
+    reopened_treatments = CadAcousticTreatmentRepository(
+        reopened_scene,
+        reopened_variants,
+    )
     reopened_r120 = R120GeometryCompilerRepository(reopened_scene)
     reopened = TreatmentBoundaryOverlayRepository(
         reopened_scene,
