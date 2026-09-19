@@ -21,7 +21,6 @@ jobs:
       PFFDTD_SHA: aa319f6c86517cb95aabfae8656277da62c3ead5
       PROBE_OUTPUT: artifacts/r100b/pffdtd_concave.json
       HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
