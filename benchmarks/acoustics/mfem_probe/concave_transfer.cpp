@@ -174,30 +174,32 @@ OrderResult SolveOrder(
       mfem::Vector rhs(source_functional);
       rhs *= -omega * density_kg_m3 * source_amplitude_m3_s;
 
-      mfem::GSSmoother preconditioner(*P);
-      mfem::GMRESSolver gmres;
-      gmres.iterative_mode = have_initial_guess;
-      gmres.SetOperator(*A);
-      gmres.SetPreconditioner(preconditioner);
-      gmres.SetKDim(200);
-      gmres.SetMaxIter(4000);
-      gmres.SetRelTol(1e-10);
-      gmres.SetAbsTol(0.0);
-      gmres.SetPrintLevel(0);
+      // K-k^2 M is real symmetric but indefinite above the first cavity mode.
+      // MINRES is the matching Krylov method.  The positive K+k^2 M diagonal
+      // Jacobi preconditioner avoids introducing a non-symmetric solve path.
+      mfem::DSmoother preconditioner(*P);
+      mfem::MINRESSolver minres;
+      minres.iterative_mode = have_initial_guess;
+      minres.SetOperator(*A);
+      minres.SetPreconditioner(preconditioner);
+      minres.SetMaxIter(8000);
+      minres.SetRelTol(1e-10);
+      minres.SetAbsTol(0.0);
+      minres.SetPrintLevel(0);
 
       if (!have_initial_guess)
       {
          solution = 0.0;
       }
 
-      gmres.Mult(rhs, solution);
-      if (!gmres.GetConverged())
+      minres.Mult(rhs, solution);
+      if (!minres.GetConverged())
       {
          throw std::runtime_error(
-            "GMRES did not converge at order=" + std::to_string(order)
+            "MINRES did not converge at order=" + std::to_string(order)
             + " frequency_hz=" + std::to_string(frequency_hz)
-            + " iterations=" + std::to_string(gmres.GetNumIterations())
-            + " final_norm=" + std::to_string(gmres.GetFinalNorm()));
+            + " iterations=" + std::to_string(minres.GetNumIterations())
+            + " final_norm=" + std::to_string(minres.GetFinalNorm()));
       }
       have_initial_guess = true;
 
@@ -214,7 +216,7 @@ OrderResult SolveOrder(
       sample.frequency_hz = frequency_hz;
       sample.pressure_real_pa = 0.0;
       sample.pressure_imag_pa = pressure_imag_pa;
-      sample.iterations = gmres.GetNumIterations();
+      sample.iterations = minres.GetNumIterations();
       sample.relative_residual = relative_residual;
       result.samples.push_back(sample);
       result.max_iterations = std::max(result.max_iterations, sample.iterations);
@@ -305,7 +307,7 @@ void WriteJson(
 
 } // namespace
 
-int main(int argc, char *argv[])
+int ProbeMain(int argc, char *argv[])
 {
    double density_kg_m3 = 1.2;
    double sound_speed_m_s = 343.0;
@@ -400,4 +402,23 @@ int main(int argc, char *argv[])
       frequency_step_hz);
 
    return 0;
+}
+
+
+int main(int argc, char *argv[])
+{
+   try
+   {
+      return ProbeMain(argc, argv);
+   }
+   catch (const std::exception &error)
+   {
+      std::cerr << "R100B_MFEM_CONCAVE_FATAL: " << error.what() << std::endl;
+      return 2;
+   }
+   catch (...)
+   {
+      std::cerr << "R100B_MFEM_CONCAVE_FATAL: unknown exception" << std::endl;
+      return 3;
+   }
 }
