@@ -66,6 +66,15 @@ try {
 
     Invoke-Git @("fetch", "--prune", "origin", $Branch) | Out-Null
     $remoteRef = "origin/$Branch"
+
+    $isShallow = Get-GitFirstLine -Arguments @("rev-parse", "--is-shallow-repository")
+    if ($isShallow -eq "true") {
+        Write-Output "O60R_HISTORY_SHALLOW=True"
+        Invoke-Git @("fetch", "--no-tags", "--unshallow", "origin", $Branch) | Out-Null
+    } else {
+        Write-Output "O60R_HISTORY_SHALLOW=False"
+    }
+
     $branchHead = Get-GitFirstLine -Arguments @("rev-parse", $remoteRef)
     Write-Output "O60R_BRANCH_HEAD=$branchHead"
     Write-Output "O60R_PRODUCT_HEAD=$ExpectedProductHead"
