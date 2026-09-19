@@ -201,6 +201,29 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _source_provenance(upstream_root: Path) -> dict[str, object]:
+    root = Path(__file__).resolve().parents[1]
+    result: dict[str, object] = {
+        **_htdt_git_provenance(),
+        'harness_source_sha256': _file_sha256(Path(__file__).resolve()),
+        'adapter_source_sha256': _file_sha256(
+            root / 'backend' / 'src' / 'htdt' / 'acoustic_pffdtd_adapter.py'
+        ),
+    }
+    try:
+        result['pffdtd_source_commit_sha'] = pffdtd_git_head(upstream_root)
+    except Exception:
+        result['pffdtd_source_commit_sha'] = None
+
+    for key, relative in (
+        ('upstream_sim_consts_sha256', Path('python/fdtd/sim_consts.py')),
+        ('upstream_sim_setup_sha256', Path('python/sim_setup.py')),
+    ):
+        source = upstream_root / relative
+        result[key] = _file_sha256(source) if source.is_file() else None
+    return result
+
+
 def _position(position) -> tuple[float, float, float]:
     return (float(position.x_m), float(position.y_m), float(position.z_m))
 
@@ -1199,24 +1222,10 @@ def _execute(
     )
     validate_bakeoff_run(benchmark, candidates, run)
 
-    root = Path(__file__).resolve().parents[1]
     details = {
         'candidate_source_commit_sha': candidate.source_commit_sha,
         'compatibility_patch': compatibility,
-        'source_provenance': {
-            **_htdt_git_provenance(),
-            'pffdtd_source_commit_sha': actual_head,
-            'harness_source_sha256': _file_sha256(Path(__file__).resolve()),
-            'adapter_source_sha256': _file_sha256(
-                root / 'backend' / 'src' / 'htdt' / 'acoustic_pffdtd_adapter.py'
-            ),
-            'upstream_sim_consts_sha256': _file_sha256(
-                upstream_root / 'python' / 'fdtd' / 'sim_consts.py'
-            ),
-            'upstream_sim_setup_sha256': _file_sha256(
-                upstream_root / 'python' / 'sim_setup.py'
-            ),
-        },
+        'source_provenance': _source_provenance(upstream_root),
         'compiled_model': {
             'model_json_sha256': _file_sha256(model_path),
             **compiled_geometry,
@@ -1354,6 +1363,7 @@ def main(argv: list[str] | None = None) -> int:
             'traceback': traceback.format_exc(),
             'runtime_versions': _runtime_versions(),
             'upstream_root': str(args.upstream_root),
+            'source_provenance': _source_provenance(args.upstream_root),
         }
         run = _blocked_run(benchmark, candidates, evidence_ref, error)
 
