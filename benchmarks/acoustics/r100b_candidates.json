@@ -60,8 +60,8 @@
       "notes": [
         "Acts as the primary independent wave reference/production alternative in R100B.",
         "A Gmsh/PETSc dependency is not assumed; exact meshing/linear-solver choices remain benchmark-gated.",
-        "Portal continuity is not claimed until an acoustic adapter implements and verifies it.",
-        "Portal continuity adapter permission was added with Issue #159; probe_capabilities authorize execution but do not constitute PASS evidence."
+        "Portal continuity probe permission was added with Issue #159; PR #160 fixture PASS is separate evidence and probe_capabilities alone never constitute PASS.",
+        "R100A-3 radiation-termination probe permission is added with Issue #163 only for the exact frozen Robin adapter; the capability declaration is not PASS evidence."
       ]
     },
     {
