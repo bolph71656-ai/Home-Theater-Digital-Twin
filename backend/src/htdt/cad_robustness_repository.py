@@ -182,7 +182,12 @@ class CadRobustnessRepository:
         return RobustnessSpec.model_validate_json(str(row['payload_json']))
 
     def save_sample(self, sample: PerturbationSample) -> PerturbationSample:
-        self.get_spec(sample.robustness_spec_id)
+        spec = self.get_spec(sample.robustness_spec_id)
+        if (
+            sample.robustness_spec_sha256 != spec.robustness_spec_sha256
+            or sample.candidate_id != spec.candidate_id
+        ):
+            raise ValueError('PerturbationSample robustness authority mismatch')
         payload = self._payload(sample)
         with self._connect() as connection:
             row = connection.execute(
@@ -281,7 +286,12 @@ class CadRobustnessRepository:
         self,
         evaluation: RobustnessEvaluation,
     ) -> RobustnessEvaluation:
-        self.get_spec(evaluation.robustness_spec_id)
+        spec = self.get_spec(evaluation.robustness_spec_id)
+        if (
+            evaluation.robustness_spec_sha256 != spec.robustness_spec_sha256
+            or evaluation.candidate_id != spec.candidate_id
+        ):
+            raise ValueError('RobustnessEvaluation robustness authority mismatch')
         payload = self._payload(evaluation)
         with self._connect() as connection:
             row = connection.execute(
