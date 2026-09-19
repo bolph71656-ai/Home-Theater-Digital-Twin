@@ -369,6 +369,11 @@ def test_wave_excitation_rejects_wrong_equipment_source(tmp_path: Path) -> None:
                 real_m3_s=1.0e-4,
                 imag_m3_s=0.0,
             ),
+            ComplexVolumeVelocitySample(
+                frequency_hz=200.0,
+                real_m3_s=1.0e-4,
+                imag_m3_s=0.0,
+            ),
         ),
         interpolation=InterpolationProvenance(
             method='linear',
