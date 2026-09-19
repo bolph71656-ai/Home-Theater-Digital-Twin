@@ -114,10 +114,13 @@ Source:
 Profile identity: `dolby-atmos-home-5.1.2-layout`, version
 `r3.1-2018-12-13`.
 
-Encoded azimuth ranges are 22°–30° absolute azimuth for front left/right and 90°–110°
-absolute azimuth for surround left/right. Endpoints are encoded as inclusive because the
-published figure presents those endpoints as the placement range. HTDT adds no tolerance
-outside that range.
+Encoded source ranges are 22°–30° for front left/right and 90°–110° for surround
+left/right. HTDT maps them into its explicit signed azimuth convention: 0° points toward
+the screen/front, positive angles point toward +X/right, negative angles toward -X/left,
+and values normalize to [-180°, 180°). Therefore FL is -30°..-22°, FR is +22°..+30°,
+SL is -110°..-90°, and SR is +90°..+110°. Endpoints are inclusive because the published
+figure presents those endpoints as the placement range. This is a coordinate mapping, not
+an added tolerance.
 
 The profile intentionally does not infer top-speaker, elevation, room, or performance
 criteria not encoded by this profile.
