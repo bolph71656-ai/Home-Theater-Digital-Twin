@@ -8,8 +8,10 @@ import pytest
 from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
 from htdt.acoustic_pffdtd_adapter import (
     compile_rigid_fixture_model,
-    recombine_pffdtd_receiver_traces,
+    finite_record_pressure_transfer,
+    pffdtd_velocity_potential_to_pressure_trace,
     pffdtd_velocity_potential_to_pressure_transfer,
+    recombine_pffdtd_receiver_traces,
 )
 
 
@@ -139,20 +141,68 @@ def test_receiver_recombination_rejects_authority_mismatch() -> None:
         )
 
 
-def test_velocity_potential_pressure_transfer_uses_exp_minus_iwt_authority() -> None:
-    source = np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
-    potential = 2.0 * source
-    frequencies = np.asarray([100.0, 200.0], dtype=np.float64)
+def test_velocity_potential_pressure_trace_recovers_linear_primary_field() -> None:
+    dt = 0.001
+    slope = 2.5
+    density = 1.2
+    times = np.arange(6, dtype=np.float64) * dt
+    potential = 0.3 + slope * times
 
+    pressure = pffdtd_velocity_potential_to_pressure_trace(
+        potential,
+        time_step_s=dt,
+        density_kg_m3=density,
+    )
+
+    assert np.allclose(pressure, density * slope)
+
+
+def test_finite_record_pressure_transfer_matches_direct_dtft_definition() -> None:
+    dt = 0.001
+    pressure = np.asarray([1.0, 2.0, -0.5, 0.25], dtype=np.float64)
+    source = np.asarray([2.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    frequencies = np.asarray([100.0, 200.0], dtype=np.float64)
+    times = np.arange(pressure.size, dtype=np.float64) * dt
+    kernel = np.exp(-2j * np.pi * frequencies[:, None] * times[None, :])
+    expected = (dt * (kernel @ pressure)) / (dt * (kernel @ source))
+
+    actual = finite_record_pressure_transfer(
+        pressure,
+        source,
+        time_step_s=dt,
+        frequency_hz=frequencies,
+    )
+
+    assert np.allclose(actual, expected)
+
+
+def test_velocity_potential_transfer_wrapper_uses_pressure_record_first() -> None:
+    dt = 0.001
+    density = 1.2
+    times = np.arange(6, dtype=np.float64) * dt
+    potential = 0.4 + 3.0 * times
+    source = np.asarray([1.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    frequencies = np.asarray([100.0, 200.0], dtype=np.float64)
+    pressure = pffdtd_velocity_potential_to_pressure_trace(
+        potential,
+        time_step_s=dt,
+        density_kg_m3=density,
+    )
+
+    expected = finite_record_pressure_transfer(
+        pressure,
+        source,
+        time_step_s=dt,
+        frequency_hz=frequencies,
+    )
     actual = pffdtd_velocity_potential_to_pressure_transfer(
         potential,
         source,
-        time_step_s=0.001,
+        time_step_s=dt,
         frequency_hz=frequencies,
-        density_kg_m3=1.2,
+        density_kg_m3=density,
     )
 
-    expected = -1j * 2.0 * np.pi * frequencies * 1.2 * 2.0
     assert np.allclose(actual, expected)
 
 
