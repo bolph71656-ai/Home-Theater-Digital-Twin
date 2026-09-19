@@ -141,8 +141,8 @@ def test_unsampled_reference_requires_specialized_evaluator() -> None:
         observations=(
             RawObservableObservation(
                 observable_id='convergence',
-                kind='field_pressure_pa',
-                unit='Pa',
+                kind='complex_pressure_transfer_pa_per_m3_s',
+                unit='Pa/(m3/s)',
                 samples=(
                     RawObservationSample(sample_key='placeholder', scalar_value=1.0),
                 ),
