@@ -21,7 +21,7 @@ Implemented:
   - add triangle
   - set vertex with expected-before stale guard
 - deterministic repair operation ids and immutable before/after topology-hash lineage
-- stable raw-triangle lineage ids and stable semantic-surface ids
+- stable raw-triangle lineage ids and semantic-surface ids derived from exact raw-mesh identity + explicit surface key, so the same semantic surface keeps its ID across repair snapshots
 - explicit surface classification:
   - `room_boundary`
   - `object_surface`
@@ -35,12 +35,12 @@ Implemented:
   - `ready_for_r120_geometry_compiler_contract`
 - deterministic semantic geometry identity/hash and canonical serialization/reopen
 - SceneDocument schema v4 optional `r120_semantic_geometry` field
-- exact SceneRevision binding metadata in `cad_r120_semantic_geometry_bindings`
-- save/reopen validation that the persisted binding matches the semantic geometry stored inside the exact SceneRevision payload
+- exact SceneRevision ownership/binding derived from the immutable SceneRevision payload; no duplicate geometry/binding table is introduced
+- save/reopen validation that the same semantic geometry is reconstructed from the exact SceneRevision payload
 
 ## Authority boundary
 
-The persistent geometry truth remains the SceneRevision/R120 payload. The binding table contains only exact identity/provenance references; it does not store a second copy of geometry.
+The persistent geometry truth remains the SceneRevision/R120 payload. `SceneRepository.semantic_geometry_binding()` is only a derived view over that revision payload; there is no separate R120 binding/geometry table that can diverge from SceneRevision truth.
 
 `RawVisualMesh` remains immutable. Repair actions create a derived semantic geometry and never rewrite original asset bytes or the PR #195 raw snapshot. PR #195 coordinates remain source-asset coordinates until the conversion request supplies an explicit non-singular affine mapping into HTDT scene metres; even an identity mapping must therefore be stated with provenance.
 
@@ -59,7 +59,7 @@ The conversion profile records material authority as externally required downstr
 
 Existing SceneRevision hashes remain unchanged when `r120_semantic_geometry` is absent. No R100B solver adapter is changed. No wave/ray compiler implementation is added.
 
-The binding table uses the existing native repository after the native schema compatibility gate and stores no geometry payload.
+No native schema version/table is added for this slice. Existing repository compatibility gates remain unchanged.
 
 ## Focused acceptance coverage
 
@@ -74,7 +74,9 @@ The binding table uses the existing native repository after the native schema co
 7. explicit room-boundary assignment reaches only the R120 geometry compiler contract (not solver-ready)
 8. semantic geometry serialization/reopen identity
 9. exact source SceneRevision binding
-10. save/reopen through `SceneRepository` with the same semantic geometry result and binding metadata
+10. save/reopen through `SceneRepository` with the same semantic geometry result and binding view
+11. absence of a duplicate R120 semantic-geometry binding table
+12. semantic surface ID stability across explicit repair when the same surface key is retained
 
 ## Deferred
 
