@@ -64,6 +64,18 @@ def test_r100a_schema_version_and_revision_are_bound() -> None:
 def _remove_r100a4_finite_record_semantics(payload: dict[str, object]) -> None:
     for fixture in payload['fixtures']:
         fixture['comparison']['finite_record_transfer'] = None
+        if fixture['fixture_id'] == 'wave-rectangular-convergence-v1':
+            fixture['comparison']['time_step_s'] = 1.0 / 6000.0
+            fixture['observables'][0]['kind'] = 'field_pressure_pa'
+            fixture['observables'][0]['unit'] = 'Pa'
+        if fixture['fixture_id'] == 'wave-concave-l-room-v1':
+            for observable in fixture['observables']:
+                if observable['observable_id'] == 'lroom-fr':
+                    observable['unit'] = 'dB'
+                    observable['reference_description'] = (
+                        'Compare against an independently implemented/reference '
+                        'discretization on the exact concave prism.'
+                    )
 
 
 def test_r100a2_rejects_r100a3_radiation_semantics() -> None:
@@ -113,6 +125,15 @@ def test_r100a4_finite_record_transfer_authority_is_explicit() -> None:
         assert contract.solver_time_step_policy == 'solver_native_recorded'
         assert contract.dtft_kernel == 'exp(-i*2*pi*f*n*dt)'
         assert contract.dtft_measure == 'dt_weighted_sum'
+        assert contract.numerator_quantity == 'physical_pressure'
+        assert (
+            contract.numerator_record_policy
+            == 'solver_pressure_or_declared_primary_field_conversion'
+        )
+        assert (
+            contract.denominator_record
+            == 'physical_volume_velocity_samples_on_solver_time_grid'
+        )
         assert contract.transfer_definition == 'pressure_over_volume_velocity'
         assert contract.frequency_evaluation == 'direct_scored_frequency_dtft'
         assert contract.source_spectrum_requirement == 'finite_nonzero_on_scored_grid'
@@ -122,6 +143,9 @@ def test_r100a4_finite_record_transfer_authority_is_explicit() -> None:
     convergence_observable = convergence.observables[0]
     assert convergence_observable.kind == 'complex_pressure_transfer_pa_per_m3_s'
     assert convergence_observable.unit == 'Pa/(m3/s)'
+    concave = _fixture(manifest, 'wave-concave-l-room-v1')
+    magnitude = next(item for item in concave.observables if item.observable_id == 'lroom-fr')
+    assert magnitude.unit == 'dB re 1 Pa/(m3/s)'
 
 
 def test_r100a3_rejects_r100a4_finite_record_semantics() -> None:
@@ -130,6 +154,17 @@ def test_r100a3_rejects_r100a4_finite_record_semantics() -> None:
     payload['revision'] = 3
 
     with pytest.raises(ValueError, match='cannot carry R100A-4 finite-record transfer semantics'):
+        AcousticBenchmarkManifest.model_validate(payload)
+
+
+def test_r100a3_rejects_r100a4_transfer_observable_kind() -> None:
+    payload = _manifest().model_dump(mode='python')
+    for fixture in payload['fixtures']:
+        fixture['comparison']['finite_record_transfer'] = None
+    payload['schema_version'] = 'r100a-3'
+    payload['revision'] = 3
+
+    with pytest.raises(ValueError, match='cannot carry R100A-4 complex pressure-transfer'):
         AcousticBenchmarkManifest.model_validate(payload)
 
 
@@ -357,7 +392,8 @@ def test_pressure_convergence_authority_has_density_and_complex_error_contract()
     observable = fixture.observables[0]
 
     assert fixture.environment.density_kg_m3 == pytest.approx(1.2)
-    assert observable.kind == 'field_pressure_pa'
+    assert observable.kind == 'complex_pressure_transfer_pa_per_m3_s'
+    assert observable.unit == 'Pa/(m3/s)'
     assert observable.acceptance_relation == 'monotonic_convergence'
     assert observable.tolerance.absolute == pytest.approx(0.02)
     assert observable.tolerance.relative == pytest.approx(0.02)
