@@ -166,7 +166,7 @@ class CadTopologyComparisonRepository:
             )
         if not self._same_exact_ref(ref, resolved):
             raise ValueError(
-                f'{ref.authority_kind} authority identity/hash/version mismatch'
+                f'{ref.authority_kind} exact authority identity/hash/version mismatch'
             )
 
     def _validate_spec_authorities(
