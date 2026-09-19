@@ -129,7 +129,6 @@ def test_candidate_manifest_is_version_pinned_and_covers_primary_roles() -> None
     profile = _adoption_profile()
     summary = preflight_summary(benchmark, candidates, profile)
     assert set(summary['uncovered_fixture_ids']) == {
-        'wave-explicit-radiation-termination-v1',
         'hybrid-overlap-continuity-v1',
     }
     assert summary['adoption_profile']['profile_id'] == profile.profile_id
@@ -143,13 +142,11 @@ def test_candidate_manifest_is_version_pinned_and_covers_primary_roles() -> None
     mfem_summary = next(
         item for item in summary['candidates'] if item['candidate_id'] == mfem.candidate_id
     )
-    assert mfem_summary['adoption_missing_capabilities'] == [
-        'wave_radiation_termination',
-    ]
+    assert mfem_summary['adoption_missing_capabilities'] == []
     assert 'wave-portal-split-room-v1' in mfem_summary['applicable_fixture_ids']
     assert (
         'wave-explicit-radiation-termination-v1'
-        not in mfem_summary['applicable_fixture_ids']
+        in mfem_summary['applicable_fixture_ids']
     )
 
 
@@ -178,6 +175,19 @@ def test_probe_capabilities_are_not_accepted_capabilities() -> None:
 
     assert all(item.status == 'not_run' for item in run.fixture_evidence)
     assert all(item.status == 'not_run' for item in run.hard_gates)
+
+
+def test_mfem_radiation_probe_permission_is_not_pass_evidence() -> None:
+    benchmark, candidates = _authorities()
+    mfem = _candidate(candidates, 'mfem-v4.10-d964264')
+    fixture_id = 'wave-explicit-radiation-termination-v1'
+
+    assert 'wave_radiation_termination' in mfem.probe_capabilities
+    assert fixture_id in applicable_fixture_ids(benchmark, mfem)
+
+    run = _run(mfem.candidate_id, (fixture_id,))
+    validate_bakeoff_run(benchmark, candidates, run)
+    assert run.fixture_evidence[0].status == 'not_run'
 
 
 def test_r100a_semantic_hash_mismatch_is_rejected() -> None:
