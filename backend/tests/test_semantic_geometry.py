@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import SceneDocument, make_empty_scene
@@ -58,6 +59,20 @@ def test_imperfect_mesh_explicit_repair_keeps_raw_immutable_and_lineage_determin
         semantic_class='object_surface',
     )
 
+    before_repair_request = make_semantic_geometry_conversion_request(
+        mesh,
+        source_scene_revision_id='scene-revision-parent',
+        source_to_scene_transform=_identity_transform(),
+        surface_assignments=(
+            SurfaceSemanticAssignment(
+                surface_key='captured-object-surfaces',
+                triangle_ids=triangle_ids,
+                semantic_class='object_surface',
+            ),
+        ),
+    )
+    before_repair = convert_raw_visual_mesh_to_semantic_geometry(mesh, before_repair_request)
+
     request = make_semantic_geometry_conversion_request(
         mesh,
         source_scene_revision_id='scene-revision-parent',
@@ -73,6 +88,7 @@ def test_imperfect_mesh_explicit_repair_keeps_raw_immutable_and_lineage_determin
     assert first == repeated
     assert first.geometry_id == repeated.geometry_id
     assert first.semantic_hash() == repeated.semantic_hash()
+    assert first.surfaces[0].surface_id == before_repair.surfaces[0].surface_id
     assert len(first.repair_lineage) == 1
     assert first.repair_lineage[0].input_geometry_hash == first.lineage_root_geometry_hash
     assert first.repair_lineage[0].output_geometry_hash == first.derived_geometry_hash
@@ -238,6 +254,7 @@ def test_scene_revision_binding_save_and_reopen_tracks_same_semantic_result(tmp_
     binding = repository.semantic_geometry_binding(saved.revision_id)
     assert binding is not None
     assert binding.scene_revision_id == saved.revision_id
+    assert binding.source_scene_revision_id == base.revision_id
     assert binding.geometry_id == geometry.geometry_id
     assert binding.geometry_semantic_hash == geometry.semantic_hash()
     assert binding.input_raw_mesh_id == mesh.mesh_id
@@ -249,3 +266,10 @@ def test_scene_revision_binding_save_and_reopen_tracks_same_semantic_result(tmp_
     assert reopened.document.r120_semantic_geometry == geometry
     assert reopened.document.r120_semantic_geometry.semantic_hash() == geometry.semantic_hash()
     assert repository.latest(document.document_id).revision_id == saved.revision_id
+
+    with sqlite3.connect(repository.path) as connection:
+        duplicate_binding_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='cad_r120_semantic_geometry_bindings'"
+        ).fetchone()
+    assert duplicate_binding_table is None
