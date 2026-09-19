@@ -1,0 +1,51 @@
+name: R100A-3 Radiation Reference
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/htdt/acoustic_benchmark.py'
+      - 'benchmarks/acoustics/r100a_manifest.json'
+      - 'scripts/check_r100a_radiation_reference.py'
+      - '.github/workflows/r100a3-radiation-reference.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-radiation-reference:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      REFERENCE_OUTPUT: artifacts/r100a3/radiation_reference.json
+      HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install focused HTDT reference runtime
+        run: python -m pip install -e ".\backend" psutil
+
+      - name: Validate and persist R100A-3 radiation reference
+        run: python scripts\check_r100a_radiation_reference.py --manifest benchmarks\acoustics\r100a_manifest.json --output $env:REFERENCE_OUTPUT
+
+      - name: Show radiation reference outcome
+        shell: pwsh
+        run: |
+          $reference = Get-Content -Raw $env:REFERENCE_OUTPUT | ConvertFrom-Json
+          Write-Host "R100A3_RADIATION_REFERENCE_OUTCOME=$($reference.reference_outcome)"
+          Write-Host "R100A3_RADIATION_R100A_HASH=$($reference.r100a_semantic_hash)"
+          Write-Host "R100A3_RADIATION_REFERENCE_SHA256=$($reference.reference_payload_sha256)"
+          Write-Host "R100A3_RADIATION_RMS_REL=$($reference.complex_rms_relative_coarse_to_reference)"
+          Write-Host "R100A3_RADIATION_MAX_POINT_REL=$($reference.max_point_relative_coarse_to_reference)"
+          Write-Host "R100A3_RADIATION_RESOURCES=$($reference.resource_evidence | ConvertTo-Json -Compress)"
+          Write-Host "R100A3_RADIATION_SOURCE=$($reference.source_provenance | ConvertTo-Json -Compress)"
+
+      - name: Upload R100A-3 radiation reference evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: r100a3-radiation-reference
+          path: artifacts/r100a3/radiation_reference.json
+          if-no-files-found: error
