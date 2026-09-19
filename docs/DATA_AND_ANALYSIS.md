@@ -290,3 +290,12 @@ Measurementの旧 `quality_status` 等は既存import互換として保持する
 AcquisitionContextは既存設計上の別authorityである。Report側はID/hash/source-kind参照のみを保持し、存在しないContextを推測生成しない。source-kindがunknownの参照ではcontext依存claimを開放しない。phase配列の存在だけではcommon timingを成立させず、reference identity、clock/sample rate、delay correction等の明示証拠を要求する。calibrated responseはさらにno-clipping、SNR、usable band、calibration provenanceを要求する。
 
 retakeは別Measurementとして保持し、旧reportを上書きしない。supersedes/selected lineageはappend-onlyとし、O60のpreregistered calibration/holdout assignmentや既存validation evidenceを自動変更しない。詳細は[Measurement quality authority](MEASUREMENT_QUALITY.md)を参照。
+
+
+## 11. CalibrationPlan / exported settings authority（Issue #173）
+
+CalibrationPlanはMeasurementQualityReportのclaim gateを下流で再利用する。FR配列やphase配列の存在だけで不足capabilityを補完しない。Planはexact SceneRevision/SystemVariant/Measurement/Dataset/MeasurementQualityReport hash、channel/role/source entity/physical output mapping、sample rate、gain/delay/polarity/crossover/ordered PEQ、target curve/normalization、device capability constraintへ固定する。
+
+requested planとactual exported settingsは別authorityとする。device resolutionによる量子化はexport snapshot側へ記録し、planを書き換えない。filter count、boost/cut、unsupported filter/output/order等を超える場合はclip/omissionせずunsupportedとする。exportはuser-applied/as-built/validatedを意味しない。
+
+VerificationMeasurementPlanはexact exported-settings hash、scene/system、measurement point、routing、reference level、required capability、before/after Measurement lineageを保持する。詳細は[CalibrationPlan authority](CALIBRATION_PLAN.md)。
