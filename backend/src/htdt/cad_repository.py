@@ -125,44 +125,74 @@ class SceneRepository:
         return self._row_to_revision(row) if row else None
 
     def save(self, document: SceneDocument, *, parent_revision_id: str | None) -> SaveResult:
-        payload_json = canonical_scene_json(document)
-        content_hash = scene_content_hash(document)
         with closing(self._connect()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
-            parent = None
-            if parent_revision_id is not None:
-                parent = connection.execute(
-                    'SELECT * FROM scene_revisions WHERE revision_id=?',
-                    (parent_revision_id,),
-                ).fetchone()
-                if parent is None:
-                    raise ValueError(f'unknown parent revision: {parent_revision_id}')
-                if parent['document_id'] != document.document_id:
-                    raise ValueError('parent revision belongs to a different document')
-                if parent['content_hash'] == content_hash:
-                    connection.execute(
-                        'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
-                        (document.document_id,),
-                    )
-                    return SaveResult(self._row_to_revision(parent), created=False)
-            revision_id = str(uuid4())
-            created_at = datetime.now(timezone.utc).isoformat()
-            connection.execute(
-                '''
-                INSERT INTO scene_revisions(
-                    revision_id, document_id, parent_revision_id, created_at_utc, content_hash, payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ''',
-                (revision_id, document.document_id, parent_revision_id, created_at, content_hash, payload_json),
+            return self._save_in_transaction(
+                connection,
+                document,
+                parent_revision_id=parent_revision_id,
             )
-            connection.execute(
-                'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
-                (document.document_id,),
-            )
-            row = connection.execute(
+
+    def _save_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        document: SceneDocument,
+        *,
+        parent_revision_id: str | None,
+        revision_id: str | None = None,
+        created_at_utc: str | None = None,
+    ) -> SaveResult:
+        """Persist one immutable SceneRevision inside the caller's transaction.
+
+        This is the single SceneRevision write authority used by both normal saves
+        and higher-level operations that must commit related lineage atomically.
+        The caller owns BEGIN/COMMIT/ROLLBACK when passing an existing connection.
+        """
+
+        payload_json = canonical_scene_json(document)
+        content_hash = scene_content_hash(document)
+        parent = None
+        if parent_revision_id is not None:
+            parent = connection.execute(
                 'SELECT * FROM scene_revisions WHERE revision_id=?',
-                (revision_id,),
+                (parent_revision_id,),
             ).fetchone()
+            if parent is None:
+                raise ValueError(f'unknown parent revision: {parent_revision_id}')
+            if parent['document_id'] != document.document_id:
+                raise ValueError('parent revision belongs to a different document')
+            if parent['content_hash'] == content_hash:
+                connection.execute(
+                    'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
+                    (document.document_id,),
+                )
+                return SaveResult(self._row_to_revision(parent), created=False)
+
+        revision_id = revision_id or str(uuid4())
+        created_at = created_at_utc or datetime.now(timezone.utc).isoformat()
+        connection.execute(
+            '''
+            INSERT INTO scene_revisions(
+                revision_id, document_id, parent_revision_id, created_at_utc, content_hash, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                revision_id,
+                document.document_id,
+                parent_revision_id,
+                created_at,
+                content_hash,
+                payload_json,
+            ),
+        )
+        connection.execute(
+            'DELETE FROM scene_recovery_snapshots WHERE document_id=?',
+            (document.document_id,),
+        )
+        row = connection.execute(
+            'SELECT * FROM scene_revisions WHERE revision_id=?',
+            (revision_id,),
+        ).fetchone()
         return SaveResult(self._row_to_revision(row), created=True)
 
     def save_recovery(
