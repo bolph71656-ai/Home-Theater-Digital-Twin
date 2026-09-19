@@ -40,8 +40,10 @@ records:
 ## Explicit hard-constraint interface
 
 Compliance is advisory by default. A `FAIL` does not remove a candidate or mutate an
-O30/O40/O90/O100 objective. Only criterion IDs explicitly supplied in
-`hard_constraint_ids` participate in `explicit_hard_constraint_gate()`.
+O30/O40/O90/O100 objective. Hard-constraint selection is not stored in, and does not
+change, the `StandardsEvaluation` identity. Only criterion IDs explicitly supplied as
+`selected_criterion_ids` to `explicit_hard_constraint_gate()` participate in the
+downstream gate.
 
 For a selected hard criterion, `FAIL` and `UNKNOWN` block downstream use. An
 unselected `FAIL` never blocks. `NOT_APPLICABLE` does not block. This is a separate
@@ -53,8 +55,8 @@ gate; it is not a hidden Pareto objective or combined score.
   non-finite JSON numbers forbidden.
 - Profile semantic identity covers the exact criterion definitions and source provenance.
 - Evaluation identity covers the profile ID/version/hash, exact scene/variant/entity
-  binding, observations/evidence, selected hard-constraint criterion IDs, and optional
-  re-evaluation lineage.
+  binding, observations/evidence, and optional re-evaluation lineage. Downstream
+  hard-constraint selection is deliberately excluded from evaluation identity.
 - Floating-point comparison uses the decimal string representation of the supplied finite
   number. No epsilon is introduced.
 - Every lower/upper boundary records inclusive/exclusive semantics.
