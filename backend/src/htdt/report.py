@@ -898,6 +898,18 @@ def _treatment_summary(
         raise ValueError(
             'treatment definitions, placements, and surface binding evaluations must be supplied together'
         )
+    definitions = tuple(
+        AcousticTreatmentDefinition.model_validate(item.model_dump(mode='python'))
+        for item in definitions
+    )
+    placements = tuple(
+        AcousticTreatmentPlacement.model_validate(item.model_dump(mode='python'))
+        for item in placements
+    )
+    evaluations = tuple(
+        TreatmentSurfaceBindingEvaluation.model_validate(item.model_dump(mode='python'))
+        for item in evaluations
+    )
     definition_by_key: dict[tuple[str, str], AcousticTreatmentDefinition] = {}
     for definition in definitions:
         key = (definition.definition_id, definition.version)
@@ -1075,14 +1087,33 @@ def _calibration_summary(
         return InstallationCalibrationSummary(status='UNKNOWN')
     if plan is None:
         raise ValueError('CalibrationPlan is required for calibration integration')
-    if variant is None:
-        raise ValueError('CalibrationPlan requires exact SystemVariant in InstallationOutput')
+    plan = CadCalibrationPlan.model_validate(plan.model_dump(mode='python'))
+    export_snapshot = (
+        None
+        if export_snapshot is None
+        else CadCalibrationExportSnapshot.model_validate(
+            export_snapshot.model_dump(mode='python')
+        )
+    )
+    verification_plan = (
+        None
+        if verification_plan is None
+        else CadVerificationMeasurementPlan.model_validate(
+            verification_plan.model_dump(mode='python')
+        )
+    )
+    lifecycle_events = tuple(
+        CadCalibrationLifecycleEvent.model_validate(item.model_dump(mode='python'))
+        for item in lifecycle_events
+    )
     if (
         plan.document_id != revision.document_id
         or plan.scene_revision_id != revision.revision_id
         or plan.scene_content_hash != revision.content_hash
     ):
         raise ValueError('CalibrationPlan SceneRevision mismatch')
+    if variant is None:
+        raise ValueError('CalibrationPlan requires exact SystemVariant in InstallationOutput')
     if (
         plan.system_variant_id != variant.variant_id
         or plan.system_variant_sha256 != variant.variant_sha256
