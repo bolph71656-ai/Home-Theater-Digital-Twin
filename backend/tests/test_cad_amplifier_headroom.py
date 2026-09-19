@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import log10
 from pathlib import Path
 
 import pytest
@@ -366,9 +367,8 @@ def test_voltage_capability_has_explicit_continuous_peak_and_target_margins(
     assert evaluation.continuous_electrical_margin.unit == 'V RMS'
     assert evaluation.continuous_electrical_margin.value == pytest.approx(4.0)
     assert evaluation.peak_electrical_margin.value == pytest.approx(8.0)
-    expected_ceiling = 88.0 + 20.0 * pytest.approx(0.0)
     assert evaluation.continuous_amplifier_spl_ceiling.value == pytest.approx(
-        88.0 + 20.0 * __import__('math').log10(10.0 / 2.83)
+        88.0 + 20.0 * log10(10.0 / 2.83)
     )
     assert evaluation.amplifier_constrained_target_margin.value == pytest.approx(
         evaluation.continuous_amplifier_spl_ceiling.value - 95.0
