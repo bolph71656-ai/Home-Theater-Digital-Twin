@@ -126,6 +126,7 @@ def _fixture(tmp_path: Path):
     scene_repository = SceneRepository(db)
     document = SceneDocument(
         document_id='wave-excitation-fixture',
+        schema_version=4,
         room=None,
         r120_semantic_geometry=_semantic_geometry(),
         entities=(
