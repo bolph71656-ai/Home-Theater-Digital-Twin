@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import subprocess
 import threading
 import time
 
@@ -329,6 +330,35 @@ def check_reference(manifest_path: Path) -> dict[str, object]:
     }
 
 
+def _git_rev_parse(revision: str) -> str | None:
+    completed = subprocess.run(
+        ['git', 'rev-parse', '--verify', revision],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip().lower()
+    return value or None
+
+
+def _htdt_git_provenance() -> dict[str, str]:
+    checkout = _git_rev_parse('HEAD')
+    if checkout is None:
+        raise RuntimeError('cannot resolve HTDT checkout commit')
+    event_head = os.environ.get('HTDT_PR_HEAD_SHA', '').strip().lower()
+    if len(event_head) == 40 and all(ch in '0123456789abcdef' for ch in event_head):
+        pr_head = event_head
+    else:
+        pr_head = _git_rev_parse('HEAD^2') or checkout
+    return {
+        'checkout_commit_sha': checkout,
+        'pr_head_commit_sha': pr_head,
+    }
+
+
 def _sha256_file(path: Path) -> str:
     digest = sha256()
     with path.open('rb') as handle:
@@ -389,6 +419,7 @@ def main(argv: list[str] | None = None) -> int:
                 'raw_reference_mb': raw_reference_bytes / (1024.0 * 1024.0),
             },
             'source_provenance': {
+                **_htdt_git_provenance(),
                 'manifest_file_sha256': _sha256_file(args.manifest),
                 'checker_source_sha256': _sha256_file(Path(__file__).resolve()),
                 'runtime_versions': _runtime_versions(),
