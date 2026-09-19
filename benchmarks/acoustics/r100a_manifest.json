@@ -2053,9 +2053,9 @@
         {
           "observable_id": "termination-fr",
           "kind": "transfer_magnitude_db",
-          "unit": "dB",
+          "unit": "dB re 1 Pa/(m3/s)",
           "reference_kind": "analytical",
-          "reference_description": "R100A-3 semi-analytical rectangular-waveguide modal Green-function reference for the exact local first-order outgoing Robin termination; normalized Neumann transverse modes, rigid x=0/y/z walls and dp/dn-i*k*p=0 at x=6 m.",
+          "reference_description": "R100A-3 semi-analytical rectangular-waveguide modal Green-function reference for the exact local first-order outgoing Robin termination; transfer magnitude is 20*log10(|P/Q| / (1 Pa/(m3/s))), with Q frozen by the source authority; normalized Neumann transverse modes, rigid x=0/y/z walls and dp/dn-i*k*p=0 at x=6 m.",
           "acceptance_relation": "matches_reference",
           "tolerance": {
             "absolute": 1,
