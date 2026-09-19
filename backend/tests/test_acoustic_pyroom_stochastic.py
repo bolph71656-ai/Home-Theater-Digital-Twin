@@ -215,7 +215,39 @@ def test_insufficient_ray_support_is_retained_as_fail_not_zero_response() -> Non
     assert evidence.status == 'fail'
     assert evaluation.convergence_status == 'fail'
     assert evaluation.insufficient_observation_ids == (first['observation_id'],)
+    assert tuple(item.ray_budget for item in evaluation.budget_variation) == (
+        authority.ray_budgets[1], authority.ray_budgets[2]
+    )
+    assert tuple(item.ray_budget for item in evaluation.resource_scaling) == authority.ray_budgets
     assert 'zero response' in evidence.observables[0].summary
+
+
+def test_insufficient_same_seed_curve_keeps_raw_histogram_repeatability_separate() -> None:
+    benchmark, candidates, authority, fixture, _candidate, raw = _raw()
+    payload = raw.model_dump(mode='python')
+    observations = list(payload['observations'])
+    replay_seed = fixture.random_seed
+    for index, observation in enumerate(observations):
+        if observation['seed'] != replay_seed:
+            continue
+        changed = dict(observation)
+        changed['status'] = 'insufficient_support'
+        changed['values_db'] = ()
+        changed['diagnostic'] = 'same raw histogram replay, estimator support unavailable'
+        observations[index] = changed
+    payload['observations'] = observations
+    replay_insufficient = PyroomStochasticRawEvidence.model_validate(payload)
+
+    evidence, evaluation = evaluate_pyroom_stochastic_fixture(
+        benchmark, candidates, fixture, authority, replay_insufficient
+    )
+
+    assert evaluation.exact_histogram_replay is True
+    assert evaluation.exact_curve_replay is False
+    assert evaluation.repeatability_status == 'fail'
+    assert evaluation.convergence_status == 'pass'
+    assert evidence.status == 'fail'
+    assert len(evaluation.budget_variation) == len(authority.ray_budgets)
 
 
 def test_stale_r100a_semantic_hash_is_rejected() -> None:
