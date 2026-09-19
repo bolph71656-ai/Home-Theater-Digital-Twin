@@ -63,12 +63,13 @@ Performance never rescues a failed correctness gate.
 
 ## Current coverage
 
-The current candidate capability envelope intentionally leaves two R100A-3 fixtures without an authorized candidate:
+The current candidate capability envelope authorizes at least one candidate probe for every low-band wave-adoption fixture under R100A-4. Authorization is **not** verified capability or PASS evidence:
 
-- `wave-explicit-radiation-termination-v1`;
-- `hybrid-overlap-continuity-v1`.
+- MFEM declares `portal_continuity`; PR #160 records Portal fixture PASS;
+- MFEM declares `wave_radiation_termination`; PR #177 records the radiation fixture FAIL on the frozen resource budget;
+- PFFDTD and MFEM both carry concave evidence, but the current concave numerical evidence is non-converged/FAIL and no qualified finite-record independent reference exists.
 
-MFEM now declares `portal_continuity` and PR #160 records a PASS for `wave-portal-split-room-v1`. Radiation termination remains intentionally uncovered until a candidate implements the exact R100A-3 Robin authority; hybrid overlap belongs after compatible wave/geometric evidence exists. The preflight command reports these gaps rather than silently assigning them to an unsuitable backend.
+`hybrid-overlap-continuity-v1` remains intentionally without a candidate because it belongs to the later hybrid role and is explicitly deferred by the low-band wave adoption profile. The preflight command reports missing capability/evidence rather than silently treating authorization as success.
 
 ## Repeatable command
 
@@ -77,7 +78,8 @@ Windows CI executes:
 ~~~powershell
 python -m htdt.acoustic_bakeoff preflight `
   --manifest benchmarks\acoustics\r100a_manifest.json `
-  --candidates benchmarks\acoustics\r100b_candidates.json
+  --candidates benchmarks\acoustics\r100b_candidates.json `
+  --adoption-profile benchmarks\acoustics\r100b_wave_adoption_profile.json
 ~~~
 
 A recorded candidate run is validated with:
@@ -238,7 +240,7 @@ The corresponding required capability union is `wave_rigid`, `wave_impedance`, `
 
 Geometric-reference fixtures and `hybrid-overlap-continuity-v1` are deliberately deferred from this **low-band wave solver** adoption profile. Their exclusion is explicit scope separation, not implicit PASS evidence. R150/R160 own those later roles.
 
-The adoption profile is independent authority from R100A. R100A-3 separately changes the benchmark semantic hash because radiation semantics were previously incomplete; historical artifacts remain preserved but are stale for current selection until replayed.
+The adoption profile is independent authority from R100A. R100A-3 changed the benchmark semantic hash because radiation semantics were previously incomplete; R100A-4 changes it again to freeze finite-record transfer semantics. Historical artifacts remain preserved but are stale for current selection until replayed under the current authority.
 
 ## Next R100B implementation slices
 
