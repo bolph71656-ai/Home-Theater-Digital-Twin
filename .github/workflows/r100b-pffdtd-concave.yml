@@ -44,9 +44,9 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'pffdtd-r100b-concave'
           git clone --filter=blob:none https://github.com/bsxfun/pffdtd.git $root
-          git -C $root checkout --detach $env:PFFDTTD_SHA
+          git -C $root checkout --detach $env:PFFDTD_SHA
           $actual = (git -C $root rev-parse HEAD).Trim().ToLowerInvariant()
-          if ($actual -ne $env:PFFDTTD_SHA) {
+          if ($actual -ne $env:PFFDTD_SHA) {
             throw "PFFDTD checkout mismatch: $actual"
           }
           "PFFDTD_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
