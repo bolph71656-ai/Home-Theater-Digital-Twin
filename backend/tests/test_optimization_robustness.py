@@ -482,6 +482,9 @@ def test_o90b_keeps_infeasible_samples_builds_envelope_and_round_trips(
     assert evaluation.sampled_envelope is not None
     assert evaluation.sampled_envelope.percentile_values is None
     assert evaluation.percentile_semantics == 'not_available_bounded_interval'
+    assert evaluation.mean_value is None
+    assert evaluation.constraint_violation_probability is None
+    assert evaluation.probability_semantics is None
     assert evaluation.sampling_provenance_sha256 is not None
 
     repository = CadRobustnessRepository(tmp_path / 'o90b.sqlite3')
@@ -590,4 +593,308 @@ def test_o90b_requires_nominal_and_both_corner_anchors(tmp_path) -> None:
             sample_count=2,
             seed=1,
             created_at_utc='2026-09-19T00:02:00+00:00',
+        )
+
+
+
+def _o90b_distribution_model(base_spec):
+    from htdt.optimization_robustness import (
+        DistributionAxisUncertainty,
+        DistributionUncertaintyModel,
+    )
+
+    return DistributionUncertaintyModel(
+        model_id='known-uniform-inputs',
+        axes=tuple(
+            DistributionAxisUncertainty(
+                axis_id=axis.axis_id,
+                distribution='uniform',
+                min_delta=-float(axis.minus_delta),
+                max_delta=float(axis.plus_delta),
+            )
+            for axis in base_spec.axes
+        ),
+    )
+
+
+def _o90b_linear_evaluator(document, sample_id: str) -> PerturbationObjectiveResult:
+    speaker = document.entity('speaker-fl')
+    value = 2.0 + (speaker.position.x_m - 1.0) * 10.0
+    return PerturbationObjectiveResult(
+        prediction_result_ref=f'prediction:{sample_id}',
+        objective_vector=ObjectiveVector(
+            candidate_id=sample_id,
+            metrics=(
+                ObjectiveMetric(
+                    objective_id='response.shape_rms_db',
+                    value=value,
+                    unit='dB',
+                ),
+            ),
+        ),
+    )
+
+
+def test_o90b_explicit_distribution_recovers_known_mean_and_percentile(
+    tmp_path,
+) -> None:
+    from htdt.optimization_robustness_uncertainty import (
+        derive_uncertainty_robustness_spec,
+        evaluate_uncertainty_robustness,
+    )
+
+    revision, constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=_o90b_distribution_model(base_spec),
+        sample_count=65,
+        seed=1701,
+        created_at_utc='2026-09-19T00:10:00+00:00',
+    )
+
+    result = evaluate_uncertainty_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        created_at_utc='2026-09-19T00:11:00+00:00',
+    )
+
+    assert result.status == 'completed'
+    evaluation = result.evaluations[0]
+    assert evaluation.probability_semantics == 'explicit_distribution'
+    assert evaluation.percentile_semantics == 'explicit_probability_model'
+    assert evaluation.mean_value == pytest.approx(2.0, abs=1e-12)
+    assert evaluation.sampled_envelope is not None
+    assert evaluation.sampled_envelope.percentile_values is not None
+    assert evaluation.sampled_envelope.percentile_values['p95'] == pytest.approx(
+        2.18,
+        abs=0.005,
+    )
+    assert evaluation.constraint_violation_probability == pytest.approx(0.0)
+    assert evaluation.feasible_fraction == pytest.approx(1.0)
+
+
+def test_o90b_empirical_samples_remain_non_probabilistic_without_weights(
+    tmp_path,
+) -> None:
+    from htdt.optimization_robustness import (
+        EmpiricalUncertaintyModel,
+        ExplicitPerturbationState,
+    )
+    from htdt.optimization_robustness_uncertainty import (
+        build_uncertainty_sampling_plan,
+        derive_uncertainty_robustness_spec,
+        evaluate_uncertainty_robustness,
+    )
+
+    revision, constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    model = EmpiricalUncertaintyModel(
+        model_id='installation-observations',
+        samples=(
+            ExplicitPerturbationState(
+                state_id='z-observation',
+                parameter_deltas={'speaker-x': 0.01},
+            ),
+            ExplicitPerturbationState(
+                state_id='a-observation',
+                parameter_deltas={'speaker-x': -0.01},
+            ),
+        ),
+    )
+    spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        created_at_utc='2026-09-19T00:12:00+00:00',
+    )
+    plans = build_uncertainty_sampling_plan(spec)
+    assert [item.uncertainty_item_id for item in plans[1:]] == [
+        'a-observation',
+        'z-observation',
+    ]
+    assert all(item.probability_weight is None for item in plans[1:])
+
+    result = evaluate_uncertainty_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        created_at_utc='2026-09-19T00:13:00+00:00',
+    )
+    evaluation = result.evaluations[0]
+    assert evaluation.percentile_semantics == 'not_available_empirical_unweighted'
+    assert evaluation.sampled_envelope is not None
+    assert evaluation.sampled_envelope.percentile_values is None
+    assert evaluation.mean_value is None
+    assert evaluation.constraint_violation_probability is None
+    assert evaluation.probability_semantics is None
+
+
+def test_o90b_explicit_discrete_weights_produce_violation_probability(
+    tmp_path,
+) -> None:
+    from htdt.cad_search_models import CadCandidate
+    from htdt.optimization_robustness import (
+        DiscreteUncertaintyModel,
+        ExplicitPerturbationState,
+        build_robustness_spec,
+    )
+    from htdt.optimization_robustness_uncertainty import (
+        derive_uncertainty_robustness_spec,
+        evaluate_uncertainty_robustness,
+    )
+
+    revision, constraints, search_spec, nominal, original = _fixture(tmp_path)
+    axes = tuple(
+        axis.model_copy(update={'allowed_min': 0.99})
+        if axis.axis_id == 'speaker-x'
+        else axis
+        for axis in original.axes
+    )
+    base_spec = build_robustness_spec(
+        source_revision=revision,
+        search_spec=search_spec,
+        candidate=CadCandidate.model_validate_json(original.candidate_payload_json),
+        candidate_set_sha256=original.candidate_set_sha256,
+        nominal_objective=nominal,
+        nominal_prediction_result_ref=original.nominal_prediction_result_ref,
+        model_id=original.model_id,
+        model_version=original.model_version,
+        prediction_provider_id=original.prediction_provider_id,
+        fidelity=original.fidelity,
+        axes=axes,
+        software_version='test',
+        created_at_utc='2026-09-19T00:14:00+00:00',
+    )
+    model = DiscreteUncertaintyModel(
+        model_id='mounting-alternatives',
+        states=(
+            ExplicitPerturbationState(
+                state_id='negative',
+                parameter_deltas={'speaker-x': -0.02},
+                probability_weight=0.25,
+            ),
+            ExplicitPerturbationState(
+                state_id='positive',
+                parameter_deltas={'speaker-x': 0.01},
+                probability_weight=0.75,
+            ),
+        ),
+    )
+    spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        created_at_utc='2026-09-19T00:15:00+00:00',
+    )
+
+    result = evaluate_uncertainty_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        created_at_utc='2026-09-19T00:16:00+00:00',
+    )
+    evaluation = result.evaluations[0]
+    assert evaluation.probability_semantics == 'explicit_discrete_weights'
+    assert evaluation.constraint_violation_probability == pytest.approx(0.25)
+    assert evaluation.feasible_fraction == pytest.approx(0.5)
+    assert evaluation.feasible_fraction != pytest.approx(
+        1.0 - evaluation.constraint_violation_probability
+    )
+    assert any(not sample.feasible for sample in result.samples[1:])
+
+
+def test_o90b_cancel_cache_resume_and_stale_reuse_protection(tmp_path) -> None:
+    from htdt.optimization_robustness_uncertainty import (
+        derive_uncertainty_robustness_spec,
+        evaluate_uncertainty_robustness,
+    )
+
+    revision, constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    model = _o90b_distribution_model(base_spec)
+    spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        sample_count=9,
+        seed=77,
+        created_at_utc='2026-09-19T00:17:00+00:00',
+    )
+    repository = CadRobustnessRepository(tmp_path / 'o90b-resume.sqlite3')
+    cancel_calls = {'count': 0}
+
+    def cancel_after_one_perturbation() -> bool:
+        cancel_calls['count'] += 1
+        return cancel_calls['count'] > 2
+
+    cancelled = evaluate_uncertainty_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        cache=repository,
+        cancel_requested=cancel_after_one_perturbation,
+        created_at_utc='2026-09-19T00:18:00+00:00',
+    )
+    assert cancelled.status == 'cancelled'
+    assert len(cancelled.samples) == 2
+    assert repository.list_samples(spec.robustness_spec_id) == cancelled.samples
+
+    resumed = evaluate_uncertainty_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        cache=repository,
+        created_at_utc='2026-09-19T00:18:00+00:00',
+    )
+    assert resumed.status == 'completed'
+    assert resumed.reused_sample_ids == tuple(
+        sample.sample_id for sample in cancelled.samples
+    )
+    assert len(resumed.computed_sample_ids) == spec.sample_count - len(cancelled.samples)
+    assert repository.get_spec(spec.robustness_spec_id) == spec
+    assert repository.list_samples(spec.robustness_spec_id) == resumed.samples
+    assert repository.list_evaluations(spec.robustness_spec_id) == resumed.evaluations
+
+    changed_spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        sample_count=9,
+        seed=78,
+        created_at_utc='2026-09-19T00:19:00+00:00',
+    )
+    with pytest.raises(ValueError, match='stale or incompatible'):
+        evaluate_uncertainty_robustness(
+            source_revision=revision,
+            search_spec=search_spec,
+            spec=changed_spec,
+            constraint_set=constraints,
+            nominal_objective=nominal,
+            evaluator=_o90b_linear_evaluator,
+            completed_samples=resumed.samples,
+            created_at_utc='2026-09-19T00:20:00+00:00',
+        )
+
+    changed_revision = revision.model_copy(
+        update={'revision_id': f'{revision.revision_id}-changed'}
+    )
+    with pytest.raises(ValueError, match='SceneRevision authority mismatch'):
+        evaluate_uncertainty_robustness(
+            source_revision=changed_revision,
+            search_spec=search_spec,
+            spec=spec,
+            constraint_set=constraints,
+            nominal_objective=nominal,
+            evaluator=_o90b_linear_evaluator,
+            created_at_utc='2026-09-19T00:20:00+00:00',
         )
