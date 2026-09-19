@@ -90,20 +90,6 @@ class AcousticSolverObservableArtifact(BaseModel):
     artifact_authority: ExactExternalAuthorityRef
     encoding_schema_ref: ExactExternalAuthorityRef
     valid_frequency_domain: FrequencyDomain
-    source_entity_ids: tuple[str, ...] = ()
-    receiver_ids: tuple[str, ...] = ()
-
-    @model_validator(mode='after')
-    def validate_manifest(self) -> 'AcousticSolverObservableArtifact':
-        if self.source_entity_ids != tuple(sorted(set(self.source_entity_ids))):
-            raise ValueError(
-                'solver result artifact source entity ids must be unique and sorted'
-            )
-        if self.receiver_ids != tuple(sorted(set(self.receiver_ids))):
-            raise ValueError(
-                'solver result artifact receiver ids must be unique and sorted'
-            )
-        return self
 
 
 class AcousticSolverResultEnvelope(BaseModel):
