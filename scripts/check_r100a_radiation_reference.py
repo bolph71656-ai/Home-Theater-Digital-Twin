@@ -269,6 +269,10 @@ def _compare_manifest_samples(fixture, frequencies: tuple[float, ...], pressures
     complex_pressure = _observable(fixture, COMPLEX_OBSERVABLE_ID)
     if magnitude.reference_kind != 'analytical' or complex_pressure.reference_kind != 'analytical':
         raise ValueError('radiation reference observables must remain analytical authority')
+    if magnitude.unit != 'dB re 1 Pa/(m3/s)':
+        raise ValueError('radiation transfer-magnitude dB reference unit changed')
+    if complex_pressure.unit != 'Pa':
+        raise ValueError('radiation complex-pressure unit changed')
     if len(magnitude.samples) != len(frequencies) or len(complex_pressure.samples) != len(frequencies):
         raise ValueError('radiation reference samples do not cover the complete frozen grid')
 
