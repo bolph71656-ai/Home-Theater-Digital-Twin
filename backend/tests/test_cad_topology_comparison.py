@@ -8,12 +8,21 @@ import pytest
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity
 from htdt.cad_standards import (
+    CriterionDefinition,
+    CriterionEvidenceRef,
+    CriterionObservation,
+    CriterionRule,
+    CriterionSource,
     StandardsEvaluationTarget,
     build_user_standards_profile,
     evaluate_standards_profile,
 )
 from htdt.cad_standards_repository import CadStandardsRepository
-from htdt.cad_system_variant import ChannelRoleBinding, build_system_variant
+from htdt.cad_system_variant import (
+    ChannelRoleBinding,
+    ProposedEntitySpec,
+    build_system_variant,
+)
 from htdt.cad_system_variant_repository import CadSystemVariantRepository
 from htdt.cad_topology_comparison import (
     ExactAuthorityRef,
@@ -44,33 +53,33 @@ def _hash(value: str) -> str:
     return sha256(value.encode('utf-8')).hexdigest()
 
 
+def _speaker(
+    entity_id: str,
+    role: str,
+    x_m: float,
+    y_m: float,
+    z_m: float,
+) -> SceneEntity:
+    return SceneEntity(
+        entity_id=entity_id,
+        kind='speaker',
+        name=role,
+        speaker_role=role,
+        position=Position3(x_m=x_m, y_m=y_m, z_m=z_m),
+    )
+
+
 def _scene() -> SceneDocument:
     return SceneDocument(
         document_id=DOCUMENT_ID,
         schema_version=2,
         room=RoomPrism(width_m=6.0, depth_m=4.5, height_m=2.4),
         entities=(
-            SceneEntity(
-                entity_id='fl',
-                kind='speaker',
-                name='FL',
-                speaker_role='FL',
-                position=Position3(x_m=1.2, y_m=0.8, z_m=1.0),
-            ),
-            SceneEntity(
-                entity_id='c',
-                kind='speaker',
-                name='C',
-                speaker_role='C',
-                position=Position3(x_m=3.0, y_m=0.6, z_m=0.9),
-            ),
-            SceneEntity(
-                entity_id='fr',
-                kind='speaker',
-                name='FR',
-                speaker_role='FR',
-                position=Position3(x_m=4.8, y_m=0.8, z_m=1.0),
-            ),
+            _speaker('fl', 'FL', 1.2, 0.8, 1.0),
+            _speaker('c', 'C', 3.0, 0.6, 0.9),
+            _speaker('fr', 'FR', 4.8, 0.8, 1.0),
+            _speaker('tfl', 'TFL', 1.8, 2.0, 2.2),
+            _speaker('tfr', 'TFR', 4.2, 2.0, 2.2),
             SceneEntity(
                 entity_id='mlp',
                 kind='measurement_point',
@@ -97,6 +106,21 @@ def _roles(*, surround: bool) -> tuple[ChannelRoleBinding, ...]:
             )
         )
     return tuple(values)
+
+
+def _surround_proposals() -> tuple[ProposedEntitySpec, ...]:
+    return (
+        ProposedEntitySpec(
+            spec_id='proposal-sl',
+            entity=_speaker('sl', 'SL', 0.8, 2.9, 1.3),
+            role_binding_id='SL',
+        ),
+        ProposedEntitySpec(
+            spec_id='proposal-sr',
+            entity=_speaker('sr', 'SR', 5.2, 2.9, 1.3),
+            role_binding_id='SR',
+        ),
+    )
 
 
 def _definition(
@@ -169,6 +193,7 @@ def _standards_evaluation(
     baseline,
     variant,
     timestamp: str,
+    observed_value: float,
 ):
     evaluation = evaluate_standards_profile(
         profile=profile,
@@ -181,7 +206,22 @@ def _standards_evaluation(
             entity_ids=(),
             applicable_domains=('topology-comparison-fixture',),
         ),
-        observations=(),
+        observations=(
+            CriterionObservation(
+                criterion_id='fixture-clearance',
+                observed_value=observed_value,
+                unit='m',
+                evidence_basis='derived',
+                evidence_refs=(
+                    CriterionEvidenceRef(
+                        evidence_id=f'clearance:{variant.variant_id}',
+                        evidence_sha256=_hash(
+                            f'clearance:{variant.variant_id}:{observed_value}'
+                        ),
+                    ),
+                ),
+            ),
+        ),
         created_at_utc=timestamp,
     )
     standards_repository.save_evaluation(evaluation)
@@ -206,13 +246,18 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
         ('Proposed missing required', True),
         ('Proposed incompatible unit', True),
         ('Proposed incompatible model', True),
+        ('Proposed unsupported required', True),
     )
     variants = tuple(
         build_system_variant(
             baseline=baseline,
             name=name,
             role_bindings=_roles(surround=surround),
-            proposed_entities=(),
+            proposed_entities=(
+                _surround_proposals()
+                if surround
+                else ()
+            ),
             created_at_utc=f'2026-09-19T14:0{index}:00+00:00',
         )
         for index, (name, surround) in enumerate(variant_specs)
@@ -228,7 +273,25 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
         profile_id='topology-comparison-fixture-profile',
         version='1',
         name='Topology comparison fixture profile',
-        criteria=(),
+        criteria=(
+            CriterionDefinition(
+                criterion_id='fixture-clearance',
+                name='Fixture clearance',
+                source=CriterionSource(
+                    publisher='HTDT fixture',
+                    document_title='Topology comparison fixture',
+                    document_version='1',
+                    reference='fixture-clearance',
+                ),
+                quantity='clearance',
+                unit='m',
+                applicable_domains=('topology-comparison-fixture',),
+                rule=CriterionRule(
+                    operator='min',
+                    minimum=0.5,
+                ),
+            ),
+        ),
     )
     standards_repository.save_profile(profile)
     standards_evaluations = {
@@ -238,6 +301,7 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
             baseline=baseline,
             variant=variant,
             timestamp=f'2026-09-19T14:1{index}:00+00:00',
+            observed_value=0.25 if index == 0 else 0.75,
         )
         for index, variant in enumerate(variants)
     }
@@ -292,6 +356,7 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
                     '5.0.2 missing-required fixture',
                     '5.0.2 incompatible-unit fixture',
                     '5.0.2 incompatible-model fixture',
+                    '5.0.2 unsupported-required fixture',
                 ),
                 strict=True,
             )
@@ -371,6 +436,7 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
         (0.88, 2.5, None, 91.0),
         (0.82, 3.5, 4.0, 91.0),
         (0.86, 2.8, 4.5, 91.5),
+        (0.84, 3.1, 'unsupported', 90.5),
     )
 
     bundles = []
@@ -383,7 +449,18 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
                 loss_value,
             ),
         ]
-        if headroom_value is not None:
+        if headroom_value == 'unsupported':
+            metrics.append(
+                ObjectiveMetric(
+                    objective_id=headroom.objective_id,
+                    value=None,
+                    unit=headroom.unit,
+                    direction=headroom.direction,
+                    state='unsupported',
+                    definition=headroom,
+                )
+            )
+        elif headroom_value is not None:
             metrics.append(
                 _metric(
                     bad_unit_headroom if index == 4 else headroom,
@@ -448,6 +525,7 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
     assert state[variants[3].variant_id].state == 'INELIGIBLE'
     assert state[variants[4].variant_id].state == 'INELIGIBLE'
     assert state[variants[5].variant_id].state == 'INELIGIBLE'
+    assert state[variants[6].variant_id].state == 'INELIGIBLE'
 
     assert {
         issue.code for issue in state[variants[3].variant_id].issues
@@ -458,6 +536,9 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
     assert 'incompatible_comparison_model_version' in {
         issue.code for issue in state[variants[5].variant_id].issues
     }
+    assert {
+        issue.code for issue in state[variants[6].variant_id].issues
+    } == {'required_objective_unsupported'}
 
     # Optional SPL is absent for proposed B but does not make it ineligible and
     # is not silently substituted; it is simply not a common Pareto axis.
@@ -482,9 +563,11 @@ def test_named_topology_comparison_exact_authority_pareto_and_reopen(
         not objective_id.startswith('standards.')
         for objective_id in evaluation.pareto_objective_ids
     )
+    assert standards_evaluations[variants[0].variant_id].results[0].status == 'FAIL'
+    assert state[variants[0].variant_id].state == 'ELIGIBLE'
     assert all(
-        standards_evaluations[variant.variant_id].results == ()
-        for variant in variants
+        evaluation.results[0].status in {'PASS', 'FAIL', 'UNKNOWN'}
+        for evaluation in standards_evaluations.values()
     )
 
     selection = build_topology_comparison_selection(
