@@ -5,6 +5,8 @@ from contextlib import closing
 from pathlib import Path
 import sqlite3
 
+from .cad_amplifier_headroom import amplifier_headroom_objective_vector
+from .cad_amplifier_headroom_repository import CadAmplifierHeadroomRepository
 from .cad_coverage_repository import CadCoverageRepository
 from .cad_direct_level_repository import CadDirectLevelRepository
 from .cad_repository import SceneRepository
@@ -17,6 +19,7 @@ from .cad_topology_comparison import (
     TopologyComparisonEvaluation,
     TopologyComparisonSelection,
     VariantEvaluationBundle,
+    amplifier_headroom_evaluation_ref,
     build_topology_comparison_selection,
     coverage_evaluation_ref,
     direct_level_evaluation_ref,
@@ -43,6 +46,7 @@ class CadTopologyComparisonRepository:
         standards_repository: CadStandardsRepository,
         coverage_repository: CadCoverageRepository | None = None,
         direct_level_repository: CadDirectLevelRepository | None = None,
+        amplifier_headroom_repository: CadAmplifierHeadroomRepository | None = None,
         external_resolvers: Mapping[str, AuthorityResolver] | None = None,
     ) -> None:
         self.scene_repository = scene_repository
@@ -50,6 +54,7 @@ class CadTopologyComparisonRepository:
         self.standards_repository = standards_repository
         self.coverage_repository = coverage_repository
         self.direct_level_repository = direct_level_repository
+        self.amplifier_headroom_repository = amplifier_headroom_repository
         self.external_resolvers = dict(external_resolvers or {})
         self.path = Path(scene_repository.path)
 
@@ -58,6 +63,7 @@ class CadTopologyComparisonRepository:
             ('Standards', standards_repository),
             ('Coverage', coverage_repository),
             ('DirectLevel', direct_level_repository),
+            ('AmplifierHeadroom', amplifier_headroom_repository),
         )
         for label, repository in repositories:
             if repository is None:
@@ -319,6 +325,47 @@ class CadTopologyComparisonRepository:
                 or evaluation.scene_content_hash != spec.baseline_scene_content_hash
             ):
                 raise ValueError('bundle DirectLevelEvaluation variant/baseline mismatch')
+            return
+
+        if ref.authority_kind == 'amplifier_headroom_evaluation':
+            if self.amplifier_headroom_repository is None:
+                self._resolve_external_ref(ref)
+                return
+            evaluation = self.amplifier_headroom_repository.resolve_evaluation_exact(
+                ref.authority_id,
+                evaluation_sha256=ref.semantic_sha256,
+                document_id=spec.document_id,
+                scene_revision_id=spec.baseline_scene_revision_id,
+                scene_content_hash=spec.baseline_scene_content_hash,
+                variant_id=bundle.variant_id,
+                variant_sha256=bundle.variant_sha256,
+            )
+            if evaluation is None:
+                raise ValueError('bundle PlaybackChainEvaluation does not exist')
+            resolved = amplifier_headroom_evaluation_ref(evaluation)
+            if resolved != ref:
+                raise ValueError(
+                    'bundle PlaybackChainEvaluation exact authority mismatch'
+                )
+            canonical_vector = amplifier_headroom_objective_vector(evaluation)
+            for binding in bundle.objective_evidence:
+                if (
+                    binding.source_authority_kind != ref.authority_kind
+                    or binding.source_authority_id != ref.authority_id
+                    or binding.source_semantic_sha256 != ref.semantic_sha256
+                ):
+                    continue
+                try:
+                    expected_metric = canonical_vector.metric(binding.objective_id)
+                    actual_metric = bundle.objective_vector.metric(binding.objective_id)
+                except KeyError as exc:
+                    raise ValueError(
+                        'bundle PlaybackChainEvaluation objective evidence is not canonical'
+                    ) from exc
+                if actual_metric != expected_metric:
+                    raise ValueError(
+                        'bundle PlaybackChainEvaluation objective metric mismatch'
+                    )
             return
 
         if ref.authority_kind == 'standards_evaluation':

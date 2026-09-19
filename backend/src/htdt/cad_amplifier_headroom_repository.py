@@ -561,6 +561,45 @@ class CadAmplifierHeadroomRepository:
             raise ValueError('persisted playback-chain evaluation scenario mismatch')
         return evaluation
 
+    def resolve_evaluation_exact(
+        self,
+        evaluation_id: str,
+        *,
+        evaluation_sha256: str,
+        document_id: str,
+        scene_revision_id: str,
+        scene_content_hash: str,
+        variant_id: str,
+        variant_sha256: str,
+    ) -> PlaybackChainEvaluation | None:
+        """Resolve one evaluation and revalidate its exact comparison binding.
+
+        get_evaluation first reopens the persisted PlaybackChainScenario and
+        revalidates its source EquipmentDefinition, amplifier capability,
+        optional speaker load, and routing authority. This helper then pins the
+        comparison-owned SceneRevision/SystemVariant identity and evaluation
+        hash without introducing a second playback-chain model.
+        """
+
+        evaluation = self.get_evaluation(evaluation_id)
+        if evaluation is None:
+            return None
+        if evaluation.evaluation_sha256 != evaluation_sha256:
+            raise ValueError('playback-chain evaluation exact hash mismatch')
+        scenario = evaluation.scenario
+        if (
+            scenario.document_id != document_id
+            or scenario.scene_revision_id != scene_revision_id
+            or scenario.scene_content_hash != scene_content_hash
+        ):
+            raise ValueError('playback-chain evaluation baseline authority mismatch')
+        if (
+            scenario.variant_id != variant_id
+            or scenario.variant_sha256 != variant_sha256
+        ):
+            raise ValueError('playback-chain evaluation SystemVariant authority mismatch')
+        return evaluation
+
     def list_evaluations_for_variant(
         self,
         variant_id: str,
