@@ -197,6 +197,7 @@ def _dsp_variables() -> tuple[JointDspVariable, ...]:
             maximum=12.0,
             step=0.5,
             required_measurement_claim='magnitude_response',
+            required_band_hz=(20.0, 20000.0),
         ),
         JointDspVariable(
             variable_id='dsp:peq-gain',
@@ -207,6 +208,7 @@ def _dsp_variables() -> tuple[JointDspVariable, ...]:
             maximum=12.0,
             step=0.5,
             required_measurement_claim='magnitude_response',
+            required_band_hz=(20.0, 20000.0),
         ),
         JointDspVariable(
             variable_id='dsp:delay',
