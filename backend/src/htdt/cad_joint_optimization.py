@@ -14,7 +14,10 @@ from .cad_calibration import (
     evaluate_calibration_support,
 )
 from .cad_extended_search import CadExtendedSearchSpec
-from .cad_measurement_quality import CadMeasurementQualityReport
+from .cad_measurement_quality import (
+    CadMeasurementQualityReport,
+    gate_measurement_claim,
+)
 from .cad_repository import SceneRevision
 from .cad_search_models import CadSearchSpec
 from .cad_system_variant import SystemVariant
@@ -135,6 +138,7 @@ class JointDspVariable(BaseModel):
         'common_timing',
         'polarity',
     ]
+    required_band_hz: tuple[float, float] | None = None
 
     @model_validator(mode='after')
     def valid_variable(self) -> 'JointDspVariable':
@@ -148,6 +152,23 @@ class JointDspVariable(BaseModel):
         if self.required_measurement_claim != expected_claim:
             raise ValueError(
                 f'{self.parameter} requires {expected_claim} measurement authority'
+            )
+        if expected_claim == 'magnitude_response':
+            if self.required_band_hz is None:
+                raise ValueError(
+                    f'{self.parameter} requires an explicit magnitude capability band'
+                )
+            low, high = self.required_band_hz
+            if (
+                not isfinite(float(low))
+                or not isfinite(float(high))
+                or low <= 0.0
+                or high <= low
+            ):
+                raise ValueError('DSP required magnitude band is invalid')
+        elif self.required_band_hz is not None:
+            raise ValueError(
+                'timing/polarity DSP variables must not carry a magnitude band'
             )
 
         if self.parameter.startswith('peq_'):
@@ -869,6 +890,35 @@ def _device_resolution_reasons(plan: CadCalibrationPlan) -> tuple[str, ...]:
     return tuple(dict.fromkeys(reasons))
 
 
+def _decision_capability_reasons(
+    *,
+    spec: JointOptimizationSpec,
+    decisions: Sequence[JointDecisionValue],
+    quality_report: CadMeasurementQualityReport,
+) -> tuple[str, ...]:
+    dsp_variables = {item.variable_id: item for item in spec.dsp_variables}
+    reasons: list[str] = []
+    for decision in decisions:
+        if decision.domain != 'dsp':
+            continue
+        variable = dsp_variables[decision.variable_id]
+        result = gate_measurement_claim(
+            quality_report,
+            variable.required_measurement_claim,
+            required_band_hz=(
+                variable.required_band_hz
+                if variable.required_measurement_claim == 'magnitude_response'
+                else None
+            ),
+        )
+        if result.decision != 'ALLOWED':
+            reasons.append(
+                f'{variable.variable_id}: {variable.required_measurement_claim}: '
+                f'{result.decision}: ' + '; '.join(result.reasons)
+            )
+    return tuple(dict.fromkeys(reasons))
+
+
 def _validate_dsp_candidate_authority(
     *,
     spec: JointOptimizationSpec,
@@ -999,12 +1049,18 @@ def build_joint_candidate(
             == spec.dsp_authority.base_calibration_plan_sha256
         ):
             raise ValueError('DSP decision candidate cannot reuse unchanged base CalibrationPlan')
-        blocked_reasons = _validate_dsp_candidate_authority(
+        support_reasons = list(_validate_dsp_candidate_authority(
             spec=spec,
             physical_variant=physical_system_variant,
             calibration_plan=calibration_plan,
             quality_report=measurement_quality_report,
-        )
+        ))
+        support_reasons.extend(_decision_capability_reasons(
+            spec=spec,
+            decisions=ordered,
+            quality_report=measurement_quality_report,
+        ))
+        blocked_reasons = tuple(dict.fromkeys(support_reasons))
         calibration_ref = JointCalibrationCandidateRef(
             plan_id=calibration_plan.plan_id,
             plan_semantic_sha256=calibration_plan.plan_semantic_sha256,
