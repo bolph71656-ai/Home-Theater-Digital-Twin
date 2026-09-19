@@ -207,3 +207,12 @@ Reportはexact Measurement/Dataset hash、raw asset SHA-256、SceneRevision/cont
 downstreamは単一quality scoreではなくclaim別 `ALLOWED | BLOCKED | UNKNOWN` を消費する。FR-onlyはmagnitude表示を維持する一方、phase/arrival/decay/common timing/calibrated response/repeatability/polarityを証拠なしに開放しない。`calibrated_response` はno-clipping、SNR、usable band、calibration provenance、AcquisitionContextを要求する。要求帯域があるconsumerは明示usable-band evidenceも満たす必要がある。
 
 retakeは別Measurementとして保存し、append-only lineageでsupersedesとselected measurementを記録する。旧Measurement/Dataset/Reportは保持し、O50/O60のcalibration/holdout assignmentをretakeへ暗黙転送しない。
+
+
+## 10. CalibrationPlan と re-measure loop（Issue #173）
+
+validated measurement capabilityの範囲だけをCalibrationPlanへ渡す。magnitude系のtarget/gain/crossover/PEQはrequired-band付き`magnitude_response` gate、absolute delayは`common_timing`、polarity inversionは`polarity`を要求する。phase配列だけではcommon timingを開かず、magnitude-only measurementからphase correctionを生成しない。初期authorityではcoherent inter-channel phase correctionが未成立のためall-pass correctionは明示unsupported。
+
+Planはdevice-neutralなchannel/role/source entity/physical output mapping、sample rate、gain、delay、polarity、crossover、ordered PEQ、target curve normalization、device constraintを保持する。generic biquad exportではrequested planと量子化後actual settingsを別hashで保存し、filter countやboost/cut超過をsilent clip/omissionしない。
+
+export、user-applied、remeasured、validatedは別のappend-only lifecycle stateであり、export操作だけでは実機適用・as-built・validatedにならない。再測定はVerificationMeasurementPlanでexact exported settings、scene/system、measurement point、routing、reference level、required capability、before/after Measurement IDを固定する。詳細は[CalibrationPlan authority](CALIBRATION_PLAN.md)。
