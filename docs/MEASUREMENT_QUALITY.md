@@ -39,6 +39,8 @@ Changing a threshold/profile creates another report. Existing reports are append
 
 The report has independent checks for clipping, noise/SNR, usable frequency band, timing reference, polarity, IR window/truncation, calibration provenance, and repeatability.
 
+Thresholds are never invented by the evaluator. SNR, polarity-confidence, and repeatability thresholds are optional profile fields; when the relevant evidence exists but its threshold is not configured, that check is `NOT_EVALUATED`, never `PASS`.
+
 The evidence contract is explicit rather than inferred from FR samples:
 
 | Quality item | Required evidence / acquisition method | Unit / scope | Profile / threshold | Stored reason | Downstream claim |
