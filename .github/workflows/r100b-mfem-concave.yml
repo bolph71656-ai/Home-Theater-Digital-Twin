@@ -49,7 +49,7 @@ jobs:
           $build = Join-Path $env:RUNNER_TEMP 'mfem-r100b-concave-build'
           $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
-          cmake -S benchmarks\acoustics\mfem_probe -B $build -A x64 -DHTDT_MFEM_SOURCE_DIR="$env:MFEM_ROOT"
+          cmake -S benchmarks\acoustics\mfem_probe -B $build -A x64 -DHTDT_MFEM_SOURCE_DIR="$env:MFEM_ROOT" -DMFEM_USE_EXCEPTIONS=ON
           if ($LASTEXITCODE -ne 0) {
             $timer.Stop()
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
