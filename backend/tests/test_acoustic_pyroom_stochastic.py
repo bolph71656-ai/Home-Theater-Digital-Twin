@@ -49,13 +49,15 @@ def _raw(*, offsets: tuple[float, float, float] = (0.08, 0.02, 0.0)):
     seed_deltas = (-0.01, -0.005, 0.005, 0.01)
     observations: list[PyroomStochasticObservation] = []
 
-    for budget, offset in zip(authority.ray_budgets, offsets):
+    for level_index, (budget, offset) in enumerate(zip(authority.ray_budgets, offsets)):
         for seed, seed_delta in zip(authority.independent_seeds, seed_deltas):
             observations.append(
                 PyroomStochasticObservation(
                     observation_id=f'independent-seed-{seed}-rays-{budget}',
                     seed=seed,
                     ray_budget=budget,
+                    receiver_radius_m=authority.receiver_radius_sequence_m[level_index],
+                    histogram_bin_size_s=authority.histogram_bin_size_sequence_s[level_index],
                     replicate=0,
                     status='ok',
                     sample_keys=keys,
@@ -83,6 +85,8 @@ def _raw(*, offsets: tuple[float, float, float] = (0.08, 0.02, 0.0)):
                 observation_id=f'replay-{replicate}',
                 seed=fixture.random_seed,
                 ray_budget=authority.ray_budgets[-1],
+                receiver_radius_m=authority.receiver_radius_sequence_m[-1],
+                histogram_bin_size_s=authority.histogram_bin_size_sequence_s[-1],
                 replicate=replicate,
                 status='ok',
                 sample_keys=keys,
