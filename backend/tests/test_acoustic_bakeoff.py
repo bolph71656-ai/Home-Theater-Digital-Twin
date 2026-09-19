@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from htdt.acoustic_bakeoff import (
+    BakeoffAdoptionProfile,
     BakeoffCandidateManifest,
     BakeoffDecision,
     BakeoffFixtureEvidence,
@@ -13,6 +14,7 @@ from htdt.acoustic_bakeoff import (
     BakeoffPlatform,
     BakeoffRun,
     applicable_fixture_ids,
+    load_bakeoff_adoption_profile,
     load_bakeoff_candidate_manifest,
     preflight_summary,
     validate_bakeoff_decision,
@@ -24,6 +26,7 @@ from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
 ROOT = Path(__file__).resolve().parents[2]
 R100A_PATH = ROOT / 'benchmarks' / 'acoustics' / 'r100a_manifest.json'
 CANDIDATE_PATH = ROOT / 'benchmarks' / 'acoustics' / 'r100b_candidates.json'
+ADOPTION_PATH = ROOT / 'benchmarks' / 'acoustics' / 'r100b_wave_adoption_profile.json'
 
 
 def _authorities():
@@ -31,6 +34,10 @@ def _authorities():
         load_acoustic_benchmark_manifest(R100A_PATH),
         load_bakeoff_candidate_manifest(CANDIDATE_PATH),
     )
+
+
+def _adoption_profile() -> BakeoffAdoptionProfile:
+    return load_bakeoff_adoption_profile(ADOPTION_PATH)
 
 
 def _candidate(candidates: BakeoffCandidateManifest, candidate_id: str):
@@ -119,11 +126,17 @@ def test_candidate_manifest_is_version_pinned_and_covers_primary_roles() -> None
     assert pyroom.source_ref == 'v0.10.1'
     assert pyroom.evaluation_scope == 'reference_only'
 
-    summary = preflight_summary(benchmark, candidates)
+    profile = _adoption_profile()
+    summary = preflight_summary(benchmark, candidates, profile)
     assert set(summary['uncovered_fixture_ids']) == {
         'wave-portal-split-room-v1',
         'hybrid-overlap-continuity-v1',
     }
+    assert summary['adoption_profile']['profile_id'] == profile.profile_id
+    pffdtd_summary = next(
+        item for item in summary['candidates'] if item['candidate_id'] == pffdtd.candidate_id
+    )
+    assert pffdtd_summary['adoption_missing_capabilities'] == ['portal_continuity']
 
 
 def test_probe_capabilities_are_not_accepted_capabilities() -> None:
@@ -187,21 +200,51 @@ def test_candidate_cannot_execute_fixture_without_probe_capability() -> None:
         validate_bakeoff_run(benchmark, candidates, altered)
 
 
-def test_production_selection_is_blocked_until_hard_gates_and_fixtures_pass() -> None:
+def test_production_selection_is_blocked_when_required_capability_is_omitted() -> None:
     benchmark, candidates = _authorities()
+    profile = _adoption_profile()
     pffdtd = _candidate(candidates, 'pffdtd-main-aa319f6')
-    applicable = applicable_fixture_ids(benchmark, pffdtd)
-    run = _run(pffdtd.candidate_id, applicable)
+    run = _run(pffdtd.candidate_id, applicable_fixture_ids(benchmark, pffdtd))
 
     decision = BakeoffDecision(
         status='selected',
         selected_candidate_id=pffdtd.candidate_id,
         accepted_run_id=run.run_id,
-        rationale='schema guard test',
+        adoption_profile_id=profile.profile_id,
+        adoption_profile_sha256=profile.semantic_hash(),
+        rationale='portal capability must not disappear from production adoption',
     )
 
-    with pytest.raises(ValueError, match='hard gates'):
-        validate_bakeoff_decision(benchmark, candidates, (run,), decision)
+    with pytest.raises(ValueError, match='missing required capabilities.*portal_continuity'):
+        validate_bakeoff_decision(
+            benchmark, candidates, (run,), decision, profile
+        )
+
+
+def test_selected_decision_requires_current_adoption_profile_binding() -> None:
+    profile = _adoption_profile()
+
+    with pytest.raises(ValueError, match='exact adoption profile binding'):
+        BakeoffDecision(
+            status='selected',
+            selected_candidate_id='candidate',
+            accepted_run_id='run',
+            rationale='missing binding',
+        )
+
+    decision = BakeoffDecision(
+        status='selected',
+        selected_candidate_id='candidate',
+        accepted_run_id='run',
+        adoption_profile_id=profile.profile_id,
+        adoption_profile_sha256='0' * 64,
+        rationale='stale profile binding',
+    )
+    benchmark, candidates = _authorities()
+    with pytest.raises(ValueError, match='profile binding is stale'):
+        validate_bakeoff_decision(
+            benchmark, candidates, (), decision, profile
+        )
 
 
 def test_reference_only_candidate_cannot_be_selected_for_production() -> None:
@@ -209,15 +252,191 @@ def test_reference_only_candidate_cannot_be_selected_for_production() -> None:
     pyroom = _candidate(candidates, 'pyroomacoustics-v0.10.1-f02b01d')
     run = _run(pyroom.candidate_id, applicable_fixture_ids(benchmark, pyroom))
 
+    profile = _adoption_profile()
     decision = BakeoffDecision(
         status='selected',
         selected_candidate_id=pyroom.candidate_id,
         accepted_run_id=run.run_id,
+        adoption_profile_id=profile.profile_id,
+        adoption_profile_sha256=profile.semantic_hash(),
         rationale='schema guard test',
     )
 
     with pytest.raises(ValueError, match='reference-only'):
-        validate_bakeoff_decision(benchmark, candidates, (run,), decision)
+        validate_bakeoff_decision(
+            benchmark, candidates, (run,), decision, profile
+        )
+
+
+def _passing_wave_fixture(fixture) -> BakeoffFixtureEvidence:
+    observables = []
+    for expected in fixture.observables:
+        kwargs = {
+            'observable_id': expected.observable_id,
+            'status': 'pass',
+            'summary': 'synthetic adoption-gate coverage evidence',
+        }
+        if expected.acceptance_relation == 'must_differ_from_peer':
+            kwargs['difference_from_peer'] = float(
+                expected.tolerance.minimum_difference or 0.001
+            )
+        elif expected.kind == 'transfer_phase_deg':
+            kwargs['phase_error_deg'] = 0.0
+        elif expected.kind == 'complex_reflection_coefficient':
+            kwargs.update(
+                absolute_error=0.0,
+                relative_error=0.0,
+                phase_error_deg=0.0,
+            )
+        else:
+            if expected.tolerance.absolute is not None:
+                kwargs['absolute_error'] = 0.0
+            if expected.tolerance.relative is not None:
+                kwargs['relative_error'] = 0.0
+            if expected.tolerance.phase_deg is not None:
+                kwargs['phase_error_deg'] = 0.0
+            if expected.tolerance.statistical_stddev_max is not None:
+                kwargs['statistical_stddev'] = 0.0
+        observables.append(BakeoffObservableEvidence(**kwargs))
+
+    return BakeoffFixtureEvidence(
+        fixture_id=fixture.fixture_id,
+        status='pass',
+        evidence_ref=f'artifact:test/{fixture.fixture_id}.json',
+        adapter_id='synthetic-adoption-gate',
+        adapter_version='1',
+        backend_version='synthetic',
+        precision='float64',
+        compile_s=0.1,
+        solve_s=0.1,
+        postprocess_s=0.1,
+        peak_ram_mb=1.0,
+        disk_mb=1.0,
+        output_mb=1.0,
+        observables=tuple(observables),
+    )
+
+
+def _passing_gates(categories: list[str]) -> tuple[BakeoffHardGateEvidence, ...]:
+    return tuple(
+        BakeoffHardGateEvidence(
+            category=category,
+            status='pass',
+            evidence_ref=f'artifact:test/gate-{category}.json',
+            summary='synthetic adoption-gate PASS',
+        )
+        for category in categories
+    )
+
+
+def _fully_covered_wave_authority():
+    benchmark, candidates = _authorities()
+    profile = _adoption_profile()
+    base = _candidate(candidates, 'pffdtd-main-aa319f6')
+    upgraded = base.model_copy(
+        update={
+            'probe_capabilities': tuple(
+                sorted(
+                    set(base.probe_capabilities)
+                    | set(profile.required_capabilities)
+                )
+            )
+        }
+    )
+    candidate_payload = candidates.model_dump(mode='python')
+    candidate_payload['candidates'] = [
+        upgraded.model_dump(mode='python')
+        if item['candidate_id'] == base.candidate_id
+        else item
+        for item in candidate_payload['candidates']
+    ]
+    upgraded_manifest = BakeoffCandidateManifest.model_validate(candidate_payload)
+
+    fixture_by_id = {item.fixture_id: item for item in benchmark.fixtures}
+    categories = [
+        'physics_correctness',
+        'cpu_baseline',
+        'windows_packaging',
+        'license_redistribution',
+        'required_capability',
+        'reproducible_authority',
+    ]
+    run = BakeoffRun(
+        run_id='synthetic-fully-covered-wave-run',
+        r100a_manifest_id=benchmark.manifest_id,
+        r100a_semantic_hash=benchmark.semantic_hash(),
+        candidate_manifest_hash=upgraded_manifest.semantic_hash(),
+        candidate_id=upgraded.candidate_id,
+        candidate_source_commit_sha=upgraded.source_commit_sha,
+        platform=BakeoffPlatform(
+            os='test',
+            architecture='x86_64',
+            python_version='3.12',
+            cpu='test',
+            logical_threads=4,
+            thread_budget=4,
+            gpu=None,
+            device_notes='synthetic adoption validator test',
+        ),
+        fixture_evidence=tuple(
+            _passing_wave_fixture(fixture_by_id[fixture_id])
+            for fixture_id in profile.required_fixture_ids
+        ),
+        hard_gates=_passing_gates(categories),
+    )
+    return benchmark, upgraded_manifest, profile, upgraded, run
+
+
+def test_fully_covered_shipping_wave_candidate_can_pass_adoption_gate() -> None:
+    benchmark, candidates, profile, candidate, run = _fully_covered_wave_authority()
+    decision = BakeoffDecision(
+        status='selected',
+        selected_candidate_id=candidate.candidate_id,
+        accepted_run_id=run.run_id,
+        adoption_profile_id=profile.profile_id,
+        adoption_profile_sha256=profile.semantic_hash(),
+        rationale='synthetic complete adoption evidence',
+    )
+
+    validate_bakeoff_decision(
+        benchmark, candidates, (run,), decision, profile
+    )
+
+
+def test_adoption_gate_rejects_missing_or_nonpassing_required_fixture() -> None:
+    benchmark, candidates, profile, candidate, run = _fully_covered_wave_authority()
+    decision = BakeoffDecision(
+        status='selected',
+        selected_candidate_id=candidate.candidate_id,
+        accepted_run_id=run.run_id,
+        adoption_profile_id=profile.profile_id,
+        adoption_profile_sha256=profile.semantic_hash(),
+        rationale='fixture completeness guard',
+    )
+
+    missing = run.model_copy(update={'fixture_evidence': run.fixture_evidence[:-1]})
+    with pytest.raises(ValueError, match='required adoption fixtures'):
+        validate_bakeoff_decision(
+            benchmark, candidates, (missing,), decision.model_copy(
+                update={'accepted_run_id': missing.run_id}
+            ), profile
+        )
+
+    blocked_items = list(run.fixture_evidence)
+    target = blocked_items[-1]
+    blocked_items[-1] = target.model_copy(
+        update={
+            'status': 'blocked',
+            'observables': (),
+            'diagnostics': ('synthetic blocked fixture',),
+        }
+    )
+    blocked = run.model_copy(update={'run_id': 'synthetic-blocked-wave-run', 'fixture_evidence': tuple(blocked_items)})
+    blocked_decision = decision.model_copy(update={'accepted_run_id': blocked.run_id})
+    with pytest.raises(ValueError, match='required adoption fixtures'):
+        validate_bakeoff_decision(
+            benchmark, candidates, (blocked,), blocked_decision, profile
+        )
 
 
 def _passing_geometric_evidence(*, direct_length_absolute_error: float = 0.0, solve_s: float = 1.0):
