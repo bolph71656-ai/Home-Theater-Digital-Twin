@@ -494,10 +494,6 @@ def validate_directivity_dataset_binding(
         raise ValueError(
             'DirectivityDataset domain does not match EquipmentDefinition directivity domain'
         )
-    if capability.provenance.source_sha256 != dataset.source_asset_sha256:
-        raise ValueError(
-            'EquipmentDefinition directivity provenance does not bind the dataset source asset'
-        )
     if capability.interpolation is None:
         raise ValueError(
             'EquipmentDefinition directivity interpolation provenance is missing'
