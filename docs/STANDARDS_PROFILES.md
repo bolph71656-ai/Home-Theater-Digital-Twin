@@ -1,0 +1,178 @@
+# StandardsProfile authority
+
+> Issue #170 / authority version `standards-profile-1` + `standards-evaluation-1`
+>
+> This document defines HTDT's standards/layout criterion authority. It does not turn a
+> standards document into physical truth, an acoustic prediction model, or an optimization
+> score.
+
+## Authority boundary
+
+`StandardsProfile` is immutable and versioned. Each criterion carries its own source
+publisher, document title/version, reference, quantity, unit, applicable domain, required
+inputs/capabilities, evidence requirement, comparison operator, boundary inclusivity, and
+numeric angle semantics.
+
+`StandardsEvaluation` binds the exact profile semantic hash to one exact
+`SceneRevision` and, when applicable, one exact `SystemVariant` semantic hash and an
+explicit set of target entity IDs. The repository re-validates those bindings before
+persistence. A newer profile creates a new evaluation linked by `reevaluation_of_id`; it
+never rewrites the historical profile or evaluation.
+
+The evaluator consumes explicit observations. It does **not** derive a missing physical
+quantity, infer a missing capability, or invent a tolerance. Missing required
+input/capability/evidence is `UNKNOWN`. A domain that does not apply is
+`NOT_APPLICABLE`. Those states are not aliases for `FAIL`.
+
+There is intentionally no aggregate compliance score. Criterion results are independent
+records:
+
+- `PASS`: the supplied observation satisfies the exact encoded rule.
+- `FAIL`: the supplied observation does not satisfy the exact encoded rule.
+- `UNKNOWN`: required input, capability, evidence, unit, or observed value is not
+  sufficient to make the comparison.
+- `NOT_APPLICABLE`: the criterion's declared domain does not apply, or the caller
+  explicitly marks the criterion not applicable.
+
+`predicted` and `measured` evidence remain distinct in the result. A predicted
+`PASS` is not renamed or promoted to a measurement-verified `PASS`.
+
+## Explicit hard-constraint interface
+
+Compliance is advisory by default. A `FAIL` does not remove a candidate or mutate an
+O30/O40/O90/O100 objective. Only criterion IDs explicitly supplied in
+`hard_constraint_ids` participate in `explicit_hard_constraint_gate()`.
+
+For a selected hard criterion, `FAIL` and `UNKNOWN` block downstream use. An
+unselected `FAIL` never blocks. `NOT_APPLICABLE` does not block. This is a separate
+gate; it is not a hidden Pareto objective or combined score.
+
+## Deterministic numeric semantics
+
+- JSON identity is canonicalized with sorted keys, UTF-8, compact separators, and
+  non-finite JSON numbers forbidden.
+- Profile semantic identity covers the exact criterion definitions and source provenance.
+- Evaluation identity covers the profile ID/version/hash, exact scene/variant/entity
+  binding, observations/evidence, selected hard-constraint criterion IDs, and optional
+  re-evaluation lineage.
+- Floating-point comparison uses the decimal string representation of the supplied finite
+  number. No epsilon is introduced.
+- Every lower/upper boundary records inclusive/exclusive semantics.
+- Angle rules explicitly select no wrap, signed `[-180, 180)`, or unsigned
+  `[0, 360)` normalization. Absolute-angle comparison is explicit.
+- `created_at_utc` is record metadata, not evaluation semantics; repeating the exact
+  profile + target + evidence yields the same deterministic evaluation ID/hash.
+
+## Built-in public-source profiles
+
+The built-in data live in `backend/src/htdt/cad_standards_profiles.py`; the evaluator is
+separate in `cad_standards.py`. Built-ins are deliberately incomplete where a public
+source does not provide an explicit pass/fail boundary that HTDT can encode without
+inventing one.
+
+### CEDIA/CTA-RP22 v1.2 — spatial/layout subset
+
+Source:
+
+- CEDIA / Consumer Technology Association, **CEDIA/CTA-RP22 Recommended Practice for
+  Immersive Audio Design**, v1.2, September 2023.
+- Public source:
+  <https://cedia.org/site/assets/files/6057/cedia-cta_rp22_v1_2_sept_2023.pdf>
+
+HTDT provides separate profile identities for Levels 1–4:
+`cedia-cta-rp22-spatial-level-{1..4}`, version `1.2-2023-09`.
+
+Encoded criteria:
+
+| Criterion ID | RP22 reference | Encoded rule |
+|---|---|---|
+| `rp22.p01.listener-boundary-distance` | Appendix A Parameter 1; §4.1.4 | listener-to-boundary distance strictly > 0.5 / 0.8 / 1.2 / 1.5 m for Levels 1/2/3/4 |
+| `rp22.p03.screen-speakers-outside-zone-count` | Appendix A Parameter 3; §5.5.4 | 0 screen-wall speakers outside recommended zones |
+| `rp22.p05.max-adjacent-surround-horizontal-angle` | Appendix A Parameter 5; §5.6.2.1 | max 80° / 60° / 50° for Levels 2/3/4; omitted for Level 1 where Appendix A is N/A |
+| `rp22.p07.wide-horizontal-median-deviation` | Appendix A Parameter 7; §5.7 | max absolute deviation 10° / 7° / 5° / 2° for Levels 1/2/3/4 |
+| `rp22.p08.upfiring-elevation-speakers-prohibited` | Appendix A Parameter 8; §5.8.2 | Levels 3/4 require `uses_upfiring_elevation_speakers == false`; Levels 1/2 are omitted because “allowed” is not a requirement to use them |
+| `rp22.p09.max-adjacent-upper-vertical-angle` | Appendix A Parameter 9; §5.8.2 | max 80° / 60° / 50° for Levels 2/3/4; omitted for Level 1 where Appendix A is N/A |
+| `rp22.p11.surround-wide-upper-outside-zone-count` | Appendix A Parameter 11; §5.9.3 | 0 speakers outside recommended zones for Levels 2/3/4; omitted for Level 1 where Appendix A is N/A |
+
+This is explicitly a **spatial/layout subset**, not an RP22 room certification. RP22
+contains additional criteria including acoustic performance/SPL-related requirements.
+Issue #170 does not implement O100D coverage/SPL/headroom objectives, and this profile
+must not imply those unimplemented criteria passed. Criteria that depend on recommended
+zones also require the explicit `rp22-recommended-zone-evaluation-v1` capability; without
+it they evaluate to `UNKNOWN`.
+
+### Dolby Atmos Home Theater 5.1.2 layout guidance
+
+Source:
+
+- Dolby Laboratories, **Dolby Atmos Home Theater Installation Guidelines**, R3.1,
+  13 December 2018.
+- Public source:
+  <https://www.dolby.com/siteassets/technologies/dolby-atmos/atmos-installation-guidelines-121318_r3.1.pdf>
+- Encoded reference: Figure 12, page 28, 5.1.2 speaker placement.
+
+Profile identity: `dolby-atmos-home-5.1.2-layout`, version
+`r3.1-2018-12-13`.
+
+Encoded azimuth ranges are 22°–30° absolute azimuth for front left/right and 90°–110°
+absolute azimuth for surround left/right. Endpoints are encoded as inclusive because the
+published figure presents those endpoints as the placement range. HTDT adds no tolerance
+outside that range.
+
+The profile intentionally does not infer top-speaker, elevation, room, or performance
+criteria not encoded by this profile.
+
+### DTS:X and Auro-3D
+
+No built-in DTS:X criterion is included in Issue #170 because an official public source
+with a sufficiently explicit criterion boundary/provenance was not established for this
+slice.
+
+The public **Auro-3D Home Theater Setup Guidelines** was reviewed, including its stated
+speaker target angles. Issue #170 does not encode those targets as pass/fail criteria
+because the reviewed public guidance does not establish the tolerance/boundary semantics
+needed to convert a target angle into a compliance interval without inference. HTDT does
+not invent that interval.
+
+Users can represent an independently sourced criterion through
+`build_user_standards_profile()`; every such criterion still requires explicit source
+metadata, version, reference, unit, rule, evidence requirements, and capability
+prerequisites.
+
+## Persistence and re-evaluation
+
+`CadStandardsRepository` stores profiles and evaluations append-only in the native CAD
+SQLite database, after the existing native schema compatibility gate. It reuses
+`SceneRepository` and `CadSystemVariantRepository`; it does not create a second
+scene/layout truth.
+
+Persistence checks include:
+
+1. the exact profile ID/version/hash exists;
+2. the evaluation re-generates identically through the current declared evaluator
+   authority;
+3. the exact SceneRevision ID/document/content hash exists;
+4. an optional SystemVariant ID/hash belongs to that exact baseline SceneRevision;
+5. bound entity IDs exist in the exact scene or materialized variant;
+6. an explicit re-evaluation points to a persisted historical evaluation with the exact
+   same target.
+
+Reopening reads the serialized immutable payload and re-runs its model hash validation.
+A duplicate semantic evaluation may carry a later attempted timestamp, but the repository
+returns the original stored record because timestamp metadata is not part of the
+deterministic criterion result identity.
+
+## Deferred / out of scope
+
+Issue #170 does not implement:
+
+- overall RP22 certification or a hidden total compliance score;
+- O100D coverage, SPL, headroom, worst-seat, or other acoustic objectives;
+- automatic conversion of criterion results into Pareto objectives;
+- automatic candidate deletion based on advisory `FAIL`;
+- GUI;
+- private/commercial document content that is not available in the cited public source;
+- inferred DTS:X/Auro-3D tolerances;
+- physical geometry/measurement derivation engines for every criterion. Those providers
+  must declare their own input/evidence capability before a criterion can move from
+  `UNKNOWN`.
