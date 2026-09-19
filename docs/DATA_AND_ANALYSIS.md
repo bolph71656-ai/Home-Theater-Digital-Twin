@@ -279,3 +279,14 @@ manifestにはスキーマ版、DBと原本のハッシュ、作成日時を記�
 v0.1からschema_versionを設け、将来の移行前にバックアップを作る。未知の新しい版は書込みせず説明を出す。移行失敗時に途中状態で開かない。
 
 測定の通常削除はアーカイブ扱いにし、比較・来歴が参照する原本を自動消去しない。完全削除とディスク清掃は必要になってから、参照確認付きの明示操作として追加する。
+
+
+## 10. MeasurementQualityReport の証拠契約（Issue #172）
+
+Measurementの旧 `quality_status` 等は既存import互換として保持するが、downstream claimを開く正本はimmutable `MeasurementQualityReport` のclaim別capabilityとする。Reportは既存native Measurement/Dataset/RawAsset/SceneRevisionを参照し、それらのauthorityを再実装しない。
+
+品質判定は一つのscoreへ縮約しない。clipping、SNR、usable band、timing、polarity、IR window/truncation、calibration provenance、repeatabilityを独立判定し、証拠不足を `UNKNOWN` または `NOT_EVALUATED` とする。SNR・polarity confidence・repeatabilityの閾値を暗黙defaultで捏造せず、profile未設定ならその項目は `NOT_EVALUATED` とする。`FAIL` は明示的に不適合な証拠がある場合だけ使用する。
+
+AcquisitionContextは既存設計上の別authorityである。Report側はID/hash/source-kind参照のみを保持し、存在しないContextを推測生成しない。source-kindがunknownの参照ではcontext依存claimを開放しない。phase配列の存在だけではcommon timingを成立させず、reference identity、clock/sample rate、delay correction等の明示証拠を要求する。calibrated responseはさらにno-clipping、SNR、usable band、calibration provenanceを要求する。
+
+retakeは別Measurementとして保持し、旧reportを上書きしない。supersedes/selected lineageはappend-onlyとし、O60のpreregistered calibration/holdout assignmentや既存validation evidenceを自動変更しない。詳細は[Measurement quality authority](MEASUREMENT_QUALITY.md)を参照。
