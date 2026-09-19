@@ -215,8 +215,12 @@ def _validate_fixture_contract(fixture) -> None:
     if len(fixture.observables) != 1:
         raise ValueError('PFFDTD convergence probe requires exactly one convergence observable')
     observable = fixture.observables[0]
-    if observable.kind != 'field_pressure_pa' or observable.acceptance_relation != 'monotonic_convergence':
-        raise ValueError('PFFDTD convergence probe received incompatible observable authority')
+    if (
+        observable.kind != 'complex_pressure_transfer_pa_per_m3_s'
+        or observable.unit != 'Pa/(m3/s)'
+        or observable.acceptance_relation != 'monotonic_convergence'
+    ):
+        raise ValueError('PFFDTD convergence probe received incompatible P/Q observable authority')
 
 
 def _prepare_engine(SimEngine, sim_dir: Path):
