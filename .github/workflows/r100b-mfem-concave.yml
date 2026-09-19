@@ -19,6 +19,7 @@ jobs:
       PYTHONUTF8: '1'
       MFEM_SHA: d964264cdb9a13e94a201b6c236c7721e0c8765f
       PROBE_OUTPUT: artifacts/r100b/mfem_concave_reference.json
+      HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +31,9 @@ jobs:
 
       - name: Install focused HTDT probe runtime
         run: python -m pip install -e ".\backend" psutil
+
+      - name: Preflight MFEM reference probe script
+        run: python -m py_compile scripts\\run_r100b_mfem_concave_probe.py
 
       - name: Checkout pinned MFEM source
         shell: pwsh
