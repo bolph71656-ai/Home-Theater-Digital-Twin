@@ -73,6 +73,21 @@ QUALITY_ALGORITHM_IDENTITY = {
     'missing_evidence': 'unknown_or_not_evaluated_never_pass',
     'phase_does_not_imply_common_timing': True,
     'fr_does_not_imply_acquisition_quality': True,
+    'common_timing_requires': [
+        'authoritative_acquisition_context',
+        'timing_reference',
+    ],
+    'arrival_time_requires': ['impulse_response', 'common_timing', 'ir_window'],
+    'decay_requires': ['impulse_response', 'ir_window'],
+    'calibrated_response_requires': [
+        'authoritative_acquisition_context',
+        'clipping:PASS',
+        'noise_snr:PASS',
+        'usable_frequency_band:PASS',
+        'calibration:PASS',
+    ],
+    'polarity_requires': ['polarity:PASS'],
+    'repeatability_requires': ['repeatability:PASS'],
 }
 QUALITY_ALGORITHM_SHA256 = _hash(QUALITY_ALGORITHM_IDENTITY)
 
