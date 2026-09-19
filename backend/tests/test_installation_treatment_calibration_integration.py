@@ -739,11 +739,12 @@ def test_calibration_scene_variant_export_verification_and_lifecycle_mismatches_
             calibration_lifecycle_events=(other_events[0],),
         )
 
-    forged_export_event = other_events[1].model_copy(
-        update={
-            'calibration_plan_id': plan.plan_id,
-            'calibration_plan_semantic_sha256': plan.plan_semantic_sha256,
-        }
+    wrong_export_event = build_calibration_lifecycle_event(
+        plan=plan,
+        state='exported',
+        exported_settings=other_export,
+        event_id='cal-plan-1-event-wrong-export',
+        created_at_utc='2026-09-19T13:30:00+00:00',
     )
     with pytest.raises(ValueError, match='calibration lifecycle event export hash mismatch'):
         build_installation_output(
@@ -751,7 +752,7 @@ def test_calibration_scene_variant_export_verification_and_lifecycle_mismatches_
             variant=variant,
             calibration_plan=plan,
             calibration_export_snapshot=export,
-            calibration_lifecycle_events=(events[0], forged_export_event),
+            calibration_lifecycle_events=(events[0], wrong_export_event),
         )
 
 
