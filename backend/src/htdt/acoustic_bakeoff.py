@@ -120,6 +120,45 @@ class BakeoffCandidateManifest(BaseModel):
         return sha256(self.canonical_json().encode('utf-8')).hexdigest()
 
 
+class BakeoffAdoptionProfile(BaseModel):
+    """Fail-closed R100B product-adoption requirements kept separate from run hashes."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: Literal['r100b-adoption-1'] = 'r100b-adoption-1'
+    profile_id: str = Field(min_length=1)
+    selection_scope: Literal['low_band_wave_solver'] = 'low_band_wave_solver'
+    allowed_candidate_roles: tuple[CandidateRole, ...] = Field(min_length=1)
+    required_capabilities: tuple[BenchmarkCapability, ...] = Field(min_length=1)
+    required_fixture_ids: tuple[str, ...] = Field(min_length=1)
+    deferred_fixture_ids: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    @model_validator(mode='after')
+    def valid_profile(self) -> 'BakeoffAdoptionProfile':
+        if len(self.allowed_candidate_roles) != len(set(self.allowed_candidate_roles)):
+            raise ValueError('adoption profile candidate roles must be unique')
+        if len(self.required_capabilities) != len(set(self.required_capabilities)):
+            raise ValueError('adoption profile required capabilities must be unique')
+        if len(self.required_fixture_ids) != len(set(self.required_fixture_ids)):
+            raise ValueError('adoption profile required fixture ids must be unique')
+        if len(self.deferred_fixture_ids) != len(set(self.deferred_fixture_ids)):
+            raise ValueError('adoption profile deferred fixture ids must be unique')
+        overlap = set(self.required_fixture_ids) & set(self.deferred_fixture_ids)
+        if overlap:
+            raise ValueError(
+                f'adoption profile fixtures cannot be both required and deferred: {sorted(overlap)}'
+            )
+        if 'geometric_reference' in self.allowed_candidate_roles:
+            raise ValueError('low-band wave adoption cannot select geometric_reference role')
+        return self
+
+    def canonical_json(self) -> str:
+        return canonical_benchmark_json(self.model_dump(mode='json'))
+
+    def semantic_hash(self) -> str:
+        return sha256(self.canonical_json().encode('utf-8')).hexdigest()
+
 class BakeoffObservableEvidence(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -265,6 +304,11 @@ class BakeoffDecision(BaseModel):
     status: DecisionStatus = 'open'
     selected_candidate_id: str | None = None
     accepted_run_id: str | None = None
+    adoption_profile_id: str | None = Field(default=None, min_length=1)
+    adoption_profile_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
     rationale: str = Field(min_length=1)
 
     @model_validator(mode='after')
@@ -272,14 +316,27 @@ class BakeoffDecision(BaseModel):
         if self.status == 'selected':
             if not self.selected_candidate_id or not self.accepted_run_id:
                 raise ValueError('selected decision requires candidate and accepted run ids')
-        elif self.selected_candidate_id is not None or self.accepted_run_id is not None:
-            raise ValueError('non-selected decision must not name an accepted candidate/run')
+            if not self.adoption_profile_id or not self.adoption_profile_sha256:
+                raise ValueError('selected decision requires exact adoption profile binding')
+        elif (
+            self.selected_candidate_id is not None
+            or self.accepted_run_id is not None
+            or self.adoption_profile_id is not None
+            or self.adoption_profile_sha256 is not None
+        ):
+            raise ValueError(
+                'non-selected decision must not name an accepted candidate/run/adoption profile'
+            )
         return self
+
 
 
 def load_bakeoff_candidate_manifest(path: str | Path) -> BakeoffCandidateManifest:
     return BakeoffCandidateManifest.model_validate_json(Path(path).read_text(encoding='utf-8'))
 
+
+def load_bakeoff_adoption_profile(path: str | Path) -> BakeoffAdoptionProfile:
+    return BakeoffAdoptionProfile.model_validate_json(Path(path).read_text(encoding='utf-8'))
 
 def load_bakeoff_run(path: str | Path) -> BakeoffRun:
     return BakeoffRun.model_validate_json(Path(path).read_text(encoding='utf-8'))
@@ -296,6 +353,35 @@ def applicable_fixture_ids(
         if set(fixture.required_capabilities).issubset(capabilities)
     )
 
+
+def validate_bakeoff_adoption_profile(
+    benchmark: AcousticBenchmarkManifest,
+    profile: BakeoffAdoptionProfile,
+) -> None:
+    fixture_by_id = {item.fixture_id: item for item in benchmark.fixtures}
+    referenced = set(profile.required_fixture_ids) | set(profile.deferred_fixture_ids)
+    benchmark_fixture_ids = set(fixture_by_id)
+    unknown = sorted(referenced - benchmark_fixture_ids)
+    if unknown:
+        raise ValueError(f'adoption profile references unknown fixtures: {unknown}')
+    unclassified = sorted(benchmark_fixture_ids - referenced)
+    if unclassified:
+        raise ValueError(
+            f'adoption profile leaves benchmark fixtures unclassified: {unclassified}'
+        )
+
+    required_capabilities = set(profile.required_capabilities)
+    fixture_capabilities = set().union(
+        *(
+            set(fixture_by_id[fixture_id].required_capabilities)
+            for fixture_id in profile.required_fixture_ids
+        )
+    )
+    missing = sorted(fixture_capabilities - required_capabilities)
+    if missing:
+        raise ValueError(
+            f'adoption profile required capabilities do not cover required fixtures: {missing}'
+        )
 
 def _required_gate_categories(
     benchmark: AcousticBenchmarkManifest,
@@ -470,9 +556,18 @@ def validate_bakeoff_decision(
     candidates: BakeoffCandidateManifest,
     runs: tuple[BakeoffRun, ...],
     decision: BakeoffDecision,
+    adoption_profile: BakeoffAdoptionProfile | None = None,
 ) -> None:
     if decision.status != 'selected':
         return
+    if adoption_profile is None:
+        raise ValueError('production selection requires an explicit adoption profile')
+    validate_bakeoff_adoption_profile(benchmark, adoption_profile)
+    if (
+        decision.adoption_profile_id != adoption_profile.profile_id
+        or decision.adoption_profile_sha256 != adoption_profile.semantic_hash()
+    ):
+        raise ValueError('selected decision adoption profile binding is stale or mismatched')
 
     candidate = next(
         (item for item in candidates.candidates if item.candidate_id == decision.selected_candidate_id),
@@ -482,6 +577,19 @@ def validate_bakeoff_decision(
         raise ValueError('selected bakeoff candidate is unknown')
     if candidate.evaluation_scope != 'shipping_candidate':
         raise ValueError('reference-only candidate cannot be selected for the production stack')
+    if candidate.role not in set(adoption_profile.allowed_candidate_roles):
+        raise ValueError(
+            f'selected candidate role {candidate.role} is outside adoption profile'
+        )
+
+    missing_capabilities = sorted(
+        set(adoption_profile.required_capabilities) - set(candidate.probe_capabilities)
+    )
+    if missing_capabilities:
+        raise ValueError(
+            f'production selection is blocked by missing required capabilities: '
+            f'{missing_capabilities}'
+        )
 
     run = next((item for item in runs if item.run_id == decision.accepted_run_id), None)
     if run is None or run.candidate_id != candidate.candidate_id:
@@ -490,28 +598,38 @@ def validate_bakeoff_decision(
 
     required_gates = _required_gate_categories(benchmark, candidate)
     gate_by_category = {item.category: item.status for item in run.hard_gates}
-    failed = sorted(category for category in required_gates if gate_by_category.get(category) != 'pass')
+    failed = sorted(
+        category for category in required_gates if gate_by_category.get(category) != 'pass'
+    )
     if failed:
         raise ValueError(f'production selection is blocked by hard gates: {failed}')
 
-    applicable = set(applicable_fixture_ids(benchmark, candidate))
     evidence_by_fixture = {item.fixture_id: item.status for item in run.fixture_evidence}
     incomplete = sorted(
-        fixture_id for fixture_id in applicable if evidence_by_fixture.get(fixture_id) != 'pass'
+        fixture_id
+        for fixture_id in adoption_profile.required_fixture_ids
+        if evidence_by_fixture.get(fixture_id) != 'pass'
     )
     if incomplete:
-        raise ValueError(f'production selection is blocked by applicable fixtures: {incomplete}')
+        raise ValueError(
+            f'production selection is blocked by required adoption fixtures: {incomplete}'
+        )
+
 
 
 def preflight_summary(
     benchmark: AcousticBenchmarkManifest,
     candidates: BakeoffCandidateManifest,
+    adoption_profile: BakeoffAdoptionProfile | None = None,
 ) -> dict[str, object]:
     coverage = {
         candidate.candidate_id: set(applicable_fixture_ids(benchmark, candidate))
         for candidate in candidates.candidates
     }
     covered = set().union(*coverage.values()) if coverage else set()
+    if adoption_profile is not None:
+        validate_bakeoff_adoption_profile(benchmark, adoption_profile)
+
     return {
         'r100a_manifest_id': benchmark.manifest_id,
         'r100a_semantic_hash': benchmark.semantic_hash(),
@@ -519,6 +637,17 @@ def preflight_summary(
         'candidate_manifest_hash': candidates.semantic_hash(),
         'uncovered_fixture_ids': sorted(
             fixture.fixture_id for fixture in benchmark.fixtures if fixture.fixture_id not in covered
+        ),
+        'adoption_profile': (
+            {
+                'profile_id': adoption_profile.profile_id,
+                'profile_sha256': adoption_profile.semantic_hash(),
+                'selection_scope': adoption_profile.selection_scope,
+                'required_fixture_ids': list(adoption_profile.required_fixture_ids),
+                'required_capabilities': list(adoption_profile.required_capabilities),
+            }
+            if adoption_profile is not None
+            else None
         ),
         'candidates': [
             {
@@ -529,10 +658,20 @@ def preflight_summary(
                 'source_commit_sha': candidate.source_commit_sha,
                 'applicable_fixture_ids': list(applicable_fixture_ids(benchmark, candidate)),
                 'required_gate_categories': sorted(_required_gate_categories(benchmark, candidate)),
+                'adoption_missing_capabilities': (
+                    sorted(
+                        set(adoption_profile.required_capabilities)
+                        - set(candidate.probe_capabilities)
+                    )
+                    if adoption_profile is not None
+                    and candidate.role in set(adoption_profile.allowed_candidate_roles)
+                    else []
+                ),
             }
             for candidate in candidates.candidates
         ],
     }
+
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -542,6 +681,7 @@ def _build_parser() -> argparse.ArgumentParser:
     preflight = subparsers.add_parser('preflight', help='validate authorities and print candidate coverage')
     preflight.add_argument('--manifest', required=True, type=Path)
     preflight.add_argument('--candidates', required=True, type=Path)
+    preflight.add_argument('--adoption-profile', type=Path)
 
     validate = subparsers.add_parser('validate-run', help='validate a recorded R100B evidence run')
     validate.add_argument('--manifest', required=True, type=Path)
@@ -556,7 +696,18 @@ def main(argv: list[str] | None = None) -> int:
     candidates = load_bakeoff_candidate_manifest(args.candidates)
 
     if args.command == 'preflight':
-        print(json.dumps(preflight_summary(benchmark, candidates), indent=2, sort_keys=True))
+        adoption_profile = (
+            load_bakeoff_adoption_profile(args.adoption_profile)
+            if args.adoption_profile is not None
+            else None
+        )
+        print(
+            json.dumps(
+                preflight_summary(benchmark, candidates, adoption_profile),
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
     run = load_bakeoff_run(args.run)

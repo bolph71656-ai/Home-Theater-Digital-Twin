@@ -195,6 +195,25 @@ For PFFDTD, the adapter does not label native `u` as Pa. Pinned upstream treats 
 
 PR #151 preserves the R100A-2 impedance fixture and maps only the exact frequency-independent purely resistive subset to PFFDTD `DEF=[0,2,0]`. The pinned upstream reflection function returns `R=1/3+0j` at 100/200/300 Hz and the central evaluator reports PASS. Reactive/frequency-varying fitting remains unsupported, and no scalar absorption coefficient is used. This gate is not evidence that a full spatial FDTD run recovers the same reflection coefficient.
 
+## Low-band wave adoption profile
+
+R100B numerical runs and the final product-adoption decision are intentionally separate authorities. Historical run hashes remain bound to R100A-2 and the candidate manifest; the final low-band wave-solver selection additionally binds `benchmarks/acoustics/r100b_wave_adoption_profile.json`.
+
+The adoption profile requires one shipping wave candidate to cover and PASS all of:
+
+- `wave-rigid-rectangular-modes-v1`;
+- `wave-rectangular-convergence-v1`;
+- `wave-normal-incidence-impedance-v1`;
+- `wave-concave-l-room-v1`;
+- `wave-portal-split-room-v1`;
+- `wave-explicit-radiation-termination-v1`.
+
+The corresponding required capability union is `wave_rigid`, `wave_impedance`, and `portal_continuity`. A candidate cannot make a required fixture disappear from the selection gate merely by omitting a probe capability. Missing capability, missing/non-PASS required fixture, stale adoption-profile binding, or a failed hard gate blocks a `selected` decision.
+
+Geometric-reference fixtures and `hybrid-overlap-continuity-v1` are deliberately deferred from this **low-band wave solver** adoption profile. Their exclusion is explicit scope separation, not implicit PASS evidence. R150/R160 own those later roles.
+
+This profile does not change the R100A-2 semantic hash or invalidate existing numerical artifacts. It only tightens the authority needed to turn evidence into a production selection.
+
 ## Next R100B implementation slices
 
 The numerical bakeoff proceeds in this order:
