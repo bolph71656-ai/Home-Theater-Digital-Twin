@@ -53,9 +53,9 @@ Each `AcousticSolverObservableArtifact` records:
 - observable name;
 - exact external artifact authority id/version/hash;
 - exact encoding/schema authority id/version/hash;
-- valid frequency domain;
-- exact source entity id set when applicable;
-- exact receiver id set when applicable.
+- valid frequency domain.
+
+Source/receiver identity is not duplicated in the artifact manifest. It remains authoritative through the exact dispatch → request → AcousticSceneSnapshot lineage, avoiding a second unchecked source/receiver truth.
 
 The envelope requires the artifact observable set to equal the prediction request observable set exactly.
 
