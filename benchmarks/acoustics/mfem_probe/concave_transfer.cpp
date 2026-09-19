@@ -404,6 +404,24 @@ int ProbeMain(int argc, char *argv[])
    return 0;
 }
 
+int main(int argc, char *argv[])
+{
+   try
+   {
+      return ProbeMain(argc, argv);
+   }
+   catch (const std::exception &exc)
+   {
+      std::cerr << "R100B_MFEM_CONCAVE_FATAL: " << exc.what() << std::endl;
+      return 2;
+   }
+   catch (...)
+   {
+      std::cerr << "R100B_MFEM_CONCAVE_FATAL: unknown exception" << std::endl;
+      return 3;
+   }
+}
+
 
 int main(int argc, char *argv[])
 {
