@@ -330,8 +330,14 @@ class CadTopologyComparisonRepository:
             if self.amplifier_headroom_repository is None:
                 self._resolve_external_ref(ref)
                 return
-            evaluation = self.amplifier_headroom_repository.get_evaluation(
-                ref.authority_id
+            evaluation = self.amplifier_headroom_repository.resolve_evaluation_exact(
+                ref.authority_id,
+                evaluation_sha256=ref.semantic_sha256,
+                document_id=spec.document_id,
+                scene_revision_id=spec.baseline_scene_revision_id,
+                scene_content_hash=spec.baseline_scene_content_hash,
+                variant_id=bundle.variant_id,
+                variant_sha256=bundle.variant_sha256,
             )
             if evaluation is None:
                 raise ValueError('bundle PlaybackChainEvaluation does not exist')
@@ -339,17 +345,6 @@ class CadTopologyComparisonRepository:
             if resolved != ref:
                 raise ValueError(
                     'bundle PlaybackChainEvaluation exact authority mismatch'
-                )
-            scenario = evaluation.scenario
-            if (
-                scenario.document_id != spec.document_id
-                or scenario.scene_revision_id != spec.baseline_scene_revision_id
-                or scenario.scene_content_hash != spec.baseline_scene_content_hash
-                or scenario.variant_id != bundle.variant_id
-                or scenario.variant_sha256 != bundle.variant_sha256
-            ):
-                raise ValueError(
-                    'bundle PlaybackChainEvaluation variant/baseline mismatch'
                 )
             return
 
