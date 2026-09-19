@@ -324,6 +324,23 @@ def test_profile_change_and_retake_preserve_old_reports_and_do_not_reassign_camp
     )
     quality_repository.save_lineage(lineage)
 
+    newest_record, _newest_dataset = _save_measurement(
+        measurement_repository,
+        revision,
+        'retake-2',
+        raw=b'retake-2',
+    )
+    newest_lineage = build_measurement_lineage(
+        document_id=revision.document_id,
+        measurement_id=newest_record.measurement_id,
+        supersedes_measurement_id=new_record.measurement_id,
+        selected_measurement_id=newest_record.measurement_id,
+        reason='second explicit retake',
+        lineage_id='retake-lineage-2',
+        created_at_utc='2026-09-19T00:09:00+00:00',
+    )
+    quality_repository.save_lineage(newest_lineage)
+
     reports = quality_repository.list_reports(old_record.measurement_id)
     assert reports == (old_report, recheck)
     assert quality_repository.get_report(old_report.report_id) == old_report
@@ -331,8 +348,9 @@ def test_profile_change_and_retake_preserve_old_reports_and_do_not_reassign_camp
     assert old_report.noise_snr.status == 'PASS'
     assert recheck.noise_snr.status == 'FAIL'
     assert quality_repository.list_reports(new_record.measurement_id) == (retake_report,)
-    assert quality_repository.list_lineage(revision.document_id) == (lineage,)
-    assert quality_repository.selected_measurement_for_lineage(old_record.measurement_id) == new_record.measurement_id
+    assert quality_repository.list_lineage(revision.document_id) == (lineage, newest_lineage)
+    assert quality_repository.selected_measurement_for_lineage(old_record.measurement_id) == newest_record.measurement_id
+    assert quality_repository.selected_measurement_for_lineage(newest_record.measurement_id) == newest_record.measurement_id
 
     # Retake lineage is independent of preregistered O50/O60 calibration/holdout plans:
     # no measurement-plan or campaign row is created or rewritten as a side effect.
