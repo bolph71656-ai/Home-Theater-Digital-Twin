@@ -1211,6 +1211,7 @@ def topology_candidate_to_system_variant(
         'o100b.topology_search_sha256',
         'o100b.topology_option_id',
         'o100b.search_sha256',
+        'o100b.algorithm_version',
         'o100b.candidate_id',
         'o100b.candidate_sha256',
     }
@@ -1230,6 +1231,10 @@ def topology_candidate_to_system_variant(
         VariantProvenanceItem(
             key='o100b.search_sha256',
             value=spec.search_sha256,
+        ),
+        VariantProvenanceItem(
+            key='o100b.algorithm_version',
+            value=spec.algorithm_version,
         ),
         VariantProvenanceItem(
             key='o100b.candidate_id',
