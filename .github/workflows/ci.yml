@@ -32,6 +32,9 @@ jobs:
       - name: Preflight R100B acoustic bakeoff authority
         run: python -m htdt.acoustic_bakeoff preflight --manifest benchmarks\acoustics\r100a_manifest.json --candidates benchmarks\acoustics\r100b_candidates.json --adoption-profile benchmarks\acoustics\r100b_wave_adoption_profile.json
 
+      - name: Validate R100A-3 radiation reference authority
+        run: python scripts\check_r100a_radiation_reference.py --manifest benchmarks\acoustics\r100a_manifest.json
+
       - name: Check backend launcher CLI
         run: python -m htdt --help
 
