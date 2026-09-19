@@ -292,10 +292,6 @@ def test_calibration_file_mismatch_blocks_calibrated_claim_and_recommends_retake
         'cal-mismatch',
         raw=b'cal-mismatch',
     )
-    acquisition = CadAcquisitionContextBinding(
-        acquisition_context_id='acq-cal',
-        acquisition_context_sha256=sha256(b'acq-cal').hexdigest(),
-    )
     report = build_measurement_quality_report(
         measurement=record,
         dataset=dataset,
@@ -305,7 +301,6 @@ def test_calibration_file_mismatch_blocks_calibrated_claim_and_recommends_retake
             expected_calibration_file_sha256=sha256(b'expected-cal').hexdigest(),
         ),
         profile=build_measurement_quality_profile(),
-        acquisition_context=acquisition,
         report_id='report-cal-mismatch',
         created_at_utc='2026-09-19T00:04:00+00:00',
     )
