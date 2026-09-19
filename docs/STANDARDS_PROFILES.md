@@ -104,6 +104,24 @@ must not imply those unimplemented criteria passed. Criteria that depend on reco
 zones also require the explicit `rp22-recommended-zone-evaluation-v1` capability; without
 it they evaluate to `UNKNOWN`.
 
+The following RP22 Appendix A parameters are deliberately **not encoded** in this initial
+profile:
+
+| Parameter | Reason not encoded in Issue #170 |
+|---|---|
+| P2 decoder/renderer capability + discrete speaker count | Levels 3/4 have an explicit format-dependent 15/13 rule; HTDT does not collapse that conditional renderer/format authority into one invented threshold |
+| P4 screen-speaker SPL difference | acoustic prediction/result authority; not a layout-only criterion |
+| P6 surround-speaker SPL difference | acoustic prediction/result authority; not a layout-only criterion |
+| P10 upper-speaker SPL difference | acoustic prediction/result authority; not a layout-only criterion |
+| P12–P14 SPL capability/headroom | explicitly deferred with O100D SPL/headroom scope |
+| P15 background noise floor | requires measured/acquisition-quality evidence authority rather than layout inference |
+| P16–P17 seat-to-seat frequency-response variance | requires acoustic prediction or measurement evidence authority |
+| P18–P20 bass extension / low-frequency response / seat variance | requires acoustic prediction or measurement evidence authority |
+| P21 early-reflection level | requires acoustic prediction or measurement evidence authority |
+
+Those omissions remain `UNKNOWN`/unsupported at the profile-data level; they are not
+silently treated as passing criteria and are not replaced by an aggregate compliance score.
+
 ### Dolby Atmos Home Theater 5.1.2 layout guidance
 
 Source:
