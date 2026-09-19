@@ -361,7 +361,7 @@ class FiniteRecordTransferContract(BaseModel):
     sample_zero_reference: Literal['source_t0']
     record_interval: Literal['half_open_0_T']
     solver_time_step_policy: Literal['solver_native_recorded']
-    dtft_kernel: Literal['exp(-i*2*pi*f*n*dt)']
+    dtft_kernel: Literal['exp(+i*2*pi*f*n*dt)']
     dtft_measure: Literal['dt_weighted_sum']
     numerator_quantity: Literal['physical_pressure']
     numerator_record_policy: Literal[
