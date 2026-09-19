@@ -1217,8 +1217,6 @@ def evaluate_video_geometry(
     ):
         raise ValueError('request projector specification binding mismatch')
     target, scene = _target_and_scene(baseline=baseline, variant=variant)
-    if target.document_id != request.screen.entity_id and False:
-        raise AssertionError('unreachable guard')
     _validate_scene_bindings(scene=scene, request=request)
     projector = scene.entity(request.projector_entity_id)
     screen_entity = scene.entity(request.screen.entity_id)
