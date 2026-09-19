@@ -133,6 +133,7 @@ def test_radiation_termination_rejects_implicit_or_mismatched_model() -> None:
         for item in current_payload['fixtures']
         if item['fixture_id'] == 'wave-explicit-radiation-termination-v1'
     )
+    current_fixture['terminations'] = list(current_fixture['terminations'])
     current_fixture['terminations'][0] = legacy_termination_payload
     with pytest.raises(ValueError, match='requires explicit boundary/model/sign/normal authority'):
         AcousticBenchmarkManifest.model_validate(current_payload)
@@ -146,6 +147,7 @@ def test_radiation_termination_rejects_implicit_or_mismatched_model() -> None:
         if item['fixture_id'] == 'wave-explicit-radiation-termination-v1'
     )
     legacy_fixture['required_capabilities'] = ['wave_rigid']
+    legacy_fixture['terminations'] = list(legacy_fixture['terminations'])
     legacy_fixture['terminations'][0] = legacy_termination_payload
     reparsed_legacy = AcousticBenchmarkManifest.model_validate(legacy_manifest_payload)
     assert reparsed_legacy.schema_version == 'r100a-2'
