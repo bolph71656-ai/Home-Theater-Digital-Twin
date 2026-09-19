@@ -11,10 +11,14 @@ from .acoustic_benchmark import AcousticMaterial
 from .cad_repository import SceneRevision
 from .cad_scene import Position3, Quaternion4
 from .cad_system_variant import SystemVariant, materialize_system_variant
+from .semantic_geometry import SemanticSurface
 
 
 ACOUSTIC_TREATMENT_SCHEMA_VERSION = 1
 ACOUSTIC_TREATMENT_AUTHORITY_VERSION = 'acoustic-treatment-1'
+TREATMENT_SURFACE_BINDING_EVALUATOR_ID = 'htdt.acoustic_treatment.semantic_surface_binding'
+TREATMENT_SURFACE_BINDING_EVALUATOR_VERSION = '1'
+TREATMENT_SURFACE_AUTHORITY_VERSION = 'r120-semantic-surface-host-1'
 
 TreatmentType = Literal[
     'porous_absorber',
@@ -30,6 +34,27 @@ TreatmentEvidenceBasis = Literal['measured', 'inferred', 'modelled']
 CapabilityState = Literal['SUPPORTED', 'UNKNOWN']
 PredictionReadiness = Literal['UNKNOWN']
 SystemVariantRelation = Literal['proposal_baseline', 'design_source']
+HostSurfaceSemanticClass = Literal['room_boundary', 'object_surface', 'unknown']
+SurfaceBindingState = Literal[
+    'exact',
+    'unbound',
+    'legacy_unverified',
+    'scene_revision_missing',
+    'wrong_scene_revision',
+    'scene_authority_mismatch',
+    'semantic_geometry_missing',
+    'surface_removed',
+    'surface_authority_mismatch',
+    'stale_scene_revision',
+    'stale_semantic_geometry',
+]
+SurfaceLifecycleState = Literal[
+    'unavailable',
+    'stable_same_authority',
+    'stable_authority_changed',
+    'removed',
+]
+HostSemanticPolicy = Literal['semantic_class_does_not_gate_placement_authority']
 
 
 def _canonical(value: Any) -> str:
@@ -364,6 +389,378 @@ class TreatmentPredictionCapability(BaseModel):
     reasons: tuple[str, ...]
 
 
+class TreatmentSurfaceBindingEvaluation(BaseModel):
+    """Deterministic evaluation of one placement against exact R120 surface authority."""
+
+    model_config = ConfigDict(frozen=True)
+
+    evaluator_id: Literal['htdt.acoustic_treatment.semantic_surface_binding'] = (
+        TREATMENT_SURFACE_BINDING_EVALUATOR_ID
+    )
+    evaluator_version: Literal['1'] = TREATMENT_SURFACE_BINDING_EVALUATOR_VERSION
+    placement_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    bound_scene_revision_id: str
+    bound_scene_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    evaluated_scene_revision_id: str | None
+    evaluated_scene_content_hash: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    binding_state: SurfaceBindingState
+    bound_authority_valid: bool
+    placement_authority_valid: bool
+    host_surface_id: str | None
+    expected_host_surface_authority_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    bound_semantic_geometry_id: str | None = Field(
+        default=None,
+        pattern=r'^semantic-acoustic-geometry:[0-9a-f]{64}$',
+    )
+    bound_semantic_geometry_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    evaluated_semantic_geometry_id: str | None = Field(
+        default=None,
+        pattern=r'^semantic-acoustic-geometry:[0-9a-f]{64}$',
+    )
+    evaluated_semantic_geometry_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    actual_host_surface_authority_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    actual_host_surface_semantic_class: HostSurfaceSemanticClass | None = None
+    host_surface_lifecycle: SurfaceLifecycleState
+    host_surface_semantics_known: bool
+    host_semantic_policy: HostSemanticPolicy = 'semantic_class_does_not_gate_placement_authority'
+    solver_prediction_readiness: PredictionReadiness = 'UNKNOWN'
+    reasons: tuple[str, ...]
+    evaluation_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+    @model_validator(mode='after')
+    def valid_evaluation_identity(self) -> 'TreatmentSurfaceBindingEvaluation':
+        if self.evaluation_sha256 != _digest(self.identity_payload()):
+            raise ValueError('TreatmentSurfaceBindingEvaluation semantic hash mismatch')
+        return self
+
+    def identity_payload(self) -> dict[str, Any]:
+        return self.model_dump(mode='json', exclude={'evaluation_sha256'})
+
+
+def semantic_surface_host_authority_sha256(surface: SemanticSurface) -> str:
+    """Hash only the stable SemanticSurface authority, not the whole geometry snapshot."""
+
+    return _digest(
+        {
+            'authority_version': TREATMENT_SURFACE_AUTHORITY_VERSION,
+            'surface': surface.model_dump(mode='json'),
+        }
+    )
+
+
+def _surface_in_revision(
+    revision: SceneRevision,
+    surface_id: str,
+) -> SemanticSurface | None:
+    geometry = revision.document.r120_semantic_geometry
+    if geometry is None:
+        return None
+    matches = [surface for surface in geometry.surfaces if surface.surface_id == surface_id]
+    if len(matches) > 1:
+        raise ValueError('R120 semantic geometry contains duplicate SemanticSurface ids')
+    return None if not matches else matches[0]
+
+
+def _resolve_host_surface_binding(
+    revision: SceneRevision,
+    host_surface_id: str | None,
+    host_surface_authority_sha256: str | None,
+) -> tuple[str | None, str | None]:
+    if host_surface_id is None:
+        if host_surface_authority_sha256 is not None:
+            raise ValueError('host surface id/hash must be supplied together')
+        return None, None
+
+    geometry = revision.document.r120_semantic_geometry
+    if geometry is None:
+        if host_surface_authority_sha256 is None:
+            raise ValueError(
+                'legacy host surface binding without R120 semantic geometry requires an explicit authority hash'
+            )
+        return host_surface_id, host_surface_authority_sha256
+
+    surface = _surface_in_revision(revision, host_surface_id)
+    if surface is None:
+        raise ValueError('host SemanticSurface does not exist in the exact SceneRevision geometry')
+    actual_sha256 = semantic_surface_host_authority_sha256(surface)
+    if (
+        host_surface_authority_sha256 is not None
+        and host_surface_authority_sha256 != actual_sha256
+    ):
+        raise ValueError('host SemanticSurface authority hash mismatch')
+    return host_surface_id, actual_sha256
+
+
+def _make_surface_binding_evaluation(**payload: Any) -> TreatmentSurfaceBindingEvaluation:
+    identity = {
+        'evaluator_id': TREATMENT_SURFACE_BINDING_EVALUATOR_ID,
+        'evaluator_version': TREATMENT_SURFACE_BINDING_EVALUATOR_VERSION,
+        **payload,
+    }
+    return TreatmentSurfaceBindingEvaluation(
+        **identity,
+        evaluation_sha256=_digest(identity),
+    )
+
+
+def evaluate_treatment_surface_binding(
+    placement: AcousticTreatmentPlacement,
+    *,
+    bound_revision: SceneRevision | None,
+    evaluated_revision: SceneRevision | None,
+    evaluated_revision_id: str | None,
+) -> TreatmentSurfaceBindingEvaluation:
+    """Evaluate exact placement binding and surface lifecycle without promoting prediction capability."""
+
+    common: dict[str, Any] = {
+        'placement_sha256': placement.placement_sha256,
+        'bound_scene_revision_id': placement.scene_revision_id,
+        'bound_scene_content_hash': placement.scene_content_hash,
+        'evaluated_scene_revision_id': evaluated_revision_id,
+        'evaluated_scene_content_hash': (
+            None if evaluated_revision is None else evaluated_revision.content_hash
+        ),
+        'host_surface_id': placement.host_surface_id,
+        'expected_host_surface_authority_sha256': placement.host_surface_authority_sha256,
+        'bound_semantic_geometry_id': None,
+        'bound_semantic_geometry_sha256': None,
+        'evaluated_semantic_geometry_id': None,
+        'evaluated_semantic_geometry_sha256': None,
+        'actual_host_surface_authority_sha256': None,
+        'actual_host_surface_semantic_class': None,
+        'host_surface_lifecycle': 'unavailable',
+        'host_surface_semantics_known': False,
+        'host_semantic_policy': 'semantic_class_does_not_gate_placement_authority',
+        'solver_prediction_readiness': 'UNKNOWN',
+    }
+
+    if placement.host_surface_id is None:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='unbound',
+            bound_authority_valid=True,
+            placement_authority_valid=True,
+            reasons=(
+                'placement has no host surface binding to evaluate',
+                'unbound placement does not establish solver prediction readiness',
+            ),
+        )
+
+    if bound_revision is None:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='scene_revision_missing',
+            bound_authority_valid=False,
+            placement_authority_valid=False,
+            reasons=('bound SceneRevision does not exist',),
+        )
+
+    if (
+        bound_revision.revision_id != placement.scene_revision_id
+        or bound_revision.document_id != placement.document_id
+        or bound_revision.content_hash != placement.scene_content_hash
+    ):
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='scene_authority_mismatch',
+            bound_authority_valid=False,
+            placement_authority_valid=False,
+            reasons=('placement does not match the exact bound SceneRevision authority',),
+        )
+
+    bound_geometry = bound_revision.document.r120_semantic_geometry
+    if bound_geometry is None:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='legacy_unverified',
+            bound_authority_valid=False,
+            placement_authority_valid=False,
+            reasons=(
+                'bound SceneRevision has no R120 semantic geometry; legacy host id/hash cannot be promoted to exact authority',
+            ),
+        )
+
+    common['bound_semantic_geometry_id'] = bound_geometry.geometry_id
+    common['bound_semantic_geometry_sha256'] = bound_geometry.semantic_hash_sha256
+    bound_surface = _surface_in_revision(bound_revision, placement.host_surface_id)
+    if bound_surface is None:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='surface_removed',
+            bound_authority_valid=False,
+            placement_authority_valid=False,
+            host_surface_lifecycle='removed',
+            reasons=('bound SemanticSurface is absent from the exact bound geometry',),
+        )
+
+    bound_surface_sha256 = semantic_surface_host_authority_sha256(bound_surface)
+    common['actual_host_surface_authority_sha256'] = bound_surface_sha256
+    common['actual_host_surface_semantic_class'] = bound_surface.semantic_class
+    common['host_surface_semantics_known'] = bound_surface.semantic_class != 'unknown'
+    common['host_surface_lifecycle'] = (
+        'stable_same_authority'
+        if bound_surface_sha256 == placement.host_surface_authority_sha256
+        else 'stable_authority_changed'
+    )
+    if bound_surface_sha256 != placement.host_surface_authority_sha256:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='surface_authority_mismatch',
+            bound_authority_valid=False,
+            placement_authority_valid=False,
+            reasons=('bound SemanticSurface id exists but its exact authority hash does not match',),
+        )
+
+    if evaluated_revision is None:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='scene_revision_missing',
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            reasons=('evaluated SceneRevision does not exist',),
+        )
+
+    if evaluated_revision.document_id != placement.document_id:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='wrong_scene_revision',
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            evaluated_semantic_geometry_id=(
+                None
+                if evaluated_revision.document.r120_semantic_geometry is None
+                else evaluated_revision.document.r120_semantic_geometry.geometry_id
+            ),
+            evaluated_semantic_geometry_sha256=(
+                None
+                if evaluated_revision.document.r120_semantic_geometry is None
+                else evaluated_revision.document.r120_semantic_geometry.semantic_hash_sha256
+            ),
+            reasons=('evaluated SceneRevision belongs to another SceneDocument',),
+        )
+
+    evaluated_geometry = evaluated_revision.document.r120_semantic_geometry
+    if evaluated_geometry is not None:
+        common['evaluated_semantic_geometry_id'] = evaluated_geometry.geometry_id
+        common['evaluated_semantic_geometry_sha256'] = evaluated_geometry.semantic_hash_sha256
+        evaluated_surface = _surface_in_revision(evaluated_revision, placement.host_surface_id)
+        if evaluated_surface is None:
+            common['host_surface_lifecycle'] = 'removed'
+            common['actual_host_surface_authority_sha256'] = None
+            common['actual_host_surface_semantic_class'] = None
+            common['host_surface_semantics_known'] = False
+        else:
+            evaluated_surface_sha256 = semantic_surface_host_authority_sha256(evaluated_surface)
+            common['actual_host_surface_authority_sha256'] = evaluated_surface_sha256
+            common['actual_host_surface_semantic_class'] = evaluated_surface.semantic_class
+            common['host_surface_semantics_known'] = evaluated_surface.semantic_class != 'unknown'
+            common['host_surface_lifecycle'] = (
+                'stable_same_authority'
+                if evaluated_surface_sha256 == placement.host_surface_authority_sha256
+                else 'stable_authority_changed'
+            )
+    else:
+        common['host_surface_lifecycle'] = 'unavailable'
+        common['actual_host_surface_authority_sha256'] = None
+        common['actual_host_surface_semantic_class'] = None
+        common['host_surface_semantics_known'] = False
+
+    if evaluated_revision.revision_id != placement.scene_revision_id:
+        state: SurfaceBindingState = 'stale_scene_revision'
+        if (
+            evaluated_geometry is not None
+            and evaluated_geometry.semantic_hash_sha256 != bound_geometry.semantic_hash_sha256
+        ):
+            state = 'stale_semantic_geometry'
+        reasons = [
+            'placement remains bound to its immutable original SceneRevision and is stale for the evaluated revision'
+        ]
+        if common['host_surface_lifecycle'] == 'stable_same_authority':
+            reasons.append(
+                'stable SemanticSurface id and authority are traceable across revisions, but exact placement binding is still stale'
+            )
+        elif common['host_surface_lifecycle'] == 'stable_authority_changed':
+            reasons.append(
+                'stable SemanticSurface id is traceable, but its surface authority changed'
+            )
+        elif common['host_surface_lifecycle'] == 'removed':
+            reasons.append('bound SemanticSurface was removed from the evaluated geometry')
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state=state,
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            reasons=tuple(reasons),
+        )
+
+    if evaluated_revision.content_hash != placement.scene_content_hash:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='scene_authority_mismatch',
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            reasons=('evaluated SceneRevision content hash does not match the placement authority',),
+        )
+
+    if evaluated_geometry is None:
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='semantic_geometry_missing',
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            reasons=('exact SceneRevision no longer resolves an R120 semantic geometry authority',),
+        )
+
+    if common['host_surface_lifecycle'] == 'removed':
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='surface_removed',
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            reasons=('bound SemanticSurface is absent from the evaluated exact geometry',),
+        )
+
+    if common['host_surface_lifecycle'] == 'stable_authority_changed':
+        return _make_surface_binding_evaluation(
+            **common,
+            binding_state='surface_authority_mismatch',
+            bound_authority_valid=True,
+            placement_authority_valid=False,
+            reasons=('SemanticSurface id matches but exact host authority hash does not',),
+        )
+
+    reasons = [
+        'placement, SceneRevision, R120 semantic geometry, SemanticSurface id, and host surface hash match exactly'
+    ]
+    if not common['host_surface_semantics_known']:
+        reasons.append(
+            'SemanticSurface class is unknown; placement authority is valid but prediction capability is not implied'
+        )
+    else:
+        reasons.append(
+            'room_boundary/object_surface classification is placement metadata only; solver prediction readiness remains UNKNOWN'
+        )
+    return _make_surface_binding_evaluation(
+        **common,
+        binding_state='exact',
+        bound_authority_valid=True,
+        placement_authority_valid=True,
+        reasons=tuple(reasons),
+    )
+
+
 def build_acoustic_treatment_definition(
     *,
     definition_id: str,
@@ -481,6 +878,11 @@ def build_treatment_placement(
         materialize_system_variant(revision, system_variant)
         relation = 'proposal_baseline'
 
+    host_surface_id, host_surface_authority_sha256 = _resolve_host_surface_binding(
+        revision,
+        host_surface_id,
+        host_surface_authority_sha256,
+    )
     identity = {
         'schema_version': ACOUSTIC_TREATMENT_SCHEMA_VERSION,
         'authority_version': ACOUSTIC_TREATMENT_AUTHORITY_VERSION,
@@ -568,11 +970,20 @@ def revise_treatment_placement(
 
     if host_surface_id is None and host_surface_authority_sha256 is None:
         next_surface_id = previous.host_surface_id
-        next_surface_hash = previous.host_surface_authority_sha256
+        requested_surface_hash = (
+            previous.host_surface_authority_sha256
+            if revision.document.r120_semantic_geometry is None
+            else None
+        )
     else:
         next_surface_id = host_surface_id
-        next_surface_hash = host_surface_authority_sha256
+        requested_surface_hash = host_surface_authority_sha256
 
+    next_surface_id, next_surface_hash = _resolve_host_surface_binding(
+        revision,
+        next_surface_id,
+        requested_surface_hash,
+    )
     next_orientation = previous.orientation if orientation is None else orientation
     next_position = previous.position if position is None else position
     next_coverage = previous.coverage if coverage is None else coverage
