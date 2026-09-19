@@ -139,6 +139,17 @@ def test_candidate_manifest_is_version_pinned_and_covers_primary_roles() -> None
     assert pffdtd_summary['adoption_missing_capabilities'] == ['portal_continuity']
 
 
+def test_adoption_profile_must_classify_every_r100a_fixture() -> None:
+    benchmark, candidates = _authorities()
+    profile = _adoption_profile()
+    incomplete = profile.model_copy(
+        update={'deferred_fixture_ids': profile.deferred_fixture_ids[:-1]}
+    )
+
+    with pytest.raises(ValueError, match='leaves benchmark fixtures unclassified'):
+        preflight_summary(benchmark, candidates, incomplete)
+
+
 def test_probe_capabilities_are_not_accepted_capabilities() -> None:
     benchmark, candidates = _authorities()
     pffdtd = _candidate(candidates, 'pffdtd-main-aa319f6')
