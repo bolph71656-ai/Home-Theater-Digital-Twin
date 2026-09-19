@@ -5,6 +5,7 @@ from htdt.cad_scene import SceneDocument, make_empty_scene
 from htdt.raw_mesh import import_raw_visual_mesh
 from htdt.semantic_geometry import (
     RemoveTriangleRepair,
+    SemanticCoordinateTransform,
     SurfaceSemanticAssignment,
     convert_raw_visual_mesh_to_semantic_geometry,
     deserialize_semantic_acoustic_geometry,
@@ -84,6 +85,39 @@ def test_imperfect_mesh_explicit_repair_keeps_raw_immutable_and_lineage_determin
     assert first.acoustic_regions_status == 'not_inferred'
     assert first.portals_status == 'not_inferred'
     assert first.boundary_terminations_status == 'not_inferred'
+
+
+
+def test_source_to_scene_transform_is_explicit_and_part_of_semantic_identity() -> None:
+    mesh = _closed_tetra_mesh()
+    identity_request = make_semantic_geometry_conversion_request(
+        mesh,
+        source_scene_revision_id=None,
+        source_to_scene_transform=_identity_transform(),
+    )
+    identity = convert_raw_visual_mesh_to_semantic_geometry(mesh, identity_request)
+
+    transformed_request = make_semantic_geometry_conversion_request(
+        mesh,
+        source_scene_revision_id=None,
+        source_to_scene_transform=SemanticCoordinateTransform(
+            matrix_source_to_scene_m=(
+                (2.0, 0.0, 0.0, 1.0),
+                (0.0, 3.0, 0.0, -2.0),
+                (0.0, 0.0, 4.0, 0.5),
+                (0.0, 0.0, 0.0, 1.0),
+            ),
+            provenance='explicit_user_authority',
+            reason='fixture exercises explicit scale and translation into HTDT metres',
+        ),
+    )
+    transformed = convert_raw_visual_mesh_to_semantic_geometry(mesh, transformed_request)
+
+    assert transformed.vertices[0].model_dump() == {'x_m': 1.0, 'y_m': -2.0, 'z_m': 0.5}
+    assert transformed.vertices[1].model_dump() == {'x_m': 3.0, 'y_m': -2.0, 'z_m': 0.5}
+    assert transformed.conversion_request_id != identity.conversion_request_id
+    assert transformed.derived_geometry_hash != identity.derived_geometry_hash
+    assert transformed.geometry_id != identity.geometry_id
 
 
 def test_clean_geometry_without_explicit_semantics_is_not_promoted() -> None:
