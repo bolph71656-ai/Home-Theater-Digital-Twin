@@ -415,6 +415,10 @@ class InstallationTreatmentInstanceSummary(BaseModel):
     treatment_type: str = Field(min_length=1)
     acoustic_model_id: str | None = None
     acoustic_model_version: str | None = None
+    material_id: str | None = None
+    material_version: str | None = None
+    wave_material_model: str | None = None
+    geometric_material_model: str | None = None
     evidence_basis: str | None = None
     uncertainty_kind: str = Field(min_length=1)
     uncertainty_value: float | None = None
@@ -990,6 +994,10 @@ def _treatment_summary(
             treatment_type=definition.treatment_type,
             acoustic_model_id=None if model is None else model.model_id,
             acoustic_model_version=None if model is None else model.model_version,
+            material_id=None if model is None else model.material.material_id,
+            material_version=None if model is None else model.material.version,
+            wave_material_model=None if model is None else model.material.wave_model,
+            geometric_material_model=None if model is None else model.material.geometric_model,
             evidence_basis=capability.evidence_basis,
             uncertainty_kind=uncertainty.kind,
             uncertainty_value=uncertainty.value,
