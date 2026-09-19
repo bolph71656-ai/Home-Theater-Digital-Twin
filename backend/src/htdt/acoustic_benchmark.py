@@ -357,35 +357,23 @@ class FiniteRecordTransferContract(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    excitation_model: Literal[
-        'causal_discrete_unit_sample_volume_velocity'
-    ] = 'causal_discrete_unit_sample_volume_velocity'
-    sample_zero_reference: Literal['source_t0'] = 'source_t0'
-    record_interval: Literal['half_open_0_T'] = 'half_open_0_T'
-    solver_time_step_policy: Literal[
-        'solver_native_recorded'
-    ] = 'solver_native_recorded'
-    dtft_kernel: Literal[
-        'exp(-i*2*pi*f*n*dt)'
-    ] = 'exp(-i*2*pi*f*n*dt)'
-    dtft_measure: Literal['dt_weighted_sum'] = 'dt_weighted_sum'
-    numerator_quantity: Literal['physical_pressure'] = 'physical_pressure'
+    excitation_model: Literal['causal_discrete_unit_sample_volume_velocity']
+    sample_zero_reference: Literal['source_t0']
+    record_interval: Literal['half_open_0_T']
+    solver_time_step_policy: Literal['solver_native_recorded']
+    dtft_kernel: Literal['exp(-i*2*pi*f*n*dt)']
+    dtft_measure: Literal['dt_weighted_sum']
+    numerator_quantity: Literal['physical_pressure']
     numerator_record_policy: Literal[
         'solver_pressure_or_declared_primary_field_conversion'
-    ] = 'solver_pressure_or_declared_primary_field_conversion'
+    ]
     denominator_record: Literal[
         'physical_volume_velocity_samples_on_solver_time_grid'
-    ] = 'physical_volume_velocity_samples_on_solver_time_grid'
-    transfer_definition: Literal[
-        'pressure_over_volume_velocity'
-    ] = 'pressure_over_volume_velocity'
-    frequency_evaluation: Literal[
-        'direct_scored_frequency_dtft'
-    ] = 'direct_scored_frequency_dtft'
-    source_spectrum_requirement: Literal[
-        'finite_nonzero_on_scored_grid'
-    ] = 'finite_nonzero_on_scored_grid'
-    zero_padding: Literal['none'] = 'none'
+    ]
+    transfer_definition: Literal['pressure_over_volume_velocity']
+    frequency_evaluation: Literal['direct_scored_frequency_dtft']
+    source_spectrum_requirement: Literal['finite_nonzero_on_scored_grid']
+    zero_padding: Literal['none']
 
 
 class NumericalComparisonContract(BaseModel):
@@ -791,8 +779,14 @@ class AcousticBenchmarkManifest(BaseModel):
                 if fixture.comparison.finite_record_transfer is not None
             }
             required_finite_record_fixture_ids = {
-                'wave-rectangular-convergence-v1',
-                'wave-concave-l-room-v1',
+                fixture.fixture_id
+                for fixture in self.fixtures
+                if fixture.comparison.observation_time_s is not None
+                and any(
+                    observable.acceptance_relation == 'monotonic_convergence'
+                    or observable.reference_kind == 'independent_solver'
+                    for observable in fixture.observables
+                )
             }
             if finite_record_fixture_ids != required_finite_record_fixture_ids:
                 raise ValueError(
