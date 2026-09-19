@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 
-from htdt.cad_repository import SceneRevision
+from htdt.cad_repository import SceneRepository, SceneRevision
 from htdt.cad_scene import SceneDocument, scene_content_hash
 from htdt.r120_geometry_compiler import (
     AcousticRegionDeclaration,
@@ -24,6 +25,7 @@ from htdt.r120_geometry_compiler import (
     serialize_r120_compiled_geometry,
     serialize_r120_leak_portal_diagnostic,
 )
+from htdt.r120_geometry_compiler_repository import R120GeometryCompilerRepository
 from htdt.raw_mesh import import_raw_visual_mesh
 from htdt.semantic_geometry import (
     RemoveTriangleRepair,
@@ -450,3 +452,57 @@ def test_leak_diagnostic_round_trip_preserves_exact_compiled_input_hash() -> Non
     assert reopened.exact_compiled_geometry_hash_sha256 == compiled.compiled_hash_sha256
     assert reopened.request.sampling_authority == request.sampling_authority
     assert reopened.diagnostic_hash_sha256 == result.diagnostic_hash_sha256
+
+
+def test_sqlite_save_reopen_preserves_exact_scene_and_diagnostic_hashes(
+    tmp_path: Path,
+) -> None:
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    template_revision, _ = _revision()
+    saved_revision = scene_repository.save(
+        template_revision.document,
+        parent_revision_id=None,
+    ).revision
+
+    request = make_r120_geometry_compilation_request(
+        saved_revision,
+        geometric_tolerance_m=1.0e-6,
+    )
+    compiled = compile_r120_geometry(saved_revision, request)
+    diagnostic_request = make_leak_portal_diagnostic_request(
+        compiled,
+        closed_boundary_expectation=True,
+        sampling_authority=_sampling(),
+    )
+    diagnostic = diagnose_r120_leak_and_portals(
+        compiled,
+        diagnostic_request,
+        portal_authority=make_portal_authority(declaration_mode='explicit_none'),
+    )
+
+    repository = R120GeometryCompilerRepository(scene_repository)
+    repository.save_compiled_geometry(compiled)
+    repository.save_leak_portal_diagnostic(diagnostic)
+
+    reopened_repository = R120GeometryCompilerRepository(
+        SceneRepository(scene_repository.path)
+    )
+    reopened_compiled = reopened_repository.get_compiled_geometry(
+        compiled.compiled_geometry_id
+    )
+    reopened_diagnostic = reopened_repository.get_leak_portal_diagnostic(
+        diagnostic.diagnostic_result_id
+    )
+
+    assert reopened_compiled == compiled
+    assert reopened_compiled is not None
+    assert reopened_compiled.exact_scene_revision_id == saved_revision.revision_id
+    assert reopened_compiled.exact_scene_revision_content_hash == saved_revision.content_hash
+    assert reopened_compiled.exact_semantic_geometry_hash_sha256 == (
+        saved_revision.document.r120_semantic_geometry.semantic_hash_sha256
+    )
+    assert reopened_diagnostic == diagnostic
+    assert reopened_diagnostic is not None
+    assert reopened_diagnostic.exact_compiled_geometry_hash_sha256 == (
+        compiled.compiled_hash_sha256
+    )
