@@ -762,7 +762,9 @@ def _derive_readiness(
             geometric_directivity_ready=geometric_directivity_ready,
             wave_source_ready=wave_source_ready,
             wave_boundary_ready=wave_boundary_ready,
-            geometric_boundary_ready=geometric_boundary_ready,
+            geometric_boundary_ready=(
+                geometric_boundary_ready if schema_version >= 2 else True
+            ),
             environment_ready=environment_ready,
             receiver_ready=receiver_ready,
         )
