@@ -108,9 +108,19 @@ def _htdt_git_provenance() -> dict[str, str]:
     checkout = _git_rev_parse('HEAD')
     if checkout is None:
         raise RuntimeError('cannot resolve HTDT checkout commit')
-    # actions/checkout uses a synthetic merge commit for pull_request events.
-    # HEAD^2 is the exact PR head when that parent is available at fetch-depth=1.
-    pr_head = _git_rev_parse('HEAD^2') or checkout
+
+    event_head = os.environ.get('HTDT_PR_HEAD_SHA', '').strip().lower()
+    is_sha = (
+        len(event_head) == 40
+        and all(character in '0123456789abcdef' for character in event_head)
+    )
+    if is_sha:
+        pr_head = event_head
+    else:
+        # Fallback for local/manual execution where the workflow event SHA is
+        # not injected. pull_request checkout may be a synthetic merge commit.
+        pr_head = _git_rev_parse('HEAD^2') or checkout
+
     return {
         'checkout_commit_sha': checkout,
         'pr_head_commit_sha': pr_head,
@@ -846,6 +856,7 @@ def _execute(
     impedance = _fixture(benchmark, IMPEDANCE_FIXTURE_ID)
     _validate_concave_authority(concave)
     impedance_capability = _validate_impedance_authority(impedance)
+    htdt_git = _htdt_git_provenance()
 
     actual_head = _git_head(mfem_root)
     if actual_head != candidate.source_commit_sha:
@@ -984,7 +995,9 @@ def _execute(
     executable_size_mb = executable.stat().st_size / (1024.0 * 1024.0)
     details = {
         'mfem_source_commit_sha': actual_head,
-        'htdt_source_commit_sha': htdt_git['pr_head_commit_sha'],\n        'htdt_checkout_commit_sha': htdt_git['checkout_commit_sha'],\n        'htdt_pr_head_commit_sha': htdt_git['pr_head_commit_sha'],
+        'htdt_source_commit_sha': htdt_git['pr_head_commit_sha'],
+        'htdt_checkout_commit_sha': htdt_git['checkout_commit_sha'],
+        'htdt_pr_head_commit_sha': htdt_git['pr_head_commit_sha'],
         'native_build_s': native_build_s,
         'mfem_build_configuration': {
             'generator': 'Visual Studio x64 from dedicated GitHub Actions workflow',
