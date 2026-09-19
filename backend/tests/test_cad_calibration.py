@@ -436,7 +436,7 @@ def test_generic_export_round_trip_preserves_exact_exported_transfer(tmp_path: P
             abs=1e-12,
         )
     csv_text = render_generic_biquad_csv(snapshot)
-    assert 'b0,b1,b2,a1,a2' not in csv_text
+    assert 'b0,b1,b2,a1,a2' in csv_text
     assert 'filter_type' in csv_text
     assert 'peq-1' in csv_text
 
