@@ -545,11 +545,18 @@ class DirectivitySourceSampleV1(BaseModel):
 
 
 class NormalizedDirectivityJsonV1(BaseModel):
-    model_config = ConfigDict(frozen=True, extra='forbid')
+    model_config = ConfigDict(
+        frozen=True,
+        extra='forbid',
+        populate_by_name=True,
+    )
 
-    schema: Literal[
+    schema_id: Literal[
         'htdt.normalized-directivity.v1'
-    ] = 'htdt.normalized-directivity.v1'
+    ] = Field(
+        default='htdt.normalized-directivity.v1',
+        alias='schema',
+    )
     dataset_id: str = Field(min_length=1)
     version: str = Field(min_length=1)
     source_format: DirectivityDataFormat
