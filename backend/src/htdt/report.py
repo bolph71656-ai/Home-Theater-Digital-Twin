@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .cad_repository import SceneRevision
 from .cad_scene import SceneDocument, SceneEntity, quaternion_to_euler_deg, scene_content_hash
 from .cad_system_variant import SystemVariant, materialize_system_variant
+from .cad_standards import StandardsEvaluation, StandardsProfile
+from .cad_video_geometry import ProjectorSpecification, VideoGeometryEvaluation
 
 
 REPORT_SCHEMA_VERSION = 1
@@ -169,9 +171,9 @@ section{{background:white;border:1px solid #d9dde3;border-radius:10px;padding:20
 </main></body></html>'''
 
 
-INSTALLATION_OUTPUT_SCHEMA_VERSION = 1
-INSTALLATION_OUTPUT_AUTHORITY_VERSION = 'installation-output-1'
-INSTALLATION_REPORT_RENDERER_VERSION = 'installation-report-1'
+INSTALLATION_OUTPUT_SCHEMA_VERSION = 2
+INSTALLATION_OUTPUT_AUTHORITY_VERSION = 'installation-output-2'
+INSTALLATION_REPORT_RENDERER_VERSION = 'installation-report-2'
 
 
 def _canonical(value: Any) -> str:
@@ -272,23 +274,122 @@ class InstallationSectionStatus(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class InstallationSightlineSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    seat_entity_id: str = Field(min_length=1)
+    row_id: str = Field(min_length=1)
+    status: Literal['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE']
+    blocking_seat_ids: tuple[str, ...] = ()
+    blocking_row_ids: tuple[str, ...] = ()
+    blocked_sample_ids: tuple[str, ...] = ()
+    minimum_head_ray_clearance_m: float | None = None
+
+
+class InstallationCollisionSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    entity_a: str = Field(min_length=1)
+    entity_b: str = Field(min_length=1)
+    status: Literal['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE']
+    intersects_or_violates_clearance: bool
+
+
+class InstallationProjectorSummary(BaseModel):
+    """Read-only installation summary of exact projector/video authority."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal['AVAILABLE', 'UNKNOWN']
+    specification_id: str | None = None
+    specification_version: str | None = None
+    specification_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    projector_entity_id: str | None = None
+    lens_reference_offset_m: tuple[float, float, float] | None = None
+    lens_position_m: tuple[float, float, float] | None = None
+    optical_axis_local: tuple[float, float, float] | None = None
+    throw_ratio_min: float | None = None
+    throw_ratio_max: float | None = None
+    evaluated_throw_ratio: float | None = None
+    zoom_position: float | None = None
+    horizontal_lens_shift_range: tuple[float, float] | None = None
+    vertical_lens_shift_range: tuple[float, float] | None = None
+    required_horizontal_lens_shift_fraction: float | None = None
+    required_vertical_lens_shift_fraction: float | None = None
+    image_plane_corners_m: tuple[tuple[float, float, float], ...] = ()
+    projection_cone_directions: tuple[tuple[float, float, float], ...] = ()
+    supported_aspect_ratios: tuple[str, ...] = ()
+    image_aspect_ratio: float | None = None
+    screen_entity_id: str | None = None
+    screen_visible_width_m: float | None = None
+    screen_visible_height_m: float | None = None
+    screen_frame_clearance_m: float | None = None
+    video_geometry_evaluation_id: str | None = None
+    video_geometry_evaluation_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    projection_status: Literal['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE'] | None = None
+    geometry_status: Literal['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE'] | None = None
+    sightlines: tuple[InstallationSightlineSummary, ...] = ()
+    collisions: tuple[InstallationCollisionSummary, ...] = ()
+    screen_acoustic_effect_status: Literal['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE'] | None = None
+    screen_acoustic_effect_reason: str | None = None
+
+
+class InstallationStandardsCriterionSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    criterion_id: str = Field(min_length=1)
+    status: Literal['PASS', 'FAIL', 'UNKNOWN', 'NOT_APPLICABLE']
+    observed_value: float | int | bool | str | None = None
+    unit: str | None = None
+    target_entity_ids: tuple[str, ...] = ()
+    reason_code: str = Field(min_length=1)
+    source_publisher: str = Field(min_length=1)
+    source_document_title: str = Field(min_length=1)
+    source_document_version: str = Field(min_length=1)
+    source_reference: str = Field(min_length=1)
+    source_uri: str | None = None
+    evidence_refs: tuple[tuple[str, str | None, str | None], ...] = ()
+
+
+class InstallationStandardsSummary(BaseModel):
+    """Criterion-level report view of one exact StandardsProfile/Evaluation pair."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal['AVAILABLE', 'UNKNOWN']
+    profile_id: str | None = None
+    profile_version: str | None = None
+    profile_semantic_hash: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    evaluation_id: str | None = None
+    evaluation_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    criteria: tuple[InstallationStandardsCriterionSummary, ...] = ()
+
+
 class InstallationOutput(BaseModel):
     """Immutable semantic installation snapshot.
 
     Generation metadata such as exported_at is intentionally absent from this
-    model and therefore cannot alter semantic_sha256.
+    model and therefore cannot alter semantic_sha256. Schema v1 remains
+    loadable; new generation uses v2 projector/standards authority summaries.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal[1] = INSTALLATION_OUTPUT_SCHEMA_VERSION
-    authority_version: Literal['installation-output-1'] = INSTALLATION_OUTPUT_AUTHORITY_VERSION
+    schema_version: Literal[1, 2] = INSTALLATION_OUTPUT_SCHEMA_VERSION
+    authority_version: Literal['installation-output-1', 'installation-output-2'] = (
+        INSTALLATION_OUTPUT_AUTHORITY_VERSION
+    )
     coordinate_system: Literal['htdt-x-right-y-rear-z-up-m'] = 'htdt-x-right-y-rear-z-up-m'
     authority: InstallationAuthorityBinding
     evidence: tuple[InstallationEvidenceRef, ...]
     entities: tuple[InstallationEntityOutput, ...]
     dimensions: tuple[InstallationDimensionSheet, ...]
     sections: tuple[InstallationSectionStatus, ...]
+    projector: InstallationProjectorSummary | None = None
+    standards: InstallationStandardsSummary | None = None
     semantic_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
     @model_validator(mode='after')
@@ -296,12 +397,22 @@ class InstallationOutput(BaseModel):
         evidence_keys = [(item.authority, item.evidence_id) for item in self.evidence]
         if len(evidence_keys) != len(set(evidence_keys)):
             raise ValueError('installation evidence references must be unique by authority/id')
+        if self.schema_version == 1:
+            if self.authority_version != 'installation-output-1':
+                raise ValueError('InstallationOutput v1 requires installation-output-1 authority')
+            if self.projector is not None or self.standards is not None:
+                raise ValueError('InstallationOutput v1 cannot contain v2 authority summaries')
+        else:
+            if self.authority_version != INSTALLATION_OUTPUT_AUTHORITY_VERSION:
+                raise ValueError('InstallationOutput v2 authority version mismatch')
+            if self.projector is None or self.standards is None:
+                raise ValueError('InstallationOutput v2 requires explicit projector/standards summaries')
         if self.semantic_sha256 != _semantic_digest(self.identity_payload()):
             raise ValueError('InstallationOutput semantic hash mismatch')
         return self
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             'schema_version': self.schema_version,
             'authority_version': self.authority_version,
             'coordinate_system': self.coordinate_system,
@@ -311,6 +422,10 @@ class InstallationOutput(BaseModel):
             'dimensions': [item.model_dump(mode='json') for item in self.dimensions],
             'sections': [item.model_dump(mode='json') for item in self.sections],
         }
+        if self.schema_version >= 2:
+            payload['projector'] = self.projector.model_dump(mode='json') if self.projector else None
+            payload['standards'] = self.standards.model_dump(mode='json') if self.standards else None
+        return payload
 
 
 def _installation_entity(entity: SceneEntity) -> InstallationEntityOutput:
@@ -391,36 +506,259 @@ def _dimension_sheets(
     )
 
 
-def _installation_sections(document: SceneDocument) -> tuple[InstallationSectionStatus, ...]:
-    kinds = {str(entity.kind) for entity in document.entities}
+def _xyz_position(value: Any) -> tuple[float, float, float]:
+    return (float(value.x_m), float(value.y_m), float(value.z_m))
+
+
+def _xyz_direction(value: Any) -> tuple[float, float, float]:
+    return (float(value.x), float(value.y), float(value.z))
+
+
+def _projector_summary(
+    *,
+    revision: SceneRevision,
+    variant: SystemVariant | None,
+    document: SceneDocument,
+    effective_hash: str,
+    specification: ProjectorSpecification | None,
+    evaluation: VideoGeometryEvaluation | None,
+) -> InstallationProjectorSummary:
+    if specification is None and evaluation is None:
+        return InstallationProjectorSummary(status='UNKNOWN')
+    if specification is None or evaluation is None:
+        raise ValueError(
+            'ProjectorSpecification and VideoGeometryEvaluation must be supplied together'
+        )
+
+    target = evaluation.target
+    expected_variant_id = None if variant is None else variant.variant_id
+    expected_variant_sha256 = None if variant is None else variant.variant_sha256
+    if (
+        target.document_id != revision.document_id
+        or target.scene_revision_id != revision.revision_id
+        or target.scene_content_hash != revision.content_hash
+        or target.system_variant_id != expected_variant_id
+        or target.system_variant_sha256 != expected_variant_sha256
+        or target.evaluated_scene_content_hash != effective_hash
+    ):
+        raise ValueError('video geometry evaluation authority does not match installation target')
+    request = evaluation.request
+    if (
+        request.projector_specification_id != specification.specification_id
+        or request.projector_specification_version != specification.version
+        or request.projector_specification_sha256 != specification.specification_sha256
+        or evaluation.projector_specification_sha256 != specification.specification_sha256
+    ):
+        raise ValueError('ProjectorSpecification/VideoGeometryEvaluation binding mismatch')
+
+    projector_entity = document.entity(request.projector_entity_id)
+    if projector_entity.kind != 'projector':
+        raise ValueError('video geometry projector binding is not a projector entity')
+    screen_entity = document.entity(request.screen.entity_id)
+    if screen_entity.kind != 'screen':
+        raise ValueError('video geometry screen binding is not a screen entity')
+
+    horizontal_range = (
+        None
+        if specification.horizontal_lens_shift is None
+        else (
+            float(specification.horizontal_lens_shift.minimum_fraction),
+            float(specification.horizontal_lens_shift.maximum_fraction),
+        )
+    )
+    vertical_range = (
+        None
+        if specification.vertical_lens_shift is None
+        else (
+            float(specification.vertical_lens_shift.minimum_fraction),
+            float(specification.vertical_lens_shift.maximum_fraction),
+        )
+    )
+    return InstallationProjectorSummary(
+        status='AVAILABLE',
+        specification_id=specification.specification_id,
+        specification_version=specification.version,
+        specification_sha256=specification.specification_sha256,
+        projector_entity_id=request.projector_entity_id,
+        lens_reference_offset_m=(
+            float(specification.lens_reference_offset_m.x_m),
+            float(specification.lens_reference_offset_m.y_m),
+            float(specification.lens_reference_offset_m.z_m),
+        ),
+        lens_position_m=_xyz_position(evaluation.projection.lens_position),
+        optical_axis_local=_xyz_direction(specification.optical_axis_local),
+        throw_ratio_min=float(specification.throw_ratio_min),
+        throw_ratio_max=float(specification.throw_ratio_max),
+        evaluated_throw_ratio=float(evaluation.projection.throw_ratio),
+        zoom_position=(
+            None
+            if evaluation.projection.required_zoom_fraction is None
+            else float(evaluation.projection.required_zoom_fraction)
+        ),
+        horizontal_lens_shift_range=horizontal_range,
+        vertical_lens_shift_range=vertical_range,
+        required_horizontal_lens_shift_fraction=(
+            None
+            if evaluation.projection.required_horizontal_lens_shift_fraction is None
+            else float(evaluation.projection.required_horizontal_lens_shift_fraction)
+        ),
+        required_vertical_lens_shift_fraction=(
+            None
+            if evaluation.projection.required_vertical_lens_shift_fraction is None
+            else float(evaluation.projection.required_vertical_lens_shift_fraction)
+        ),
+        image_plane_corners_m=tuple(
+            _xyz_position(item) for item in evaluation.projection.image_plane_corners
+        ),
+        projection_cone_directions=tuple(
+            _xyz_direction(item) for item in evaluation.projection.projection_cone_directions
+        ),
+        supported_aspect_ratios=tuple(
+            f'{item.width_units}:{item.height_units}'
+            for item in specification.supported_aspect_ratios
+        ),
+        image_aspect_ratio=float(
+            request.screen.visible_width_m / request.screen.visible_height_m
+        ),
+        screen_entity_id=request.screen.entity_id,
+        screen_visible_width_m=float(request.screen.visible_width_m),
+        screen_visible_height_m=float(request.screen.visible_height_m),
+        screen_frame_clearance_m=float(request.screen.frame_clearance_m),
+        video_geometry_evaluation_id=evaluation.evaluation_id,
+        video_geometry_evaluation_sha256=evaluation.evaluation_sha256,
+        projection_status=evaluation.projection.status,
+        geometry_status=evaluation.geometry_status,
+        sightlines=tuple(
+            InstallationSightlineSummary(
+                seat_entity_id=item.seat_entity_id,
+                row_id=item.row_id,
+                status=item.status,
+                blocking_seat_ids=item.blocking_seat_ids,
+                blocking_row_ids=item.blocking_row_ids,
+                blocked_sample_ids=item.blocked_sample_ids,
+                minimum_head_ray_clearance_m=item.minimum_head_ray_clearance_m,
+            )
+            for item in evaluation.sightlines
+        ),
+        collisions=tuple(
+            InstallationCollisionSummary(
+                entity_a=item.entity_a,
+                entity_b=item.entity_b,
+                status=item.status,
+                intersects_or_violates_clearance=item.intersects_or_violates_clearance,
+            )
+            for item in evaluation.collisions
+        ),
+        screen_acoustic_effect_status=evaluation.screen_acoustic_effect_status,
+        screen_acoustic_effect_reason=evaluation.screen_acoustic_effect_reason,
+    )
+
+
+def _standards_summary(
+    *,
+    revision: SceneRevision,
+    variant: SystemVariant | None,
+    document: SceneDocument,
+    profile: StandardsProfile | None,
+    evaluation: StandardsEvaluation | None,
+) -> InstallationStandardsSummary:
+    if profile is None and evaluation is None:
+        return InstallationStandardsSummary(status='UNKNOWN')
+    if profile is None or evaluation is None:
+        raise ValueError('StandardsProfile and StandardsEvaluation must be supplied together')
+    if (
+        evaluation.profile_id != profile.profile_id
+        or evaluation.profile_version != profile.version
+        or evaluation.profile_semantic_hash != profile.profile_semantic_hash
+    ):
+        raise ValueError('StandardsProfile/StandardsEvaluation binding mismatch')
+
+    target = evaluation.target
+    expected_variant_id = None if variant is None else variant.variant_id
+    expected_variant_sha256 = None if variant is None else variant.variant_sha256
+    if (
+        target.document_id != revision.document_id
+        or target.scene_revision_id != revision.revision_id
+        or target.scene_content_hash != revision.content_hash
+        or target.system_variant_id != expected_variant_id
+        or target.system_variant_sha256 != expected_variant_sha256
+    ):
+        raise ValueError('StandardsEvaluation authority does not match installation target')
+    entity_ids = {entity.entity_id for entity in document.entities}
+    if not set(target.entity_ids).issubset(entity_ids):
+        raise ValueError('StandardsEvaluation target references entities outside installation target')
+
+    criteria_by_id = {item.criterion_id: item for item in profile.criteria}
+    result_ids = {item.criterion_id for item in evaluation.results}
+    if result_ids != set(criteria_by_id):
+        raise ValueError('StandardsEvaluation criterion set does not match StandardsProfile')
+    rows = []
+    for result in evaluation.results:
+        criterion = criteria_by_id[result.criterion_id]
+        if result.criterion_sha256 != _semantic_digest(criterion.model_dump(mode='json')):
+            raise ValueError('StandardsEvaluation criterion hash does not match StandardsProfile')
+        source = criterion.source
+        rows.append(InstallationStandardsCriterionSummary(
+            criterion_id=result.criterion_id,
+            status=result.status,
+            observed_value=result.observed_value,
+            unit=result.unit,
+            target_entity_ids=result.entity_ids,
+            reason_code=result.reason_code,
+            source_publisher=source.publisher,
+            source_document_title=source.document_title,
+            source_document_version=source.document_version,
+            source_reference=source.reference,
+            source_uri=source.source_uri,
+            evidence_refs=tuple(
+                (item.evidence_id, item.evidence_sha256, item.detail)
+                for item in result.evidence_refs
+            ),
+        ))
+    return InstallationStandardsSummary(
+        status='AVAILABLE',
+        profile_id=profile.profile_id,
+        profile_version=profile.version,
+        profile_semantic_hash=profile.profile_semantic_hash,
+        evaluation_id=evaluation.evaluation_id,
+        evaluation_sha256=evaluation.evaluation_sha256,
+        criteria=tuple(rows),
+    )
+
+
+def _installation_sections(
+    *,
+    projector: InstallationProjectorSummary,
+    standards: InstallationStandardsSummary,
+) -> tuple[InstallationSectionStatus, ...]:
     return (
         InstallationSectionStatus(
             section='projector_coordinates',
-            status='AVAILABLE' if 'projector' in kinds else 'UNKNOWN',
+            status=projector.status,
             reason=(
-                'projector entities are present in the effective Scene authority'
-                if 'projector' in kinds
-                else 'no projector entity authority is present in this SceneRevision/SystemVariant'
+                'exact ProjectorSpecification and VideoGeometryEvaluation are bound'
+                if projector.status == 'AVAILABLE'
+                else 'no exact projector/video geometry authority is bound'
             ),
         ),
         InstallationSectionStatus(
             section='standards_profile',
-            status='UNKNOWN',
-            reason='no StandardsProfile authority is bound by the installation-output foundation',
+            status=standards.status,
+            reason=(
+                'exact StandardsProfile and StandardsEvaluation are bound'
+                if standards.status == 'AVAILABLE'
+                else 'no exact StandardsProfile/StandardsEvaluation authority is bound'
+            ),
         ),
         InstallationSectionStatus(
             section='calibration_plan',
             status='UNKNOWN',
-            reason='no CalibrationPlan authority is bound by the installation-output foundation',
+            reason='CalibrationPlan integration is deferred from this InstallationOutput slice',
         ),
         InstallationSectionStatus(
             section='treatment_plan',
-            status='UNKNOWN' if 'treatment' not in kinds else 'AVAILABLE',
-            reason=(
-                'treatment entities are present in the effective Scene authority'
-                if 'treatment' in kinds
-                else 'no treatment authority is bound by the installation-output foundation'
-            ),
+            status='UNKNOWN',
+            reason='AcousticTreatment integration is deferred from this InstallationOutput slice',
         ),
     )
 
@@ -430,6 +768,10 @@ def build_installation_output(
     *,
     variant: SystemVariant | None = None,
     evidence: Sequence[InstallationEvidenceRef] = (),
+    projector_specification: ProjectorSpecification | None = None,
+    video_geometry_evaluation: VideoGeometryEvaluation | None = None,
+    standards_profile: StandardsProfile | None = None,
+    standards_evaluation: StandardsEvaluation | None = None,
 ) -> InstallationOutput:
     """Derive one semantic installation snapshot without creating editable truth."""
 
@@ -437,6 +779,22 @@ def build_installation_output(
         raise ValueError('SceneRevision content hash does not match its document')
     document = revision.document if variant is None else materialize_system_variant(revision, variant)
     effective_hash = scene_content_hash(document)
+
+    projector = _projector_summary(
+        revision=revision,
+        variant=variant,
+        document=document,
+        effective_hash=effective_hash,
+        specification=projector_specification,
+        evaluation=video_geometry_evaluation,
+    )
+    standards = _standards_summary(
+        revision=revision,
+        variant=variant,
+        document=document,
+        profile=standards_profile,
+        evaluation=standards_evaluation,
+    )
 
     supported_kinds = {'speaker', 'seat', 'screen', 'projector', 'measurement_point'}
     rows = tuple(
@@ -474,6 +832,8 @@ def build_installation_output(
         system_variant_id=None if variant is None else variant.variant_id,
         system_variant_sha256=None if variant is None else variant.variant_sha256,
     )
+    dimensions = _dimension_sheets(document, rows)
+    sections = _installation_sections(projector=projector, standards=standards)
     identity = {
         'schema_version': INSTALLATION_OUTPUT_SCHEMA_VERSION,
         'authority_version': INSTALLATION_OUTPUT_AUTHORITY_VERSION,
@@ -481,28 +841,20 @@ def build_installation_output(
         'authority': authority.model_dump(mode='json'),
         'evidence': [item.model_dump(mode='json') for item in evidence_rows],
         'entities': [item.model_dump(mode='json') for item in rows],
-        'dimensions': [
-            item.model_dump(mode='json')
-            for item in _dimension_sheets(document, rows)
-        ],
-        'sections': [
-            item.model_dump(mode='json')
-            for item in _installation_sections(document)
-        ],
+        'dimensions': [item.model_dump(mode='json') for item in dimensions],
+        'sections': [item.model_dump(mode='json') for item in sections],
+        'projector': projector.model_dump(mode='json'),
+        'standards': standards.model_dump(mode='json'),
     }
     return InstallationOutput(
         coordinate_system=document.coordinate_system,
         authority=authority,
         evidence=evidence_rows,
         entities=rows,
-        dimensions=tuple(
-            InstallationDimensionSheet.model_validate(item)
-            for item in identity['dimensions']
-        ),
-        sections=tuple(
-            InstallationSectionStatus.model_validate(item)
-            for item in identity['sections']
-        ),
+        dimensions=dimensions,
+        sections=sections,
+        projector=projector,
+        standards=standards,
         semantic_sha256=_semantic_digest(identity),
     )
 
@@ -550,7 +902,106 @@ def render_installation_csv(output: InstallationOutput) -> str:
             output.authority.system_variant_sha256 or '',
             output.semantic_sha256,
         ))
+    if output.schema_version >= 2:
+        writer.writerow(())
+        writer.writerow(('authority_record', 'authority', 'payload_json'))
+        writer.writerow((
+            'authority_record',
+            'projector',
+            _canonical(
+                None if output.projector is None
+                else output.projector.model_dump(mode='json')
+            ),
+        ))
+        writer.writerow((
+            'authority_record',
+            'standards',
+            _canonical(
+                None if output.standards is None
+                else output.standards.model_dump(mode='json')
+            ),
+        ))
     return stream.getvalue()
+
+
+def _projector_report_block(summary: InstallationProjectorSummary | None) -> str:
+    if summary is None or summary.status == 'UNKNOWN':
+        return '<section><h2>Projector / video geometry</h2><p>UNKNOWN — no exact projector/video authority is bound.</p></section>'
+    sightlines = ''.join(
+        '<tr>'
+        f'<td><code>{escape(item.seat_entity_id)}</code></td>'
+        f'<td>{escape(item.row_id)}</td><td>{escape(item.status)}</td>'
+        f'<td>{escape(", ".join(item.blocking_seat_ids) or "—")}</td>'
+        f'<td>{_metric(item.minimum_head_ray_clearance_m)}</td>'
+        '</tr>'
+        for item in summary.sightlines
+    ) or '<tr><td colspan="5">None</td></tr>'
+    collisions = ''.join(
+        '<tr>'
+        f'<td><code>{escape(item.entity_a)}</code></td>'
+        f'<td><code>{escape(item.entity_b)}</code></td>'
+        f'<td>{escape(item.status)}</td>'
+        f'<td>{escape(str(item.intersects_or_violates_clearance))}</td>'
+        '</tr>'
+        for item in summary.collisions
+    ) or '<tr><td colspan="4">None</td></tr>'
+    return (
+        '<section><h2>Projector / video geometry</h2>'
+        f'<p>ProjectorSpecification: <code>{escape(summary.specification_id or "UNKNOWN")}</code> '
+        f'v{escape(summary.specification_version or "UNKNOWN")} / '
+        f'<code>{escape(summary.specification_sha256 or "UNKNOWN")}</code></p>'
+        f'<p>Projector entity: <code>{escape(summary.projector_entity_id or "UNKNOWN")}</code> · '
+        f'VideoGeometryEvaluation: <code>{escape(summary.video_geometry_evaluation_id or "UNKNOWN")}</code> / '
+        f'<code>{escape(summary.video_geometry_evaluation_sha256 or "UNKNOWN")}</code></p>'
+        f'<p>Lens world position: {escape(str(summary.lens_position_m or "UNKNOWN"))} · '
+        f'optical axis local: {escape(str(summary.optical_axis_local or "UNKNOWN"))}</p>'
+        f'<p>Throw ratio: {_metric(summary.evaluated_throw_ratio)} '
+        f'(spec {_metric(summary.throw_ratio_min)}…{_metric(summary.throw_ratio_max)}) · '
+        f'zoom position: {_metric(summary.zoom_position)} · '
+        f'lens shift H/V: {_metric(summary.required_horizontal_lens_shift_fraction)} / '
+        f'{_metric(summary.required_vertical_lens_shift_fraction)}</p>'
+        f'<p>Screen: <code>{escape(summary.screen_entity_id or "UNKNOWN")}</code> · '
+        f'visible {_metric(summary.screen_visible_width_m)} × {_metric(summary.screen_visible_height_m)} m · '
+        f'frame clearance {_metric(summary.screen_frame_clearance_m)} m · '
+        f'aspect {_metric(summary.image_aspect_ratio)}</p>'
+        f'<p>Projection status: {escape(summary.projection_status or "UNKNOWN")} · '
+        f'geometry status: {escape(summary.geometry_status or "UNKNOWN")} · '
+        f'acoustic screen effect: {escape(summary.screen_acoustic_effect_status or "UNKNOWN")}</p>'
+        '<h3>Sightline / obstruction</h3><table><thead><tr>'
+        '<th>Seat</th><th>Row</th><th>Status</th><th>Blocking seats</th><th>Min clearance (m)</th>'
+        f'</tr></thead><tbody>{sightlines}</tbody></table>'
+        '<h3>Collision / clearance</h3><table><thead><tr>'
+        '<th>A</th><th>B</th><th>Status</th><th>Intersects/violates clearance</th>'
+        f'</tr></thead><tbody>{collisions}</tbody></table></section>'
+    )
+
+
+def _standards_report_block(summary: InstallationStandardsSummary | None) -> str:
+    if summary is None or summary.status == 'UNKNOWN':
+        return '<section><h2>Standards evaluation</h2><p>UNKNOWN — no exact StandardsProfile/StandardsEvaluation authority is bound.</p></section>'
+    rows = ''.join(
+        '<tr>'
+        f'<td><code>{escape(item.criterion_id)}</code></td>'
+        f'<td>{escape(item.status)}</td>'
+        f'<td>{escape(str(item.observed_value) if item.observed_value is not None else "UNKNOWN")}</td>'
+        f'<td>{escape(item.unit or "UNKNOWN")}</td>'
+        f'<td>{escape(", ".join(item.target_entity_ids) or "—")}</td>'
+        f'<td>{escape(item.source_publisher)} — {escape(item.source_document_title)} '
+        f'{escape(item.source_document_version)} § {escape(item.source_reference)}</td>'
+        '</tr>'
+        for item in summary.criteria
+    ) or '<tr><td colspan="6">No criteria</td></tr>'
+    return (
+        '<section><h2>Standards evaluation</h2>'
+        f'<p>StandardsProfile: <code>{escape(summary.profile_id or "UNKNOWN")}</code> '
+        f'v{escape(summary.profile_version or "UNKNOWN")} / '
+        f'<code>{escape(summary.profile_semantic_hash or "UNKNOWN")}</code></p>'
+        f'<p>StandardsEvaluation: <code>{escape(summary.evaluation_id or "UNKNOWN")}</code> / '
+        f'<code>{escape(summary.evaluation_sha256 or "UNKNOWN")}</code></p>'
+        '<p class="muted">Criterion truth is reported directly; no aggregate compliance score or hard-constraint policy is inferred.</p>'
+        '<table><thead><tr><th>Criterion</th><th>Status</th><th>Observed</th><th>Unit</th>'
+        f'<th>Target entities</th><th>Source/reference</th></tr></thead><tbody>{rows}</tbody></table></section>'
+    )
 
 
 def render_installation_report_html(
@@ -602,6 +1053,8 @@ def render_installation_report_html(
         + '</tbody></table></section>'
         for sheet in output.dimensions
     )
+    projector_block = _projector_report_block(output.projector)
+    standards_block = _standards_report_block(output.standards)
     semantic_json = json.dumps(output.model_dump(mode='json'), ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
     return f'''<!doctype html>
@@ -624,6 +1077,8 @@ section{{background:white;border:1px solid #d9dde3;border-radius:10px;padding:20
 </tr></thead><tbody>{entity_rows}</tbody></table>
 <p class="muted">Speaker mounting height is the exact Scene entity-origin Z coordinate; no separate bracket/mount reference is inferred.</p></section>
 {dimension_blocks}
+{projector_block}
+{standards_block}
 <section><h2>Section availability</h2><table><thead><tr><th>Section</th><th>Status</th><th>Reason</th></tr></thead><tbody>{section_rows}</tbody></table></section>
 <section><h2>Machine-readable semantic snapshot</h2><p class="muted">This embedded JSON excludes exported_at and other generation metadata.</p><details><summary>Show JSON</summary><pre>{escape(json.dumps(output.model_dump(mode='json'), ensure_ascii=False, indent=2))}</pre></details></section>
 <script type="application/json" id="htdt-installation-output">{semantic_json}</script>
