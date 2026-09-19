@@ -38,8 +38,9 @@ from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
 from htdt.acoustic_pffdtd_adapter import (
     apply_pffdtd_runtime_compatibility_patches,
     compile_rigid_fixture_model,
+    finite_record_pressure_transfer,
     pffdtd_git_head,
-    pffdtd_velocity_potential_to_pressure_transfer,
+    pffdtd_velocity_potential_to_pressure_trace,
     recombine_pffdtd_receiver_traces,
 )
 
@@ -49,7 +50,7 @@ FIXTURE_ID = 'wave-concave-l-room-v1'
 PROBE_SCHEMA = 'r100b-pffdtd-concave-artifact-1'
 PROBE_ID = 'pffdtd-concave-complex-pressure'
 ADAPTER_ID = 'htdt-r100b-pffdtd-concave'
-ADAPTER_VERSION = '2'
+ADAPTER_VERSION = '3'
 FMAX_HZ = 300.0
 GRID_SPACINGS_M = (0.5, 0.25, 0.125)
 THREAD_BUDGET = 4
@@ -366,6 +367,9 @@ def _validate_fixture_contract(fixture) -> None:
         or finite_record.solver_time_step_policy != 'solver_native_recorded'
         or finite_record.dtft_kernel != 'exp(-i*2*pi*f*n*dt)'
         or finite_record.dtft_measure != 'dt_weighted_sum'
+        or finite_record.numerator_quantity != 'physical_pressure'
+        or finite_record.numerator_record_policy != 'solver_pressure_or_declared_primary_field_conversion'
+        or finite_record.denominator_record != 'physical_volume_velocity_samples_on_solver_time_grid'
         or finite_record.transfer_definition != 'pressure_over_volume_velocity'
         or finite_record.frequency_evaluation != 'direct_scored_frequency_dtft'
         or finite_record.source_spectrum_requirement != 'finite_nonzero_on_scored_grid'
@@ -380,7 +384,7 @@ def _validate_fixture_contract(fixture) -> None:
     phase = observable_by_id['lroom-phase']
     if (
         magnitude.kind != 'transfer_magnitude_db'
-        or magnitude.unit != 'dB'
+        or magnitude.unit != 'dB re 1 Pa/(m3/s)'
         or magnitude.reference_kind != 'independent_solver'
         or magnitude.acceptance_relation != 'matches_reference'
         or magnitude.samples
@@ -518,7 +522,7 @@ def _run_level(
     authority_c = float(fixture.environment.sound_speed_m_s)
     # PFFDTD aa319f6 exposes Tc instead of c and computes
     # c = 343.2*sqrt(Tc/20). Use Tc only as a numerical control so the
-    # solver wave speed equals the frozen R100A-3 343.0 m/s exactly.
+    # solver wave speed equals the frozen R100A-4 343.0 m/s exactly.
     # Physical temperature authority remains 20 C and is recorded separately.
     solver_tc_for_sound_speed = 20.0 * (authority_c / 343.2) ** 2
     ppw = authority_c / (FMAX_HZ * target_h_m)
@@ -596,22 +600,22 @@ def _run_level(
     if receiver_potential.shape != (1, int(engine.Nt)):
         raise RuntimeError(f'unexpected PFFDTD receiver trace shape: {receiver_potential.shape}')
 
+    source = fixture.sources[0]
     physical_source = np.zeros(int(engine.Nt), dtype=np.float64)
-    physical_source[0] = 1.0
-    pressure_transfer = pffdtd_velocity_potential_to_pressure_transfer(
+    physical_source[0] = float(source.amplitude)
+    pressure_record = pffdtd_velocity_potential_to_pressure_trace(
         receiver_potential[0],
+        time_step_s=float(engine.Ts),
+        density_kg_m3=float(fixture.environment.density_kg_m3),
+    )
+    pressure_transfer = finite_record_pressure_transfer(
+        pressure_record,
         physical_source,
         time_step_s=float(engine.Ts),
         frequency_hz=frequencies_hz,
-        density_kg_m3=float(fixture.environment.density_kg_m3),
     )
-    source = fixture.sources[0]
-    source_excitation = float(source.amplitude) * np.exp(
-        1j * np.deg2rad(float(source.phase_deg))
-    )
-    pressure = pressure_transfer * source_excitation
-    if not np.all(np.isfinite(pressure.real)) or not np.all(np.isfinite(pressure.imag)):
-        raise RuntimeError('PFFDTD concave pressure contains non-finite values')
+    if not np.all(np.isfinite(pressure_transfer.real)) or not np.all(np.isfinite(pressure_transfer.imag)):
+        raise RuntimeError('PFFDTD concave pressure transfer contains non-finite values')
     post_s = time.perf_counter() - post_started
 
     detail = {
@@ -634,6 +638,8 @@ def _run_level(
         'authority_temperature_c': float(fixture.environment.temperature_c),
         'solver_temperature_control_c': solver_tc_for_sound_speed,
         'sound_speed_mapping': 'c=343.2*sqrt(Tc/20); Tc_control=20*(authority_c/343.2)^2',
+        'pressure_record_conversion': 'p=rho*d(phi)/dt; second-order centered interior and one-sided endpoints',
+        'finite_record_transfer': 'dt-weighted direct DTFT P_T/Q_T from physical pressure/source records',
         'air_absorption_postprocess_applied': False,
         'courant': float(engine.l),
         'setup_s': setup_s,
@@ -645,12 +651,15 @@ def _run_level(
         'sim_outs_mb': output_path.stat().st_size / (1024.0 * 1024.0),
         'generated_disk_mb': _directory_size_mb(level_dir),
         'receiver_potential_max_abs': float(np.max(np.abs(receiver_potential))),
-        'pressure_max_abs_pa': float(np.max(np.abs(pressure))),
+        'pressure_record_max_abs_pa': float(np.max(np.abs(pressure_record))),
+        'pressure_transfer_max_abs_pa_per_m3_s': float(np.max(np.abs(pressure_transfer))),
     }
     traces = {
         'receiver_velocity_potential': receiver_potential,
-        'pressure_real_pa': pressure.real.copy(),
-        'pressure_imag_pa': pressure.imag.copy(),
+        'receiver_pressure_pa': pressure_record.copy(),
+        'source_volume_velocity_m3_s': physical_source.copy(),
+        'pressure_transfer_real_pa_per_m3_s': pressure_transfer.real.copy(),
+        'pressure_transfer_imag_pa_per_m3_s': pressure_transfer.imag.copy(),
         'frequency_hz': frequencies_hz.copy(),
     }
     compile_s = setup_s + warm_prepare_s + jit_s + prepare_s
@@ -830,16 +839,16 @@ def _raw_candidate_observation(
             RawObservableObservation(
                 observable_id='lroom-fr',
                 kind='transfer_magnitude_db',
-                unit='dB',
+                unit='dB re 1 Pa/(m3/s)',
                 samples=tuple(magnitude_samples),
-                diagnostics=('Computed from finest h=0.125 m PFFDTD complex pressure as 20*log10(|P/Q|).',),
+                diagnostics=('Computed from finest h=0.125 m finite-record transfer as 20*log10(|P_T/Q_T|/(1 Pa/(m3/s))).',),
             ),
             RawObservableObservation(
                 observable_id='lroom-phase',
                 kind='transfer_phase_deg',
                 unit='deg',
                 samples=tuple(phase_samples),
-                diagnostics=('Computed from finest h=0.125 m PFFDTD P/Q phase under exp(-i*omega*t).',),
+                diagnostics=('Computed from finest h=0.125 m finite-record P_T/Q_T phase under exp(-i*omega*t).',),
             ),
         ),
         diagnostics=(
@@ -1052,8 +1061,8 @@ def _execute(
             )
             levels.append(detail)
             pressure = (
-                np.asarray(traces['pressure_real_pa'], dtype=np.float64)
-                + 1j * np.asarray(traces['pressure_imag_pa'], dtype=np.float64)
+                np.asarray(traces['pressure_transfer_real_pa_per_m3_s'], dtype=np.float64)
+                + 1j * np.asarray(traces['pressure_transfer_imag_pa_per_m3_s'], dtype=np.float64)
             )
             pressures.append(pressure)
             for key, value in traces.items():
