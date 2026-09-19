@@ -678,7 +678,6 @@ def _resource_violations(fixture, raw: RawFixtureObservation) -> list[str]:
 
 def _reference_observations(
     fixture,
-    candidates,
     reference_path: Path,
 ) -> tuple[dict[str, RawObservableObservation], dict[str, object]]:
     payload = json.loads(reference_path.read_text(encoding='utf-8'))
@@ -687,9 +686,6 @@ def _reference_observations(
             f'independent reference is not qualified: '
             f'{payload.get("concave_reference_outcome")!r}'
         )
-    if payload.get('r100a_semantic_hash') != fixture.__pydantic_parent_namespace__ if False else None:
-        pass
-
     # The artifact must belong to the same current benchmark/candidate manifest.
     # Exact hash checks are completed by the caller because the fixture alone
     # does not own manifest semantic identity.
@@ -975,7 +971,6 @@ def _execute(
             raise ValueError('independent reference candidate-manifest hash is stale')
         reference_by_id, payload = _reference_observations(
             fixture,
-            candidates,
             reference_artifact,
         )
         cross_evidence = _cross_solver_evidence(fixture, raw, reference_by_id)
