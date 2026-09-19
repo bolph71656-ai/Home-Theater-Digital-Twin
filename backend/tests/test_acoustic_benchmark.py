@@ -26,9 +26,9 @@ def _fixture(manifest: AcousticBenchmarkManifest, fixture_id: str) -> AcousticBe
 def test_r100a_manifest_loads_as_immutable_canonical_authority() -> None:
     manifest = _manifest()
 
-    assert manifest.schema_version == 'r100a-2'
+    assert manifest.schema_version == 'r100a-3'
     assert manifest.manifest_id == 'htdt-issue-101-r100a-benchmark-authority'
-    assert manifest.revision == 2
+    assert manifest.revision == 3
     assert len(manifest.fixtures) == 10
     assert len(manifest.hard_gates) == 6
     assert all(item.environment.density_kg_m3 == pytest.approx(1.2) for item in manifest.fixtures)
@@ -39,7 +39,7 @@ def test_r100a_manifest_loads_as_immutable_canonical_authority() -> None:
     assert reparsed.semantic_hash() == manifest.semantic_hash()
 
     with pytest.raises(Exception):
-        manifest.revision = 2  # type: ignore[misc]
+        manifest.revision = 3  # type: ignore[misc]
 
 
 def test_r100a_required_fixture_roles_are_present() -> None:
@@ -74,7 +74,42 @@ def test_opening_authority_is_explicit_portal_or_termination() -> None:
     assert len(termination_fixture.regions) == 1
     assert not termination_fixture.portals
     assert len(termination_fixture.terminations) == 1
-    assert termination_fixture.terminations[0].kind == 'radiation'
+    termination = termination_fixture.terminations[0]
+    assert termination.kind == 'radiation'
+    assert termination.boundary_id == 'b-interface'
+    assert termination.radiation_model == 'local_first_order_outgoing'
+    assert termination.normal_convention == 'outward_from_region'
+    assert termination.characteristic_impedance_model == 'rho_c_from_environment'
+    assert termination.pressure_velocity_equation == 'p_eq_rho_c_u_n'
+    assert termination.wavenumber_equation == 'k_eq_omega_over_c'
+    assert termination.helmholtz_robin_equation == 'dp_dn_minus_i_k_p_eq_0'
+    assert tuple(termination_fixture.required_capabilities) == (
+        'wave_rigid',
+        'wave_radiation_termination',
+    )
+    observable_by_id = {
+        item.observable_id: item for item in termination_fixture.observables
+    }
+    assert len(observable_by_id['termination-fr'].samples) == 281
+    assert len(observable_by_id['termination-complex-pressure'].samples) == 281
+
+
+def test_radiation_termination_rejects_implicit_or_mismatched_model() -> None:
+    manifest = _manifest()
+    fixture = _fixture(manifest, 'wave-explicit-radiation-termination-v1')
+    termination = fixture.terminations[0]
+
+    missing = termination.model_copy(
+        update={'helmholtz_robin_equation': None}
+    ).model_dump(mode='python')
+    with pytest.raises(ValueError, match='explicit model/sign/normal authority'):
+        type(termination).model_validate(missing)
+
+    non_radiation = termination.model_copy(
+        update={'kind': 'rigid'}
+    ).model_dump(mode='python')
+    with pytest.raises(ValueError, match='only valid for radiation termination'):
+        type(termination).model_validate(non_radiation)
 
 
 def test_wave_impedance_capability_rejects_geometric_only_material() -> None:
