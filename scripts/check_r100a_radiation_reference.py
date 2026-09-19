@@ -1,0 +1,312 @@
+from __future__ import annotations
+
+import argparse
+import cmath
+from hashlib import sha256
+import json
+import math
+from pathlib import Path
+
+from htdt.acoustic_benchmark import (
+    canonical_benchmark_json,
+    load_acoustic_benchmark_manifest,
+)
+
+
+FIXTURE_ID = 'wave-explicit-radiation-termination-v1'
+MAGNITUDE_OBSERVABLE_ID = 'termination-fr'
+COMPLEX_OBSERVABLE_ID = 'termination-complex-pressure'
+COARSE_TRUNCATION = 8
+REFERENCE_TRUNCATION = 12
+RMS_RELATIVE_LIMIT = 1.0e-9
+MAX_POINT_RELATIVE_LIMIT = 1.0e-8
+REFERENCE_RELATIVE_TOLERANCE = 1.0e-12
+REFERENCE_ABSOLUTE_TOLERANCE = 1.0e-12
+
+
+def _fixture(manifest):
+    return next(item for item in manifest.fixtures if item.fixture_id == FIXTURE_ID)
+
+
+def _position(position) -> tuple[float, float, float]:
+    return (float(position.x_m), float(position.y_m), float(position.z_m))
+
+
+def _mode_value(index: int, coordinate: float, length: float) -> float:
+    if index == 0:
+        return 1.0 / math.sqrt(length)
+    return math.sqrt(2.0 / length) * math.cos(index * math.pi * coordinate / length)
+
+
+def _axial_green(
+    *,
+    k: float,
+    transverse_wavenumber_sq: float,
+    x_m: float,
+    source_x_m: float,
+    length_x_m: float,
+) -> complex:
+    q = cmath.sqrt(complex(k * k - transverse_wavenumber_sq, 0.0))
+    x_min = min(x_m, source_x_m)
+    x_max = max(x_m, source_x_m)
+
+    if abs(q) < 1.0e-10:
+        u = complex(1.0, 0.0)
+        v = complex(1.0, -k * (length_x_m - x_max))
+        wronskian = complex(0.0, k)
+    else:
+        u = cmath.cos(q * x_min)
+        distance_from_termination = length_x_m - x_max
+        v = (
+            cmath.cos(q * distance_from_termination)
+            - 1j * (k / q) * cmath.sin(q * distance_from_termination)
+        )
+        wronskian = (
+            q * cmath.sin(q * length_x_m)
+            + 1j * k * cmath.cos(q * length_x_m)
+        )
+    return u * v / wronskian
+
+
+def _pressure(fixture, frequency_hz: float, truncation: int) -> complex:
+    source = fixture.sources[0]
+    receiver = fixture.receivers[0]
+    rho = float(fixture.environment.density_kg_m3)
+    sound_speed = float(fixture.environment.sound_speed_m_s)
+    omega = 2.0 * math.pi * frequency_hz
+    k = omega / sound_speed
+
+    length_x = 6.0
+    length_y = 4.0
+    length_z = 2.5
+    source_x, source_y, source_z = _position(source.position)
+    receiver_x, receiver_y, receiver_z = _position(receiver.position)
+
+    modal_sum = complex(0.0, 0.0)
+    for m in range(truncation + 1):
+        y_weight = (
+            _mode_value(m, source_y, length_y)
+            * _mode_value(m, receiver_y, length_y)
+        )
+        if abs(y_weight) < 1.0e-16:
+            continue
+        alpha_sq = (m * math.pi / length_y) ** 2
+
+        for n in range(truncation + 1):
+            z_weight = (
+                _mode_value(n, source_z, length_z)
+                * _mode_value(n, receiver_z, length_z)
+            )
+            if abs(z_weight) < 1.0e-16:
+                continue
+            transverse_sq = alpha_sq + (n * math.pi / length_z) ** 2
+            modal_sum += (
+                y_weight
+                * z_weight
+                * _axial_green(
+                    k=k,
+                    transverse_wavenumber_sq=transverse_sq,
+                    x_m=receiver_x,
+                    source_x_m=source_x,
+                    length_x_m=length_x,
+                )
+            )
+
+    return (
+        1j
+        * omega
+        * rho
+        * float(source.amplitude)
+        * modal_sum
+    )
+
+
+def _frequency_grid(fixture) -> tuple[float, ...]:
+    grid = fixture.comparison.frequency_grid
+    if (
+        grid.kind != 'uniform'
+        or float(grid.start_hz) != 20.0
+        or float(grid.stop_hz) != 300.0
+        or float(grid.step_hz) != 1.0
+    ):
+        raise ValueError('radiation reference requires the frozen 20-300 Hz / 1 Hz grid')
+    count = int(round((float(grid.stop_hz) - float(grid.start_hz)) / float(grid.step_hz))) + 1
+    return tuple(float(grid.start_hz) + index * float(grid.step_hz) for index in range(count))
+
+
+def _validate_authority(manifest, fixture) -> None:
+    if manifest.schema_version != 'r100a-3' or manifest.revision != 3:
+        raise ValueError('radiation reference requires R100A-3 revision 3')
+    if tuple(fixture.required_capabilities) != (
+        'wave_rigid',
+        'wave_radiation_termination',
+    ):
+        raise ValueError('radiation fixture capability authority changed')
+    if len(fixture.regions) != 1 or fixture.regions[0].region_id != 'room':
+        raise ValueError('radiation fixture region authority changed')
+    if len(fixture.terminations) != 1:
+        raise ValueError('radiation fixture must have exactly one termination')
+    termination = fixture.terminations[0]
+    if (
+        termination.termination_id != 'open-right'
+        or termination.region_id != 'room'
+        or termination.kind != 'radiation'
+        or termination.boundary_id != 'b-interface'
+        or termination.radiation_model != 'local_first_order_outgoing'
+        or termination.normal_convention != 'outward_from_region'
+        or termination.characteristic_impedance_model != 'rho_c_from_environment'
+        or termination.pressure_velocity_equation != 'p_eq_rho_c_u_n'
+        or termination.wavenumber_equation != 'k_eq_omega_over_c'
+        or termination.helmholtz_robin_equation != 'dp_dn_minus_i_k_p_eq_0'
+    ):
+        raise ValueError('radiation termination mathematical authority changed')
+
+    expected_aperture = (
+        (6.0, 0.0, 0.0),
+        (6.0, 0.0, 2.5),
+        (6.0, 4.0, 2.5),
+        (6.0, 4.0, 0.0),
+    )
+    if tuple(_position(item) for item in termination.aperture) != expected_aperture:
+        raise ValueError('radiation termination aperture authority changed')
+    if float(fixture.environment.density_kg_m3) != 1.2:
+        raise ValueError('radiation reference density authority changed')
+    if float(fixture.environment.sound_speed_m_s) != 343.0:
+        raise ValueError('radiation reference sound-speed authority changed')
+    if fixture.comparison.fourier_sign != 'exp(-i*omega*t)':
+        raise ValueError('radiation reference Fourier authority changed')
+    source = fixture.sources[0]
+    receiver = fixture.receivers[0]
+    if (
+        _position(source.position) != (1.0, 2.0, 1.0)
+        or source.normalization != 'volume_velocity_m3_s'
+        or float(source.amplitude) != 1.0
+        or float(source.phase_deg) != 0.0
+        or _position(receiver.position) != (5.0, 2.0, 1.0)
+    ):
+        raise ValueError('radiation source/receiver authority changed')
+
+
+def _observable(fixture, observable_id: str):
+    return next(item for item in fixture.observables if item.observable_id == observable_id)
+
+
+def _reference_payload(frequencies: tuple[float, ...], pressures: tuple[complex, ...]) -> dict[str, object]:
+    return {
+        'fixture_id': FIXTURE_ID,
+        'model': 'rectangular-neumann-transverse-modal-green-function-v1',
+        'radiation_model': 'local_first_order_outgoing',
+        'fourier_sign': 'exp(-i*omega*t)',
+        'normal_convention': 'outward_from_region',
+        'pressure_velocity_equation': 'p_eq_rho_c_u_n',
+        'helmholtz_robin_equation': 'dp_dn_minus_i_k_p_eq_0',
+        'truncation': REFERENCE_TRUNCATION,
+        'samples': [
+            {
+                'frequency_hz': frequency_hz,
+                'pressure_real_pa': pressure.real,
+                'pressure_imag_pa': pressure.imag,
+            }
+            for frequency_hz, pressure in zip(frequencies, pressures, strict=True)
+        ],
+    }
+
+
+def _compare_manifest_samples(fixture, frequencies: tuple[float, ...], pressures: tuple[complex, ...]) -> None:
+    magnitude = _observable(fixture, MAGNITUDE_OBSERVABLE_ID)
+    complex_pressure = _observable(fixture, COMPLEX_OBSERVABLE_ID)
+    if magnitude.reference_kind != 'analytical' or complex_pressure.reference_kind != 'analytical':
+        raise ValueError('radiation reference observables must remain analytical authority')
+    if len(magnitude.samples) != len(frequencies) or len(complex_pressure.samples) != len(frequencies):
+        raise ValueError('radiation reference samples do not cover the complete frozen grid')
+
+    magnitude_by_key = {item.sample_key: item for item in magnitude.samples}
+    complex_by_key = {item.sample_key: item for item in complex_pressure.samples}
+    for frequency_hz, pressure in zip(frequencies, pressures, strict=True):
+        integer_hz = int(round(frequency_hz))
+        magnitude_sample = magnitude_by_key.get(f'mag@{integer_hz}Hz')
+        complex_sample = complex_by_key.get(f'P@{integer_hz}Hz')
+        if magnitude_sample is None or complex_sample is None:
+            raise ValueError(f'missing radiation reference sample at {frequency_hz} Hz')
+        expected_db = 20.0 * math.log10(abs(pressure))
+        if not math.isclose(
+            float(magnitude_sample.scalar_value),
+            expected_db,
+            rel_tol=REFERENCE_RELATIVE_TOLERANCE,
+            abs_tol=REFERENCE_ABSOLUTE_TOLERANCE,
+        ):
+            raise ValueError(f'radiation magnitude sample drift at {frequency_hz} Hz')
+        if not math.isclose(
+            float(complex_sample.real_value),
+            pressure.real,
+            rel_tol=REFERENCE_RELATIVE_TOLERANCE,
+            abs_tol=REFERENCE_ABSOLUTE_TOLERANCE,
+        ) or not math.isclose(
+            float(complex_sample.imag_value),
+            pressure.imag,
+            rel_tol=REFERENCE_RELATIVE_TOLERANCE,
+            abs_tol=REFERENCE_ABSOLUTE_TOLERANCE,
+        ):
+            raise ValueError(f'radiation complex-pressure sample drift at {frequency_hz} Hz')
+
+
+def check_reference(manifest_path: Path) -> dict[str, object]:
+    manifest = load_acoustic_benchmark_manifest(manifest_path)
+    fixture = _fixture(manifest)
+    _validate_authority(manifest, fixture)
+    frequencies = _frequency_grid(fixture)
+
+    coarse = tuple(_pressure(fixture, frequency_hz, COARSE_TRUNCATION) for frequency_hz in frequencies)
+    reference = tuple(
+        _pressure(fixture, frequency_hz, REFERENCE_TRUNCATION)
+        for frequency_hz in frequencies
+    )
+    numerator = sum(abs(fine - coarse_value) ** 2 for coarse_value, fine in zip(coarse, reference, strict=True))
+    denominator = sum(abs(fine) ** 2 for fine in reference)
+    rms_relative = math.sqrt(numerator / max(denominator, 1.0e-300))
+    max_point_relative = max(
+        abs(fine - coarse_value) / max(abs(fine), 1.0e-300)
+        for coarse_value, fine in zip(coarse, reference, strict=True)
+    )
+    if rms_relative > RMS_RELATIVE_LIMIT or max_point_relative > MAX_POINT_RELATIVE_LIMIT:
+        raise ValueError(
+            'radiation modal reference did not converge under frozen truncation check: '
+            f'rms_relative={rms_relative} max_point_relative={max_point_relative}'
+        )
+
+    _compare_manifest_samples(fixture, frequencies, reference)
+    payload = _reference_payload(frequencies, reference)
+    reference_sha256 = sha256(
+        canonical_benchmark_json(payload).encode('utf-8')
+    ).hexdigest()
+    return {
+        'status': 'pass',
+        'manifest_id': manifest.manifest_id,
+        'r100a_semantic_hash': manifest.semantic_hash(),
+        'fixture_id': FIXTURE_ID,
+        'radiation_model': fixture.terminations[0].radiation_model,
+        'coarse_truncation': COARSE_TRUNCATION,
+        'reference_truncation': REFERENCE_TRUNCATION,
+        'complex_rms_relative_coarse_to_reference': rms_relative,
+        'max_point_relative_coarse_to_reference': max_point_relative,
+        'frequency_sample_count': len(frequencies),
+        'reference_payload_sha256': reference_sha256,
+    }
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description='Validate the frozen R100A-3 local-radiation semi-analytical reference'
+    )
+    parser.add_argument('--manifest', required=True, type=Path)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    print(json.dumps(check_reference(args.manifest), indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
