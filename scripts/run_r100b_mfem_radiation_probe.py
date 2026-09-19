@@ -34,7 +34,7 @@ from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
 CANDIDATE_ID = 'mfem-v4.10-d964264'
 FIXTURE_ID = 'wave-explicit-radiation-termination-v1'
 ADAPTER_ID = 'htdt-r100b-mfem-radiation-termination'
-ADAPTER_VERSION = '1'
+ADAPTER_VERSION = '2'
 ARTIFACT_SCHEMA = 'r100b-mfem-radiation-termination-artifact-1'
 
 ORDER_MIN = 2
@@ -742,8 +742,99 @@ def _execute(
     )
     monitor = ProcessPeakRssMonitor(process)
     monitor.start()
-    stdout, _ = process.communicate()
+    execution_budget_s = (
+        float(fixture.resource_budget.max_compile_s)
+        + float(fixture.resource_budget.max_solve_s)
+    )
+    process_started = time.perf_counter()
+    timed_out = False
+    try:
+        stdout, _ = process.communicate(timeout=execution_budget_s)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        process.kill()
+        stdout, _ = process.communicate()
+    process_wall_s = time.perf_counter() - process_started
     peak_ram_mb = monitor.stop()
+
+    if timed_out:
+        reason = (
+            f'MFEM radiation executable exceeded the combined frozen assembly/solve '
+            f'budget {execution_budget_s:g} s; observed wall time before termination '
+            f'{process_wall_s:.6f} s. Exact compile/solve split is unavailable because '
+            'the process was terminated once resource PASS became impossible.'
+        )
+        fixture_evidence = BakeoffFixtureEvidence(
+            fixture_id=fixture.fixture_id,
+            status='fail',
+            evidence_ref=evidence_ref,
+            adapter_id=ADAPTER_ID,
+            adapter_version=ADAPTER_VERSION,
+            backend_version='4.10',
+            precision='float64',
+            peak_ram_mb=peak_ram_mb,
+            disk_mb=_directory_size_mb(work_dir),
+            output_mb=(
+                raw_path.stat().st_size / (1024.0 * 1024.0)
+                if raw_path.is_file()
+                else 0.0
+            ),
+            diagnostics=(reason,),
+        )
+        run = BakeoffRun(
+            run_id=f'mfem-radiation-termination-{os.environ.get("GITHUB_RUN_ID", "manual")}',
+            r100a_manifest_id=benchmark.manifest_id,
+            r100a_semantic_hash=benchmark.semantic_hash(),
+            candidate_manifest_hash=candidates.semantic_hash(),
+            candidate_id=candidate.candidate_id,
+            candidate_source_commit_sha=candidate.source_commit_sha,
+            platform=_platform(fixture.resource_budget.cpu_thread_budget),
+            fixture_evidence=(fixture_evidence,),
+            hard_gates=_hard_gates(evidence_ref, reproducible=True),
+            notes=(
+                'Workflow completion and radiation fixture result are separate authorities.',
+                'The executable was terminated only after the frozen combined assembly/solve resource budget made candidate PASS impossible.',
+                'No pressure samples are synthesized for the timed-out solve.',
+            ),
+        )
+        validate_bakeoff_run(benchmark, candidates, run)
+        root = Path(__file__).resolve().parents[1]
+        details = {
+            'raw': None,
+            'convergence': [],
+            'qualification': {
+                'qualified': False,
+                'violations': [reason],
+            },
+            'solver_violations': [reason],
+            'central_observable_evidence': None,
+            'resource_evidence': {
+                'native_build_s': native_build_s,
+                'execution_budget_s': execution_budget_s,
+                'observed_process_wall_s': process_wall_s,
+                'peak_ram_mb': peak_ram_mb,
+                'work_disk_mb': _directory_size_mb(work_dir),
+                'raw_output_mb': (
+                    raw_path.stat().st_size / (1024.0 * 1024.0)
+                    if raw_path.is_file()
+                    else 0.0
+                ),
+                'resource_timeout': True,
+            },
+            'source_provenance': {
+                **_htdt_git_provenance(),
+                'mfem_source_commit_sha': actual_head,
+                'probe_source_sha256': _sha256_file(
+                    root / 'benchmarks' / 'acoustics' / 'mfem_probe' / 'radiation_transfer.cpp'
+                ),
+                'harness_source_sha256': _sha256_file(Path(__file__).resolve()),
+                'probe_executable_sha256': _sha256_file(executable),
+                'runtime_versions': _runtime_versions(),
+            },
+            'process_stdout_tail': stdout[-6000:],
+        }
+        return details, run
+
     if process.returncode != 0:
         raise RuntimeError(
             f'MFEM radiation probe executable exited {process.returncode}: {stdout[-6000:]}'
