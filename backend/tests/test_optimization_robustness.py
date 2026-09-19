@@ -872,10 +872,20 @@ def test_o90b_cancel_cache_resume_and_stale_reuse_protection(tmp_path) -> None:
     assert len(cancelled.samples) == 2
     assert repository.list_samples(spec.robustness_spec_id) == cancelled.samples
 
+    replay_spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=model,
+        sample_count=9,
+        seed=77,
+        created_at_utc='2026-09-19T00:18:30+00:00',
+    )
+    assert replay_spec.robustness_spec_sha256 == spec.robustness_spec_sha256
+    assert replay_spec.created_at_utc != spec.created_at_utc
+
     resumed = evaluate_uncertainty_robustness(
         source_revision=revision,
         search_spec=search_spec,
-        spec=spec,
+        spec=replay_spec,
         constraint_set=constraints,
         nominal_objective=nominal,
         evaluator=_o90b_linear_evaluator,
