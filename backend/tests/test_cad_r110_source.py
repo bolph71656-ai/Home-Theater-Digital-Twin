@@ -483,6 +483,9 @@ def test_complex_directivity_does_not_create_wave_excitation_normalization(
         == 'SUPPORTED_FOR_COMPLEX_DIRECTIVITY'
     )
     assert model.capability('electrical_sensitivity_reference').decision == 'SUPPORTED'
+    assert model.electrical_sensitivity_reference is not None
+    assert model.electrical_sensitivity_reference.input_quantity == 'voltage_v_rms'
+    assert model.electrical_sensitivity_reference.input_value == pytest.approx(2.83)
     assert (
         model.capability('acoustic_wave_excitation_normalization').decision
         == 'BLOCKED'
