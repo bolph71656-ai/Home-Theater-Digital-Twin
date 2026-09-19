@@ -268,8 +268,26 @@ def _validate_authority(manifest, fixture) -> None:
         raise ValueError('radiation reference density authority changed')
     if float(fixture.environment.sound_speed_m_s) != 343.0:
         raise ValueError('radiation reference sound-speed authority changed')
-    if fixture.comparison.fourier_sign != 'exp(-i*omega*t)':
-        raise ValueError('radiation reference Fourier authority changed')
+
+    comparison = fixture.comparison
+    if (
+        comparison.coordinate_system != 'x_right_y_rear_z_up'
+        or comparison.length_unit != 'm'
+        or comparison.pressure_unit != 'Pa'
+        or comparison.fourier_sign != 'exp(-i*omega*t)'
+        or comparison.phase_wrap != '[-180,180)'
+        or comparison.time_zero_reference != 'source_excitation_t0'
+        or comparison.floating_point != 'float64'
+        or comparison.interpolation != 'linear_complex'
+        or comparison.window != 'none'
+        or comparison.filter != 'none'
+        or comparison.time_step_s is not None
+        or float(comparison.observation_time_s) != 2.0
+    ):
+        raise ValueError('radiation comparison authority changed')
+
+    if len(fixture.sources) != 1 or len(fixture.receivers) != 1:
+        raise ValueError('radiation reference requires exactly one source and receiver')
     source = fixture.sources[0]
     receiver = fixture.receivers[0]
     if (
