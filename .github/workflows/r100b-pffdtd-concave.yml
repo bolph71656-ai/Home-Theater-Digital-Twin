@@ -12,6 +12,10 @@ on:
       - '.github/workflows/r100b-pffdtd-concave.yml'
   workflow_dispatch:
 
+concurrency:
+  group: r100b-pffdtd-concave-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-pffdtd-concave:
     runs-on: windows-latest
