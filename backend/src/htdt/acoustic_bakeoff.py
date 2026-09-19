@@ -360,9 +360,15 @@ def validate_bakeoff_adoption_profile(
 ) -> None:
     fixture_by_id = {item.fixture_id: item for item in benchmark.fixtures}
     referenced = set(profile.required_fixture_ids) | set(profile.deferred_fixture_ids)
-    unknown = sorted(referenced - set(fixture_by_id))
+    benchmark_fixture_ids = set(fixture_by_id)
+    unknown = sorted(referenced - benchmark_fixture_ids)
     if unknown:
         raise ValueError(f'adoption profile references unknown fixtures: {unknown}')
+    unclassified = sorted(benchmark_fixture_ids - referenced)
+    if unclassified:
+        raise ValueError(
+            f'adoption profile leaves benchmark fixtures unclassified: {unclassified}'
+        )
 
     required_capabilities = set(profile.required_capabilities)
     fixture_capabilities = set().union(
