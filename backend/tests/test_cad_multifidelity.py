@@ -19,6 +19,7 @@ from htdt.cad_scene import RoomPrism, SceneDocument
 from htdt.cad_topology_comparison import (
     ComparisonEligibilityIssue,
     TopologyComparisonEvaluation,
+    VariantBundleRef,
     VariantComparisonEligibility,
     canonical_topology_comparison_sha256,
 )
@@ -203,6 +204,24 @@ def _final_comparison(
         )
         for variant_id in all_ids
     )
+    variant_hashes = {
+        'variant-a': 'a' * 64,
+        'variant-b': 'b' * 64,
+        'variant-c': 'c' * 64,
+    }
+    bundles = tuple(
+        VariantBundleRef(
+            bundle_id=f'fixture-bundle:{variant_id}',
+            bundle_sha256={
+                'variant-a': '1' * 64,
+                'variant-b': '2' * 64,
+                'variant-c': '3' * 64,
+            }[variant_id],
+            variant_id=variant_id,
+            variant_sha256=variant_hashes[variant_id],
+        )
+        for variant_id in candidate_ids
+    )
     pareto = ParetoResult(
         objective_ids=('fixture-objective',),
         non_dominated_candidate_ids=candidate_ids,
@@ -213,7 +232,7 @@ def _final_comparison(
         'authority_version': 'o100d-topology-comparison-evaluation-1',
         'comparison_id': 'fixture-comparison',
         'comparison_semantic_sha256': 'd' * 64,
-        'bundles': [],
+        'bundles': [item.model_dump(mode='json') for item in bundles],
         'eligibility': [item.model_dump(mode='json') for item in eligibility],
         'pareto_objective_ids': ['fixture-objective'],
         'pareto_result': pareto.model_dump(mode='json'),
@@ -224,7 +243,7 @@ def _final_comparison(
         evaluation_id=f'topology-evaluation-{digest[:24]}',
         comparison_id='fixture-comparison',
         comparison_semantic_sha256='d' * 64,
-        bundles=(),
+        bundles=bundles,
         eligibility=eligibility,
         pareto_objective_ids=('fixture-objective',),
         pareto_result=pareto,
@@ -461,3 +480,42 @@ def test_o100_finalization_reopen_requires_typed_final_comparison_resolver(
         match='requires a typed topology comparison repository',
     ):
         unresolved.get_finalization(finalization.finalization_id)
+
+
+def test_final_common_fidelity_requires_exact_bundle_for_each_survivor() -> None:
+    plan = _plan()
+    _geometry, _coverage, screening = _screening(plan)
+    valid = _final_comparison()
+    missing_bundle = valid.model_copy(
+        update={
+            'bundles': valid.bundles[:1],
+            'evaluation_sha256': canonical_topology_comparison_sha256(
+                {
+                    **valid.semantic_payload(),
+                    'bundles': [
+                        item.model_dump(mode='json')
+                        for item in valid.bundles[:1]
+                    ],
+                }
+            ),
+        }
+    )
+    payload = missing_bundle.semantic_payload()
+    digest = canonical_topology_comparison_sha256(payload)
+    missing_bundle = TopologyComparisonEvaluation(
+        **{
+            **payload,
+            'evaluation_id': f'topology-evaluation-{digest[:24]}',
+            'evaluation_sha256': digest,
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match='requires exact VariantEvaluationBundle ref',
+    ):
+        finalize_o100_multifidelity(
+            plan=plan,
+            screening=screening,
+            final_comparison=missing_bundle,
+        )
