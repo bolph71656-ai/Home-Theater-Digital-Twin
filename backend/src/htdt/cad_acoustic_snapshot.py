@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .cad_acoustic_treatment import semantic_surface_host_authority_sha256
 from .cad_equipment import DirectivityCapabilityTier, FrequencyDomain
 from .cad_prediction_models import canonical_prediction_json, prediction_input_hash
 from .cad_r110_source import R110CompiledSourceModel
@@ -21,12 +22,22 @@ from .r120_geometry_compiler import (
     ExactExternalAuthorityRef,
     R120CompiledGeometry,
 )
+from .treatment_boundary_overlay import (
+    TreatmentBoundaryCompilationResult,
+    TreatmentBoundaryCompileStatus,
+    TreatmentBoundaryOverlay,
+    TreatmentBoundaryTarget,
+    adapt_treatment_boundary_composition_to_r120,
+)
 
 
-ACOUSTIC_SCENE_SNAPSHOT_SCHEMA_VERSION = 1
-ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION = '1'
+ACOUSTIC_SCENE_SNAPSHOT_SCHEMA_VERSION = 2
+ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION = '2'
 ACOUSTIC_SCENE_SNAPSHOT_COMPILER_ID = 'htdt.acoustic_scene_snapshot'
-ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION = '1'
+ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION = '2'
+ACOUSTIC_SCENE_SNAPSHOT_V1_SCHEMA_VERSION = 1
+ACOUSTIC_SCENE_SNAPSHOT_V1_AUTHORITY_VERSION = '1'
+ACOUSTIC_SCENE_SNAPSHOT_V1_COMPILER_VERSION = '1'
 ACOUSTIC_PREDICTION_REQUEST_SCHEMA_VERSION = 1
 
 KnownObservable = Literal[
@@ -176,6 +187,94 @@ class SurfaceBoundaryConfiguration(BaseModel):
     boundary_physics_authority: ExactExternalAuthorityRef | None = None
 
 
+class TreatmentBoundaryOverlaySnapshotRef(BaseModel):
+    """Exact attached-treatment lineage retained without flattening base construction."""
+
+    model_config = ConfigDict(frozen=True, extra='forbid')
+
+    overlay_ref: ExactExternalAuthorityRef
+    host_surface_authority_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    lifecycle: Literal['proposed', 'installed']
+    treatment_definition_id: str = Field(min_length=1)
+    treatment_definition_version: str = Field(min_length=1)
+    treatment_definition_hash_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    treatment_placement_instance_id: str = Field(min_length=1)
+    treatment_placement_version: int = Field(ge=1)
+    treatment_placement_hash_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    surface_binding_evaluation_id: str = Field(
+        pattern=r'^treatment-surface-binding:[0-9a-f]{64}$'
+    )
+    surface_binding_evaluation_hash_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    wave_capability_state: Literal['AVAILABLE', 'UNKNOWN']
+    geometric_capability_state: Literal['AVAILABLE', 'UNKNOWN']
+
+
+class TreatmentBoundarySnapshotBinding(BaseModel):
+    """Snapshot binding to composition authority; blocked results never masquerade as input."""
+
+    model_config = ConfigDict(frozen=True, extra='forbid')
+
+    status: TreatmentBoundaryCompileStatus
+    target_domain: TreatmentBoundaryTarget
+    host_surface_id: str = Field(pattern=r'^semantic-surface:[0-9a-f]{64}$')
+    composition_id: str | None = Field(
+        default=None,
+        pattern=r'^treatment-boundary-composition:[0-9a-f]{64}$',
+    )
+    composition_authority_version: str | None = Field(default=None, min_length=1)
+    composition_hash_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    attached_treatment_overlays: tuple[TreatmentBoundaryOverlaySnapshotRef, ...] = ()
+    selected_treatment_material_authorities: tuple[ExactExternalAuthorityRef, ...] = ()
+    lifecycle: Literal['proposed', 'installed'] | None = None
+    base_material_authority: ExactExternalAuthorityRef | None = None
+    base_boundary_physics_authority: ExactExternalAuthorityRef | None = None
+    reasons: tuple[str, ...] = ()
+
+    @model_validator(mode='after')
+    def exact_composition_contract(self) -> 'TreatmentBoundarySnapshotBinding':
+        composition_fields = (
+            self.composition_id,
+            self.composition_authority_version,
+            self.composition_hash_sha256,
+        )
+        available = self.status == 'AVAILABLE'
+        if available and any(value is None for value in composition_fields):
+            raise ValueError('AVAILABLE treatment binding requires exact composition identity')
+        if not available and any(value is not None for value in composition_fields):
+            raise ValueError('blocked treatment binding cannot expose composition identity')
+        if available and not self.attached_treatment_overlays:
+            raise ValueError('AVAILABLE treatment binding requires exact overlay lineage')
+        if available and len(self.attached_treatment_overlays) != len(
+            self.selected_treatment_material_authorities
+        ):
+            raise ValueError(
+                'AVAILABLE treatment binding requires one selected material per overlay'
+            )
+        if not available and self.selected_treatment_material_authorities:
+            raise ValueError('blocked treatment binding cannot select treatment materials')
+        if available and self.lifecycle is None:
+            raise ValueError('AVAILABLE treatment binding requires lifecycle')
+        if self.lifecycle is not None and any(
+            overlay.lifecycle != self.lifecycle
+            for overlay in self.attached_treatment_overlays
+        ):
+            raise ValueError('treatment overlay lifecycle mismatch')
+        overlay_ids = [
+            item.overlay_ref.authority_id
+            for item in self.attached_treatment_overlays
+        ]
+        if len(overlay_ids) != len(set(overlay_ids)):
+            raise ValueError('treatment overlay refs must be unique')
+        if len(self.reasons) != len(set(self.reasons)):
+            raise ValueError('treatment binding reasons must be unique')
+        if not available and not self.reasons:
+            raise ValueError('blocked treatment binding requires a reason')
+        return self
+
+
 class ObservableReadiness(BaseModel):
     model_config = ConfigDict(frozen=True, extra='forbid')
 
@@ -203,6 +302,7 @@ class AcousticSceneReadiness(BaseModel):
     geometric_directivity_ready: bool
     wave_source_ready: bool
     wave_boundary_ready: bool
+    geometric_boundary_ready: bool | None = None
     environment_ready: bool
     receiver_ready: bool
     requested_observable_ready: bool
@@ -212,12 +312,12 @@ class AcousticSceneReadiness(BaseModel):
 class AcousticSceneSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True, extra='forbid')
 
-    schema_version: Literal[1] = ACOUSTIC_SCENE_SNAPSHOT_SCHEMA_VERSION
-    authority_version: Literal['1'] = ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION
+    schema_version: Literal[1, 2] = ACOUSTIC_SCENE_SNAPSHOT_SCHEMA_VERSION
+    authority_version: Literal['1', '2'] = ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION
     compiler_id: Literal[
         'htdt.acoustic_scene_snapshot'
     ] = ACOUSTIC_SCENE_SNAPSHOT_COMPILER_ID
-    compiler_version: Literal['1'] = ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION
+    compiler_version: Literal['1', '2'] = ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION
 
     snapshot_id: str = Field(pattern=r'^acoustic-scene-snapshot:[0-9a-f]{64}$')
     semantic_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
@@ -254,6 +354,7 @@ class AcousticSceneSnapshot(BaseModel):
     material_boundary_configuration_sha256: str = Field(
         pattern=r'^[0-9a-f]{64}$'
     )
+    treatment_boundary_bindings: tuple[TreatmentBoundarySnapshotBinding, ...] = ()
 
     sources: tuple[AcousticSceneSourceBinding, ...]
     receivers: tuple[AcousticReceiverBinding, ...]
@@ -269,6 +370,36 @@ class AcousticSceneSnapshot(BaseModel):
 
     @model_validator(mode='after')
     def exact_snapshot_identity(self) -> 'AcousticSceneSnapshot':
+        if self.schema_version == 1:
+            if (
+                self.authority_version != ACOUSTIC_SCENE_SNAPSHOT_V1_AUTHORITY_VERSION
+                or self.compiler_version != ACOUSTIC_SCENE_SNAPSHOT_V1_COMPILER_VERSION
+            ):
+                raise ValueError('AcousticSceneSnapshot v1 version tuple mismatch')
+            if self.treatment_boundary_bindings:
+                raise ValueError('AcousticSceneSnapshot v1 cannot contain treatment bindings')
+            if self.readiness.geometric_boundary_ready is not None:
+                raise ValueError(
+                    'AcousticSceneSnapshot v1 cannot carry v2 geometric boundary readiness'
+                )
+        else:
+            if (
+                self.authority_version != ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION
+                or self.compiler_version != ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION
+            ):
+                raise ValueError('AcousticSceneSnapshot v2 version tuple mismatch')
+            if self.readiness.geometric_boundary_ready is None:
+                raise ValueError(
+                    'AcousticSceneSnapshot v2 requires geometric boundary readiness'
+                )
+        treatment_keys = [
+            (item.host_surface_id, item.target_domain)
+            for item in self.treatment_boundary_bindings
+        ]
+        if len(treatment_keys) != len(set(treatment_keys)):
+            raise ValueError(
+                'treatment boundary bindings must be unique per surface/domain'
+            )
         if (self.system_variant_id is None) != (
             self.system_variant_sha256 is None
         ):
@@ -308,10 +439,16 @@ class AcousticSceneSnapshot(BaseModel):
         return self
 
     def semantic_payload(self) -> dict[str, Any]:
-        return self.model_dump(
+        payload = self.model_dump(
             mode='json',
             exclude={'snapshot_id', 'semantic_sha256'},
         )
+        if self.schema_version == 1:
+            payload.pop('treatment_boundary_bindings', None)
+            readiness = payload.get('readiness')
+            if isinstance(readiness, dict):
+                readiness.pop('geometric_boundary_ready', None)
+        return payload
 
 
 class AcousticPredictionRequest(BaseModel):
@@ -461,6 +598,7 @@ def _observable_readiness(
     geometric_directivity_ready: bool,
     wave_source_ready: bool,
     wave_boundary_ready: bool,
+    geometric_boundary_ready: bool,
     environment_ready: bool,
     receiver_ready: bool,
 ) -> ObservableReadiness:
@@ -483,6 +621,8 @@ def _observable_readiness(
         ga_reasons.append('geometric_acoustics_geometry_not_ready')
     if not geometric_directivity_ready:
         ga_reasons.append('geometric_directivity_not_ready')
+    if not geometric_boundary_ready:
+        ga_reasons.append('geometric_boundary_not_ready')
     if not environment_ready:
         ga_reasons.append('environment_not_ready')
     if not receiver_ready:
@@ -548,6 +688,8 @@ def _derive_readiness(
     receivers: tuple[AcousticReceiverBinding, ...],
     environment: SnapshotEnvironmentAuthorityRef | None,
     requested_observables: tuple[str, ...],
+    treatment_bindings: tuple[TreatmentBoundarySnapshotBinding, ...],
+    schema_version: int,
 ) -> AcousticSceneReadiness:
     geometry_ready = compiled.readiness.geometry_compiled
     geometric_directivity_ready = bool(sources) and all(
@@ -562,7 +704,47 @@ def _derive_readiness(
         }
         for item in sources
     )
-    wave_boundary_ready = compiled.readiness.wave_geometry_ready
+    treated_surfaces = {
+        binding.host_surface_id
+        for binding in treatment_bindings
+    }
+    wave_composed_surfaces = {
+        binding.host_surface_id
+        for binding in treatment_bindings
+        if binding.target_domain == 'wave' and binding.status == 'AVAILABLE'
+    }
+    geometric_composed_surfaces = {
+        binding.host_surface_id
+        for binding in treatment_bindings
+        if binding.target_domain == 'geometric' and binding.status == 'AVAILABLE'
+    }
+    treatment_wave_ready = (
+        not treated_surfaces
+        or treated_surfaces.issubset(wave_composed_surfaces)
+    )
+    treatment_geometric_ready = (
+        not treated_surfaces
+        or treated_surfaces.issubset(geometric_composed_surfaces)
+    )
+    structural_blocks = {
+        'BLOCKED_NO_ACOUSTIC_MODEL',
+        'BLOCKED_PARTIAL_COVERAGE',
+        'BLOCKED_OVERLAP',
+    }
+    if any(
+        binding.status in structural_blocks
+        for binding in treatment_bindings
+    ):
+        treatment_wave_ready = False
+        treatment_geometric_ready = False
+
+    wave_boundary_ready = (
+        compiled.readiness.wave_geometry_ready and treatment_wave_ready
+    )
+    geometric_boundary_ready = (
+        compiled.readiness.geometric_acoustics_geometry_ready
+        and treatment_geometric_ready
+    )
     environment_ready = (
         environment is not None
         and environment.sound_speed_m_s is not None
@@ -580,6 +762,9 @@ def _derive_readiness(
             geometric_directivity_ready=geometric_directivity_ready,
             wave_source_ready=wave_source_ready,
             wave_boundary_ready=wave_boundary_ready,
+            geometric_boundary_ready=(
+                geometric_boundary_ready if schema_version >= 2 else True
+            ),
             environment_ready=environment_ready,
             receiver_ready=receiver_ready,
         )
@@ -590,11 +775,178 @@ def _derive_readiness(
         geometric_directivity_ready=geometric_directivity_ready,
         wave_source_ready=wave_source_ready,
         wave_boundary_ready=wave_boundary_ready,
+        geometric_boundary_ready=(
+            geometric_boundary_ready if schema_version >= 2 else None
+        ),
         environment_ready=environment_ready,
         receiver_ready=receiver_ready,
         requested_observable_ready=bool(statuses)
         and all(item.state == 'READY' for item in statuses),
         observable_readiness=statuses,
+    )
+
+
+def _treatment_overlay_snapshot_ref(
+    overlay: TreatmentBoundaryOverlay,
+) -> TreatmentBoundaryOverlaySnapshotRef:
+    return TreatmentBoundaryOverlaySnapshotRef(
+        overlay_ref=overlay.as_external_authority_ref(),
+        host_surface_authority_sha256=overlay.host_surface_authority_sha256,
+        lifecycle=overlay.lifecycle,
+        treatment_definition_id=overlay.treatment_definition_id,
+        treatment_definition_version=overlay.treatment_definition_version,
+        treatment_definition_hash_sha256=overlay.treatment_definition_hash_sha256,
+        treatment_placement_instance_id=overlay.treatment_placement_instance_id,
+        treatment_placement_version=overlay.treatment_placement_version,
+        treatment_placement_hash_sha256=overlay.treatment_placement_hash_sha256,
+        surface_binding_evaluation_id=overlay.surface_binding_evaluation_id,
+        surface_binding_evaluation_hash_sha256=(
+            overlay.surface_binding_evaluation_hash_sha256
+        ),
+        wave_capability_state=overlay.wave_capability_state,
+        geometric_capability_state=overlay.geometric_capability_state,
+    )
+
+
+def _treatment_binding_from_result(
+    result: TreatmentBoundaryCompilationResult,
+    *,
+    scene_revision: SceneRevision,
+    compiled: R120CompiledGeometry,
+) -> TreatmentBoundarySnapshotBinding:
+    result = TreatmentBoundaryCompilationResult.model_validate(
+        result.model_dump(mode='python')
+    )
+    if result.status in {
+        'BLOCKED_STALE_SURFACE',
+        'BLOCKED_STALE_R120_COMPILED_GEOMETRY',
+    }:
+        raise ValueError('stale treatment compilation result cannot enter snapshot')
+    if result.host_surface_id is None:
+        raise ValueError('treatment compilation result requires exact host surface')
+
+    geometry = scene_revision.document.r120_semantic_geometry
+    if geometry is None:
+        raise ValueError('SceneRevision has no SemanticAcousticGeometry')
+    surface_matches = [
+        surface
+        for surface in geometry.surfaces
+        if surface.surface_id == result.host_surface_id
+    ]
+    if len(surface_matches) != 1:
+        raise ValueError('treatment host SemanticSurface is missing or ambiguous')
+    mapping_matches = [
+        item
+        for item in compiled.surface_mapping
+        if item.source_surface_id == result.host_surface_id
+    ]
+    if len(mapping_matches) != 1:
+        raise ValueError('treatment host R120 surface binding is missing or ambiguous')
+    base_mapping = mapping_matches[0]
+
+    overlay_refs: tuple[TreatmentBoundaryOverlaySnapshotRef, ...] = ()
+    lifecycle: Literal['proposed', 'installed'] | None = None
+    if result.overlay is not None:
+        overlay = TreatmentBoundaryOverlay.model_validate(
+            result.overlay.model_dump(mode='python')
+        )
+        if (
+            overlay.exact_scene_revision_id != scene_revision.revision_id
+            or overlay.exact_scene_revision_content_hash
+            != scene_revision.content_hash
+            or overlay.exact_semantic_geometry_id != geometry.geometry_id
+            or overlay.exact_semantic_geometry_hash_sha256
+            != geometry.semantic_hash_sha256
+            or overlay.exact_r120_compiled_geometry_id
+            != compiled.compiled_geometry_id
+            or overlay.exact_r120_compiled_geometry_hash_sha256
+            != compiled.compiled_hash_sha256
+            or overlay.host_surface_id != result.host_surface_id
+        ):
+            raise ValueError('treatment overlay exact authority lineage mismatch')
+        actual_surface_hash = semantic_surface_host_authority_sha256(
+            surface_matches[0]
+        )
+        if overlay.host_surface_authority_sha256 != actual_surface_hash:
+            raise ValueError('treatment overlay host SemanticSurface authority is stale')
+        overlay_refs = (_treatment_overlay_snapshot_ref(overlay),)
+        lifecycle = overlay.lifecycle
+
+    composition = result.composition_request
+    if result.status == 'AVAILABLE':
+        if composition is None or result.overlay is None:
+            raise ValueError('AVAILABLE treatment result is incomplete')
+        if (
+            composition.target_domain != result.target_domain
+            or composition.host_surface_id != result.host_surface_id
+            or composition.exact_scene_revision_id != scene_revision.revision_id
+            or composition.exact_scene_revision_content_hash
+            != scene_revision.content_hash
+            or composition.exact_semantic_geometry_id != geometry.geometry_id
+            or composition.exact_semantic_geometry_hash_sha256
+            != geometry.semantic_hash_sha256
+            or composition.exact_r120_compiled_geometry_id
+            != compiled.compiled_geometry_id
+            or composition.exact_r120_compiled_geometry_hash_sha256
+            != compiled.compiled_hash_sha256
+        ):
+            raise ValueError('treatment composition exact authority lineage mismatch')
+        if (
+            composition.base_material_authority != base_mapping.material_authority
+            or composition.base_boundary_physics_authority
+            != base_mapping.boundary_physics_authority
+        ):
+            raise ValueError(
+                'treatment composition does not preserve exact R120 base boundary'
+            )
+        if composition.attached_treatment_overlays != (
+            result.overlay.as_external_authority_ref(),
+        ):
+            raise ValueError('treatment composition overlay refs mismatch')
+        expected_selected = (
+            result.overlay.wave_material_candidate_ref
+            if result.target_domain == 'wave'
+            else result.overlay.geometric_material_candidate_ref
+        )
+        if expected_selected is None or composition.selected_treatment_material_authorities != (
+            expected_selected,
+        ):
+            raise ValueError('treatment composition selected material authority mismatch')
+        if composition.selected_treatment_lifecycle != result.overlay.lifecycle:
+            raise ValueError('treatment composition lifecycle mismatch')
+        expected_r120_binding = adapt_treatment_boundary_composition_to_r120(
+            composition
+        )
+        if result.r120_surface_binding != expected_r120_binding:
+            raise ValueError('treatment composition R120 surface binding mismatch')
+        return TreatmentBoundarySnapshotBinding(
+            status=result.status,
+            target_domain=result.target_domain,
+            host_surface_id=result.host_surface_id,
+            composition_id=composition.composition_id,
+            composition_authority_version=composition.authority_version,
+            composition_hash_sha256=composition.composition_hash_sha256,
+            attached_treatment_overlays=overlay_refs,
+            selected_treatment_material_authorities=(
+                composition.selected_treatment_material_authorities
+            ),
+            lifecycle=composition.selected_treatment_lifecycle,
+            base_material_authority=composition.base_material_authority,
+            base_boundary_physics_authority=(
+                composition.base_boundary_physics_authority
+            ),
+            reasons=result.reasons,
+        )
+
+    return TreatmentBoundarySnapshotBinding(
+        status=result.status,
+        target_domain=result.target_domain,
+        host_surface_id=result.host_surface_id,
+        attached_treatment_overlays=overlay_refs,
+        lifecycle=lifecycle,
+        base_material_authority=base_mapping.material_authority,
+        base_boundary_physics_authority=base_mapping.boundary_physics_authority,
+        reasons=result.reasons,
     )
 
 
@@ -610,6 +962,7 @@ def build_acoustic_scene_snapshot(
     environment: SnapshotEnvironmentAuthorityRef | None = None,
     valid_frequency_domain: FrequencyDomain | None = None,
     valid_frequency_domain_authority_ref: ExactExternalAuthorityRef | None = None,
+    treatment_boundary_results: tuple[TreatmentBoundaryCompilationResult, ...] = (),
 ) -> AcousticSceneSnapshot:
     compiled_geometry = R120CompiledGeometry.model_validate(
         compiled_geometry.model_dump(mode='python')
@@ -684,6 +1037,37 @@ def build_acoustic_scene_snapshot(
         raise ValueError('snapshot must request at least one observable')
 
     receiver_tuple = tuple(sorted(receivers, key=lambda item: item.receiver_id))
+    treatment_bindings = tuple(
+        sorted(
+            (
+                _treatment_binding_from_result(
+                    item,
+                    scene_revision=scene_revision,
+                    compiled=compiled_geometry,
+                )
+                for item in treatment_boundary_results
+            ),
+            key=lambda item: (
+                item.host_surface_id,
+                item.target_domain,
+                item.status,
+                item.composition_hash_sha256 or '',
+            ),
+        )
+    )
+    treatment_keys = [
+        (item.host_surface_id, item.target_domain)
+        for item in treatment_bindings
+    ]
+    if len(treatment_keys) != len(set(treatment_keys)):
+        raise ValueError(
+            'treatment boundary results must be unique per surface/domain'
+        )
+    snapshot_schema_version = (
+        ACOUSTIC_SCENE_SNAPSHOT_SCHEMA_VERSION
+        if treatment_bindings
+        else ACOUSTIC_SCENE_SNAPSHOT_V1_SCHEMA_VERSION
+    )
     surface_configuration = _surface_configuration(compiled_geometry)
     boundary_hash = _digest(
         [item.model_dump(mode='json') for item in surface_configuration]
@@ -694,6 +1078,8 @@ def build_acoustic_scene_snapshot(
         receivers=receiver_tuple,
         environment=environment,
         requested_observables=requested_observables,
+        treatment_bindings=treatment_bindings,
+        schema_version=snapshot_schema_version,
     )
 
     unresolved = list(compiled_geometry.unresolved_conditions)
@@ -718,13 +1104,38 @@ def build_acoustic_scene_snapshot(
         unresolved.append('portal_authority_missing')
     if compiled_geometry.boundary_termination_authority_ref is None:
         unresolved.append('boundary_termination_authority_missing')
+    for binding in treatment_bindings:
+        if binding.status != 'AVAILABLE':
+            unresolved.append(
+                f'treatment_{binding.target_domain}_boundary_{binding.status.lower()}'
+            )
+        if any(
+            item.wave_capability_state != 'AVAILABLE'
+            for item in binding.attached_treatment_overlays
+        ):
+            unresolved.append('treatment_wave_boundary_capability_unknown')
+        if any(
+            item.geometric_capability_state != 'AVAILABLE'
+            for item in binding.attached_treatment_overlays
+        ):
+            unresolved.append('treatment_geometric_boundary_capability_unknown')
     unresolved = list(dict.fromkeys(unresolved))
 
+    snapshot_authority_version = (
+        ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION
+        if snapshot_schema_version >= 2
+        else ACOUSTIC_SCENE_SNAPSHOT_V1_AUTHORITY_VERSION
+    )
+    snapshot_compiler_version = (
+        ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION
+        if snapshot_schema_version >= 2
+        else ACOUSTIC_SCENE_SNAPSHOT_V1_COMPILER_VERSION
+    )
     core: dict[str, Any] = {
-        'schema_version': ACOUSTIC_SCENE_SNAPSHOT_SCHEMA_VERSION,
-        'authority_version': ACOUSTIC_SCENE_SNAPSHOT_AUTHORITY_VERSION,
+        'schema_version': snapshot_schema_version,
+        'authority_version': snapshot_authority_version,
         'compiler_id': ACOUSTIC_SCENE_SNAPSHOT_COMPILER_ID,
-        'compiler_version': ACOUSTIC_SCENE_SNAPSHOT_COMPILER_VERSION,
+        'compiler_version': snapshot_compiler_version,
         'document_id': scene_revision.document_id,
         'scene_revision_id': scene_revision.revision_id,
         'scene_content_hash': scene_revision.content_hash,
@@ -766,6 +1177,8 @@ def build_acoustic_scene_snapshot(
         'readiness': readiness,
         'unresolved_conditions': tuple(unresolved),
     }
+    if snapshot_schema_version >= 2:
+        core['treatment_boundary_bindings'] = treatment_bindings
     semantic_payload = {
         key: (
             value.model_dump(mode='json')
@@ -781,6 +1194,10 @@ def build_acoustic_scene_snapshot(
         )
         for key, value in core.items()
     }
+    if snapshot_schema_version == 1:
+        readiness_payload = semantic_payload.get('readiness')
+        if isinstance(readiness_payload, dict):
+            readiness_payload.pop('geometric_boundary_ready', None)
     digest = _digest(semantic_payload)
     return AcousticSceneSnapshot(
         snapshot_id=f'acoustic-scene-snapshot:{digest}',
