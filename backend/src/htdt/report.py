@@ -10,6 +10,19 @@ from typing import Any, Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .cad_acoustic_treatment import (
+    AcousticTreatmentDefinition,
+    AcousticTreatmentPlacement,
+    TreatmentSurfaceBindingEvaluation,
+    evaluate_treatment_prediction_capability,
+)
+from .cad_calibration import (
+    CadCalibrationExportSnapshot,
+    CadCalibrationLifecycleEvent,
+    CadCalibrationPlan,
+    CadVerificationMeasurementPlan,
+)
+from .cad_calibration_repository import _LIFECYCLE_ORDER as CALIBRATION_LIFECYCLE_ORDER
 from .cad_repository import SceneRevision
 from .cad_scene import SceneDocument, SceneEntity, quaternion_to_euler_deg, scene_content_hash
 from .cad_system_variant import SystemVariant, materialize_system_variant
@@ -171,9 +184,9 @@ section{{background:white;border:1px solid #d9dde3;border-radius:10px;padding:20
 </main></body></html>'''
 
 
-INSTALLATION_OUTPUT_SCHEMA_VERSION = 2
-INSTALLATION_OUTPUT_AUTHORITY_VERSION = 'installation-output-2'
-INSTALLATION_REPORT_RENDERER_VERSION = 'installation-report-2'
+INSTALLATION_OUTPUT_SCHEMA_VERSION = 3
+INSTALLATION_OUTPUT_AUTHORITY_VERSION = 'installation-output-3'
+INSTALLATION_REPORT_RENDERER_VERSION = 'installation-report-3'
 
 
 def _canonical(value: Any) -> str:
@@ -368,20 +381,147 @@ class InstallationStandardsSummary(BaseModel):
     criteria: tuple[InstallationStandardsCriterionSummary, ...] = ()
 
 
+class InstallationTreatmentInstanceSummary(BaseModel):
+    """Installation-facing view of one exact treatment placement and definition."""
+
+    model_config = ConfigDict(frozen=True)
+
+    instance_id: str = Field(min_length=1)
+    placement_version: int = Field(ge=1)
+    placement_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    lifecycle: Literal['proposed', 'installed']
+    definition_id: str = Field(min_length=1)
+    definition_version: str = Field(min_length=1)
+    definition_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    scene_revision_id: str = Field(min_length=1)
+    scene_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    system_variant_id: str | None = None
+    system_variant_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    host_surface_id: str = Field(min_length=1)
+    host_surface_authority_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    host_binding_evaluation_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    host_binding_state: str = Field(min_length=1)
+    host_surface_semantic_class: str = Field(min_length=1)
+    position_m: tuple[float, float, float]
+    orientation: dict[str, float]
+    coverage_width_m: float
+    coverage_height_m: float
+    host_surface_fraction: float | None = None
+    physical_width_m: float
+    physical_height_m: float
+    thickness_m: float
+    air_gap_m: float
+    face_area_m2: float
+    treatment_type: str = Field(min_length=1)
+    acoustic_model_id: str | None = None
+    acoustic_model_version: str | None = None
+    material_id: str | None = None
+    material_version: str | None = None
+    wave_material_model: str | None = None
+    geometric_material_model: str | None = None
+    evidence_basis: str | None = None
+    uncertainty_kind: str = Field(min_length=1)
+    uncertainty_value: float | None = None
+    uncertainty_unit: str | None = None
+    uncertainty_note: str | None = None
+    wave_material_capability: Literal['SUPPORTED', 'UNKNOWN']
+    geometric_material_capability: Literal['SUPPORTED', 'UNKNOWN']
+    solver_prediction_readiness: Literal['UNKNOWN']
+
+
+class InstallationTreatmentQuantitySummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    definition_id: str = Field(min_length=1)
+    definition_version: str = Field(min_length=1)
+    definition_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    lifecycle: Literal['proposed', 'installed']
+    quantity: int = Field(ge=1)
+    total_face_area_m2: float = Field(gt=0.0)
+    instance_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class InstallationTreatmentSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal['AVAILABLE', 'UNKNOWN']
+    instances: tuple[InstallationTreatmentInstanceSummary, ...] = ()
+    quantities: tuple[InstallationTreatmentQuantitySummary, ...] = ()
+
+
+class InstallationCalibrationPeqSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    filter_index: int = Field(ge=0)
+    filter_id: str = Field(min_length=1)
+    filter_type: str = Field(min_length=1)
+    frequency_hz: float
+    q: float
+    gain_db: float
+
+
+class InstallationCalibrationChannelSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    settings_source: Literal['requested', 'exported']
+    channel_id: str = Field(min_length=1)
+    role_id: str = Field(min_length=1)
+    source_entity_id: str = Field(min_length=1)
+    physical_output_id: str = Field(min_length=1)
+    sample_rate_hz: int = Field(gt=0)
+    gain_db: float
+    delay_s: float
+    polarity: Literal['normal', 'inverted']
+    crossovers: tuple[tuple[str, float, int], ...] = ()
+    peq: tuple[InstallationCalibrationPeqSummary, ...] = ()
+    routing: tuple[str, ...] = ()
+
+
+class InstallationCalibrationSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal['AVAILABLE', 'UNKNOWN']
+    plan_id: str | None = None
+    plan_version: str | None = None
+    plan_semantic_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    support_state: Literal['SUPPORTED', 'UNSUPPORTED'] | None = None
+    unsupported_reasons: tuple[str, ...] = ()
+    sample_rate_hz: int | None = None
+    requested_channels: tuple[InstallationCalibrationChannelSummary, ...] = ()
+    exported_channels: tuple[InstallationCalibrationChannelSummary, ...] = ()
+    target_curve_semantic_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    target_normalization: dict[str, Any] | None = None
+    max_boost_db: float | None = None
+    max_cut_db: float | None = None
+    device_capability_id: str | None = None
+    device_capability_version: str | None = None
+    device_constraints_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    export_id: str | None = None
+    exported_settings_semantic_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    quantization_applied: bool | None = None
+    quantization_notes: tuple[str, ...] = ()
+    verification_plan_id: str | None = None
+    verification_semantic_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    lifecycle_state: Literal['proposed', 'exported', 'user_applied', 'remeasured', 'validated'] | None = None
+    lifecycle_events: tuple[tuple[str, str, str], ...] = ()
+
+
 class InstallationOutput(BaseModel):
     """Immutable semantic installation snapshot.
 
     Generation metadata such as exported_at is intentionally absent from this
-    model and therefore cannot alter semantic_sha256. Schema v1 remains
-    loadable; new generation uses v2 projector/standards authority summaries.
+    model and therefore cannot alter semantic_sha256. Serialized v1/v2 remain
+    loadable; new generation uses v3 treatment/calibration summaries.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal[1, 2] = INSTALLATION_OUTPUT_SCHEMA_VERSION
-    authority_version: Literal['installation-output-1', 'installation-output-2'] = (
-        INSTALLATION_OUTPUT_AUTHORITY_VERSION
-    )
+    schema_version: Literal[1, 2, 3] = INSTALLATION_OUTPUT_SCHEMA_VERSION
+    authority_version: Literal[
+        'installation-output-1',
+        'installation-output-2',
+        'installation-output-3',
+    ] = INSTALLATION_OUTPUT_AUTHORITY_VERSION
     coordinate_system: Literal['htdt-x-right-y-rear-z-up-m'] = 'htdt-x-right-y-rear-z-up-m'
     authority: InstallationAuthorityBinding
     evidence: tuple[InstallationEvidenceRef, ...]
@@ -390,6 +530,8 @@ class InstallationOutput(BaseModel):
     sections: tuple[InstallationSectionStatus, ...]
     projector: InstallationProjectorSummary | None = None
     standards: InstallationStandardsSummary | None = None
+    treatment: InstallationTreatmentSummary | None = None
+    calibration: InstallationCalibrationSummary | None = None
     semantic_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
     @model_validator(mode='after')
@@ -400,13 +542,26 @@ class InstallationOutput(BaseModel):
         if self.schema_version == 1:
             if self.authority_version != 'installation-output-1':
                 raise ValueError('InstallationOutput v1 requires installation-output-1 authority')
-            if self.projector is not None or self.standards is not None:
-                raise ValueError('InstallationOutput v1 cannot contain v2 authority summaries')
-        else:
-            if self.authority_version != INSTALLATION_OUTPUT_AUTHORITY_VERSION:
+            if any(item is not None for item in (
+                self.projector, self.standards, self.treatment, self.calibration
+            )):
+                raise ValueError('InstallationOutput v1 cannot contain later authority summaries')
+        elif self.schema_version == 2:
+            if self.authority_version != 'installation-output-2':
                 raise ValueError('InstallationOutput v2 authority version mismatch')
             if self.projector is None or self.standards is None:
-                raise ValueError('InstallationOutput v2 requires explicit projector/standards summaries')
+                raise ValueError('InstallationOutput v2 requires projector/standards summaries')
+            if self.treatment is not None or self.calibration is not None:
+                raise ValueError('InstallationOutput v2 cannot contain v3 authority summaries')
+        else:
+            if self.authority_version != INSTALLATION_OUTPUT_AUTHORITY_VERSION:
+                raise ValueError('InstallationOutput v3 authority version mismatch')
+            if any(item is None for item in (
+                self.projector, self.standards, self.treatment, self.calibration
+            )):
+                raise ValueError(
+                    'InstallationOutput v3 requires explicit projector/standards/treatment/calibration summaries'
+                )
         if self.semantic_sha256 != _semantic_digest(self.identity_payload()):
             raise ValueError('InstallationOutput semantic hash mismatch')
         return self
@@ -425,6 +580,9 @@ class InstallationOutput(BaseModel):
         if self.schema_version >= 2:
             payload['projector'] = self.projector.model_dump(mode='json') if self.projector else None
             payload['standards'] = self.standards.model_dump(mode='json') if self.standards else None
+        if self.schema_version >= 3:
+            payload['treatment'] = self.treatment.model_dump(mode='json') if self.treatment else None
+            payload['calibration'] = self.calibration.model_dump(mode='json') if self.calibration else None
         return payload
 
 
@@ -726,10 +884,362 @@ def _standards_summary(
     )
 
 
+def _treatment_summary(
+    *,
+    revision: SceneRevision,
+    variant: SystemVariant | None,
+    definitions: Sequence[AcousticTreatmentDefinition],
+    placements: Sequence[AcousticTreatmentPlacement],
+    evaluations: Sequence[TreatmentSurfaceBindingEvaluation],
+) -> InstallationTreatmentSummary:
+    if not definitions and not placements and not evaluations:
+        return InstallationTreatmentSummary(status='UNKNOWN')
+    if not definitions or not placements or not evaluations:
+        raise ValueError(
+            'treatment definitions, placements, and surface binding evaluations must be supplied together'
+        )
+    definitions = tuple(
+        AcousticTreatmentDefinition.model_validate(item.model_dump(mode='python'))
+        for item in definitions
+    )
+    placements = tuple(
+        AcousticTreatmentPlacement.model_validate(item.model_dump(mode='python'))
+        for item in placements
+    )
+    evaluations = tuple(
+        TreatmentSurfaceBindingEvaluation.model_validate(item.model_dump(mode='python'))
+        for item in evaluations
+    )
+    definition_by_key: dict[tuple[str, str], AcousticTreatmentDefinition] = {}
+    for definition in definitions:
+        key = (definition.definition_id, definition.version)
+        if key in definition_by_key:
+            raise ValueError('duplicate treatment definition authority')
+        definition_by_key[key] = definition
+    evaluation_by_placement: dict[str, TreatmentSurfaceBindingEvaluation] = {}
+    for evaluation in evaluations:
+        if evaluation.placement_sha256 in evaluation_by_placement:
+            raise ValueError('duplicate treatment surface binding evaluation')
+        evaluation_by_placement[evaluation.placement_sha256] = evaluation
+    if len(evaluation_by_placement) != len(placements):
+        raise ValueError('each treatment placement requires one exact surface binding evaluation')
+
+    expected_variant_id = None if variant is None else variant.variant_id
+    expected_variant_sha256 = None if variant is None else variant.variant_sha256
+    seen_instances: set[str] = set()
+    rows: list[InstallationTreatmentInstanceSummary] = []
+    for placement in sorted(placements, key=lambda item: (item.instance_id, item.placement_version)):
+        if placement.instance_id in seen_instances:
+            raise ValueError('InstallationOutput treatment placements must contain one current version per instance')
+        seen_instances.add(placement.instance_id)
+        if (
+            placement.document_id != revision.document_id
+            or placement.scene_revision_id != revision.revision_id
+            or placement.scene_content_hash != revision.content_hash
+        ):
+            raise ValueError('treatment SceneRevision mismatch')
+        if placement.system_variant_id is not None and (
+            placement.system_variant_id != expected_variant_id
+            or placement.system_variant_sha256 != expected_variant_sha256
+        ):
+            raise ValueError('treatment SystemVariant mismatch')
+        definition = definition_by_key.get((placement.definition_id, placement.definition_version))
+        if definition is None or definition.definition_sha256 != placement.definition_sha256:
+            raise ValueError('treatment definition hash mismatch')
+        evaluation = evaluation_by_placement.get(placement.placement_sha256)
+        if evaluation is None:
+            raise ValueError('treatment placement surface binding evaluation is missing')
+        if evaluation.binding_state != 'exact' or not evaluation.placement_authority_valid:
+            raise ValueError(
+                f'treatment host SemanticSurface binding is stale or invalid: {evaluation.binding_state}'
+            )
+        if (
+            evaluation.evaluated_scene_revision_id != revision.revision_id
+            or evaluation.evaluated_scene_content_hash != revision.content_hash
+            or evaluation.host_surface_id != placement.host_surface_id
+            or evaluation.actual_host_surface_authority_sha256
+            != placement.host_surface_authority_sha256
+        ):
+            raise ValueError('treatment host SemanticSurface binding does not match installation target')
+        if placement.host_surface_id is None or placement.host_surface_authority_sha256 is None:
+            raise ValueError('treatment placement requires an exact host SemanticSurface')
+        if evaluation.actual_host_surface_semantic_class is None:
+            raise ValueError('treatment host SemanticSurface class is unavailable')
+
+        capability = evaluate_treatment_prediction_capability(definition)
+        model = definition.acoustic_model
+        uncertainty = capability.uncertainty
+        rows.append(InstallationTreatmentInstanceSummary(
+            instance_id=placement.instance_id,
+            placement_version=placement.placement_version,
+            placement_sha256=placement.placement_sha256,
+            lifecycle=placement.lifecycle,
+            definition_id=definition.definition_id,
+            definition_version=definition.version,
+            definition_sha256=definition.definition_sha256,
+            scene_revision_id=placement.scene_revision_id,
+            scene_content_hash=placement.scene_content_hash,
+            system_variant_id=placement.system_variant_id,
+            system_variant_sha256=placement.system_variant_sha256,
+            host_surface_id=placement.host_surface_id,
+            host_surface_authority_sha256=placement.host_surface_authority_sha256,
+            host_binding_evaluation_sha256=evaluation.evaluation_sha256,
+            host_binding_state=evaluation.binding_state,
+            host_surface_semantic_class=evaluation.actual_host_surface_semantic_class,
+            position_m=(
+                float(placement.position.x_m),
+                float(placement.position.y_m),
+                float(placement.position.z_m),
+            ),
+            orientation={
+                key: float(value)
+                for key, value in placement.orientation.model_dump(mode='python').items()
+            },
+            coverage_width_m=float(placement.coverage.width_m),
+            coverage_height_m=float(placement.coverage.height_m),
+            host_surface_fraction=placement.coverage.host_surface_fraction,
+            physical_width_m=float(definition.dimensions.width_m),
+            physical_height_m=float(definition.dimensions.height_m),
+            thickness_m=float(definition.dimensions.thickness_m),
+            air_gap_m=float(definition.air_gap_m),
+            face_area_m2=float(definition.dimensions.width_m * definition.dimensions.height_m),
+            treatment_type=definition.treatment_type,
+            acoustic_model_id=None if model is None else model.model_id,
+            acoustic_model_version=None if model is None else model.model_version,
+            material_id=None if model is None else model.material.material_id,
+            material_version=None if model is None else model.material.version,
+            wave_material_model=None if model is None else model.material.wave_model,
+            geometric_material_model=None if model is None else model.material.geometric_model,
+            evidence_basis=capability.evidence_basis,
+            uncertainty_kind=uncertainty.kind,
+            uncertainty_value=uncertainty.value,
+            uncertainty_unit=uncertainty.unit,
+            uncertainty_note=uncertainty.note,
+            wave_material_capability=capability.wave_material_capability,
+            geometric_material_capability=capability.geometric_material_capability,
+            solver_prediction_readiness=capability.solver_prediction_readiness,
+        ))
+
+    grouped: dict[tuple[str, str, str, str], list[InstallationTreatmentInstanceSummary]] = {}
+    for item in rows:
+        key = (item.definition_id, item.definition_version, item.definition_sha256, item.lifecycle)
+        grouped.setdefault(key, []).append(item)
+    quantities = tuple(
+        InstallationTreatmentQuantitySummary(
+            definition_id=key[0],
+            definition_version=key[1],
+            definition_sha256=key[2],
+            lifecycle=key[3],
+            quantity=len(items),
+            total_face_area_m2=sum(item.face_area_m2 for item in items),
+            instance_ids=tuple(sorted(item.instance_id for item in items)),
+        )
+        for key, items in sorted(grouped.items())
+    )
+    return InstallationTreatmentSummary(status='AVAILABLE', instances=tuple(rows), quantities=quantities)
+
+
+def _calibration_channel_summary(
+    *,
+    source: Literal['requested', 'exported'],
+    channel: Any,
+    sample_rate_hz: int,
+) -> InstallationCalibrationChannelSummary:
+    return InstallationCalibrationChannelSummary(
+        settings_source=source,
+        channel_id=channel.channel_id,
+        role_id=channel.role_id,
+        source_entity_id=channel.source_entity_id,
+        physical_output_id=channel.physical_output_id,
+        sample_rate_hz=sample_rate_hz,
+        gain_db=float(channel.gain_db),
+        delay_s=float(channel.delay_s),
+        polarity=channel.polarity,
+        crossovers=tuple(
+            (item.crossover_type, float(item.frequency_hz), int(item.filter_order))
+            for item in channel.crossovers
+        ),
+        peq=tuple(
+            InstallationCalibrationPeqSummary(
+                filter_index=index,
+                filter_id=item.filter_id,
+                filter_type=item.filter_type,
+                frequency_hz=float(item.frequency_hz),
+                q=float(item.q),
+                gain_db=float(item.gain_db),
+            )
+            for index, item in enumerate(channel.peq)
+        ),
+        routing=tuple(channel.routing),
+    )
+
+
+def _calibration_summary(
+    *,
+    revision: SceneRevision,
+    variant: SystemVariant | None,
+    plan: CadCalibrationPlan | None,
+    export_snapshot: CadCalibrationExportSnapshot | None,
+    verification_plan: CadVerificationMeasurementPlan | None,
+    lifecycle_events: Sequence[CadCalibrationLifecycleEvent],
+) -> InstallationCalibrationSummary:
+    if plan is None and export_snapshot is None and verification_plan is None and not lifecycle_events:
+        return InstallationCalibrationSummary(status='UNKNOWN')
+    if plan is None:
+        raise ValueError('CalibrationPlan is required for calibration integration')
+    plan = CadCalibrationPlan.model_validate(plan.model_dump(mode='python'))
+    export_snapshot = (
+        None
+        if export_snapshot is None
+        else CadCalibrationExportSnapshot.model_validate(
+            export_snapshot.model_dump(mode='python')
+        )
+    )
+    verification_plan = (
+        None
+        if verification_plan is None
+        else CadVerificationMeasurementPlan.model_validate(
+            verification_plan.model_dump(mode='python')
+        )
+    )
+    lifecycle_events = tuple(
+        CadCalibrationLifecycleEvent.model_validate(item.model_dump(mode='python'))
+        for item in lifecycle_events
+    )
+    if (
+        plan.document_id != revision.document_id
+        or plan.scene_revision_id != revision.revision_id
+        or plan.scene_content_hash != revision.content_hash
+    ):
+        raise ValueError('CalibrationPlan SceneRevision mismatch')
+    if variant is None:
+        raise ValueError('CalibrationPlan requires exact SystemVariant in InstallationOutput')
+    if (
+        plan.system_variant_id != variant.variant_id
+        or plan.system_variant_sha256 != variant.variant_sha256
+    ):
+        raise ValueError('CalibrationPlan SystemVariant mismatch')
+    if export_snapshot is not None and (
+        export_snapshot.calibration_plan_id != plan.plan_id
+        or export_snapshot.requested_plan_semantic_sha256 != plan.plan_semantic_sha256
+    ):
+        raise ValueError('calibration export plan hash mismatch')
+    if verification_plan is not None:
+        if export_snapshot is None:
+            raise ValueError('VerificationMeasurementPlan requires exact ExportSnapshot')
+        if (
+            verification_plan.calibration_plan_id != plan.plan_id
+            or verification_plan.calibration_plan_semantic_sha256 != plan.plan_semantic_sha256
+            or verification_plan.exported_settings_id != export_snapshot.export_id
+            or verification_plan.exported_settings_semantic_sha256
+            != export_snapshot.exported_settings_semantic_sha256
+        ):
+            raise ValueError('VerificationMeasurementPlan mismatch')
+        if (
+            verification_plan.document_id != revision.document_id
+            or verification_plan.scene_revision_id != revision.revision_id
+            or verification_plan.scene_content_hash != revision.content_hash
+            or verification_plan.system_variant_id != variant.variant_id
+            or verification_plan.system_variant_sha256 != variant.variant_sha256
+        ):
+            raise ValueError('VerificationMeasurementPlan scene/system mismatch')
+
+    previous_order = -1
+    event_rows: list[tuple[str, str, str]] = []
+    for index, event in enumerate(lifecycle_events):
+        if (
+            event.calibration_plan_id != plan.plan_id
+            or event.calibration_plan_semantic_sha256 != plan.plan_semantic_sha256
+        ):
+            raise ValueError('calibration lifecycle event plan hash mismatch')
+        current_order = CALIBRATION_LIFECYCLE_ORDER[event.state]
+        if index == 0 and event.state not in {'proposed', 'exported'}:
+            raise ValueError('first calibration lifecycle state must be proposed or exported')
+        if current_order <= previous_order:
+            raise ValueError('calibration lifecycle states must advance monotonically')
+        previous_order = current_order
+        if event.exported_settings_id is not None:
+            if export_snapshot is None or (
+                event.exported_settings_id != export_snapshot.export_id
+                or event.exported_settings_semantic_sha256
+                != export_snapshot.exported_settings_semantic_sha256
+            ):
+                raise ValueError('calibration lifecycle event export hash mismatch')
+        if event.verification_plan_id is not None:
+            if verification_plan is None or (
+                event.verification_plan_id != verification_plan.verification_plan_id
+                or event.verification_plan_semantic_sha256
+                != verification_plan.verification_semantic_sha256
+            ):
+                raise ValueError('calibration lifecycle event verification hash mismatch')
+        event_rows.append((event.event_id, event.event_semantic_sha256, event.state))
+
+    lifecycle_state: Literal[
+        'proposed', 'exported', 'user_applied', 'remeasured', 'validated'
+    ] = 'exported' if export_snapshot is not None else 'proposed'
+    if lifecycle_events:
+        last_state = lifecycle_events[-1].state
+        if CALIBRATION_LIFECYCLE_ORDER[last_state] > CALIBRATION_LIFECYCLE_ORDER[lifecycle_state]:
+            lifecycle_state = last_state
+
+    requested = tuple(
+        _calibration_channel_summary(source='requested', channel=channel, sample_rate_hz=plan.sample_rate_hz)
+        for channel in plan.channels
+    )
+    exported = () if export_snapshot is None else tuple(
+        _calibration_channel_summary(
+            source='exported',
+            channel=channel,
+            sample_rate_hz=export_snapshot.sample_rate_hz,
+        )
+        for channel in export_snapshot.channels
+    )
+    target_curve_sha256 = (
+        None if plan.target_curve is None
+        else _semantic_digest(plan.target_curve.model_dump(mode='json'))
+    )
+    target_normalization = (
+        None if plan.target_curve is None
+        else plan.target_curve.normalization.model_dump(mode='json')
+    )
+    return InstallationCalibrationSummary(
+        status='AVAILABLE',
+        plan_id=plan.plan_id,
+        plan_version=plan.plan_version,
+        plan_semantic_sha256=plan.plan_semantic_sha256,
+        support_state=plan.support_state,
+        unsupported_reasons=plan.unsupported_reasons,
+        sample_rate_hz=plan.sample_rate_hz,
+        requested_channels=requested,
+        exported_channels=exported,
+        target_curve_semantic_sha256=target_curve_sha256,
+        target_normalization=target_normalization,
+        max_boost_db=float(plan.max_boost_db),
+        max_cut_db=float(plan.max_cut_db),
+        device_capability_id=plan.device_constraints.capability_id,
+        device_capability_version=plan.device_constraints.capability_version,
+        device_constraints_sha256=_semantic_digest(plan.device_constraints.model_dump(mode='json')),
+        export_id=None if export_snapshot is None else export_snapshot.export_id,
+        exported_settings_semantic_sha256=(
+            None if export_snapshot is None else export_snapshot.exported_settings_semantic_sha256
+        ),
+        quantization_applied=None if export_snapshot is None else export_snapshot.quantization_applied,
+        quantization_notes=() if export_snapshot is None else export_snapshot.quantization_notes,
+        verification_plan_id=None if verification_plan is None else verification_plan.verification_plan_id,
+        verification_semantic_sha256=(
+            None if verification_plan is None else verification_plan.verification_semantic_sha256
+        ),
+        lifecycle_state=lifecycle_state,
+        lifecycle_events=tuple(event_rows),
+    )
+
+
 def _installation_sections(
     *,
     projector: InstallationProjectorSummary,
     standards: InstallationStandardsSummary,
+    treatment: InstallationTreatmentSummary,
+    calibration: InstallationCalibrationSummary,
 ) -> tuple[InstallationSectionStatus, ...]:
     return (
         InstallationSectionStatus(
@@ -752,13 +1262,21 @@ def _installation_sections(
         ),
         InstallationSectionStatus(
             section='calibration_plan',
-            status='UNKNOWN',
-            reason='CalibrationPlan integration is deferred from this InstallationOutput slice',
+            status=calibration.status,
+            reason=(
+                'exact CalibrationPlan authority is bound'
+                if calibration.status == 'AVAILABLE'
+                else 'no exact CalibrationPlan authority is bound'
+            ),
         ),
         InstallationSectionStatus(
             section='treatment_plan',
-            status='UNKNOWN',
-            reason='AcousticTreatment integration is deferred from this InstallationOutput slice',
+            status=treatment.status,
+            reason=(
+                'exact AcousticTreatment definition/placement/surface authority is bound'
+                if treatment.status == 'AVAILABLE'
+                else 'no exact AcousticTreatment placement authority is bound'
+            ),
         ),
     )
 
@@ -772,6 +1290,13 @@ def build_installation_output(
     video_geometry_evaluation: VideoGeometryEvaluation | None = None,
     standards_profile: StandardsProfile | None = None,
     standards_evaluation: StandardsEvaluation | None = None,
+    treatment_definitions: Sequence[AcousticTreatmentDefinition] = (),
+    treatment_placements: Sequence[AcousticTreatmentPlacement] = (),
+    treatment_surface_evaluations: Sequence[TreatmentSurfaceBindingEvaluation] = (),
+    calibration_plan: CadCalibrationPlan | None = None,
+    calibration_export_snapshot: CadCalibrationExportSnapshot | None = None,
+    verification_measurement_plan: CadVerificationMeasurementPlan | None = None,
+    calibration_lifecycle_events: Sequence[CadCalibrationLifecycleEvent] = (),
 ) -> InstallationOutput:
     """Derive one semantic installation snapshot without creating editable truth."""
 
@@ -779,7 +1304,6 @@ def build_installation_output(
         raise ValueError('SceneRevision content hash does not match its document')
     document = revision.document if variant is None else materialize_system_variant(revision, variant)
     effective_hash = scene_content_hash(document)
-
     projector = _projector_summary(
         revision=revision,
         variant=variant,
@@ -795,19 +1319,31 @@ def build_installation_output(
         profile=standards_profile,
         evaluation=standards_evaluation,
     )
-
-    supported_kinds = {'speaker', 'seat', 'screen', 'projector', 'measurement_point'}
-    rows = tuple(
-        sorted(
-            (
-                _installation_entity(entity)
-                for entity in document.entities
-                if str(entity.kind) in supported_kinds
-            ),
-            key=lambda item: (item.entity_kind, item.entity_id),
-        )
+    treatment = _treatment_summary(
+        revision=revision,
+        variant=variant,
+        definitions=treatment_definitions,
+        placements=treatment_placements,
+        evaluations=treatment_surface_evaluations,
+    )
+    calibration = _calibration_summary(
+        revision=revision,
+        variant=variant,
+        plan=calibration_plan,
+        export_snapshot=calibration_export_snapshot,
+        verification_plan=verification_measurement_plan,
+        lifecycle_events=calibration_lifecycle_events,
     )
 
+    supported_kinds = {'speaker', 'seat', 'screen', 'projector', 'measurement_point'}
+    rows = tuple(sorted(
+        (
+            _installation_entity(entity)
+            for entity in document.entities
+            if str(entity.kind) in supported_kinds
+        ),
+        key=lambda item: (item.entity_kind, item.entity_id),
+    ))
     evidence_items = list(evidence)
     if variant is not None:
         evidence_items.extend(
@@ -823,7 +1359,6 @@ def build_installation_output(
         evidence_items,
         key=lambda item: (item.authority, item.evidence_id, item.evidence_sha256 or ''),
     ))
-
     authority = InstallationAuthorityBinding(
         document_id=revision.document_id,
         scene_revision_id=revision.revision_id,
@@ -833,7 +1368,12 @@ def build_installation_output(
         system_variant_sha256=None if variant is None else variant.variant_sha256,
     )
     dimensions = _dimension_sheets(document, rows)
-    sections = _installation_sections(projector=projector, standards=standards)
+    sections = _installation_sections(
+        projector=projector,
+        standards=standards,
+        treatment=treatment,
+        calibration=calibration,
+    )
     identity = {
         'schema_version': INSTALLATION_OUTPUT_SCHEMA_VERSION,
         'authority_version': INSTALLATION_OUTPUT_AUTHORITY_VERSION,
@@ -845,6 +1385,8 @@ def build_installation_output(
         'sections': [item.model_dump(mode='json') for item in sections],
         'projector': projector.model_dump(mode='json'),
         'standards': standards.model_dump(mode='json'),
+        'treatment': treatment.model_dump(mode='json'),
+        'calibration': calibration.model_dump(mode='json'),
     }
     return InstallationOutput(
         coordinate_system=document.coordinate_system,
@@ -855,6 +1397,8 @@ def build_installation_output(
         sections=sections,
         projector=projector,
         standards=standards,
+        treatment=treatment,
+        calibration=calibration,
         semantic_sha256=_semantic_digest(identity),
     )
 
@@ -908,19 +1452,79 @@ def render_installation_csv(output: InstallationOutput) -> str:
         writer.writerow((
             'authority_record',
             'projector',
-            _canonical(
-                None if output.projector is None
-                else output.projector.model_dump(mode='json')
-            ),
+            _canonical(None if output.projector is None else output.projector.model_dump(mode='json')),
         ))
         writer.writerow((
             'authority_record',
             'standards',
-            _canonical(
-                None if output.standards is None
-                else output.standards.model_dump(mode='json')
-            ),
+            _canonical(None if output.standards is None else output.standards.model_dump(mode='json')),
         ))
+    if output.schema_version >= 3:
+        writer.writerow((
+            'authority_record',
+            'treatment',
+            _canonical(None if output.treatment is None else output.treatment.model_dump(mode='json')),
+        ))
+        writer.writerow((
+            'authority_record',
+            'calibration',
+            _canonical(None if output.calibration is None else output.calibration.model_dump(mode='json')),
+        ))
+        writer.writerow(())
+        writer.writerow((
+            'treatment_instance', 'instance_id', 'definition_id', 'lifecycle',
+            'physical_dimensions_m', 'quantity', 'position_m', 'orientation_json',
+            'host_surface_id', 'host_binding_state', 'capability_state',
+        ))
+        if output.treatment is not None:
+            for item in output.treatment.instances:
+                writer.writerow((
+                    'treatment_instance',
+                    item.instance_id,
+                    f'{item.definition_id}@{item.definition_version}',
+                    item.lifecycle,
+                    f'{_csv_number(item.physical_width_m)}x{_csv_number(item.physical_height_m)}x{_csv_number(item.thickness_m)}',
+                    '1',
+                    ','.join(_csv_number(value) for value in item.position_m),
+                    _canonical(item.orientation),
+                    item.host_surface_id,
+                    item.host_binding_state,
+                    f'wave={item.wave_material_capability};geometric={item.geometric_material_capability};solver={item.solver_prediction_readiness}',
+                ))
+            writer.writerow(())
+            writer.writerow((
+                'treatment_quantity', 'definition_id', 'lifecycle',
+                'quantity', 'total_face_area_m2', 'instance_ids',
+            ))
+            for item in output.treatment.quantities:
+                writer.writerow((
+                    'treatment_quantity',
+                    f'{item.definition_id}@{item.definition_version}',
+                    item.lifecycle,
+                    item.quantity,
+                    _csv_number(item.total_face_area_m2),
+                    '|'.join(item.instance_ids),
+                ))
+        writer.writerow(())
+        writer.writerow((
+            'calibration_setting', 'requested_or_exported', 'channel_id',
+            'physical_output_id', 'gain_db', 'delay_s', 'polarity',
+            'crossover_json', 'peq_json', 'lifecycle_state',
+        ))
+        if output.calibration is not None:
+            for item in (*output.calibration.requested_channels, *output.calibration.exported_channels):
+                writer.writerow((
+                    'calibration_setting',
+                    item.settings_source,
+                    item.channel_id,
+                    item.physical_output_id,
+                    _csv_number(item.gain_db),
+                    _csv_number(item.delay_s),
+                    item.polarity,
+                    _canonical(list(item.crossovers)),
+                    _canonical([peq.model_dump(mode='json') for peq in item.peq]),
+                    output.calibration.lifecycle_state or '',
+                ))
     return stream.getvalue()
 
 
@@ -1010,6 +1614,78 @@ def _standards_report_block(summary: InstallationStandardsSummary | None) -> str
     )
 
 
+def _treatment_report_block(summary: InstallationTreatmentSummary | None) -> str:
+    if summary is None or summary.status == 'UNKNOWN':
+        return '<section><h2>Acoustic treatment</h2><p>UNKNOWN — no exact treatment placement authority is bound.</p></section>'
+    rows = ''.join(
+        '<tr>'
+        f'<td><code>{escape(item.instance_id)}</code></td>'
+        f'<td><code>{escape(item.definition_id)}@{escape(item.definition_version)}</code></td>'
+        f'<td>{escape(item.lifecycle)}</td>'
+        f'<td>{_metric(item.physical_width_m)} × {_metric(item.physical_height_m)} × {_metric(item.thickness_m)}</td>'
+        f'<td>{escape(str(item.position_m))}</td>'
+        f'<td><code>{escape(item.host_surface_id)}</code></td>'
+        f'<td>{escape(item.host_binding_state)}</td>'
+        f'<td>wave {escape(item.wave_material_capability)} / geometric {escape(item.geometric_material_capability)} / solver {escape(item.solver_prediction_readiness)}</td>'
+        '</tr>'
+        for item in summary.instances
+    ) or '<tr><td colspan="8">None</td></tr>'
+    quantities = ''.join(
+        '<tr>'
+        f'<td><code>{escape(item.definition_id)}@{escape(item.definition_version)}</code></td>'
+        f'<td>{escape(item.lifecycle)}</td><td>{item.quantity}</td>'
+        f'<td>{_metric(item.total_face_area_m2)}</td>'
+        f'<td>{escape(", ".join(item.instance_ids))}</td></tr>'
+        for item in summary.quantities
+    ) or '<tr><td colspan="5">None</td></tr>'
+    return (
+        '<section><h2>Acoustic treatment</h2>'
+        '<p class="muted">Proposed and installed placements remain distinct. Exact surface binding is required; prediction readiness is not inferred.</p>'
+        '<table><thead><tr><th>Instance</th><th>Definition</th><th>Lifecycle</th><th>Dimensions W×H×T (m)</th>'
+        f'<th>Position</th><th>Host surface</th><th>Binding</th><th>Capability</th></tr></thead><tbody>{rows}</tbody></table>'
+        '<h3>Deterministic quantity / cut-list summary</h3><table><thead><tr>'
+        '<th>Definition</th><th>Lifecycle</th><th>Quantity</th><th>Total face area (m²)</th><th>Instances</th>'
+        f'</tr></thead><tbody>{quantities}</tbody></table>'
+        '<details><summary>Exact treatment authority summary</summary><pre>'
+        f'{escape(json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=2))}'
+        '</pre></details></section>'
+    )
+
+
+def _calibration_report_block(summary: InstallationCalibrationSummary | None) -> str:
+    if summary is None or summary.status == 'UNKNOWN':
+        return '<section><h2>Calibration plan</h2><p>UNKNOWN — no exact CalibrationPlan authority is bound.</p></section>'
+    rows = ''.join(
+        '<tr>'
+        f'<td>{escape(item.settings_source)}</td><td><code>{escape(item.channel_id)}</code></td>'
+        f'<td><code>{escape(item.physical_output_id)}</code></td>'
+        f'<td>{_metric(item.gain_db)}</td><td>{_metric(item.delay_s)}</td>'
+        f'<td>{escape(item.polarity)}</td>'
+        f'<td>{escape(json.dumps(item.crossovers, ensure_ascii=False))}</td>'
+        f'<td>{escape(json.dumps([peq.model_dump(mode="json") for peq in item.peq], ensure_ascii=False))}</td>'
+        '</tr>'
+        for item in (*summary.requested_channels, *summary.exported_channels)
+    ) or '<tr><td colspan="8">None</td></tr>'
+    return (
+        '<section><h2>Calibration plan</h2>'
+        f'<p>CalibrationPlan: <code>{escape(summary.plan_id or "UNKNOWN")}</code> '
+        f'v{escape(summary.plan_version or "UNKNOWN")} / <code>{escape(summary.plan_semantic_sha256 or "UNKNOWN")}</code></p>'
+        f'<p>Support: {escape(summary.support_state or "UNKNOWN")} · lifecycle: {escape(summary.lifecycle_state or "UNKNOWN")} · '
+        f'sample rate: {escape(str(summary.sample_rate_hz or "UNKNOWN"))} Hz</p>'
+        f'<p>ExportSnapshot: <code>{escape(summary.export_id or "none")}</code> / '
+        f'<code>{escape(summary.exported_settings_semantic_sha256 or "none")}</code> · '
+        f'quantized: {escape(str(summary.quantization_applied) if summary.quantization_applied is not None else "UNKNOWN")}</p>'
+        f'<p>VerificationMeasurementPlan: <code>{escape(summary.verification_plan_id or "none")}</code> / '
+        f'<code>{escape(summary.verification_semantic_sha256 or "none")}</code></p>'
+        '<p class="muted">Requested plan settings and actual exported settings are separate rows. Export alone never implies user_applied, remeasured, or validated.</p>'
+        '<table><thead><tr><th>Source</th><th>Channel</th><th>Output</th><th>Gain (dB)</th><th>Delay (s)</th>'
+        f'<th>Polarity</th><th>Crossover</th><th>Ordered PEQ</th></tr></thead><tbody>{rows}</tbody></table>'
+        '<details><summary>Exact calibration authority summary</summary><pre>'
+        f'{escape(json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=2))}'
+        '</pre></details></section>'
+    )
+
+
 def render_installation_report_html(
     output: InstallationOutput,
     *,
@@ -1061,6 +1737,8 @@ def render_installation_report_html(
     )
     projector_block = _projector_report_block(output.projector)
     standards_block = _standards_report_block(output.standards)
+    treatment_block = _treatment_report_block(output.treatment)
+    calibration_block = _calibration_report_block(output.calibration)
     semantic_json = json.dumps(output.model_dump(mode='json'), ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
     return f'''<!doctype html>
@@ -1085,6 +1763,8 @@ section{{background:white;border:1px solid #d9dde3;border-radius:10px;padding:20
 {dimension_blocks}
 {projector_block}
 {standards_block}
+{treatment_block}
+{calibration_block}
 <section><h2>Section availability</h2><table><thead><tr><th>Section</th><th>Status</th><th>Reason</th></tr></thead><tbody>{section_rows}</tbody></table></section>
 <section><h2>Machine-readable semantic snapshot</h2><p class="muted">This embedded JSON excludes exported_at and other generation metadata.</p><details><summary>Show JSON</summary><pre>{escape(json.dumps(output.model_dump(mode='json'), ensure_ascii=False, indent=2))}</pre></details></section>
 <script type="application/json" id="htdt-installation-output">{semantic_json}</script>
