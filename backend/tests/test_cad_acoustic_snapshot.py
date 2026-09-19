@@ -885,3 +885,200 @@ def test_rectangular_legacy_prediction_request_identity_is_unchanged(
     assert identity.model_version
     assert identity.geometry_compatibility == 'exact_for_model_geometry'
     assert len(identity.input_hash) == 64
+
+
+from htdt.cad_acoustic_solver_adapter import (
+    bind_prediction_request_to_solver_adapter,
+    build_acoustic_solver_adapter_descriptor,
+)
+
+
+def _adapter_descriptor(
+    *,
+    role: str,
+    domain: str,
+    observables: tuple[str, ...],
+    minimum_hz: float = 500.0,
+    maximum_hz: float = 1000.0,
+    solver_hash_char: str = '1',
+):
+    return build_acoustic_solver_adapter_descriptor(
+        adapter_id=f'fixture-{domain}-adapter',
+        adapter_version='1',
+        model_solver_role_id=role,
+        acoustic_domain=domain,
+        solver_implementation_ref=_ref(
+            f'fixture-{domain}-solver-build',
+            solver_hash_char,
+        ),
+        solver_configuration_schema_ref=_ref(
+            f'fixture-{domain}-config-schema',
+            '2',
+        ),
+        supported_snapshot_schema_versions=(1, 2),
+        supported_observables=observables,
+        valid_frequency_domain=FrequencyDomain(
+            minimum_hz=minimum_hz,
+            maximum_hz=maximum_hz,
+        ),
+    )
+
+
+def test_geometric_adapter_dispatch_is_ready_only_for_exact_supported_contract(
+    tmp_path: Path,
+) -> None:
+    snapshot = _fixture(tmp_path)['snapshot']
+    request = build_acoustic_prediction_request(
+        snapshot=snapshot,
+        model_solver_role_id='future-r150-geometric-role',
+        requested_frequency_domain=snapshot.requested_frequency_domain,
+        requested_observables=('deterministic_paths',),
+        numerical_fidelity_policy_ref=_policy(),
+    )
+    adapter = _adapter_descriptor(
+        role='future-r150-geometric-role',
+        domain='geometric',
+        observables=('deterministic_paths',),
+    )
+
+    binding = bind_prediction_request_to_solver_adapter(
+        snapshot=snapshot,
+        request=request,
+        adapter=adapter,
+        solver_configuration_ref=_ref(
+            'fixture-geometric-config',
+            '3',
+        ),
+    )
+
+    assert binding.state == 'READY'
+    assert binding.reasons == ()
+    assert binding.acoustic_scene_snapshot_id == snapshot.snapshot_id
+    assert binding.prediction_request_id == request.request_id
+    assert binding.solver_implementation_ref == adapter.solver_implementation_ref
+    assert len(binding.deterministic_solver_input_hash) == 64
+
+
+def test_wave_adapter_dispatch_preserves_current_wave_excitation_block(
+    tmp_path: Path,
+) -> None:
+    snapshot = _fixture(tmp_path)['snapshot']
+    request = build_acoustic_prediction_request(
+        snapshot=snapshot,
+        model_solver_role_id='future-r130-wave-role',
+        requested_frequency_domain=snapshot.requested_frequency_domain,
+        requested_observables=('complex_pressure',),
+        numerical_fidelity_policy_ref=_policy(),
+    )
+    adapter = _adapter_descriptor(
+        role='future-r130-wave-role',
+        domain='wave',
+        observables=('complex_pressure',),
+    )
+
+    binding = bind_prediction_request_to_solver_adapter(
+        snapshot=snapshot,
+        request=request,
+        adapter=adapter,
+        solver_configuration_ref=_ref('fixture-wave-config', '4'),
+    )
+
+    assert binding.state == 'BLOCKED'
+    assert 'snapshot_wave_source_not_ready' in binding.reasons
+    assert 'snapshot_observable_blocked:complex_pressure' in binding.reasons
+
+
+def test_adapter_role_observable_and_frequency_capabilities_fail_closed(
+    tmp_path: Path,
+) -> None:
+    snapshot = _fixture(tmp_path)['snapshot']
+    request = build_acoustic_prediction_request(
+        snapshot=snapshot,
+        model_solver_role_id='future-r150-geometric-role',
+        requested_frequency_domain=snapshot.requested_frequency_domain,
+        requested_observables=('deterministic_paths',),
+        numerical_fidelity_policy_ref=_policy(),
+    )
+    adapter = _adapter_descriptor(
+        role='other-role',
+        domain='geometric',
+        observables=('magnitude_response',),
+        minimum_hz=600.0,
+        maximum_hz=900.0,
+    )
+
+    binding = bind_prediction_request_to_solver_adapter(
+        snapshot=snapshot,
+        request=request,
+        adapter=adapter,
+        solver_configuration_ref=_ref(
+            'fixture-incompatible-config',
+            '5',
+        ),
+    )
+
+    assert binding.state == 'UNSUPPORTED'
+    assert 'model_solver_role_not_supported_by_adapter' in binding.reasons
+    assert (
+        'observable_not_supported_by_adapter:deterministic_paths'
+        in binding.reasons
+    )
+    assert 'frequency_domain_not_supported_by_adapter' in binding.reasons
+
+
+def test_solver_build_or_configuration_changes_dispatch_identity(
+    tmp_path: Path,
+) -> None:
+    snapshot = _fixture(tmp_path)['snapshot']
+    request = build_acoustic_prediction_request(
+        snapshot=snapshot,
+        model_solver_role_id='future-r150-geometric-role',
+        requested_frequency_domain=snapshot.requested_frequency_domain,
+        requested_observables=('deterministic_paths',),
+        numerical_fidelity_policy_ref=_policy(),
+    )
+    adapter_a = _adapter_descriptor(
+        role='future-r150-geometric-role',
+        domain='geometric',
+        observables=('deterministic_paths',),
+        solver_hash_char='6',
+    )
+    adapter_b = _adapter_descriptor(
+        role='future-r150-geometric-role',
+        domain='geometric',
+        observables=('deterministic_paths',),
+        solver_hash_char='7',
+    )
+
+    first = bind_prediction_request_to_solver_adapter(
+        snapshot=snapshot,
+        request=request,
+        adapter=adapter_a,
+        solver_configuration_ref=_ref('fixture-geometric-config', '8'),
+    )
+    changed_solver = bind_prediction_request_to_solver_adapter(
+        snapshot=snapshot,
+        request=request,
+        adapter=adapter_b,
+        solver_configuration_ref=_ref('fixture-geometric-config', '8'),
+    )
+    changed_config = bind_prediction_request_to_solver_adapter(
+        snapshot=snapshot,
+        request=request,
+        adapter=adapter_a,
+        solver_configuration_ref=_ref('fixture-geometric-config', '9'),
+    )
+
+    assert first.state == 'READY'
+    assert changed_solver.state == 'READY'
+    assert changed_config.state == 'READY'
+    assert (
+        first.deterministic_solver_input_hash
+        != changed_solver.deterministic_solver_input_hash
+    )
+    assert (
+        first.deterministic_solver_input_hash
+        != changed_config.deterministic_solver_input_hash
+    )
+    assert first.binding_id != changed_solver.binding_id
+    assert first.binding_id != changed_config.binding_id
