@@ -36,7 +36,7 @@ With rigid natural Neumann boundaries the assembled real system for the imaginar
 
 The receiver uses an independent MFEM delta functional at the frozen receiver coordinate. Raw pressure is stored as complex pressure in Pa. The reported transfer is `p/Q`; magnitude evidence uses `20*log10(|p/Q|)` and phase uses wrapped `atan2(Im, Re)`.
 
-The linear solve uses serial GMRES with a `K+k^2M` Gauss-Seidel preconditioner, relative solver tolerance `1e-10`, Krylov dimension 200, and maximum 4000 iterations. A raw relative residual above `1e-8` blocks reference qualification rather than being accepted as a reference.
+The linear solve uses serial MINRES for the symmetric-indefinite `K-k^2M` operator with a diagonal-Jacobi preconditioner built from positive `K+k^2M`, relative solver tolerance `1e-10`, and maximum 8000 iterations. A raw relative residual above `1e-8` blocks reference qualification rather than being accepted as a reference.
 
 ## Discretization and convergence
 
@@ -46,7 +46,7 @@ The geometry mesh stays fixed and exact while H1 polynomial order is refined fro
 - polynomial order;
 - FEM assembly time;
 - total solve time;
-- per-frequency GMRES iteration count and residual;
+- per-frequency MINRES iteration count and residual;
 - raw complex pressure at every frequency.
 
 Reference qualification is deliberately stricter than candidate acceptance. The R100A-2 tolerances remain unchanged; the reference must additionally satisfy a fixed `0.25 x` qualification margin between p=4 and p=5 and strict decrease of the consecutive complex RMS p-refinement error.
