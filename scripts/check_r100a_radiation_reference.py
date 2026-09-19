@@ -252,6 +252,8 @@ def _reference_payload(frequencies: tuple[float, ...], pressures: tuple[complex,
         'normal_convention': 'outward_from_region',
         'pressure_velocity_equation': 'p_eq_rho_c_u_n',
         'helmholtz_robin_equation': 'dp_dn_minus_i_k_p_eq_0',
+        'transfer_magnitude_definition': '20*log10(|P/Q|/(1 Pa/(m3/s)))',
+        'transfer_magnitude_unit': 'dB re 1 Pa/(m3/s)',
         'truncation': REFERENCE_TRUNCATION,
         'samples': [
             {
@@ -278,13 +280,15 @@ def _compare_manifest_samples(fixture, frequencies: tuple[float, ...], pressures
 
     magnitude_by_key = {item.sample_key: item for item in magnitude.samples}
     complex_by_key = {item.sample_key: item for item in complex_pressure.samples}
+    source_volume_velocity_m3_s = float(fixture.sources[0].amplitude)
     for frequency_hz, pressure in zip(frequencies, pressures, strict=True):
         integer_hz = int(round(frequency_hz))
         magnitude_sample = magnitude_by_key.get(f'mag@{integer_hz}Hz')
         complex_sample = complex_by_key.get(f'P@{integer_hz}Hz')
         if magnitude_sample is None or complex_sample is None:
             raise ValueError(f'missing radiation reference sample at {frequency_hz} Hz')
-        expected_db = 20.0 * math.log10(abs(pressure))
+        transfer_magnitude = abs(pressure) / source_volume_velocity_m3_s
+        expected_db = 20.0 * math.log10(transfer_magnitude / 1.0)
         if not math.isclose(
             float(magnitude_sample.scalar_value),
             expected_db,
