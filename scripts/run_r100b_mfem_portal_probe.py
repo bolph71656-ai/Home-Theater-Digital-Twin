@@ -333,6 +333,8 @@ def _validate_common_authority(portal, peer) -> None:
             or float(comparison.frequency_grid.start_hz) != 20.0
             or float(comparison.frequency_grid.stop_hz) != 300.0
             or float(comparison.frequency_grid.step_hz) != 1.0
+            or float(comparison.time_step_s) != (1.0 / 6000.0)
+            or float(comparison.observation_time_s) != 2.0
         ):
             raise ValueError(f'{fixture.fixture_id} comparison authority changed')
 
@@ -709,6 +711,7 @@ def _execute(
         hard_gates=_hard_gates(evidence_ref, reproducible=True),
         notes=(
             'Portal continuity is compiled as a conforming shared internal face, not a material boundary.',
+            'Frozen 2 s / 1/6000 s timing authority is validated; the MFEM comparison itself is the authorized steady-state 20–300 Hz complex transfer grid.',
             'Probe capability authorizes execution only; fixture PASS/FAIL is separate evidence.',
             'This slice does not select a production solver or satisfy candidate-wide hard gates.',
         ),
