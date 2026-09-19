@@ -34,7 +34,7 @@ Every `CadMeasurementQualityReport` is bound to:
 Repository save re-reads the N60 measurement/dataset authority, verifies every binding/hash, validates repeat measurements against the same acquisition binding, reconstructs the canonical report from its inputs, and rejects a report whose stored decisions/capabilities do not match the algorithm output.
 
 Changing a threshold/profile creates another report. Existing reports are append-only and are never rewritten.
-Historical reports validate their own stored report/profile hashes and may reopen with the canonical claim subset that existed when they were created; they are not re-evaluated under a newer algorithm merely by reading them. New saves must match the current algorithm output.
+Historical reports validate their own stored report/profile hashes and may reopen with the canonical claim subset that existed when they were created; they are not re-evaluated under a newer algorithm merely by reading them. A downstream request for a claim absent from such a historical report resolves to `UNKNOWN`, not an exception or implicit PASS. New saves must match the current algorithm output.
 
 ## Quality decisions
 
