@@ -704,27 +704,39 @@ def _derive_readiness(
         }
         for item in sources
     )
-    treatment_wave_ready = True
-    treatment_geometric_ready = True
+    treated_surfaces = {
+        binding.host_surface_id
+        for binding in treatment_bindings
+    }
+    wave_composed_surfaces = {
+        binding.host_surface_id
+        for binding in treatment_bindings
+        if binding.target_domain == 'wave' and binding.status == 'AVAILABLE'
+    }
+    geometric_composed_surfaces = {
+        binding.host_surface_id
+        for binding in treatment_bindings
+        if binding.target_domain == 'geometric' and binding.status == 'AVAILABLE'
+    }
+    treatment_wave_ready = (
+        not treated_surfaces
+        or treated_surfaces.issubset(wave_composed_surfaces)
+    )
+    treatment_geometric_ready = (
+        not treated_surfaces
+        or treated_surfaces.issubset(geometric_composed_surfaces)
+    )
     structural_blocks = {
         'BLOCKED_NO_ACOUSTIC_MODEL',
         'BLOCKED_PARTIAL_COVERAGE',
         'BLOCKED_OVERLAP',
     }
-    for binding in treatment_bindings:
-        if binding.status in structural_blocks:
-            treatment_wave_ready = False
-            treatment_geometric_ready = False
-        elif binding.status != 'AVAILABLE':
-            if binding.target_domain == 'wave':
-                treatment_wave_ready = False
-            else:
-                treatment_geometric_ready = False
-        for overlay in binding.attached_treatment_overlays:
-            if overlay.wave_capability_state != 'AVAILABLE':
-                treatment_wave_ready = False
-            if overlay.geometric_capability_state != 'AVAILABLE':
-                treatment_geometric_ready = False
+    if any(
+        binding.status in structural_blocks
+        for binding in treatment_bindings
+    ):
+        treatment_wave_ready = False
+        treatment_geometric_ready = False
 
     wave_boundary_ready = (
         compiled.readiness.wave_geometry_ready and treatment_wave_ready
