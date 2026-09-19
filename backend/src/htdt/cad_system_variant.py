@@ -13,7 +13,8 @@ from .cad_scene import PHYSICAL_ENTITY_KINDS, SceneDocument, SceneEntity, scene_
 
 
 SYSTEM_VARIANT_SCHEMA_VERSION = 1
-SYSTEM_VARIANT_AUTHORITY_VERSION = 'o100a-system-variant-3'
+SYSTEM_VARIANT_AUTHORITY_VERSION = 'o100a-system-variant-2'
+SYSTEM_VARIANT_EQUIPMENT_AUTHORITY_VERSION = 'o100a-system-variant-3'
 SystemVariantAuthorityVersion = Literal[
     'o100a-system-variant-1',
     'o100a-system-variant-2',
@@ -541,9 +542,14 @@ def build_system_variant(
             f'{sorted(invalid_binding_targets)}'
         )
 
+    authority_version: SystemVariantAuthorityVersion = (
+        SYSTEM_VARIANT_EQUIPMENT_AUTHORITY_VERSION
+        if binding_items
+        else SYSTEM_VARIANT_AUTHORITY_VERSION
+    )
     identity = {
         'schema_version': SYSTEM_VARIANT_SCHEMA_VERSION,
-        'authority_version': SYSTEM_VARIANT_AUTHORITY_VERSION,
+        'authority_version': authority_version,
         'name': name,
         'document_id': baseline.document_id,
         'baseline_revision_id': baseline.revision_id,
@@ -561,6 +567,7 @@ def build_system_variant(
         'provenance': [item.model_dump(mode='json') for item in provenance_items],
     }
     variant = SystemVariant(
+        authority_version=authority_version,
         variant_id=str(uuid4()),
         name=name,
         document_id=baseline.document_id,
