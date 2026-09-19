@@ -420,7 +420,7 @@ def build_uncertainty_robustness_evaluations(
         violation_probability = sum(
             float(item.probability_weight or 0.0)
             for item in uncertainty_samples
-            if not item.feasible
+            if item.failure_reason == 'hard_constraint_violation'
         )
         probability_sample_ids = tuple(item.sample_id for item in uncertainty_samples)
         percentile_semantics = 'explicit_probability_model'
