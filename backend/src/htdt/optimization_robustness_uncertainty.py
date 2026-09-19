@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 from math import isclose
 from statistics import NormalDist
-from typing import Callable, Literal, Protocol, Sequence
-
-from pydantic import BaseModel, ConfigDict
+from typing import Callable, Sequence
 
 from .cad_constraint_models import CadConstraintSet
 from .cad_objective_models import CadObjectiveEvaluation
@@ -26,6 +24,8 @@ from .optimization_robustness import (
     PerturbationObjectiveResult,
     PerturbationSample,
     RobustnessEvaluation,
+    RobustnessExecutionResult,
+    RobustnessSampleCache,
     RobustnessSpec,
     SampledObjectiveEnvelope,
     _candidate_document,
@@ -42,38 +42,6 @@ from .optimization_robustness_multidimensional import (
 
 
 UNCERTAINTY_SAMPLING_STRATEGY = 'deterministic_multidimensional_uncertainty'
-
-
-class RobustnessSampleCache(Protocol):
-    """Minimal append-only cache authority used by O90B resume."""
-
-    def save_spec(self, spec: RobustnessSpec) -> RobustnessSpec: ...
-
-    def list_reusable_samples(
-        self,
-        spec: RobustnessSpec,
-    ) -> tuple[PerturbationSample, ...]: ...
-
-    def save_sample(self, sample: PerturbationSample) -> PerturbationSample: ...
-
-    def save_evaluations(
-        self,
-        evaluations: tuple[RobustnessEvaluation, ...],
-    ) -> tuple[RobustnessEvaluation, ...]: ...
-
-
-class RobustnessExecutionResult(BaseModel):
-    """One O90B execution attempt; completed samples remain immutable evidence."""
-
-    model_config = ConfigDict(frozen=True)
-
-    status: Literal['completed', 'cancelled']
-    robustness_spec_id: str
-    robustness_spec_sha256: str
-    samples: tuple[PerturbationSample, ...]
-    evaluations: tuple[RobustnessEvaluation, ...] = ()
-    reused_sample_ids: tuple[str, ...] = ()
-    computed_sample_ids: tuple[str, ...] = ()
 
 
 def _canonical_uncertainty_model(
