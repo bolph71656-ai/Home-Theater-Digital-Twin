@@ -435,7 +435,8 @@ def apply_raw_mesh_repair(
             ) = _weld_vertices(vertices, triangles, operation.tolerance_source_units)
             execution_state = 'applied' if topology_changes else 'no_change'
             detail = (
-                'deterministic first-representative weld within explicit tolerance '
+                'deterministic nearest previously retained representative weld; '
+                'ties use the earliest source vertex index; explicit tolerance '
                 f'{operation.tolerance_source_units:g} source units'
             )
         elif isinstance(operation, RemoveUnreferencedVertices):
