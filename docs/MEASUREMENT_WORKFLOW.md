@@ -194,3 +194,16 @@ REWの部屋シミュレーション結果を利用する際は、まず手動�
 /roomsimの状態読取と、HTDTからの座標・設定変更は別機能とする。後者はREWのシミュレーター状態を変えるため、明示的な実行、設定の退避、終了時の復元試行と失敗通知を設計してから追加する。実機音響測定を起動する機能とは混同しない。
 
 AVRはv0.1で手入力のみ。後続でネットワーク読取を加える場合も、機種・ファームウェアで存在を確認できた公開機能に限る。EQ内部係数の自動取得やYPAO全状態の取得を前提にしない。
+
+
+## 9. MeasurementQualityReport と downstream capability gate（Issue #172）
+
+Native N60で保存済みのMeasurement/Dataset/RawAssetを正本とし、品質判定は別の不変 `MeasurementQualityReport` として追加する。REWの測定・取込engineは変更しない。
+
+Reportはexact Measurement/Dataset hash、raw asset SHA-256、SceneRevision/content hash、measurement entity/point、利用可能な場合はAcquisitionContext ID/hash、quality algorithm/profile version/hashへ固定する。profileや閾値を変更した再評価は新しいReportを作り、旧Reportを書き換えない。
+
+品質項目は clipping、noise/SNR、usable frequency band、timing reference、polarity、IR window/truncation、calibration-file provenance、repeatability を独立に `PASS | FAIL | UNKNOWN | NOT_EVALUATED` で保持する。FRのfrequency+dBだけからclipping/SNR/common timing等を推定せず、phase配列だけからcommon timing成立としない。詳細matrixとclaim gateは[Measurement quality authority](MEASUREMENT_QUALITY.md)を正本とする。
+
+downstreamは単一quality scoreではなくclaim別 `ALLOWED | BLOCKED | UNKNOWN` を消費する。FR-onlyはmagnitude表示を維持する一方、phase/arrival/decay/common timing/calibration/repeatabilityを証拠なしに開放しない。要求帯域があるconsumerは明示usable-band evidenceも満たす必要がある。
+
+retakeは別Measurementとして保存し、append-only lineageでsupersedesとselected measurementを記録する。旧Measurement/Dataset/Reportは保持し、O50/O60のcalibration/holdout assignmentをretakeへ暗黙転送しない。
