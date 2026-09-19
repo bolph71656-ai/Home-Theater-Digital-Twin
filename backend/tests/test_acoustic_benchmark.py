@@ -118,6 +118,11 @@ def test_r100a4_finite_record_transfer_authority_is_explicit() -> None:
         assert contract.source_spectrum_requirement == 'finite_nonzero_on_scored_grid'
         assert contract.zero_padding == 'none'
 
+    convergence = _fixture(manifest, 'wave-rectangular-convergence-v1')
+    convergence_observable = convergence.observables[0]
+    assert convergence_observable.kind == 'complex_pressure_transfer_pa_per_m3_s'
+    assert convergence_observable.unit == 'Pa/(m3/s)'
+
 
 def test_r100a3_rejects_r100a4_finite_record_semantics() -> None:
     payload = _manifest().model_dump(mode='python')
