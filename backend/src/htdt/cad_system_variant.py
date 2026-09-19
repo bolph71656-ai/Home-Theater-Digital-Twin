@@ -9,11 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .cad_document import WorkingDocument
 from .cad_repository import SceneRevision
-from .cad_scene import SceneDocument, SceneEntity, scene_content_hash
+from .cad_scene import PHYSICAL_ENTITY_KINDS, SceneDocument, SceneEntity, scene_content_hash
 
 
 SYSTEM_VARIANT_SCHEMA_VERSION = 1
-SYSTEM_VARIANT_AUTHORITY_VERSION = 'o100a-system-variant-1'
+SYSTEM_VARIANT_AUTHORITY_VERSION = 'o100a-system-variant-2'
+SystemVariantAuthorityVersion = Literal[
+    'o100a-system-variant-1',
+    'o100a-system-variant-2',
+]
 
 LifecycleState = Literal['current', 'proposed', 'as_built', 'measured']
 VariantDiffKind = Literal['add', 'remove', 'replace']
@@ -72,22 +76,27 @@ class ChannelRoleBinding(BaseModel):
 
 
 class ProposedEntitySpec(BaseModel):
-    """Exact hypothetical speaker payload. No measurement/equipment authority lives here."""
+    """Exact hypothetical physical entity payload without measurement evidence."""
 
     model_config = ConfigDict(frozen=True)
 
     spec_id: str = Field(min_length=1)
     entity: SceneEntity
-    role_binding_id: str = Field(min_length=1)
+    role_binding_id: str | None = Field(default=None, min_length=1)
     lifecycle: Literal['proposed'] = 'proposed'
     provenance: tuple[VariantProvenanceItem, ...] = ()
 
     @model_validator(mode='after')
     def valid_proposed_entity(self) -> 'ProposedEntitySpec':
-        if self.entity.kind != 'speaker':
-            raise ValueError('O100A ProposedEntitySpec currently supports speaker entities only')
-        if self.entity.speaker_role != self.role_binding_id:
-            raise ValueError('proposed speaker role must match ChannelRoleBinding role_id')
+        if self.entity.kind not in PHYSICAL_ENTITY_KINDS:
+            raise ValueError('ProposedEntitySpec requires a physical SceneEntity')
+        if self.entity.kind == 'speaker':
+            if self.role_binding_id is None:
+                raise ValueError('proposed speaker requires a ChannelRoleBinding')
+            if self.entity.speaker_role != self.role_binding_id:
+                raise ValueError('proposed speaker role must match ChannelRoleBinding role_id')
+        elif self.role_binding_id is not None:
+            raise ValueError('non-speaker proposed entities must not use speaker role bindings')
         keys = [item.key for item in self.provenance]
         if len(keys) != len(set(keys)):
             raise ValueError('proposed entity provenance keys must be unique')
@@ -160,7 +169,7 @@ class SystemVariant(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal[1] = SYSTEM_VARIANT_SCHEMA_VERSION
-    authority_version: Literal['o100a-system-variant-1'] = SYSTEM_VARIANT_AUTHORITY_VERSION
+    authority_version: SystemVariantAuthorityVersion = SYSTEM_VARIANT_AUTHORITY_VERSION
     variant_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     document_id: str = Field(min_length=1)
@@ -192,8 +201,8 @@ class SystemVariant(BaseModel):
             if item.paired_role_id is not None and item.paired_role_id not in role_set:
                 raise ValueError('ChannelRoleBinding paired role is not present in the variant')
         for item in self.proposed_entities:
-            if item.role_binding_id not in role_set:
-                raise ValueError('proposed entity references unknown ChannelRoleBinding')
+            if item.role_binding_id is not None and item.role_binding_id not in role_set:
+                raise ValueError('proposed speaker references unknown ChannelRoleBinding')
         diff_ids = [item.entity_id for item in self.diff]
         if len(diff_ids) != len(set(diff_ids)):
             raise ValueError('SystemVariant diff entity ids must be unique')
@@ -311,14 +320,23 @@ def materialize_system_variant(
         if final_by_id.get(entity_id) != proposed:
             raise ValueError(f'proposed entity does not match exact variant diff: {entity_id}')
 
+    final_entity_ids = {entity.entity_id for entity in entities}
     final_speaker_ids = {
         entity.entity_id
         for entity in entities
         if entity.kind == 'speaker'
     }
+    proposed_entity_ids = {
+        item.entity.entity_id
+        for item in variant.proposed_entities
+    }
     lifecycle_ids = {item.entity_id for item in variant.entity_lifecycle}
-    if lifecycle_ids != final_speaker_ids:
+    if not final_speaker_ids.issubset(lifecycle_ids):
         raise ValueError('SystemVariant lifecycle bindings must cover the exact final speaker set')
+    if not proposed_entity_ids.issubset(lifecycle_ids):
+        raise ValueError('SystemVariant lifecycle bindings must cover every proposed entity')
+    if not lifecycle_ids.issubset(final_entity_ids):
+        raise ValueError('SystemVariant lifecycle binding references a missing final entity')
 
     return baseline.document.model_copy(update={'entities': tuple(entities)})
 
@@ -353,25 +371,28 @@ def build_system_variant(
     missing_removals = set(removals) - set(baseline_entities)
     if missing_removals:
         raise ValueError(f'cannot remove missing baseline entities: {sorted(missing_removals)}')
-    non_speaker_removals = {
+    invalid_removals = {
         entity_id
         for entity_id in removals
-        if baseline_entities[entity_id].kind != 'speaker'
+        if baseline_entities[entity_id].kind not in PHYSICAL_ENTITY_KINDS
     }
-    if non_speaker_removals:
+    if invalid_removals:
         raise ValueError(
-            'SystemVariant remove operations are limited to speakers: '
-            f'{sorted(non_speaker_removals)}'
+            'SystemVariant remove operations require physical entities: '
+            f'{sorted(invalid_removals)}'
         )
     invalid_replacements = {
         entity_id
-        for entity_id in proposal_by_id
+        for entity_id, proposal in proposal_by_id.items()
         if entity_id in baseline_entities
-        and baseline_entities[entity_id].kind != 'speaker'
+        and (
+            baseline_entities[entity_id].kind not in PHYSICAL_ENTITY_KINDS
+            or baseline_entities[entity_id].kind != proposal.entity.kind
+        )
     }
     if invalid_replacements:
         raise ValueError(
-            'SystemVariant replace operations are limited to speakers: '
+            'SystemVariant replacements must preserve physical entity kind: '
             f'{sorted(invalid_replacements)}'
         )
 
@@ -379,8 +400,8 @@ def build_system_variant(
     if len(role_by_id) != len(roles):
         raise ValueError('ChannelRoleBinding role ids must be unique')
     for proposal in proposals:
-        if proposal.role_binding_id not in role_by_id:
-            raise ValueError('proposed entity references unknown ChannelRoleBinding')
+        if proposal.role_binding_id is not None and proposal.role_binding_id not in role_by_id:
+            raise ValueError('proposed speaker references unknown ChannelRoleBinding')
 
     diff: list[VariantEntityDiff] = []
     for index, entity in enumerate(baseline.document.entities):
@@ -429,26 +450,37 @@ def build_system_variant(
         raise ValueError(f'lifecycle override references missing final entity: {sorted(unknown_overrides)}')
 
     lifecycle: list[EntityLifecycleBinding] = []
-    final_speakers: list[str] = []
+    final_entities: list[SceneEntity] = []
     for entity in baseline.document.entities:
         if entity.entity_id in removals:
             continue
         replacement = proposal_by_id.get(entity.entity_id)
-        effective = replacement.entity if replacement is not None else entity
-        if effective.kind == 'speaker':
-            final_speakers.append(effective.entity_id)
-    final_speakers.extend(
-        item.entity.entity_id
+        final_entities.append(replacement.entity if replacement is not None else entity)
+    final_entities.extend(
+        item.entity
         for item in proposals
         if item.entity.entity_id not in baseline_entities
     )
-    non_speaker_overrides = set(overrides) - set(final_speakers)
-    if non_speaker_overrides:
+    final_by_id = {entity.entity_id: entity for entity in final_entities}
+    invalid_overrides = {
+        entity_id
+        for entity_id in overrides
+        if final_by_id[entity_id].kind not in PHYSICAL_ENTITY_KINDS
+    }
+    if invalid_overrides:
         raise ValueError(
-            'lifecycle overrides currently apply to final speaker entities only: '
-            f'{sorted(non_speaker_overrides)}'
+            'lifecycle overrides require physical entities: '
+            f'{sorted(invalid_overrides)}'
         )
-    for entity_id in final_speakers:
+    tracked_ids: list[str] = []
+    for entity in final_entities:
+        if (
+            entity.kind == 'speaker'
+            or entity.entity_id in proposal_by_id
+            or entity.entity_id in overrides
+        ):
+            tracked_ids.append(entity.entity_id)
+    for entity_id in tracked_ids:
         if entity_id in proposal_by_id:
             lifecycle.append(EntityLifecycleBinding(entity_id=entity_id, state='proposed'))
         else:
