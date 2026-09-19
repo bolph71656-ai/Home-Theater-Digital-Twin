@@ -223,6 +223,11 @@ class SpatialFieldDecompositionSpec(BaseModel):
     timing_fourier_authority_ref: ExactDecompositionAuthorityRef
     normalization_authority_ref: ExactDecompositionAuthorityRef
     sound_speed_authority_ref: ExactDecompositionAuthorityRef
+    pressure_evidence_source: Literal[
+        'analytic_synthetic',
+        'solver_derived',
+        'measured_or_external',
+    ]
     solver_backend_provenance_ref: ExactDecompositionAuthorityRef | None = None
 
     boundary_plane_point: Position3
@@ -248,6 +253,13 @@ class SpatialFieldDecompositionSpec(BaseModel):
             raise ValueError(
                 'decomposition spec requires exact fixture or prediction authority'
             )
+        if (
+            self.pressure_evidence_source == 'solver_derived'
+            and self.solver_backend_provenance_ref is None
+        ):
+            raise ValueError(
+                'solver-derived pressure evidence requires exact solver/backend provenance'
+            )
         if not isfinite(float(self.sound_speed_m_s)):
             raise ValueError('sound speed must be finite')
         frequencies = [float(item) for item in self.frequency_grid_hz]
@@ -272,16 +284,16 @@ class SpatialFieldDecompositionSpec(BaseModel):
             lateral = _sub(displacement, _scale(inward, projected_distance))
             if projected_distance < -tolerance:
                 raise ValueError(
-                    f'sample {sample.sample_id} lies outside canonical acoustic domain'
+                    f'UNSUPPORTED: sample {sample.sample_id} lies outside canonical acoustic domain'
                 )
             if abs(projected_distance - float(sample.inward_distance_m)) > tolerance:
                 raise ValueError(
-                    f'sample {sample.sample_id} inward distance does not match '
+                    f'UNSUPPORTED: sample {sample.sample_id} inward distance does not match '
                     'boundary plane/normal authority'
                 )
             if _norm(lateral) > tolerance:
                 raise ValueError(
-                    f'sample {sample.sample_id} is not on the canonical boundary-normal line'
+                    f'UNSUPPORTED: sample {sample.sample_id} is not on the canonical boundary-normal line'
                 )
 
         digest = canonical_spatial_decomposition_sha256(self.semantic_payload())
@@ -320,6 +332,7 @@ class SpatialFieldDecompositionSpec(BaseModel):
             'sound_speed_authority_ref': (
                 self.sound_speed_authority_ref.model_dump(mode='json')
             ),
+            'pressure_evidence_source': self.pressure_evidence_source,
             'solver_backend_provenance_ref': (
                 self.solver_backend_provenance_ref.model_dump(mode='json')
                 if self.solver_backend_provenance_ref is not None
@@ -353,6 +366,11 @@ def build_spatial_field_decomposition_spec(
     timing_fourier_authority_ref: ExactDecompositionAuthorityRef,
     normalization_authority_ref: ExactDecompositionAuthorityRef,
     sound_speed_authority_ref: ExactDecompositionAuthorityRef,
+    pressure_evidence_source: Literal[
+        'analytic_synthetic',
+        'solver_derived',
+        'measured_or_external',
+    ],
     solver_backend_provenance_ref: ExactDecompositionAuthorityRef | None,
     boundary_plane_point: Position3,
     surface_outward_normal: Direction3,
@@ -396,6 +414,7 @@ def build_spatial_field_decomposition_spec(
         'sound_speed_authority_ref': (
             sound_speed_authority_ref.model_dump(mode='json')
         ),
+        'pressure_evidence_source': pressure_evidence_source,
         'solver_backend_provenance_ref': (
             solver_backend_provenance_ref.model_dump(mode='json')
             if solver_backend_provenance_ref is not None
@@ -425,6 +444,7 @@ def build_spatial_field_decomposition_spec(
         timing_fourier_authority_ref=timing_fourier_authority_ref,
         normalization_authority_ref=normalization_authority_ref,
         sound_speed_authority_ref=sound_speed_authority_ref,
+        pressure_evidence_source=pressure_evidence_source,
         solver_backend_provenance_ref=solver_backend_provenance_ref,
         boundary_plane_point=boundary_plane_point,
         surface_outward_normal=surface_outward_normal,
