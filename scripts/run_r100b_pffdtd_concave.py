@@ -1228,7 +1228,7 @@ def _execute(
             'grid_spacings_m': list(GRID_SPACINGS_M),
             'thread_budget': min(THREAD_BUDGET, os.cpu_count() or 1),
             'setup_processes': NPROCS,
-            'finite_record_transfer': comparison.finite_record_transfer.model_dump(mode='json'),
+            'finite_record_transfer': fixture.comparison.finite_record_transfer.model_dump(mode='json'),
             'solver_time_step_policy': 'solver_native_recorded',
             'comparison_grid_hz': {
                 'start': float(frequencies_hz[0]),
