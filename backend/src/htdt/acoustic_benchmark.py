@@ -602,6 +602,12 @@ class AcousticBenchmarkFixture(BaseModel):
             item.wave_model == 'specific_impedance_table' for item in boundary_materials
         ):
             raise ValueError('wave_impedance capability requires explicit phase-bearing impedance data')
+        if 'wave_radiation_termination' in capabilities and not any(
+            item.kind == 'radiation' for item in self.terminations
+        ):
+            raise ValueError(
+                'wave_radiation_termination capability requires an explicit radiation termination'
+            )
         if 'portal_continuity' in capabilities and not self.portals:
             raise ValueError('portal_continuity capability requires an explicit AcousticPortal')
         if 'geometric_specular' in capabilities and not any(
@@ -632,6 +638,12 @@ class AcousticBenchmarkManifest(BaseModel):
 
     @model_validator(mode='after')
     def unique_fixture_and_gate_ids(self) -> 'AcousticBenchmarkManifest':
+        expected_revision = {'r100a-2': 2, 'r100a-3': 3}[self.schema_version]
+        if self.revision != expected_revision:
+            raise ValueError(
+                f'{self.schema_version} requires revision {expected_revision}, got {self.revision}'
+            )
+
         fixture_ids = [item.fixture_id for item in self.fixtures]
         gate_ids = [item.gate_id for item in self.hard_gates]
         if len(fixture_ids) != len(set(fixture_ids)):
