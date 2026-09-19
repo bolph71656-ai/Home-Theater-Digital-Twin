@@ -26,6 +26,7 @@ MeasurementCapabilityClaim = Literal[
     'decay',
     'calibrated_response',
     'repeatability',
+    'polarity',
 ]
 
 _ALL_CAPABILITY_CLAIMS: tuple[MeasurementCapabilityClaim, ...] = (
@@ -36,6 +37,7 @@ _ALL_CAPABILITY_CLAIMS: tuple[MeasurementCapabilityClaim, ...] = (
     'decay',
     'calibrated_response',
     'repeatability',
+    'polarity',
 )
 
 
@@ -607,16 +609,40 @@ def derive_measurement_capabilities(
         )
         decay = _status_to_capability('decay', checks['ir_window'])
 
-    if acquisition_context is None and checks['calibration'].status == 'PASS':
+    calibrated_checks = (
+        checks['clipping'],
+        checks['noise_snr'],
+        checks['usable_frequency_band'],
+        checks['calibration'],
+    )
+    calibrated_reasons = tuple(check.reason for check in calibrated_checks)
+    if acquisition_context is None:
         calibrated = CadMeasurementCapability(
             claim='calibrated_response',
             decision='UNKNOWN',
-            reasons=('calibration file matches but AcquisitionContext binding is unavailable',),
+            reasons=calibrated_reasons + ('AcquisitionContext binding is unavailable',),
+        )
+    elif any(check.status == 'FAIL' for check in calibrated_checks):
+        calibrated = CadMeasurementCapability(
+            claim='calibrated_response',
+            decision='BLOCKED',
+            reasons=calibrated_reasons,
+        )
+    elif all(check.status == 'PASS' for check in calibrated_checks):
+        calibrated = CadMeasurementCapability(
+            claim='calibrated_response',
+            decision='ALLOWED',
+            reasons=calibrated_reasons,
         )
     else:
-        calibrated = _status_to_capability('calibrated_response', checks['calibration'])
+        calibrated = CadMeasurementCapability(
+            claim='calibrated_response',
+            decision='UNKNOWN',
+            reasons=calibrated_reasons,
+        )
 
     repeatability = _status_to_capability('repeatability', checks['repeatability'])
+    polarity = _status_to_capability('polarity', checks['polarity'])
 
     return (
         magnitude,
@@ -626,6 +652,7 @@ def derive_measurement_capabilities(
         decay,
         calibrated,
         repeatability,
+        polarity,
     )
 
 
