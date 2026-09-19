@@ -8,10 +8,18 @@ from htdt.semantic_geometry import (
     SurfaceSemanticAssignment,
     convert_raw_visual_mesh_to_semantic_geometry,
     deserialize_semantic_acoustic_geometry,
+    explicit_identity_source_to_scene_transform,
     make_semantic_geometry_conversion_request,
     raw_triangle_ids,
     serialize_semantic_acoustic_geometry,
 )
+
+
+
+def _identity_transform():
+    return explicit_identity_source_to_scene_transform(
+        reason='fixture coordinates are explicitly declared to be HTDT metres',
+    )
 
 
 def _imperfect_mesh():
@@ -52,6 +60,7 @@ def test_imperfect_mesh_explicit_repair_keeps_raw_immutable_and_lineage_determin
     request = make_semantic_geometry_conversion_request(
         mesh,
         source_scene_revision_id='scene-revision-parent',
+        source_to_scene_transform=_identity_transform(),
         repairs=(repair,),
         surface_assignments=(assignment,),
     )
@@ -82,6 +91,7 @@ def test_clean_geometry_without_explicit_semantics_is_not_promoted() -> None:
     unassigned_request = make_semantic_geometry_conversion_request(
         mesh,
         source_scene_revision_id=None,
+        source_to_scene_transform=_identity_transform(),
     )
     unassigned = convert_raw_visual_mesh_to_semantic_geometry(mesh, unassigned_request)
 
@@ -97,6 +107,7 @@ def test_clean_geometry_without_explicit_semantics_is_not_promoted() -> None:
     explicit_request = make_semantic_geometry_conversion_request(
         mesh,
         source_scene_revision_id=None,
+        source_to_scene_transform=_identity_transform(),
         surface_assignments=(
             SurfaceSemanticAssignment(
                 surface_key='room-shell',
@@ -150,6 +161,7 @@ def test_scene_revision_binding_save_and_reopen_tracks_same_semantic_result(tmp_
     request = make_semantic_geometry_conversion_request(
         mesh,
         source_scene_revision_id=base.revision_id,
+        source_to_scene_transform=_identity_transform(),
         repairs=(
             RemoveTriangleRepair(
                 triangle_id=removed,
