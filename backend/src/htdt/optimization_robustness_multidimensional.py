@@ -363,6 +363,14 @@ def _multidimensional_sample(
         ),
         'failure_reason': failure_reason,
     }
+    if plan.uncertainty_model_sha256 is not None:
+        payload.update(
+            {
+                'uncertainty_model_sha256': plan.uncertainty_model_sha256,
+                'uncertainty_item_id': plan.uncertainty_item_id,
+                'probability_weight': plan.probability_weight,
+            }
+        )
     return PerturbationSample(
         **payload,
         sample_sha256=canonical_robustness_sha256(payload),
