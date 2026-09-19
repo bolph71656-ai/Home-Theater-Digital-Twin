@@ -41,7 +41,7 @@ ADAPTER_VERSION = '1'
 ARTIFACT_SCHEMA = 'r100b-mfem-concave-reference-artifact-1'
 REFERENCE_QUALIFICATION_FRACTION = 0.25
 ORDER_MIN = 2
-ORDER_MAX = 5
+ORDER_MAX = 6
 SOLVER_RESIDUAL_LIMIT = 1.0e-8
 
 
@@ -1021,7 +1021,6 @@ def _execute(
             'relative_tolerance': 1.0e-10,
             'qualification_residual_limit': SOLVER_RESIDUAL_LIMIT,
             'max_iterations': 8000,
-            'krylov_dimension': 200,
         },
         'convergence': convergence,
         'qualification': qualification,
