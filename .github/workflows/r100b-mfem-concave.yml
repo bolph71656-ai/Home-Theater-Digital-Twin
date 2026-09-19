@@ -10,6 +10,7 @@ on:
       - 'benchmarks/acoustics/mfem_probe/**'
       - 'scripts/run_r100b_mfem_concave_probe.py'
       - 'scripts/run_r100b_mfem_portal_probe.py'
+      - 'scripts/run_r100b_mfem_radiation_probe.py'
       - '.github/workflows/r100b-mfem-concave.yml'
   workflow_dispatch:
 
@@ -21,6 +22,7 @@ jobs:
       MFEM_SHA: d964264cdb9a13e94a201b6c236c7721e0c8765f
       PROBE_OUTPUT: artifacts/r100b/mfem_concave_reference.json
       PORTAL_OUTPUT: artifacts/r100b/mfem_portal_continuity.json
+      RADIATION_OUTPUT: artifacts/r100b/mfem_radiation_termination.json
       HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +37,7 @@ jobs:
         run: python -m pip install -e ".\backend" psutil
 
       - name: Preflight MFEM reference probe scripts
-        run: python -m py_compile scripts\\run_r100b_mfem_concave_probe.py scripts\\run_r100b_mfem_portal_probe.py
+        run: python -m py_compile scripts\\run_r100b_mfem_concave_probe.py scripts\\run_r100b_mfem_portal_probe.py scripts\\run_r100b_mfem_radiation_probe.py
 
       - name: Checkout pinned MFEM source
         shell: pwsh
@@ -60,8 +62,10 @@ jobs:
             $timer.Stop()
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BLOCK_REASON=MFEM v4.10 serial CMake configure failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_PORTAL_BLOCK_REASON=MFEM v4.10 serial CMake configure failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_BLOCK_REASON=MFEM v4.10 serial CMake configure failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BUILD_S=$($timer.Elapsed.TotalSeconds.ToString('R',[Globalization.CultureInfo]::InvariantCulture))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BUILD_DIR=$build" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             exit 0
@@ -76,8 +80,10 @@ jobs:
           if ($buildExit -ne 0) {
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BLOCK_REASON=MFEM v4.10 serial library/concave probe build failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_PORTAL_BLOCK_REASON=MFEM v4.10 serial library build failed before Portal probe build." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_BLOCK_REASON=MFEM v4.10 serial library build failed before radiation probe build." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             exit 0
           }
 
@@ -85,13 +91,34 @@ jobs:
           if ($null -eq $exe) {
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BLOCK_REASON=MFEM build succeeded but the concave reference executable was not found." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_PORTAL_BLOCK_REASON=Common MFEM build did not produce the expected concave executable." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_BLOCK_REASON=Common MFEM build did not produce the expected concave executable." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             exit 0
           }
 
           "MFEM_RUNTIME_AVAILABLE=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MFEM_PROBE_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $radiationTimer = [System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build $build --config Release --target r100b_mfem_radiation_transfer --parallel 4
+          $radiationBuildExit = $LASTEXITCODE
+          $radiationTimer.Stop()
+          "MFEM_RADIATION_BUILD_S=$($radiationTimer.Elapsed.TotalSeconds.ToString('R',[Globalization.CultureInfo]::InvariantCulture))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          if ($radiationBuildExit -ne 0) {
+            "MFEM_RADIATION_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_RADIATION_BLOCK_REASON=MFEM v4.10 radiation probe build failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            $radiationExe = Get-ChildItem -Path $build -Recurse -Filter 'r100b_mfem_radiation_transfer.exe' | Select-Object -First 1
+            if ($null -eq $radiationExe) {
+              "MFEM_RADIATION_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              "MFEM_RADIATION_BLOCK_REASON=MFEM radiation build succeeded but the executable was not found." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            } else {
+              "MFEM_RADIATION_AVAILABLE=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              "MFEM_RADIATION_EXE=$($radiationExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            }
+          }
 
           $portalTimer = [System.Diagnostics.Stopwatch]::StartNew()
           cmake --build $build --config Release --target r100b_mfem_portal_transfer --parallel 4
@@ -172,6 +199,53 @@ jobs:
             --output $env:PORTAL_OUTPUT `
             --blocked-reason "$env:MFEM_PORTAL_BLOCK_REASON"
 
+      - name: Run MFEM R100A-3 radiation termination gate
+        if: env.MFEM_RADIATION_AVAILABLE == '1'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'mfem-r100b-radiation-work'
+          python scripts\run_r100b_mfem_radiation_probe.py `
+            --manifest benchmarks\acoustics\r100a_manifest.json `
+            --candidates benchmarks\acoustics\r100b_candidates.json `
+            --mfem-root $env:MFEM_ROOT `
+            --build-dir $env:MFEM_BUILD_DIR `
+            --executable $env:MFEM_RADIATION_EXE `
+            --work-dir $work `
+            --output $env:RADIATION_OUTPUT `
+            --build-s $env:MFEM_RADIATION_BUILD_S
+
+      - name: Record blocked MFEM radiation gate
+        if: env.MFEM_RADIATION_AVAILABLE != '1'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'mfem-r100b-radiation-work'
+          python scripts\run_r100b_mfem_radiation_probe.py `
+            --manifest benchmarks\acoustics\r100a_manifest.json `
+            --candidates benchmarks\acoustics\r100b_candidates.json `
+            --mfem-root $env:MFEM_ROOT `
+            --build-dir $env:MFEM_BUILD_DIR `
+            --work-dir $work `
+            --output $env:RADIATION_OUTPUT `
+            --blocked-reason "$env:MFEM_RADIATION_BLOCK_REASON"
+
+      - name: Show MFEM radiation outcome
+        shell: pwsh
+        run: |
+          $probe = Get-Content -Raw $env:RADIATION_OUTPUT | ConvertFrom-Json
+          Write-Host "R100B_MFEM_RADIATION_OUTCOME=$($probe.radiation_fixture_outcome)"
+          Write-Host "R100B_MFEM_RADIATION_WORKFLOW_IS_FIXTURE_RESULT=$($probe.workflow_result_is_fixture_result)"
+          Write-Host "R100B_MFEM_RADIATION_R100A_HASH=$($probe.r100a_semantic_hash)"
+          Write-Host "R100B_MFEM_RADIATION_CANDIDATE_HASH=$($probe.candidate_manifest_hash)"
+          if ($null -ne $probe.details.qualification) {
+            Write-Host "R100B_MFEM_RADIATION_QUALIFICATION=$($probe.details.qualification | ConvertTo-Json -Compress)"
+          }
+          if ($null -ne $probe.details.central_observable_evidence) {
+            Write-Host "R100B_MFEM_RADIATION_OBSERVABLES=$($probe.details.central_observable_evidence | ConvertTo-Json -Compress)"
+          }
+          if ($null -ne $probe.details.resource_evidence) {
+            Write-Host "R100B_MFEM_RADIATION_RESOURCES=$($probe.details.resource_evidence | ConvertTo-Json -Compress)"
+          }
+
       - name: Show MFEM Portal outcome
         shell: pwsh
         run: |
@@ -226,4 +300,5 @@ jobs:
           path: |
             artifacts/r100b/mfem_concave_reference.json
             artifacts/r100b/mfem_portal_continuity.json
+            artifacts/r100b/mfem_radiation_termination.json
           if-no-files-found: error

@@ -29,3 +29,8 @@ target_link_libraries(r100b_mfem_concave_transfer PRIVATE mfem)
 add_executable(r100b_mfem_portal_transfer portal_transfer.cpp)
 target_compile_features(r100b_mfem_portal_transfer PRIVATE cxx_std_17)
 target_link_libraries(r100b_mfem_portal_transfer PRIVATE mfem)
+
+add_executable(r100b_mfem_radiation_transfer radiation_transfer.cpp)
+target_compile_features(r100b_mfem_radiation_transfer PRIVATE cxx_std_17)
+target_link_libraries(r100b_mfem_radiation_transfer PRIVATE mfem)
+
