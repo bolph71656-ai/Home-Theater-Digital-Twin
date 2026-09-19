@@ -23,7 +23,8 @@ For `wave-explicit-radiation-termination-v1`, R100A-3 now freezes:
 - `k = omega/c` using the fixture's frozen environment;
 - under `exp(-i*omega*t)`, the equivalent Robin form `dp/dn - i*k*p = 0`;
 - explicit binding to boundary `b-interface` on the x=6 m aperture;
-- dedicated `wave_radiation_termination` capability, distinct from rigid or impedance support.
+- dedicated `wave_radiation_termination` capability, distinct from rigid or impedance support;
+- absolute transfer magnitude is explicitly `20*log10(|P/Q| / (1 Pa/(m3/s)))`, so it cannot be confused with SPL dB re 20 uPa.
 
 This is intentionally a local first-order/Sommerfeld-type approximation. It is not described as an exact exterior-domain radiation solution for arbitrary incidence.
 
