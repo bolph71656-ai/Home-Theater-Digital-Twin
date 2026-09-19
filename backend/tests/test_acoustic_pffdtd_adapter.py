@@ -97,9 +97,11 @@ def test_rigid_fixture_compiler_preserves_exact_concave_l_prism() -> None:
         assert len(horizontal) == 6
         area_xy = sum(
             abs(
-                np.cross(
-                    points[triangle[1], :2] - points[triangle[0], :2],
-                    points[triangle[2], :2] - points[triangle[0], :2],
+                float(
+                    (points[triangle[1], 0] - points[triangle[0], 0])
+                    * (points[triangle[2], 1] - points[triangle[0], 1])
+                    - (points[triangle[1], 1] - points[triangle[0], 1])
+                    * (points[triangle[2], 0] - points[triangle[0], 0])
                 )
             )
             * 0.5
