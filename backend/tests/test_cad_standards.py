@@ -223,7 +223,21 @@ def test_missing_source_is_rejected_and_measured_requirement_fails_closed() -> N
 
 
 def test_published_boundaries_and_angle_wrap_are_explicit() -> None:
-    rp22 = rp22_spatial_profile(2)
+    rp22_profiles = tuple(rp22_spatial_profile(level) for level in range(1, 5))
+    assert tuple(profile.version for profile in rp22_profiles) == (
+        '1.2-2023-09',
+        '1.2-2023-09',
+        '1.2-2023-09',
+        '1.2-2023-09',
+    )
+    level3_upfiring = next(
+        criterion
+        for criterion in rp22_profiles[2].criteria
+        if criterion.criterion_id == 'rp22.p08.upfiring-elevation-speakers-prohibited'
+    )
+    assert level3_upfiring.rule.expected is False
+
+    rp22 = rp22_profiles[1]
     listener = next(
         criterion
         for criterion in rp22.criteria
