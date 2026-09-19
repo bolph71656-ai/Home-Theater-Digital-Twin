@@ -40,7 +40,7 @@ The linear solve uses serial MINRES for the symmetric-indefinite `K-k^2M` operat
 
 ## Discretization and convergence
 
-The geometry mesh stays fixed and exact while H1 polynomial order is refined from p=2 through p=5. Every order produces the complete frozen 281-frequency grid. The artifact records, for every level:
+The geometry mesh stays fixed and exact while H1 polynomial order is refined from p=2 through p=6. Every order produces the complete frozen 281-frequency grid. The artifact records, for every level:
 
 - exact element count and true DOF count;
 - polynomial order;
@@ -49,14 +49,14 @@ The geometry mesh stays fixed and exact while H1 polynomial order is refined fro
 - per-frequency MINRES iteration count and residual;
 - raw complex pressure at every frequency.
 
-Reference qualification is deliberately stricter than candidate acceptance. The R100A-2 tolerances remain unchanged; the reference must additionally satisfy a fixed `0.25 x` qualification margin between p=4 and p=5 and strict decrease of the consecutive complex RMS p-refinement error.
+Reference qualification is deliberately stricter than candidate acceptance. The R100A-2 tolerances remain unchanged; the reference must additionally satisfy a fixed `0.25 x` qualification margin between the final p=5 and p=6 levels and strict decrease of the consecutive complex RMS p-refinement error.
 
 For the frozen current tolerances this means:
 
 - magnitude absolute delta <= `0.1875 dB`;
 - magnitude relative delta <= `0.0125`;
 - phase delta <= `2 deg`;
-- p2->p3, p3->p4, p4->p5 complex RMS relative error must strictly decrease.
+- p2->p3, p3->p4, p4->p5, p5->p6 complex RMS relative error must strictly decrease.
 
 The existing central `observable_tolerance_violations()` and `validate_bakeoff_run()` remain the candidate/reference evidence authority. The stricter reference margin does not modify or replace R100A tolerances.
 
