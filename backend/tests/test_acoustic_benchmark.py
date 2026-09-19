@@ -56,6 +56,28 @@ def test_r100a_schema_version_and_revision_are_bound() -> None:
         AcousticBenchmarkManifest.model_validate(payload)
 
 
+def test_r100a2_rejects_r100a3_radiation_semantics() -> None:
+    manifest = _manifest()
+
+    capability_payload = manifest.model_dump(mode='python')
+    capability_payload['schema_version'] = 'r100a-2'
+    capability_payload['revision'] = 2
+    with pytest.raises(ValueError, match='cannot declare wave_radiation_termination'):
+        AcousticBenchmarkManifest.model_validate(capability_payload)
+
+    semantics_payload = manifest.model_dump(mode='python')
+    semantics_payload['schema_version'] = 'r100a-2'
+    semantics_payload['revision'] = 2
+    radiation_fixture = next(
+        item
+        for item in semantics_payload['fixtures']
+        if item['fixture_id'] == 'wave-explicit-radiation-termination-v1'
+    )
+    radiation_fixture['required_capabilities'] = ['wave_rigid']
+    with pytest.raises(ValueError, match='cannot carry R100A-3 radiation semantics'):
+        AcousticBenchmarkManifest.model_validate(semantics_payload)
+
+
 def test_r100a_required_fixture_roles_are_present() -> None:
     manifest = _manifest()
     fixture_ids = {item.fixture_id for item in manifest.fixtures}
