@@ -584,7 +584,9 @@ def _pair_metrics(
         if fine_db >= magnitude_mask_db:
             delta_db = abs(coarse_db - fine_db)
             magnitude_abs.append(delta_db)
-            magnitude_rel.append(delta_db / max(abs(fine_db), 1.0))
+            magnitude_rel.append(
+                abs(coarse_magnitude - fine_magnitude) / max(fine_magnitude, 1.0e-300)
+            )
 
         if fine_db >= phase_mask_db and coarse_magnitude > 0.0 and fine_magnitude > 0.0:
             phase_error.append(
