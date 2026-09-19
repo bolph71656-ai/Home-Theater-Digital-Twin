@@ -412,6 +412,17 @@ def test_max_boost_cut_violation_is_not_silently_clipped(tmp_path: Path) -> None
     assert plan.support_state == 'UNSUPPORTED'
     assert any('exceeds plan maximum' in reason for reason in plan.unsupported_reasons)
 
+    cut_plan = _plan(
+        revision,
+        variant,
+        measurement,
+        dataset,
+        report,
+        _channel(peq=(_peq(gain_db=-13.0, filter_id='peq-cut'),)),
+    )
+    assert cut_plan.support_state == 'UNSUPPORTED'
+    assert any('exceeds plan maximum' in reason for reason in cut_plan.unsupported_reasons)
+
 
 def test_generic_export_round_trip_preserves_exact_exported_transfer(tmp_path: Path) -> None:
     revision, variant, measurements, quality, _variants, _calibration = _repositories(tmp_path)
