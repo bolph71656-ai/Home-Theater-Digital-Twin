@@ -14,6 +14,7 @@ from .cad_scene import Direction3, Position3
 BenchmarkCapability = Literal[
     'wave_rigid',
     'wave_impedance',
+    'wave_radiation_termination',
     'portal_continuity',
     'geometric_specular',
     'geometric_scattering',
@@ -170,9 +171,34 @@ class BoundaryTermination(BaseModel):
     aperture: tuple[Position3, ...] = Field(min_length=3)
     kind: Literal['radiation', 'anechoic', 'rigid', 'impedance']
     boundary_id: str | None = None
+    radiation_model: Literal['local_first_order_outgoing'] | None = None
+    normal_convention: Literal['outward_from_region'] | None = None
+    characteristic_impedance_model: Literal['rho_c_from_environment'] | None = None
+    pressure_velocity_equation: Literal['p_eq_rho_c_u_n'] | None = None
+    wavenumber_equation: Literal['k_eq_omega_over_c'] | None = None
+    helmholtz_robin_equation: Literal['dp_dn_minus_i_k_p_eq_0'] | None = None
 
     @model_validator(mode='after')
     def boundary_requirement(self) -> 'BoundaryTermination':
+        radiation_fields = (
+            self.radiation_model,
+            self.normal_convention,
+            self.characteristic_impedance_model,
+            self.pressure_velocity_equation,
+            self.wavenumber_equation,
+            self.helmholtz_robin_equation,
+        )
+        if self.kind == 'radiation':
+            if self.boundary_id is None:
+                raise ValueError('radiation termination requires boundary_id')
+            if any(value is None for value in radiation_fields):
+                raise ValueError(
+                    'radiation termination requires explicit model/sign/normal authority'
+                )
+        elif any(value is not None for value in radiation_fields):
+            raise ValueError(
+                'radiation-specific authority is only valid for radiation termination'
+            )
         if self.kind == 'impedance' and self.boundary_id is None:
             raise ValueError('impedance termination requires boundary_id')
         return self
@@ -604,7 +630,7 @@ class AcousticBenchmarkManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal['r100a-2'] = 'r100a-2'
+    schema_version: Literal['r100a-2', 'r100a-3'] = 'r100a-3'
     manifest_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     purpose: str = Field(min_length=1)
