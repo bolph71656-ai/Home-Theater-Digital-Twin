@@ -350,7 +350,6 @@ class StandardsEvaluation(BaseModel):
     target: StandardsEvaluationTarget
     observations: tuple[CriterionObservation, ...]
     results: tuple[CriterionEvaluationResult, ...]
-    hard_constraint_ids: tuple[str, ...] = ()
     reevaluation_of_id: str | None = Field(default=None, min_length=1)
     created_at_utc: str = Field(min_length=1)
     evaluation_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
@@ -363,11 +362,6 @@ class StandardsEvaluation(BaseModel):
         observation_ids = [item.criterion_id for item in self.observations]
         if len(observation_ids) != len(set(observation_ids)):
             raise ValueError('standards evaluation observation ids must be unique')
-        if len(self.hard_constraint_ids) != len(set(self.hard_constraint_ids)):
-            raise ValueError('hard constraint ids must be unique')
-        if not set(self.hard_constraint_ids).issubset(result_ids):
-            raise ValueError('hard constraint ids must reference evaluated criteria')
-
         input_hash = _digest(self.identity_payload())
         expected_id = f'standards-eval-{input_hash[:32]}'
         if self.evaluation_id != expected_id:
@@ -393,7 +387,6 @@ class StandardsEvaluation(BaseModel):
             'profile_semantic_hash': self.profile_semantic_hash,
             'target': self.target.identity_payload(),
             'observations': observations,
-            'hard_constraint_ids': sorted(self.hard_constraint_ids),
             'reevaluation_of_id': self.reevaluation_of_id,
         }
 
@@ -508,7 +501,6 @@ def evaluate_standards_profile(
     target: StandardsEvaluationTarget,
     observations: Sequence[CriterionObservation],
     created_at_utc: str,
-    hard_constraint_ids: Sequence[str] = (),
     reevaluation_of_id: str | None = None,
 ) -> StandardsEvaluation:
     """Evaluate exact observations without deriving physical quantities or optimization scores."""
@@ -524,14 +516,6 @@ def evaluate_standards_profile(
         raise ValueError(
             'observation references criterion outside profile: '
             f'{sorted(unknown_observations)}'
-        )
-
-    hard_ids = tuple(sorted(set(hard_constraint_ids)))
-    unknown_hard = set(hard_ids) - profile_ids
-    if unknown_hard:
-        raise ValueError(
-            'hard constraint references criterion outside profile: '
-            f'{sorted(unknown_hard)}'
         )
 
     results: list[CriterionEvaluationResult] = []
@@ -656,7 +640,6 @@ def evaluate_standards_profile(
             item.model_dump(mode='json')
             for item in normalized_observations
         ],
-        'hard_constraint_ids': list(hard_ids),
         'reevaluation_of_id': reevaluation_of_id,
     }
     input_hash = _digest(identity_payload)
@@ -674,7 +657,6 @@ def evaluate_standards_profile(
         target=target,
         observations=normalized_observations,
         results=tuple(results),
-        hard_constraint_ids=hard_ids,
         reevaluation_of_id=reevaluation_of_id,
         created_at_utc=created_at_utc,
         evaluation_sha256=_digest(semantic_payload),
@@ -687,31 +669,33 @@ def reevaluate_standards_profile(
     profile: StandardsProfile,
     observations: Sequence[CriterionObservation],
     created_at_utc: str,
-    hard_constraint_ids: Sequence[str] | None = None,
 ) -> StandardsEvaluation:
     """Create a new immutable evaluation explicitly linked to a historical result."""
 
-    selected = (
-        previous.hard_constraint_ids
-        if hard_constraint_ids is None
-        else tuple(hard_constraint_ids)
-    )
     return evaluate_standards_profile(
         profile=profile,
         target=previous.target,
         observations=observations,
         created_at_utc=created_at_utc,
-        hard_constraint_ids=selected,
         reevaluation_of_id=previous.evaluation_id,
     )
 
 
 def explicit_hard_constraint_gate(
     evaluation: StandardsEvaluation,
+    *,
+    selected_criterion_ids: Sequence[str],
 ) -> StandardsHardConstraintGate:
-    """Fail closed for selected FAIL/UNKNOWN; NOT_APPLICABLE does not block."""
+    """Apply an explicit downstream policy without changing evaluation identity."""
 
-    selected = tuple(sorted(evaluation.hard_constraint_ids))
+    result_ids = {result.criterion_id for result in evaluation.results}
+    selected = tuple(sorted(set(selected_criterion_ids)))
+    unknown = set(selected) - result_ids
+    if unknown:
+        raise ValueError(
+            'hard constraint references criterion outside evaluation: '
+            f'{sorted(unknown)}'
+        )
     status_by_id = {
         result.criterion_id: result.status
         for result in evaluation.results
