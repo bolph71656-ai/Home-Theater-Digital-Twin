@@ -18,6 +18,7 @@ from htdt.cad_acoustic_treatment import (
 )
 from htdt.cad_acoustic_treatment_repository import CadAcousticTreatmentRepository
 from htdt.cad_repository import SceneRepository
+from htdt.cad_system_variant_repository import CadSystemVariantRepository
 from htdt.cad_scene import Position3, SceneDocument
 from htdt.raw_mesh import import_raw_visual_mesh
 from htdt.semantic_geometry import (
@@ -144,7 +145,11 @@ def _fixture(tmp_path: Path):
         ),
     )
     semantic_revision = _save_geometry_revision(scene_repository, root, geometry)
-    treatment_repository = CadAcousticTreatmentRepository(scene_repository)
+    variant_repository = CadSystemVariantRepository(scene_repository)
+    treatment_repository = CadAcousticTreatmentRepository(
+        scene_repository,
+        variant_repository,
+    )
     definition = treatment_repository.save_definition(_definition())
     return (
         scene_repository,
@@ -243,7 +248,8 @@ def test_exact_room_object_and_unknown_surface_binding_and_reopen(tmp_path: Path
     assert unknown_result.host_semantic_policy == 'semantic_class_does_not_gate_placement_authority'
 
     reopened_scene = SceneRepository(scene_repository.path)
-    reopened = CadAcousticTreatmentRepository(reopened_scene)
+    reopened_variants = CadSystemVariantRepository(reopened_scene)
+    reopened = CadAcousticTreatmentRepository(reopened_scene, reopened_variants)
     reopened_room = reopened.get_placement(room.instance_id, room.placement_version)
     assert reopened_room == room
     reopened_result = reopened.evaluate_placement_surface_binding(reopened_room)
