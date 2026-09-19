@@ -567,6 +567,10 @@ def build_uncertainty_robustness_evaluations(
                     'probability_sample_ids': list(probability_sample_ids),
                 }
             )
+        if nominal_metric.definition is not None:
+            identity['objective_definition'] = nominal_metric.definition.model_dump(
+                mode='json'
+            )
         digest = canonical_robustness_sha256(identity)
         evaluations.append(
             RobustnessEvaluation(
