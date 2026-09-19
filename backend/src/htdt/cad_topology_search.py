@@ -56,7 +56,8 @@ from .search_space import (
 
 TOPOLOGY_SEARCH_SCHEMA_VERSION = 1
 TOPOLOGY_SEARCH_AUTHORITY_VERSION = 'o100b-virtual-placement-1'
-TOPOLOGY_SEARCH_ALGORITHM_VERSION = 'o100b-o10-o80-grid-1'
+TOPOLOGY_SEARCH_ALGORITHM_VERSION_V1 = 'o100b-o10-o80-grid-1'
+TOPOLOGY_SEARCH_ALGORITHM_VERSION = 'o100b-o10-o80-grid-2'
 TOPOLOGY_SEARCH_SYSTEM_MAX_CANDIDATES = 50_000
 
 AngleParameter = Literal['aim_yaw_deg', 'aim_pitch_deg', 'body_yaw_deg']
@@ -211,7 +212,10 @@ class TopologyPlacementSearchSpec(BaseModel):
         ge=1,
         le=TOPOLOGY_SEARCH_SYSTEM_MAX_CANDIDATES,
     )
-    algorithm_version: Literal['o100b-o10-o80-grid-1'] = TOPOLOGY_SEARCH_ALGORITHM_VERSION
+    algorithm_version: Literal[
+        'o100b-o10-o80-grid-1',
+        'o100b-o10-o80-grid-2',
+    ] = TOPOLOGY_SEARCH_ALGORITHM_VERSION
     created_at_utc: str = Field(min_length=1)
     search_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
@@ -670,6 +674,101 @@ def _validate_search_sources(
     return virtual_scene
 
 
+def _body_yaw_entity_ids(
+    spec: TopologyPlacementSearchSpec,
+) -> set[str]:
+    return {
+        entity_id
+        for entity_id, axis in _ordered_angle_axes(spec.placement_specs)
+        if axis.parameter == 'body_yaw_deg'
+    }
+
+
+def _o10_prefilter_constraint_spec(
+    spec: TopologyPlacementSearchSpec,
+) -> dict[str, Any]:
+    """Return the deterministic XYZ prefilter for the selected O100B algorithm.
+
+    v2 must not reject an XYZ point solely because the template footprint has
+    the wrong yaw. Room/allowed/exclusion point checks remain necessary
+    conditions, while wall and envelope-pair checks involving a searched body
+    yaw are deferred to the exact final-pose evaluation.
+    """
+
+    raw = json.loads(spec.g10_constraint_spec_json)
+    if spec.algorithm_version == TOPOLOGY_SEARCH_ALGORITHM_VERSION_V1:
+        return raw
+
+    rotated = _body_yaw_entity_ids(spec)
+    if not rotated:
+        return raw
+
+    raw['entity_profiles'] = [
+        item
+        for item in raw.get('entity_profiles', [])
+        if str(item['entity_id']) not in rotated
+    ]
+    constraints = []
+    for item in raw.get('constraints', []):
+        kind = str(item.get('kind'))
+        if (
+            kind == 'wall_clearance'
+            and rotated.intersection(
+                str(value) for value in item.get('entity_ids', [])
+            )
+        ):
+            continue
+        if (
+            kind == 'pair_distance'
+            and item.get('distance_reference') == 'envelope_clearance'
+            and rotated.intersection(
+                (str(item.get('entity_a')), str(item.get('entity_b')))
+            )
+        ):
+            continue
+        constraints.append(item)
+    raw['constraints'] = constraints
+    return raw
+
+
+def _final_pose_constraint_rejections(
+    *,
+    virtual_scene: SceneDocument,
+    preview: SceneDocument,
+    spec: TopologyPlacementSearchSpec,
+    positions: dict[str, dict[str, float]],
+) -> tuple[str, ...]:
+    """Evaluate canonical G10 constraints with exact final O80 footprints."""
+
+    constraint_set = CadConstraintSet.model_validate(
+        json.loads(spec.constraint_snapshot_json)
+    )
+    placement_ids = {
+        item.entity_id
+        for item in spec.placement_specs
+    }
+    final_request = build_g10_constraint_request(
+        preview,
+        constraint_set,
+        additional_entity_ids=placement_ids,
+    )
+    final_profiles = final_request.model_dump(mode='json')['entity_profiles']
+
+    final_spec = json.loads(spec.g10_constraint_spec_json)
+    final_spec['entity_profiles'] = final_profiles
+    evaluation = evaluate_constraint_set(
+        scene_to_g10_context(virtual_scene),
+        final_spec,
+        PlacementEvaluationRequest.model_validate({
+            'positions': positions,
+        }),
+    )
+    return tuple(
+        str(item['constraint_id'])
+        for item in evaluation['rejections']
+    )
+
+
 def _all_o10_candidates(
     *,
     context: dict[str, Any],
@@ -677,14 +776,16 @@ def _all_o10_candidates(
     cancelled: Callable[[], bool] | None,
 ) -> tuple[tuple[CadCandidate, ...], dict[str, Any]]:
     raw_o10_spec = json.loads(spec.o10_search_spec_json)
-    raw_g10_spec = json.loads(spec.g10_constraint_spec_json)
+    raw_g10_spec = _o10_prefilter_constraint_spec(spec)
+    raw_g10_sha = _digest(raw_g10_spec)
+    raw_o10_spec['constraint_set_spec_sha256'] = raw_g10_sha
     page_limit = 500
     first = generate_search_space(
         context,
         raw_o10_spec,
         search_spec_sha256=spec.search_sha256,
         constraint_set_spec=raw_g10_spec,
-        constraint_set_spec_sha256=spec.g10_constraint_spec_sha256,
+        constraint_set_spec_sha256=raw_g10_sha,
         offset=0,
         limit=page_limit,
         cancelled=cancelled,
@@ -701,7 +802,7 @@ def _all_o10_candidates(
             raw_o10_spec,
             search_spec_sha256=spec.search_sha256,
             constraint_set_spec=raw_g10_spec,
-            constraint_set_spec_sha256=spec.g10_constraint_spec_sha256,
+            constraint_set_spec_sha256=raw_g10_sha,
             offset=offset,
             limit=page_limit,
             cancelled=cancelled,
@@ -890,18 +991,29 @@ def generate_topology_placement_candidates(
                 aim_pitch_deg=aim_pitch,
                 body_yaw_deg=body_yaw,
             )
-            if body_yaw:
-                rejections = orientation_constraint_rejections(
-                    preview,
-                    constraint_set,
-                    changed_entity_ids=body_yaw,
+            if spec.algorithm_version == TOPOLOGY_SEARCH_ALGORITHM_VERSION_V1:
+                rejections = (
+                    orientation_constraint_rejections(
+                        preview,
+                        constraint_set,
+                        changed_entity_ids=body_yaw,
+                    )
+                    if body_yaw
+                    else ()
                 )
-                if rejections:
-                    for constraint_id in rejections:
-                        rejection_counts[constraint_id] = (
-                            rejection_counts.get(constraint_id, 0) + 1
-                        )
-                    continue
+            else:
+                rejections = _final_pose_constraint_rejections(
+                    virtual_scene=virtual_scene,
+                    preview=preview,
+                    spec=spec,
+                    positions=base_candidate.positions,
+                )
+            if rejections:
+                for constraint_id in rejections:
+                    rejection_counts[constraint_id] = (
+                        rejection_counts.get(constraint_id, 0) + 1
+                    )
+                continue
 
             payload = _candidate_payload(
                 spec=spec,
@@ -1000,23 +1112,6 @@ def topology_candidate_document(
             'topology placement candidate is not an exact deterministic search member'
         )
 
-    g10_evaluation = evaluate_constraint_set(
-        scene_to_g10_context(virtual_scene),
-        json.loads(spec.g10_constraint_spec_json),
-        PlacementEvaluationRequest.model_validate({
-            'positions': candidate.positions,
-        }),
-    )
-    if not g10_evaluation['feasible']:
-        rejection_ids = [
-            str(item['constraint_id'])
-            for item in g10_evaluation['rejections']
-        ]
-        raise ValueError(
-            'topology placement candidate violates G10 hard constraints: '
-            + ', '.join(rejection_ids)
-        )
-
     preview = _candidate_document_from_parts(
         virtual_scene,
         o10_candidate_id=candidate.o10_candidate_id,
@@ -1027,19 +1122,48 @@ def topology_candidate_document(
         aim_pitch_deg=candidate.aim_pitch_deg,
         body_yaw_deg=candidate.body_yaw_deg,
     )
-    if candidate.body_yaw_deg:
-        constraints = CadConstraintSet.model_validate(
-            json.loads(spec.constraint_snapshot_json)
+    if spec.algorithm_version == TOPOLOGY_SEARCH_ALGORITHM_VERSION_V1:
+        g10_evaluation = evaluate_constraint_set(
+            scene_to_g10_context(virtual_scene),
+            json.loads(spec.g10_constraint_spec_json),
+            PlacementEvaluationRequest.model_validate({
+                'positions': candidate.positions,
+            }),
         )
-        rejections = orientation_constraint_rejections(
-            preview,
-            constraints,
-            changed_entity_ids=candidate.body_yaw_deg,
+        if not g10_evaluation['feasible']:
+            rejection_ids = [
+                str(item['constraint_id'])
+                for item in g10_evaluation['rejections']
+            ]
+            raise ValueError(
+                'topology placement candidate violates G10 hard constraints: '
+                + ', '.join(rejection_ids)
+            )
+        if candidate.body_yaw_deg:
+            constraints = CadConstraintSet.model_validate(
+                json.loads(spec.constraint_snapshot_json)
+            )
+            rejections = orientation_constraint_rejections(
+                preview,
+                constraints,
+                changed_entity_ids=candidate.body_yaw_deg,
+            )
+            if rejections:
+                raise ValueError(
+                    'topology placement candidate violates O80 hard constraints: '
+                    + ', '.join(rejections)
+                )
+    else:
+        rejections = _final_pose_constraint_rejections(
+            virtual_scene=virtual_scene,
+            preview=preview,
+            spec=spec,
+            positions=candidate.positions,
         )
         if rejections:
             raise ValueError(
-                'topology placement candidate violates O80 hard constraints: '
-                + ', '.join(rejections)
+                'topology placement candidate violates final-pose G10/O80 '
+                'hard constraints: ' + ', '.join(rejections)
             )
     return preview
 
@@ -1087,6 +1211,7 @@ def topology_candidate_to_system_variant(
         'o100b.topology_search_sha256',
         'o100b.topology_option_id',
         'o100b.search_sha256',
+        'o100b.algorithm_version',
         'o100b.candidate_id',
         'o100b.candidate_sha256',
     }
@@ -1106,6 +1231,10 @@ def topology_candidate_to_system_variant(
         VariantProvenanceItem(
             key='o100b.search_sha256',
             value=spec.search_sha256,
+        ),
+        VariantProvenanceItem(
+            key='o100b.algorithm_version',
+            value=spec.algorithm_version,
         ),
         VariantProvenanceItem(
             key='o100b.candidate_id',
