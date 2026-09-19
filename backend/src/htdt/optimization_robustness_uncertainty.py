@@ -418,9 +418,12 @@ def build_uncertainty_robustness_evaluations(
         if not isclose(sum(weights), 1.0, rel_tol=0.0, abs_tol=1e-9):
             raise ValueError('explicit probability sample weights must sum to 1')
         violation_probability = sum(
-            float(item.probability_weight or 0.0)
-            for item in uncertainty_samples
-            if item.failure_reason == 'hard_constraint_violation'
+            (
+                float(item.probability_weight or 0.0)
+                for item in uncertainty_samples
+                if item.failure_reason == 'hard_constraint_violation'
+            ),
+            0.0,
         )
         probability_sample_ids = tuple(item.sample_id for item in uncertainty_samples)
         percentile_semantics = 'explicit_probability_model'
