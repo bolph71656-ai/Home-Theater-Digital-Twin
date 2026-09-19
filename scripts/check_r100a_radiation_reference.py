@@ -3,9 +3,14 @@ from __future__ import annotations
 import argparse
 import cmath
 from hashlib import sha256
+import importlib.metadata
 import json
 import math
+import os
 from pathlib import Path
+import platform
+import threading
+import time
 
 from htdt.acoustic_benchmark import (
     canonical_benchmark_json,
@@ -22,6 +27,36 @@ RMS_RELATIVE_LIMIT = 1.0e-9
 MAX_POINT_RELATIVE_LIMIT = 1.0e-8
 REFERENCE_RELATIVE_TOLERANCE = 1.0e-12
 REFERENCE_ABSOLUTE_TOLERANCE = 1.0e-12
+ARTIFACT_SCHEMA = 'r100a3-radiation-reference-artifact-1'
+
+
+class ProcessPeakRssMonitor:
+    def __init__(self) -> None:
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._sample, daemon=True)
+        self.peak_bytes = 0
+
+    def _sample(self) -> None:
+        try:
+            import psutil
+        except ImportError:
+            return
+        process = psutil.Process(os.getpid())
+        while not self._stop.wait(0.005):
+            try:
+                self.peak_bytes = max(self.peak_bytes, process.memory_info().rss)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> float | None:
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+        if self.peak_bytes <= 0:
+            return None
+        return self.peak_bytes / (1024.0 * 1024.0)
 
 
 def _fixture(manifest):
@@ -294,17 +329,78 @@ def check_reference(manifest_path: Path) -> dict[str, object]:
     }
 
 
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open('rb') as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _runtime_versions() -> dict[str, str]:
+    result = {'python': platform.python_version()}
+    for name in ('pydantic', 'psutil'):
+        try:
+            result[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            result[name] = 'not-installed'
+    return result
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description='Validate the frozen R100A-3 local-radiation semi-analytical reference'
     )
     parser.add_argument('--manifest', required=True, type=Path)
+    parser.add_argument('--output', type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    print(json.dumps(check_reference(args.manifest), indent=2, sort_keys=True))
+    monitor = ProcessPeakRssMonitor()
+    monitor.start()
+    started = time.perf_counter()
+    summary = check_reference(args.manifest)
+    reference_s = time.perf_counter() - started
+    peak_rss_mb = monitor.stop()
+
+    if args.output is not None:
+        manifest = load_acoustic_benchmark_manifest(args.manifest)
+        fixture = _fixture(manifest)
+        frequencies = _frequency_grid(fixture)
+        pressures = tuple(
+            _pressure(fixture, frequency_hz, REFERENCE_TRUNCATION)
+            for frequency_hz in frequencies
+        )
+        reference_payload = _reference_payload(frequencies, pressures)
+        raw_reference_bytes = len(
+            canonical_benchmark_json(reference_payload).encode('utf-8')
+        )
+        artifact = {
+            'schema_version': ARTIFACT_SCHEMA,
+            'workflow_result_is_reference_result': False,
+            'reference_outcome': 'pass',
+            **summary,
+            'raw_reference': reference_payload,
+            'resource_evidence': {
+                'reference_compute_s': reference_s,
+                'peak_rss_mb': peak_rss_mb,
+                'raw_reference_mb': raw_reference_bytes / (1024.0 * 1024.0),
+            },
+            'source_provenance': {
+                'manifest_file_sha256': _sha256_file(args.manifest),
+                'checker_source_sha256': _sha256_file(Path(__file__).resolve()),
+                'runtime_versions': _runtime_versions(),
+            },
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+            encoding='utf-8',
+        )
+
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
