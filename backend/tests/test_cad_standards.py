@@ -20,6 +20,7 @@ from htdt.cad_standards import (
     reevaluate_standards_profile,
 )
 from htdt.cad_standards_profiles import (
+    auro3d_home_v12_profile,
     dolby_atmos_home_5_1_2_profile,
     rp22_spatial_profile,
 )
@@ -344,6 +345,70 @@ def test_published_boundaries_and_angle_wrap_are_explicit() -> None:
     ).status == 'FAIL'
 
 
+    auro = auro3d_home_v12_profile()
+    assert auro.version == 'rev12-2024-05-16'
+    height_criterion = next(
+        criterion
+        for criterion in auro.criteria
+        if criterion.criterion_id == 'auro.v12.height-layer-elevation'
+    )
+    assert height_criterion.rule.minimum == pytest.approx(25.0)
+    assert height_criterion.rule.maximum == pytest.approx(40.0)
+
+    auro_height = evaluate_standards_profile(
+        profile=auro,
+        target=StandardsEvaluationTarget(
+            document_id='doc',
+            scene_revision_id='rev',
+            scene_content_hash='0' * 64,
+            entity_ids=('height-left',),
+            applicable_domains=('auro_height_speaker',),
+        ),
+        observations=(
+            CriterionObservation(
+                criterion_id=height_criterion.criterion_id,
+                entity_ids=('height-left',),
+                observed_value=25.0,
+                unit='deg',
+                evidence_basis='predicted',
+                evidence_refs=_evidence('height-angle'),
+                provided_inputs=('height_layer_speaker_elevation_deg',),
+                capabilities=('layout-angle-v1',),
+            ),
+        ),
+        created_at_utc=NOW,
+    )
+    assert next(
+        result
+        for result in auro_height.results
+        if result.criterion_id == height_criterion.criterion_id
+    ).status == 'PASS'
+    assert next(
+        result
+        for result in auro_height.results
+        if result.criterion_id == height_criterion.criterion_id
+    ).entity_ids == ('height-left',)
+
+    with pytest.raises(ValueError, match='outside evaluation target'):
+        evaluate_standards_profile(
+            profile=auro,
+            target=auro_height.target,
+            observations=(
+                CriterionObservation(
+                    criterion_id=height_criterion.criterion_id,
+                    entity_ids=('height-right',),
+                    observed_value=30.0,
+                    unit='deg',
+                    evidence_basis='predicted',
+                    evidence_refs=_evidence('height-angle-other'),
+                    provided_inputs=('height_layer_speaker_elevation_deg',),
+                    capabilities=('layout-angle-v1',),
+                ),
+            ),
+            created_at_utc=NOW,
+        )
+
+
 def test_persistence_exact_variant_binding_and_historical_reevaluation(
     tmp_path: Path,
 ) -> None:
@@ -383,6 +448,7 @@ def test_persistence_exact_variant_binding_and_historical_reevaluation(
     )
     observation = CriterionObservation(
         criterion_id='distance',
+        entity_ids=('speaker-fl',),
         observed_value=0.8,
         unit='m',
         evidence_basis='predicted',
