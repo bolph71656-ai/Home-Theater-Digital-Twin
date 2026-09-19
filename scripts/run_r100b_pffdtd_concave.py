@@ -291,6 +291,85 @@ def _validate_fixture_contract(fixture) -> None:
         raise ValueError('concave phase authority changed')
 
 
+def _validate_compiled_concave_mesh(
+    points: np.ndarray,
+    triangles: np.ndarray,
+) -> dict[str, object]:
+    if points.shape != (16, 3) or triangles.shape != (28, 3):
+        raise ValueError(
+            f'exact concave compiler shape changed: points={points.shape}, triangles={triangles.shape}'
+        )
+
+    edge_counts: dict[tuple[int, int], int] = {}
+    for triangle in triangles:
+        for offset in range(3):
+            edge = tuple(
+                sorted(
+                    (
+                        int(triangle[offset]),
+                        int(triangle[(offset + 1) % 3]),
+                    )
+                )
+            )
+            edge_counts[edge] = edge_counts.get(edge, 0) + 1
+    if set(edge_counts.values()) != {2}:
+        raise ValueError('compiled concave surface is not a closed two-manifold')
+
+    signed_volume_m3 = sum(
+        float(
+            np.dot(
+                points[triangle[0]],
+                np.cross(points[triangle[1]], points[triangle[2]]),
+            )
+        )
+        / 6.0
+        for triangle in triangles
+    )
+    if not math.isclose(signed_volume_m3, 50.0, rel_tol=0.0, abs_tol=1.0e-10):
+        raise ValueError(
+            f'compiled concave volume changed: {signed_volume_m3} m3 != 50 m3'
+        )
+
+    horizontal_area_m2: dict[str, float] = {}
+    for label, z_m in (('bottom', 0.0), ('top', 2.5)):
+        horizontal = [
+            triangle
+            for triangle in triangles
+            if np.allclose(points[triangle, 2], z_m, rtol=0.0, atol=1.0e-12)
+        ]
+        area = sum(
+            abs(
+                float(
+                    np.cross(
+                        points[triangle[1], :2] - points[triangle[0], :2],
+                        points[triangle[2], :2] - points[triangle[0], :2],
+                    )
+                )
+            )
+            * 0.5
+            for triangle in horizontal
+        )
+        if len(horizontal) != 6 or not math.isclose(
+            area,
+            20.0,
+            rel_tol=0.0,
+            abs_tol=1.0e-10,
+        ):
+            raise ValueError(
+                f'compiled concave {label} triangulation changed: '
+                f'triangles={len(horizontal)}, area={area} m2'
+            )
+        horizontal_area_m2[label] = area
+
+    return {
+        'points': int(points.shape[0]),
+        'triangles': int(triangles.shape[0]),
+        'closed_two_manifold': True,
+        'signed_volume_m3': signed_volume_m3,
+        'horizontal_area_m2': horizontal_area_m2,
+    }
+
+
 def _frequency_grid(fixture) -> np.ndarray:
     grid = fixture.comparison.frequency_grid
     count_float = (float(grid.stop_hz) - float(grid.start_hz)) / float(grid.step_hz)
@@ -829,10 +908,7 @@ def _execute(
     rigid = compiled_model['mats_hash']['_RIGID']
     points = np.asarray(rigid['pts'], dtype=np.float64)
     triangles = np.asarray(rigid['tris'], dtype=np.int64)
-    if points.shape != (16, 3) or triangles.shape != (28, 3):
-        raise ValueError(
-            f'exact concave compiler shape changed: points={points.shape}, triangles={triangles.shape}'
-        )
+    compiled_geometry = _validate_compiled_concave_mesh(points, triangles)
     model_path.write_text(
         json.dumps(compiled_model, indent=2, sort_keys=True) + '\n',
         encoding='utf-8',
@@ -1026,9 +1102,7 @@ def _execute(
         'compatibility_patch': compatibility,
         'compiled_model': {
             'model_json_sha256': _file_sha256(model_path),
-            'points': int(points.shape[0]),
-            'triangles': int(triangles.shape[0]),
-            'expected_enclosed_volume_m3': 50.0,
+            **compiled_geometry,
         },
         'probe_controls': {
             'fmax_hz': FMAX_HZ,
