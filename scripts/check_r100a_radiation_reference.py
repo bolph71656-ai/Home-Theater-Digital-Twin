@@ -36,20 +36,36 @@ class ProcessPeakRssMonitor:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._sample, daemon=True)
         self.peak_bytes = 0
-
-    def _sample(self) -> None:
         try:
             import psutil
         except ImportError:
+            self._psutil = None
+            self._process = None
+        else:
+            self._psutil = psutil
+            self._process = psutil.Process(os.getpid())
+
+    def _sample_once(self) -> bool:
+        if self._psutil is None or self._process is None:
+            return False
+        try:
+            self.peak_bytes = max(
+                self.peak_bytes,
+                self._process.memory_info().rss,
+            )
+        except (self._psutil.NoSuchProcess, self._psutil.AccessDenied):
+            return False
+        return True
+
+    def _sample(self) -> None:
+        if not self._sample_once():
             return
-        process = psutil.Process(os.getpid())
         while not self._stop.wait(0.005):
-            try:
-                self.peak_bytes = max(self.peak_bytes, process.memory_info().rss)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            if not self._sample_once():
                 return
 
     def start(self) -> None:
+        self._sample_once()
         self._thread.start()
 
     def stop(self) -> float | None:
