@@ -133,4 +133,4 @@ Issue #167–#176の正本状態・依存・残gateは[IMPLEMENTATION_ROADMAP](I
 - REW等の専門engineは再利用し、HTDTはSceneRevision/SystemVariant/measurement/evidence lineageを保持する。
 - domain/software completionと、#118 Windows visual acceptance、#101 numerical solver validation、#83 owned-room evidenceを別gateとして扱う。
 
-2026-09-20時点で#167/#168/#169/#170/#172/#173/#174/#175/#176はdomain acceptance完了。#171はtreatment named comparisonを収束中。#101 arbitrary-room acousticsはsolver-neutral snapshot/dispatch authorityまで進んでいるが、production solver selectionとowned-room numerical validationは未完了である。
+2026-09-20時点で#167/#168/#169/#170/#171/#172/#173/#174/#175/#176はdomain acceptance完了。#171のtreatment named A/B/no-treatment comparisonはPR #223で成立済み。#101 arbitrary-room acousticsはsolver-neutral snapshot/dispatch authorityまで進んでいるが、production solver selectionとowned-room numerical validationは未完了である。
