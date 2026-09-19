@@ -42,7 +42,7 @@ Implemented:
 
 The persistent geometry truth remains the SceneRevision/R120 payload. The binding table contains only exact identity/provenance references; it does not store a second copy of geometry.
 
-`RawVisualMesh` remains immutable. Repair actions create a derived semantic geometry and never rewrite original asset bytes or the PR #195 raw snapshot.
+`RawVisualMesh` remains immutable. Repair actions create a derived semantic geometry and never rewrite original asset bytes or the PR #195 raw snapshot. PR #195 coordinates remain source-asset coordinates until the conversion request supplies an explicit non-singular affine mapping into HTDT scene metres; even an identity mapping must therefore be stated with provenance.
 
 This slice does not infer:
 
