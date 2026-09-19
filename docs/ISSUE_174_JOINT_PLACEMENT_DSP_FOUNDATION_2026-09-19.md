@@ -34,6 +34,7 @@ The implementation reuses:
   when applicable, a separate `CalibrationPlan`
 - deterministic candidate semantic hash/ID and canonical decision vector
 - post-generation CalibrationPlan support evaluation
+- explicit required-frequency bands on magnitude-bearing DSP decision variables
 - explicit resolution and routing-rewrite blocking
 - objective evaluation bindings without fake response generation
 - explicit unsupported objective vectors for absent numeric evaluators
@@ -47,7 +48,8 @@ All-pass, arbitrary phase correction, and implicit routing rewrite are not
 search variables.
 
 `backend/src/htdt/cad_joint_optimization_repository.py` adds append-only
-persistence for specs, candidates, evaluation bindings, and selections. It
+persistence for specs, candidates, evaluation bindings, and selections, with the
+persisted candidate count capped by the spec candidate budget. It
 validates persisted SceneRevision/SystemVariant/CalibrationPlan references but
 does not call SystemVariant application or CalibrationPlan export/lifecycle
 operations.
@@ -66,6 +68,11 @@ measurement/device authority for:
 - boost/cut limits
 - gain/delay bounds
 - physical output/crossover constraints
+
+Magnitude-bearing joint decision variables also carry an explicit required band and
+are checked with `gate_measurement_claim` after candidate generation, including
+full-band gain decisions for which #173 cannot infer a band from a single filter
+frequency.
 
 The joint layer additionally fail-closes values that are not aligned to declared
 device gain, delay, frequency, Q, or filter-gain resolutions. Routing/output
