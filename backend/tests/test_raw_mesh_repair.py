@@ -213,9 +213,13 @@ def test_unsupported_hole_and_non_manifold_repairs_are_not_executed() -> None:
 v 0 0 0
 v 1 0 0
 v 0 1 0
+v 0 -1 0
+v 0 0 1
 f 1 2 3
+f 2 1 4
+f 1 2 5
 ''',
-        'open.obj',
+        'open-non-manifold.obj',
     )
     diagnostic = diagnose_raw_visual_mesh(mesh)
     plan = make_raw_mesh_repair_plan(
@@ -245,6 +249,7 @@ f 1 2 3
     assert 'unsupported_operation:fill_hole' in repaired.unsupported_unresolved_findings
     assert 'unsupported_operation:non_manifold_surgery' in repaired.unsupported_unresolved_findings
     assert findings['open_boundary'].state == 'fail'
+    assert findings['non_manifold_edge'].state == 'fail'
     assert after.acoustic_volume_readiness == 'not_ready'
 
 
