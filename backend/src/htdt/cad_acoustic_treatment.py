@@ -596,12 +596,12 @@ def evaluate_treatment_surface_binding(
     common['bound_semantic_geometry_sha256'] = bound_geometry.semantic_hash_sha256
     bound_surface = _surface_in_revision(bound_revision, placement.host_surface_id)
     if bound_surface is None:
+        common['host_surface_lifecycle'] = 'removed'
         return _make_surface_binding_evaluation(
             **common,
             binding_state='surface_removed',
             bound_authority_valid=False,
             placement_authority_valid=False,
-            host_surface_lifecycle='removed',
             reasons=('bound SemanticSurface is absent from the exact bound geometry',),
         )
 
@@ -633,21 +633,18 @@ def evaluate_treatment_surface_binding(
         )
 
     if evaluated_revision.document_id != placement.document_id:
+        if evaluated_revision.document.r120_semantic_geometry is not None:
+            common['evaluated_semantic_geometry_id'] = (
+                evaluated_revision.document.r120_semantic_geometry.geometry_id
+            )
+            common['evaluated_semantic_geometry_sha256'] = (
+                evaluated_revision.document.r120_semantic_geometry.semantic_hash_sha256
+            )
         return _make_surface_binding_evaluation(
             **common,
             binding_state='wrong_scene_revision',
             bound_authority_valid=True,
             placement_authority_valid=False,
-            evaluated_semantic_geometry_id=(
-                None
-                if evaluated_revision.document.r120_semantic_geometry is None
-                else evaluated_revision.document.r120_semantic_geometry.geometry_id
-            ),
-            evaluated_semantic_geometry_sha256=(
-                None
-                if evaluated_revision.document.r120_semantic_geometry is None
-                else evaluated_revision.document.r120_semantic_geometry.semantic_hash_sha256
-            ),
             reasons=('evaluated SceneRevision belongs to another SceneDocument',),
         )
 
