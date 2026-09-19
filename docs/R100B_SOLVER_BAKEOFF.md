@@ -2,7 +2,7 @@
 
 > Tracking: Issue #101
 > Depends on: R100A merged by PR #110 (`1714c078d4063f59da93f0d733171547f7eb486d`)
-> Current state: R100B authority, pyroomacoustics direct/first-reflection + stochastic evidence, PFFDTD Windows reuse + rigid modes + complex-pressure convergence + native impedance gate, and MFEM rigid + concave independent-reference evidence are merged. PR #151 impedance representation passes; PR #154 concave reference is FAIL and MFEM complex-R extraction is BLOCKED; PR #155 stochastic evidence is FAIL/non-converged. These negative results are retained as bakeoff evidence. Spatial PFFDTD reflection/concave, Portal/termination, obstacle, candidate-wide hard gates, and production solver selection remain pending.
+> Current state: R100B authority, pyroomacoustics direct/first-reflection + stochastic evidence, PFFDTD Windows reuse + rigid modes + complex-pressure convergence + native impedance gate, MFEM rigid + concave independent-reference evidence, fail-closed low-band adoption profile, and MFEM Portal continuity evidence are merged. PR #151 impedance representation passes; PR #154 concave reference is FAIL and MFEM complex-R extraction is BLOCKED; PR #155 stochastic evidence is FAIL/non-converged; PR #160 Portal continuity is PASS. These mixed results are retained as bakeoff evidence. Spatial PFFDTD reflection/concave, explicit radiation termination, obstacle, candidate-wide hard gates, and production solver selection remain pending.
 
 ## Purpose
 
@@ -194,6 +194,14 @@ PR #116 adds a specialized common evaluator for unsampled `field_pressure_pa` co
 For PFFDTD, the adapter does not label native `u` as Pa. Pinned upstream treats `u` as acoustic velocity potential. HTDT therefore uses the explicit R100A density and Fourier convention to evaluate `P/Q = -i*omega*rho*Phi/Q` against the physical pre-grid volume-velocity source. The probe runs the complete 2.0 s record at h=0.5/0.25/0.125 m and evaluates the exact 20–300 Hz / 1 Hz grid with no window or filter.
 
 PR #151 preserves the R100A-2 impedance fixture and maps only the exact frequency-independent purely resistive subset to PFFDTD `DEF=[0,2,0]`. The pinned upstream reflection function returns `R=1/3+0j` at 100/200/300 Hz and the central evaluator reports PASS. Reactive/frequency-varying fitting remains unsupported, and no scalar absorption coefficient is used. This gate is not evidence that a full spatial FDTD run recovers the same reflection coefficient.
+
+## MFEM Portal continuity evidence
+
+PR #160 qualifies the frozen `wave-portal-split-room-v1` semantics on pinned MFEM v4.10. The peer rectangular room and Portal case use the same two-hexahedron conforming H1 mesh split at x=3 m. The only semantic difference is the volume-region attribute partition: peer `[1]`, Portal `[1,2]`. The x=3 m face remains the single internal face and receives no boundary/material condition.
+
+Current-head run `35416697808` reports Portal fixture **PASS** under the frozen cross-fixture tolerances: 281 magnitude samples and 281 phase samples, maximum magnitude absolute/relative error `0`, maximum phase error `0 deg`, and complex RMS relative difference `0`. Topology evidence records 2 elements, 11 total faces, 10 exterior faces, one internal face and equal peer/Portal DOF counts.
+
+The candidate-manifest update adds `portal_continuity` only as probe permission. The same replay preserves MFEM concave **FAIL** and independent impedance extraction **BLOCKED**. No production solver decision follows from the Portal PASS.
 
 ## Low-band wave adoption profile
 
