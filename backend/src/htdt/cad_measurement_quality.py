@@ -88,6 +88,7 @@ QUALITY_ALGORITHM_IDENTITY = {
     ],
     'polarity_requires': ['polarity:PASS'],
     'repeatability_requires': ['repeatability:PASS'],
+    'unconfigured_thresholds_do_not_pass': True,
 }
 QUALITY_ALGORITHM_SHA256 = _hash(QUALITY_ALGORITHM_IDENTITY)
 
@@ -106,15 +107,15 @@ class CadMeasurementQualityProfile(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     profile_version: str = Field(min_length=1)
-    minimum_snr_db: float = 20.0
+    minimum_snr_db: float | None = None
     required_usable_band_hz: tuple[float, float] | None = None
-    minimum_polarity_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
-    maximum_repeatability_rms_db: float = Field(default=1.0, gt=0.0)
+    minimum_polarity_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    maximum_repeatability_rms_db: float | None = Field(default=None, gt=0.0)
     profile_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
     @model_validator(mode='after')
     def valid_profile(self) -> 'CadMeasurementQualityProfile':
-        if not isfinite(float(self.minimum_snr_db)):
+        if self.minimum_snr_db is not None and not isfinite(float(self.minimum_snr_db)):
             raise ValueError('minimum_snr_db must be finite')
         if self.required_usable_band_hz is not None:
             low, high = self.required_usable_band_hz
@@ -141,17 +142,21 @@ class CadMeasurementQualityProfile(BaseModel):
 def build_measurement_quality_profile(
     *,
     profile_version: str = 'default-1',
-    minimum_snr_db: float = 20.0,
+    minimum_snr_db: float | None = None,
     required_usable_band_hz: tuple[float, float] | None = None,
-    minimum_polarity_confidence: float = 0.9,
-    maximum_repeatability_rms_db: float = 1.0,
+    minimum_polarity_confidence: float | None = None,
+    maximum_repeatability_rms_db: float | None = None,
 ) -> CadMeasurementQualityProfile:
     payload = {
         'profile_version': profile_version,
-        'minimum_snr_db': float(minimum_snr_db),
+        'minimum_snr_db': None if minimum_snr_db is None else float(minimum_snr_db),
         'required_usable_band_hz': required_usable_band_hz,
-        'minimum_polarity_confidence': float(minimum_polarity_confidence),
-        'maximum_repeatability_rms_db': float(maximum_repeatability_rms_db),
+        'minimum_polarity_confidence': (
+            None if minimum_polarity_confidence is None else float(minimum_polarity_confidence)
+        ),
+        'maximum_repeatability_rms_db': (
+            None if maximum_repeatability_rms_db is None else float(maximum_repeatability_rms_db)
+        ),
     }
     provisional = CadMeasurementQualityProfile.model_construct(
         **payload,
@@ -457,6 +462,8 @@ def _derive_checks(
 
     if evidence.snr_db is None:
         noise_snr = _check('UNKNOWN', 'explicit SNR evidence is unavailable')
+    elif profile.minimum_snr_db is None:
+        noise_snr = _check('NOT_EVALUATED', 'SNR evidence exists but the profile has no SNR threshold')
     elif evidence.snr_db < profile.minimum_snr_db:
         noise_snr = _check(
             'FAIL',
@@ -501,6 +508,11 @@ def _derive_checks(
         polarity = _check('FAIL', 'polarity evidence reports reversed polarity')
     elif evidence.polarity_correct is None or evidence.polarity_confidence is None:
         polarity = _check('UNKNOWN', 'polarity evidence or confidence is unavailable')
+    elif profile.minimum_polarity_confidence is None:
+        polarity = _check(
+            'NOT_EVALUATED',
+            'polarity evidence exists but the profile has no confidence threshold',
+        )
     elif evidence.polarity_confidence < profile.minimum_polarity_confidence:
         polarity = _check('UNKNOWN', 'polarity confidence is below the profile confidence threshold')
     else:
@@ -530,6 +542,11 @@ def _derive_checks(
 
     if len(evidence.repeat_measurement_ids) < 2 or evidence.repeatability_rms_db is None:
         repeatability = _check('NOT_EVALUATED', 'repeatability evidence requires at least two measurements and an explicit metric')
+    elif profile.maximum_repeatability_rms_db is None:
+        repeatability = _check(
+            'NOT_EVALUATED',
+            'repeatability evidence exists but the profile has no repeatability threshold',
+        )
     elif evidence.repeatability_rms_db > profile.maximum_repeatability_rms_db:
         repeatability = _check(
             'FAIL',
