@@ -90,8 +90,31 @@ def _git_head(path: Path) -> str:
     ).strip().lower()
 
 
-def _htdt_git_head() -> str:
-    return subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip().lower()
+def _git_rev_parse(revision: str) -> str | None:
+    completed = subprocess.run(
+        ['git', 'rev-parse', '--verify', revision],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip().lower()
+    return value or None
+
+
+def _htdt_git_provenance() -> dict[str, str]:
+    checkout = _git_rev_parse('HEAD')
+    if checkout is None:
+        raise RuntimeError('cannot resolve HTDT checkout commit')
+    # actions/checkout uses a synthetic merge commit for pull_request events.
+    # HEAD^2 is the exact PR head when that parent is available at fetch-depth=1.
+    pr_head = _git_rev_parse('HEAD^2') or checkout
+    return {
+        'checkout_commit_sha': checkout,
+        'pr_head_commit_sha': pr_head,
+    }
 
 
 def _sha256_file(path: Path) -> str:
@@ -961,7 +984,7 @@ def _execute(
     executable_size_mb = executable.stat().st_size / (1024.0 * 1024.0)
     details = {
         'mfem_source_commit_sha': actual_head,
-        'htdt_source_commit_sha': _htdt_git_head(),
+        'htdt_source_commit_sha': htdt_git['pr_head_commit_sha'],\n        'htdt_checkout_commit_sha': htdt_git['checkout_commit_sha'],\n        'htdt_pr_head_commit_sha': htdt_git['pr_head_commit_sha'],
         'native_build_s': native_build_s,
         'mfem_build_configuration': {
             'generator': 'Visual Studio x64 from dedicated GitHub Actions workflow',
