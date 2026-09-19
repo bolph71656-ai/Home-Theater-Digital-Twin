@@ -134,7 +134,7 @@ def test_converged_independent_seed_sequence_passes_and_connects_to_bakeoff_run(
     benchmark, candidates, authority, fixture, candidate, raw = _raw()
 
     evidence, evaluation = evaluate_pyroom_stochastic_fixture(
-        benchmark, fixture, authority, raw
+        benchmark, candidates, fixture, authority, raw
     )
 
     assert evaluation.repeatability_status == 'pass'
@@ -182,12 +182,12 @@ def test_converged_independent_seed_sequence_passes_and_connects_to_bakeoff_run(
 
 
 def test_same_seed_repeatability_is_not_enough_when_budget_sequence_does_not_converge() -> None:
-    benchmark, _candidates, authority, fixture, _candidate, raw = _raw(
+    benchmark, candidates, authority, fixture, _candidate, raw = _raw(
         offsets=(0.03, 0.10, 0.0)
     )
 
     evidence, evaluation = evaluate_pyroom_stochastic_fixture(
-        benchmark, fixture, authority, raw
+        benchmark, candidates, fixture, authority, raw
     )
 
     assert evaluation.repeatability_status == 'pass'
@@ -197,7 +197,7 @@ def test_same_seed_repeatability_is_not_enough_when_budget_sequence_does_not_con
 
 
 def test_insufficient_ray_support_is_retained_as_fail_not_zero_response() -> None:
-    benchmark, _candidates, authority, fixture, _candidate, raw = _raw()
+    benchmark, candidates, authority, fixture, _candidate, raw = _raw()
     payload = raw.model_dump(mode='python')
     observations = list(payload['observations'])
     first = dict(observations[0])
@@ -209,7 +209,7 @@ def test_insufficient_ray_support_is_retained_as_fail_not_zero_response() -> Non
     insufficient_raw = PyroomStochasticRawEvidence.model_validate(payload)
 
     evidence, evaluation = evaluate_pyroom_stochastic_fixture(
-        benchmark, fixture, authority, insufficient_raw
+        benchmark, candidates, fixture, authority, insufficient_raw
     )
 
     assert evidence.status == 'fail'
@@ -219,8 +219,24 @@ def test_insufficient_ray_support_is_retained_as_fail_not_zero_response() -> Non
 
 
 def test_stale_r100a_semantic_hash_is_rejected() -> None:
-    benchmark, _candidates, authority, fixture, _candidate, raw = _raw()
+    benchmark, candidates, authority, fixture, _candidate, raw = _raw()
     stale = raw.model_copy(update={'r100a_semantic_hash': '0' * 64})
 
     with pytest.raises(ValueError, match='semantic hash is stale'):
         evaluate_pyroom_stochastic_fixture(benchmark, fixture, authority, stale)
+
+
+def test_stale_candidate_manifest_and_source_commit_are_rejected() -> None:
+    benchmark, candidates, authority, fixture, _candidate, raw = _raw()
+
+    stale_manifest = raw.model_copy(update={'candidate_manifest_hash': '0' * 64})
+    with pytest.raises(ValueError, match='candidate manifest hash is stale'):
+        evaluate_pyroom_stochastic_fixture(
+            benchmark, candidates, fixture, authority, stale_manifest
+        )
+
+    stale_source = raw.model_copy(update={'candidate_source_commit_sha': '0' * 40})
+    with pytest.raises(ValueError, match='candidate source commit is stale'):
+        evaluate_pyroom_stochastic_fixture(
+            benchmark, candidates, fixture, authority, stale_source
+        )
