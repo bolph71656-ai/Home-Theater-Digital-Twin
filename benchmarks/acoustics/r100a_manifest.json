@@ -611,10 +611,10 @@
       "observables": [
         {
           "observable_id": "convergence",
-          "kind": "field_pressure_pa",
-          "unit": "Pa",
+          "kind": "complex_pressure_transfer_pa_per_m3_s",
+          "unit": "Pa/(m3/s)",
           "reference_kind": "invariant",
-          "reference_description": "Error against the finest accepted/reference representation must decrease under declared refinement.",
+          "reference_description": "Complex finite-record pressure/volume-velocity transfer P_T(f)/Q_T(f); error against the finest accepted/reference representation must decrease under declared refinement.",
           "acceptance_relation": "monotonic_convergence",
           "tolerance": {
             "absolute": 0.02,
