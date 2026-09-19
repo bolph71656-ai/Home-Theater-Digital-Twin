@@ -34,6 +34,7 @@ Implemented:
   - `blocked_by_surface_semantics`
   - `ready_for_r120_geometry_compiler_contract`
 - deterministic semantic geometry identity/hash and canonical serialization/reopen
+- full immutable conversion request retained in the semantic geometry so profile/algorithm version, source transform, repair request, surface assignments, and exact input hashes remain reopen-verifiable rather than hash-only provenance
 - SceneDocument schema v4 optional `r120_semantic_geometry` field
 - exact SceneRevision ownership/binding derived from the immutable SceneRevision payload; no duplicate geometry/binding table is introduced
 - save/reopen validation that the same semantic geometry is reconstructed from the exact SceneRevision payload
@@ -72,7 +73,7 @@ No native schema version/table is added for this slice. Existing repository comp
 5. unresolved geometry blocks compiler-contract readiness
 6. clean closed geometry with no semantic assignment remains blocked
 7. explicit room-boundary assignment reaches only the R120 geometry compiler contract (not solver-ready)
-8. semantic geometry serialization/reopen identity
+8. semantic geometry serialization/reopen identity, including exact conversion request/profile/algorithm provenance
 9. exact source SceneRevision binding
 10. save/reopen through `SceneRepository` with the same semantic geometry result and binding view
 11. absence of a duplicate R120 semantic-geometry binding table
