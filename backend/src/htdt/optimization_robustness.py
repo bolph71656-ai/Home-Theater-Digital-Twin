@@ -708,7 +708,7 @@ class PerturbationSample(BaseModel):
             'objective_vector': (
                 None
                 if self.objective_vector is None
-                else self.objective_vector.model_dump(mode='json')
+                else self.objective_vector.identity_payload()
             ),
             'failure_reason': self.failure_reason,
         }
