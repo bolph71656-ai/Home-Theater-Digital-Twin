@@ -42,6 +42,20 @@ def test_r100a_manifest_loads_as_immutable_canonical_authority() -> None:
         manifest.revision = 3  # type: ignore[misc]
 
 
+def test_r100a_schema_version_and_revision_are_bound() -> None:
+    manifest = _manifest()
+    payload = manifest.model_dump(mode='python')
+
+    payload['revision'] = 2
+    with pytest.raises(ValueError, match='r100a-3 requires revision 3'):
+        AcousticBenchmarkManifest.model_validate(payload)
+
+    payload = manifest.model_dump(mode='python')
+    payload['schema_version'] = 'r100a-2'
+    with pytest.raises(ValueError, match='r100a-2 requires revision 2'):
+        AcousticBenchmarkManifest.model_validate(payload)
+
+
 def test_r100a_required_fixture_roles_are_present() -> None:
     manifest = _manifest()
     fixture_ids = {item.fixture_id for item in manifest.fixtures}
@@ -141,6 +155,16 @@ def test_radiation_termination_rejects_implicit_or_mismatched_model() -> None:
     ).model_dump(mode='python')
     with pytest.raises(ValueError, match='only valid for radiation termination'):
         type(termination).model_validate(non_radiation)
+
+
+def test_wave_radiation_capability_requires_radiation_termination() -> None:
+    manifest = _manifest()
+    fixture = _fixture(manifest, 'wave-explicit-radiation-termination-v1')
+    payload = fixture.model_dump(mode='python')
+    payload['terminations'] = []
+
+    with pytest.raises(ValueError, match='requires an explicit radiation termination'):
+        AcousticBenchmarkFixture.model_validate(payload)
 
 
 def test_wave_impedance_capability_rejects_geometric_only_material() -> None:
