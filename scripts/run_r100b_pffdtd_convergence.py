@@ -348,7 +348,7 @@ def _run_level(
 
     samples = tuple(
         RawObservationSample(
-            sample_key=f'p@{float(frequency_hz):g}Hz',
+            sample_key=f'H@{float(frequency_hz):g}Hz',
             frequency_hz=float(frequency_hz),
             real_value=float(value.real),
             imag_value=float(value.imag),
