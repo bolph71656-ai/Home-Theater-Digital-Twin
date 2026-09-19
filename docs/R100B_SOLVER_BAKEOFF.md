@@ -63,12 +63,12 @@ Performance never rescues a failed correctness gate.
 
 ## Current coverage
 
-The initial candidate capability envelope intentionally leaves two R100A fixtures without an authorized candidate:
+The current candidate capability envelope intentionally leaves two R100A-3 fixtures without an authorized candidate:
 
-- `wave-portal-split-room-v1`;
+- `wave-explicit-radiation-termination-v1`;
 - `hybrid-overlap-continuity-v1`.
 
-That is expected at this stage. Portal semantics must not be claimed until an adapter implements them. Hybrid overlap belongs after compatible wave/geometric evidence exists. The preflight command reports these gaps rather than silently assigning them to an unsuitable backend.
+MFEM now declares `portal_continuity` and PR #160 records a PASS for `wave-portal-split-room-v1`. Radiation termination remains intentionally uncovered until a candidate implements the exact R100A-3 Robin authority; hybrid overlap belongs after compatible wave/geometric evidence exists. The preflight command reports these gaps rather than silently assigning them to an unsuitable backend.
 
 ## Repeatable command
 
