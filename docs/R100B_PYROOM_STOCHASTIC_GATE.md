@@ -58,17 +58,20 @@ The workflow outcome and candidate outcome are printed separately. A workflow PA
 
 ## Numerical result
 
-Authoritative dedicated workflow: Actions run `35409411713` (`R100B Pyroomacoustics Stochastic Gate`, run #13), conclusion **success**. Artifact `r100b-pyroomacoustics-stochastic` has artifact id `10573279811` and digest `sha256:43b9bb6fbfc6cec0a8518fce47fc932767ada361fbef2f0c21bd38c34eff4239`.
+Authoritative dedicated workflow: Actions run `35414892047` (`R100B Pyroomacoustics Stochastic Gate`), conclusion **success**. Artifact `r100b-pyroomacoustics-stochastic` has artifact id `10575133493` and digest `sha256:249f4802be6534c4f1fea707271a2aaad28f3ea8df35694655f523b841a97c0c`.
 
 The workflow result and candidate result are intentionally different:
 
 - workflow/harness: **PASS**;
 - candidate fixture `geometric-seed-repeatability-v1`: **FAIL / non-converged**;
-- central `BakeoffRun` id: `pyroom-stochastic-35409411713`;
+- central `BakeoffRun` id: `pyroom-stochastic-35414892047`;
 - R100A semantic hash: `97d9ff8f4225569f0193d2f4d5e4a3ae011d4c0a67fb612d525eae2287101aae`;
 - frozen fixture semantic hash: `2f542b9293812bdf5ca92d39bafb228c201a69a8e020754df313fc02888d9027`;
 - stochastic-authority semantic hash: `fc77691e12cab20f6d06cae2ccc9eab8bff83faf232e09bfe8973576fe00c80d`;
 - candidate manifest hash: `58314d89ad7a0e462ff49fde67f53d4b235afd920fe5e4b4f651c3cd2684b764`;
+- HTDT PR head: `5df4242edb68e90a176428d1bb01e2253e71a0c1`;
+- GitHub pull-request checkout commit: `bb263ac` synthetic merge of that PR head into main `cb6d15b0...`;
+- the artifact binds SHA-256 identities for the probe script, stochastic evaluator source, and stochastic-authority file;
 - raw NPZ SHA-256: `114c1d08ce54e3e291946701a3b10ed9471e4fa80698706d3effeb632d519172`.
 
 ### Same-seed replay
