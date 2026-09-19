@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization＋O100 system expansion＋Issue #170 StandardsProfile＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
+> 改訂: 2026-09-20 / N05〜N90・O10〜O80 software completion＋O90 robust optimization＋O100 system expansion＋Issue #170 StandardsProfile＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -127,8 +127,8 @@ O100は既存speakerの位置最適化だけでなく、**現在存在しないS
 |---|---|---|
 | O100A — SystemVariant / proposed lifecycle | N40 + SceneRevision authority | immutable SystemVariant / ProposedEntitySpec / ChannelRoleBinding。current/proposed/as-built/measuredを分離し、baselineを変更せず3.0.2→5.0.2等のvariantを作成。選択variantは新SceneRevisionとしてapply |
 | O100B — topology + virtual placement search | O100A + G10/O10/O80 | **PR #150で実装済み**。TopologySearchSpec、add/remove/replaceの明示操作、role別allowed/exclusion、高さ、pair/link、aim/toe-in。SL/SR等をdeterministic candidateとして生成し、candidate→SystemVariant時もexact search membershipを再確認 |
-| O100C — EquipmentDefinition / source capability | O100A + R110 source authority interface | cabinet/acoustic reference/directivity/sensitivity/SPL等のcapability/provenanceを保持。unknown/magnitude-only/complex/analyticを区別し、missing dataを捏造しない |
-| O100D — capability-gated system objectives | O100B/C + O30/O40 + 使用prediction capability | layout/profile、coverage、worst-seat/seat spread、SPL/headroom、FR/reflection、installation complexityを独立objectiveとしてPareto比較。unsupported objectiveはdisabled |
+| O100C — EquipmentDefinition / source capability | O100A + R110 source authority interface | **Issue #168で実装済み**。EquipmentDefinition、directivity dataset/import registry、exact source/equipment binding、R110 solver-neutral source compiler。CLF/CF2 native parserは仕様authority不足のためDEFERRED/UNSUPPORTEDを維持 |
+| O100D — capability-gated system objectives | O100B/C + O30/O40 + 使用prediction capability | **Issue #169で実装済み**。coverage、worst-seat/seat spread、direct SPL/target margin、continuous/peak acoustic headroom、amplifier electrical headroom、named topology comparison、direction-aware Pareto。missing/unsupportedを数値sentinelへ変換しない |
 | O100E — multi-fidelity topology search | O100D + 使用R-series capability | topology→geometry/profile→coverage→acousticの段階screeningとcommon-fidelity final comparison。approximate pruningはaudit可能にする |
 | O100F — robust expansion | O100D + O90 | exact proposed candidateをO90へ渡し、位置/aim/seat等の設置誤差耐性を比較。O90 semanticsを再実装しない |
 | O100G — UX / as-built / measurement loop | O100B〜F + UX120/UX140 | Roomで仮想speaker追加・配置範囲作図、Optimizeで構成比較、proposed ghost表示、選択案→As-built→MeasurementPlan→REW実測のlineage。proposedにfake measured evidenceを付けない |
@@ -295,3 +295,33 @@ Issue #90のsynthetic software-completion laneは完了。real-repository fixtur
 新規software feature trackとして [Issue #170 — StandardsProfile](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/170)、[Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101)、[Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102)、[Issue #118 — native UI/UX overhaul](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/118) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#118はUX100〜UX160として、HTMをUX benchmarkにしつつnavigation/workspace/layoutを再構成する。R100Bは並行可能だが、R110+の新しい入力UIを旧dock shellへ増築しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
 
 旧Issue #41等の初期milestoneは履歴としてclose済みであり、今後の再開点として扱わない。追加機能を実装する場合は、この完成済みmainを起点に新しいIssue/PRを作り、既存authority契約を弱めない。
+
+
+## Competitive gap closure — Issue #166 canonical tracking (2026-09-20)
+
+Issue #166の子Issue #167–#176は、独立できるgeometry/report/measurement作業をR100B待ちにせず、既存authorityへ接続する。domain/software completion、Windows実機visual acceptance、numerical solver validation、owned-room evidenceは別gateとして追跡する。
+
+| Issue | canonical scope | 状態 / exact authority | 残件・別gate |
+|---|---|---|---|
+| #167 | 3D capture/import → semantic acoustic geometry / repair | **completed**。RawVisualMesh、deterministic diagnostics、bounded explicit repair、SemanticAcousticGeometry、R120 compiler、save/reopen、end-to-end acceptanceをPR #195/#196/#207/#220/#221で成立 | arbitrary hole filling / non-manifold surgery / reconstructionはfail-closed future capability |
+| #168 | EquipmentDefinition / directivity import | **completed**。EquipmentDefinition、DirectivityDataset、strict import registry、R110 source compiler。native CLF/CF2は根拠不足のためDEFERRED | native format追加は独立follow-up。推測parserは禁止 |
+| #169 | coverage / SPL / headroom / worst-seat objectives | **completed**。objective quantity/unit/direction/domain、coverage、direct SPL/headroom、amplifier electrical headroom、named topology comparison、Paretoをexact authorityで成立 | R-series prediction由来objectiveは対応solver capability成立後のみ |
+| #170 | StandardsProfile | **completed**。versioned criterion/provenance/evaluation、historical re-evaluation、explicit hard-constraint opt-in | UX表示はUX140側 |
+| #171 | AcousticTreatment | **open**。definition/placement/lifecycle、R120 treatment boundary overlay/composition、AcousticSceneSnapshot v2までmerge済み。named A/B/no-treatment comparisonはPR #223で検証中 | numerical before/after、measured validation execution、optimizationは対応prediction/evidence gate後 |
+| #172 | guided measurement / MeasurementQualityReport | **completed** | owned-room実測evidenceは#83など実データgateと分離 |
+| #173 | CalibrationPlan / device-neutral export / re-measure | **completed** | 実機device integrationは明示capabilityがある経路だけ |
+| #174 | joint physical placement + DSP optimization | **completed** | production recommendationはO60/R180 evidence gateを迂回しない |
+| #175 | projector / screen / sightline | **completed**。ProjectorSpecification、projection/viewing/sightline/riser/collision authority、exact SceneRevision/SystemVariant evaluation | AT screen acoustic effectはauthorityが無い限りUNKNOWN。UI visual acceptanceは#118 |
+| #176 | installation/report output | **completed** | unknown/unsupported項目を推測で埋めない |
+
+### 共通dependency / stale contract
+
+- SceneRevision、SystemVariant、definition/model/evaluationのexact id/version/hashをcache・reopen・comparisonのauthorityとする。構成、材料、測定品質、DSP、treatment、solver inputが変われば旧結果をcurrentへ自動昇格しない。
+- current / proposed / as-built / measuredを同一状態へ潰さない。named comparisonは候補authorityを束ねるが、baselineやmeasurement truthを書き換えない。
+- Standards、coverage、SPL/headroom、treatment、video geometry、installation evidenceをhidden総合scoreへ変換しない。
+- #118 UX160のowned-Windows visual acceptance、#101 R-series numerical validation / production solver selection、#83 owned-room evidenceはdomain software completionとは独立gate。
+- R110+はsolver-neutral inputを先行してよい。AcousticSceneSnapshot、treatment composition、solver adapter dispatch contractは成立済み。explicit acoustic wave-excitation authorityはPR #224で検証中で、production R130 solver採用を意味しない。
+
+### Issue #166 completion rule
+
+本節とPROJECT_PLANから#167–#176のscope、依存、状態、残gateへ到達できることをcanonical trackingとする。子Issueの実装完了は、それぞれのfocused fixture / persistence / exact reopen evidenceで判定し、Windows実機・solver numerical validation・owned-room evidenceを一括の「完成」へ混ぜない。
