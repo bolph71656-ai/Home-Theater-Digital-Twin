@@ -365,7 +365,7 @@ def _validate_fixture_contract(fixture) -> None:
         or finite_record.sample_zero_reference != 'source_t0'
         or finite_record.record_interval != 'half_open_0_T'
         or finite_record.solver_time_step_policy != 'solver_native_recorded'
-        or finite_record.dtft_kernel != 'exp(-i*2*pi*f*n*dt)'
+        or finite_record.dtft_kernel != 'exp(+i*2*pi*f*n*dt)'
         or finite_record.dtft_measure != 'dt_weighted_sum'
         or finite_record.numerator_quantity != 'physical_pressure'
         or finite_record.numerator_record_policy != 'solver_pressure_or_declared_primary_field_conversion'
