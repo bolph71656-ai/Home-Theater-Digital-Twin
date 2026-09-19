@@ -7,6 +7,7 @@ import pytest
 
 from htdt.cad_measurement_models import CadFrequencyResponseDataset
 from htdt.cad_measurement_quality import (
+    QUALITY_ALGORITHM_SHA256,
     CadAcquisitionContextBinding,
     CadMeasurementQualityEvidence,
     build_measurement_lineage,
@@ -90,6 +91,8 @@ def test_fr_only_quality_keeps_magnitude_and_does_not_invent_missing_evidence(tm
         created_at_utc='2026-09-19T00:01:00+00:00',
     )
 
+    assert report.algorithm_sha256 == QUALITY_ALGORITHM_SHA256
+    assert report.profile.profile_sha256 == profile.profile_sha256
     assert report.clipping.status == 'UNKNOWN'
     assert report.noise_snr.status == 'UNKNOWN'
     assert report.usable_frequency_band.status == 'UNKNOWN'
