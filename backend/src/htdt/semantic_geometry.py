@@ -716,18 +716,19 @@ def _build_surfaces(
                 f'triangle assigned to multiple surfaces: {sorted(overlap)}'
             )
         assigned.update(members)
+        canonical_members = tuple(sorted(assignment.triangle_ids))
         surfaces.append(
             SemanticSurface(
                 surface_id=_surface_id(
                     derived_geometry_hash,
                     assignment.surface_key,
                     assignment.semantic_class,
-                    assignment.triangle_ids,
+                    canonical_members,
                     'explicit',
                 ),
                 surface_key=assignment.surface_key,
                 semantic_class=assignment.semantic_class,
-                triangle_ids=assignment.triangle_ids,
+                triangle_ids=canonical_members,
                 assignment_provenance='explicit',
             )
         )
