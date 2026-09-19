@@ -672,6 +672,28 @@ class AcousticBenchmarkManifest(BaseModel):
         if dangling_peers:
             raise ValueError(f'observables reference unknown peer fixtures: {dangling_peers}')
 
+        if self.schema_version == 'r100a-2':
+            for fixture in self.fixtures:
+                if 'wave_radiation_termination' in fixture.required_capabilities:
+                    raise ValueError(
+                        f'R100A-2 fixture {fixture.fixture_id} cannot declare '
+                        'wave_radiation_termination capability'
+                    )
+                for termination in fixture.terminations:
+                    radiation_fields = (
+                        termination.radiation_model,
+                        termination.normal_convention,
+                        termination.characteristic_impedance_model,
+                        termination.pressure_velocity_equation,
+                        termination.wavenumber_equation,
+                        termination.helmholtz_robin_equation,
+                    )
+                    if any(value is not None for value in radiation_fields):
+                        raise ValueError(
+                            f'R100A-2 radiation termination {termination.termination_id} '
+                            'cannot carry R100A-3 radiation semantics'
+                        )
+
         if self.schema_version == 'r100a-3':
             for fixture in self.fixtures:
                 radiation_terminations = [
