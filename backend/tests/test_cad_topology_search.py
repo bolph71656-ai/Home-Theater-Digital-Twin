@@ -7,6 +7,8 @@ import pytest
 from htdt.cad_constraint_models import (
     CadConstraintPoint2D,
     CadConstraintSet,
+    CadPairDistanceConstraint,
+    CadWallClearanceConstraint,
 )
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import (
@@ -36,6 +38,7 @@ from htdt.cad_topology_search import (
 )
 from htdt.cad_topology_search_repository import CadTopologySearchRepository
 from htdt.cad_topology_space import build_topology_search_spec
+from htdt.cad_walls import make_wall_topology
 
 
 DOCUMENT_ID = 'o100b-virtual-placement-fixture'
@@ -530,7 +533,317 @@ def test_body_yaw_reuses_o80_oriented_allowed_region_rejection(
     assert page.feasible_candidate_count == 1
     assert page.rejected_candidate_count == 1
     assert sum(page.rejection_counts.values()) == 1
+    assert next(iter(page.rejection_counts)).startswith('o100b-zone-')
     assert page.candidates[0].body_yaw_deg == {'sl': 0.0}
+    assert scene_repository.latest(document_id).revision_id == baseline.revision_id
+
+
+def test_body_yaw_can_make_template_infeasible_xyz_feasible_and_round_trip(
+    tmp_path: Path,
+) -> None:
+    document_id = 'o100b-body-yaw-rotated-fit-fixture'
+    baseline_document = SceneDocument(
+        document_id=document_id,
+        room=RoomPrism(width_m=4.0, depth_m=4.0, height_m=2.4),
+        entities=(
+            _speaker('fl', 'FL', 1.0, 0.8, 1.0),
+            _speaker('c', 'C', 2.0, 0.6, 0.9),
+            _speaker('fr', 'FR', 3.0, 0.8, 1.0),
+            _speaker('tfl', 'TFL', 1.4, 2.0, 2.2),
+            _speaker('tfr', 'TFR', 2.6, 2.0, 2.2),
+            SceneEntity(
+                entity_id='mlp',
+                kind='measurement_point',
+                name='MLP',
+                position=Position3(x_m=2.0, y_m=3.0, z_m=1.1),
+            ),
+        ),
+    )
+    scene_repository, baseline = _baseline(tmp_path, baseline_document)
+    template = build_system_variant(
+        baseline=baseline,
+        name='Proposed rotated-fit surround',
+        role_bindings=(
+            ChannelRoleBinding(role_id='FL', display_name='FL'),
+            ChannelRoleBinding(role_id='C', display_name='C'),
+            ChannelRoleBinding(role_id='FR', display_name='FR'),
+            ChannelRoleBinding(role_id='TFL', display_name='TFL'),
+            ChannelRoleBinding(role_id='TFR', display_name='TFR'),
+            ChannelRoleBinding(role_id='SL', display_name='SL'),
+        ),
+        proposed_entities=(
+            ProposedEntitySpec(
+                spec_id='proposal-sl',
+                entity=_speaker(
+                    'sl',
+                    'SL',
+                    0.6,
+                    2.0,
+                    1.2,
+                    size=Size3(x_m=1.0, y_m=0.2, z_m=0.4),
+                ),
+                role_binding_id='SL',
+            ),
+        ),
+        created_at_utc=NOW,
+    )
+    variant_repository = CadSystemVariantRepository(scene_repository)
+    variant_repository.save_variant(template)
+    topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(template,),
+        created_at_utc=NOW,
+    )
+    spec = build_topology_placement_search_spec(
+        baseline=baseline,
+        template_variant=template,
+        topology_spec=topology,
+        topology_option_id=topology.options[0].option_id,
+        placement_specs=(
+            ProposedPlacementSpec(
+                entity_id='sl',
+                role_id='SL',
+                zone_id='narrow-left-zone',
+                allowed_region=_region(0.4, 0.8, 1.3, 2.7),
+                xyz_axes=(
+                    CadSearchAxis(
+                        entity_id='sl',
+                        axis='x',
+                        min_m=0.6,
+                        max_m=0.6,
+                        step_m=0.1,
+                    ),
+                ),
+                angle_axes=(
+                    PlacementAngleAxis(
+                        parameter='body_yaw_deg',
+                        min_deg=90.0,
+                        max_deg=90.0,
+                        step_deg=1.0,
+                    ),
+                ),
+            ),
+        ),
+        constraint_set=CadConstraintSet(
+            document_id=document_id,
+            constraints=(),
+        ),
+        candidate_limit=10,
+        created_at_utc=NOW,
+    )
+
+    assert spec.algorithm_version == 'o100b-o10-o80-grid-2'
+    page = generate_topology_placement_candidates(
+        baseline=baseline,
+        template_variant=template,
+        spec=spec,
+        limit=10,
+    )
+    assert page.raw_candidate_count == 1
+    assert page.feasible_candidate_count == 1
+    assert page.rejected_candidate_count == 0
+    assert page.duplicate_candidate_count == 0
+    candidate = page.candidates[0]
+    assert candidate.body_yaw_deg == {'sl': 90.0}
+
+    preview = topology_candidate_document(
+        baseline=baseline,
+        template_variant=template,
+        spec=spec,
+        candidate=candidate,
+    )
+    assert preview.entity('sl').position.x_m == pytest.approx(0.6)
+
+    child = topology_candidate_to_system_variant(
+        baseline=baseline,
+        template_variant=template,
+        spec=spec,
+        candidate=candidate,
+        created_at_utc='2026-09-19T00:02:00+00:00',
+    )
+    topology_repository = CadTopologySearchRepository(variant_repository)
+    topology_repository.save_topology_spec(topology)
+    topology_repository.save_spec(spec)
+    topology_repository.save_candidate_page(page)
+    topology_repository.save_candidate_variant(candidate.candidate_id, child)
+
+    reopened_scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    reopened_variant_repository = CadSystemVariantRepository(
+        reopened_scene_repository
+    )
+    reopened_topology_repository = CadTopologySearchRepository(
+        reopened_variant_repository
+    )
+    assert reopened_topology_repository.get_spec(spec.search_id) == spec
+    assert reopened_topology_repository.get_candidate(candidate.candidate_id) == candidate
+    assert (
+        reopened_topology_repository.variant_for_candidate(candidate.candidate_id)
+        == child
+    )
+    assert reopened_scene_repository.latest(document_id).revision_id == baseline.revision_id
+
+
+@pytest.mark.parametrize(
+    ('case', 'expected_rejection'),
+    (
+        ('room', '__room_boundary__:sl'),
+        ('exclusion', 'o100b-exclusion-'),
+        ('wall', 'right-wall-clearance'),
+        ('pair', 'speaker-pair-clearance'),
+    ),
+)
+def test_body_yaw_final_pose_rejects_orientation_sensitive_constraints(
+    tmp_path: Path,
+    case: str,
+    expected_rejection: str,
+) -> None:
+    document_id = f'o100b-body-yaw-{case}-rejection'
+    room = RoomPrism(width_m=4.0, depth_m=4.0, height_m=2.4)
+    sl_x = 0.25 if case == 'room' else 3.4 if case == 'wall' else 0.6
+    fl_position = (1.3, 2.0) if case == 'pair' else (1.0, 0.8)
+    baseline_document = SceneDocument(
+        document_id=document_id,
+        schema_version=3,
+        room=room,
+        wall_topology=make_wall_topology(room),
+        entities=(
+            _speaker('fl', 'FL', fl_position[0], fl_position[1], 1.0),
+            _speaker('c', 'C', 2.0, 0.6, 0.9),
+            _speaker('fr', 'FR', 3.0, 0.8, 1.0),
+            _speaker('tfl', 'TFL', 1.4, 2.0, 2.2),
+            _speaker('tfr', 'TFR', 2.6, 2.0, 2.2),
+            SceneEntity(
+                entity_id='mlp',
+                kind='measurement_point',
+                name='MLP',
+                position=Position3(x_m=2.0, y_m=3.0, z_m=1.1),
+            ),
+        ),
+    )
+    scene_repository, baseline = _baseline(tmp_path, baseline_document)
+    template = build_system_variant(
+        baseline=baseline,
+        name=f'Proposed {case} rejection surround',
+        role_bindings=(
+            ChannelRoleBinding(role_id='FL', display_name='FL'),
+            ChannelRoleBinding(role_id='C', display_name='C'),
+            ChannelRoleBinding(role_id='FR', display_name='FR'),
+            ChannelRoleBinding(role_id='TFL', display_name='TFL'),
+            ChannelRoleBinding(role_id='TFR', display_name='TFR'),
+            ChannelRoleBinding(role_id='SL', display_name='SL'),
+        ),
+        proposed_entities=(
+            ProposedEntitySpec(
+                spec_id='proposal-sl',
+                entity=_speaker(
+                    'sl',
+                    'SL',
+                    sl_x,
+                    2.0,
+                    1.2,
+                    size=Size3(x_m=0.2, y_m=1.0, z_m=0.4),
+                ),
+                role_binding_id='SL',
+            ),
+        ),
+        created_at_utc=NOW,
+    )
+    topology = build_topology_search_spec(
+        baseline=baseline,
+        template_variants=(template,),
+        created_at_utc=NOW,
+    )
+
+    exclusions = ()
+    if case == 'exclusion':
+        exclusions = (
+            ProposedExclusionRegion(
+                region_id='rotated-overlap',
+                vertices=_region(0.95, 1.15, 1.8, 2.2),
+            ),
+        )
+
+    constraints = ()
+    if case == 'wall':
+        constraints = (
+            CadWallClearanceConstraint(
+                constraint_id='right-wall-clearance',
+                name='Right wall clearance',
+                entity_ids=('sl',),
+                wall_id='wall:front-right->rear-right',
+                min_m=0.3,
+            ),
+        )
+    elif case == 'pair':
+        constraints = (
+            CadPairDistanceConstraint(
+                constraint_id='speaker-pair-clearance',
+                name='Speaker pair clearance',
+                entity_a='sl',
+                entity_b='fl',
+                min_m=0.3,
+                distance_mode='horizontal_xy',
+                distance_reference='envelope_clearance',
+            ),
+        )
+
+    spec = build_topology_placement_search_spec(
+        baseline=baseline,
+        template_variant=template,
+        topology_spec=topology,
+        topology_option_id=topology.options[0].option_id,
+        placement_specs=(
+            ProposedPlacementSpec(
+                entity_id='sl',
+                role_id='SL',
+                zone_id='rotation-sensitive-zone',
+                allowed_region=_region(0.0, 4.0, 0.0, 4.0),
+                exclusion_regions=exclusions,
+                xyz_axes=(
+                    CadSearchAxis(
+                        entity_id='sl',
+                        axis='x',
+                        min_m=sl_x,
+                        max_m=sl_x,
+                        step_m=0.1,
+                    ),
+                ),
+                angle_axes=(
+                    PlacementAngleAxis(
+                        parameter='body_yaw_deg',
+                        min_deg=90.0,
+                        max_deg=90.0,
+                        step_deg=1.0,
+                    ),
+                ),
+            ),
+        ),
+        constraint_set=CadConstraintSet(
+            document_id=document_id,
+            constraints=constraints,
+        ),
+        candidate_limit=10,
+        created_at_utc=NOW,
+    )
+    page = generate_topology_placement_candidates(
+        baseline=baseline,
+        template_variant=template,
+        spec=spec,
+        limit=10,
+    )
+
+    assert page.raw_candidate_count == 1
+    assert page.feasible_candidate_count == 0
+    assert page.rejected_candidate_count == 1
+    assert page.duplicate_candidate_count == 0
+    assert page.candidates == ()
+    if expected_rejection.endswith('-'):
+        assert any(
+            constraint_id.startswith(expected_rejection)
+            for constraint_id in page.rejection_counts
+        )
+    else:
+        assert expected_rejection in page.rejection_counts
     assert scene_repository.latest(document_id).revision_id == baseline.revision_id
 
 
