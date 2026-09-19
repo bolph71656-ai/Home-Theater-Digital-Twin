@@ -34,8 +34,8 @@ class PyroomStochasticAuthority(BaseModel):
     independent_seeds: tuple[int, ...] = Field(min_length=3)
     ray_budgets: tuple[int, ...] = Field(min_length=3)
     sampling_rate_hz: int = Field(gt=0)
-    receiver_radius_m: float = Field(gt=0.0)
-    histogram_bin_size_s: float = Field(gt=0.0)
+    receiver_radius_sequence_m: tuple[float, ...] = Field(min_length=3)
+    histogram_bin_size_sequence_s: tuple[float, ...] = Field(min_length=3)
     energy_threshold: float = Field(gt=0.0)
     time_threshold_s: float = Field(gt=0.0)
     frequency_hz: tuple[float, ...] = Field(min_length=1)
@@ -73,11 +73,35 @@ class PyroomStochasticAuthority(BaseModel):
             raise ValueError('sample times must be strictly increasing')
         if self.sample_times_s[-1] >= self.time_threshold_s:
             raise ValueError('sample times must be strictly below the ray time threshold')
-        for sample_time in self.sample_times_s:
-            bin_number = round(sample_time / self.histogram_bin_size_s)
-            aligned = bin_number * self.histogram_bin_size_s
-            if abs(aligned - sample_time) > 1e-12:
-                raise ValueError('sample times must align exactly to histogram bin starts')
+        if len(self.receiver_radius_sequence_m) != len(self.ray_budgets):
+            raise ValueError('receiver-radius refinement must match ray-budget levels')
+        if len(self.histogram_bin_size_sequence_s) != len(self.ray_budgets):
+            raise ValueError('histogram-bin refinement must match ray-budget levels')
+        if any(
+            not isfinite(value) or value <= 0.0
+            for value in self.receiver_radius_sequence_m + self.histogram_bin_size_sequence_s
+        ):
+            raise ValueError('estimator refinement controls must be finite and positive')
+        if any(
+            self.receiver_radius_sequence_m[index]
+            <= self.receiver_radius_sequence_m[index + 1]
+            for index in range(len(self.receiver_radius_sequence_m) - 1)
+        ):
+            raise ValueError('receiver radius must decrease strictly with refinement')
+        if any(
+            self.histogram_bin_size_sequence_s[index]
+            <= self.histogram_bin_size_sequence_s[index + 1]
+            for index in range(len(self.histogram_bin_size_sequence_s) - 1)
+        ):
+            raise ValueError('histogram bin size must decrease strictly with refinement')
+        for histogram_bin_size_s in self.histogram_bin_size_sequence_s:
+            for sample_time in self.sample_times_s:
+                bin_number = round(sample_time / histogram_bin_size_s)
+                aligned = bin_number * histogram_bin_size_s
+                if abs(aligned - sample_time) > 1e-12:
+                    raise ValueError(
+                        'sample times must align exactly to every histogram-bin refinement level'
+                    )
         return self
 
     def canonical_json(self) -> str:
@@ -115,6 +139,8 @@ class PyroomStochasticObservation(BaseModel):
     observation_id: str = Field(min_length=1)
     seed: int = Field(ge=0, lt=2**64)
     ray_budget: int = Field(gt=0)
+    receiver_radius_m: float = Field(gt=0.0)
+    histogram_bin_size_s: float = Field(gt=0.0)
     replicate: int = Field(ge=0)
     status: ObservationStatus
     sample_keys: tuple[str, ...] = Field(min_length=1)
@@ -133,6 +159,8 @@ class PyroomStochasticObservation(BaseModel):
     @model_validator(mode='after')
     def validate_observation(self) -> 'PyroomStochasticObservation':
         metrics = (
+            self.receiver_radius_m,
+            self.histogram_bin_size_s,
             self.histogram_total_energy,
             self.setup_s,
             self.solve_s,
@@ -196,6 +224,8 @@ class StochasticBudgetVariation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     ray_budget: int = Field(gt=0)
+    receiver_radius_m: float = Field(gt=0.0)
+    histogram_bin_size_s: float = Field(gt=0.0)
     seed_count: int = Field(ge=2)
     mean_curve_db: tuple[float, ...] = Field(min_length=1)
     point_stddev_db: tuple[float, ...] = Field(min_length=1)
@@ -338,6 +368,18 @@ def evaluate_pyroom_stochastic_fixture(
         )
 
     for observation in raw.observations:
+        level_index = authority.ray_budgets.index(observation.ray_budget)
+        if observation.receiver_radius_m != authority.receiver_radius_sequence_m[level_index]:
+            raise ValueError(
+                f'observation {observation.observation_id} receiver radius does not match authority'
+            )
+        if (
+            observation.histogram_bin_size_s
+            != authority.histogram_bin_size_sequence_s[level_index]
+        ):
+            raise ValueError(
+                f'observation {observation.observation_id} histogram bin does not match authority'
+            )
         if observation.sample_keys != expected_keys:
             raise ValueError(
                 f'observation {observation.observation_id} sample keys do not match authority'
@@ -393,6 +435,12 @@ def evaluate_pyroom_stochastic_fixture(
             variation.append(
                 StochasticBudgetVariation(
                     ray_budget=budget,
+                    receiver_radius_m=authority.receiver_radius_sequence_m[
+                        authority.ray_budgets.index(budget)
+                    ],
+                    histogram_bin_size_s=authority.histogram_bin_size_sequence_s[
+                        authority.ray_budgets.index(budget)
+                    ],
                     seed_count=len(observations),
                     mean_curve_db=mean_curve,
                     point_stddev_db=point_stddev,
