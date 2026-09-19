@@ -302,6 +302,12 @@ def test_magnitude_only_directivity_cannot_fabricate_coherent_phase() -> None:
             provenance=provenance,
             data_asset_sha256='2' * 64,
             valid_domain=_domain(),
+            interpolation=InterpolationProvenance(
+                method='linear',
+                implementation='phase-rejection-fixture',
+                implementation_version='1',
+                provenance=provenance,
+            ),
             coherent_phase=True,
             phase_reference='fabricated-reference',
         )
