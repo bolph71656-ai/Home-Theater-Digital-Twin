@@ -42,8 +42,9 @@ R100A-4 applies the finite-record contract **only** to `wave-rectangular-converg
 - sample zero is exactly `source_t0`;
 - scored samples are exactly the half-open interval `[0,T)` with frozen `T=2 s`; each solver records its actual `dt`, sample count and last/next sample times as provenance;
 - solver `dt` is **not** common authority. It remains a discretization/refinement parameter and therefore `comparison.time_step_s` is null for these fixtures;
-- direct scored-frequency DTFT uses `exp(-i*2*pi*f*n*dt)` at the frozen frequency grid, with no window, filter or zero-padding interpolation;
-- finite-record spectra are `X_T(f)=dt*sum_n x[n]*exp(-i*2*pi*f*n*dt)`;
+- `comparison.fourier_sign = exp(-i*omega*t)` is the time-harmonic/phasor dependence; the corresponding analysis transform is its dual;
+- direct scored-frequency DTFT therefore uses `exp(+i*2*pi*f*n*dt)` at the frozen frequency grid, with no window, filter or zero-padding interpolation;
+- finite-record spectra are `X_T(f)=dt*sum_n x[n]*exp(+i*2*pi*f*n*dt)`;
 - the numerator record is **physical pressure**. A solver that stores another primary field may use a declared conversion to physical pressure, but that conversion and its numerical stencil must be recorded as adapter provenance before the DTFT is taken;
 - normalized transfer is `H_T(f)=P_T(f)/Q_T(f)` from the physical pressure record and the **physical volume-velocity source samples on that same solver time grid, before solver-internal numerical scaling**; the rectangular complex-convergence observable is therefore explicitly typed as `complex_pressure_transfer_pa_per_m3_s` with unit `Pa/(m3/s)`, not pressure `Pa`;
 - the concave magnitude observable is absolute transfer level `dB re 1 Pa/(m3/s)`, i.e. `20*log10(|P_T/Q_T|/(1 Pa/(m3/s)))`;
