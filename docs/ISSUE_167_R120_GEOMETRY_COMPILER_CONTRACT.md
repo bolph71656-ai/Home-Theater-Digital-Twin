@@ -39,6 +39,8 @@ The compiler authority records:
 - bounding volume
 - closed-shell / open-edge / non-manifold diagnostics
 - approximation operations and dropped-feature evidence
+- explicit approximation error status: dropped-feature extent is recorded, but no geometric error bound is fabricated when it has not been computed
+- topology identity independent from external material/boundary-physics references
 - compiler warnings and unresolved conditions
 - deterministic compiled hash
 
