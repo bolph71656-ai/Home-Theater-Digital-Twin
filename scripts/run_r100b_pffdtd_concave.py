@@ -48,7 +48,7 @@ FIXTURE_ID = 'wave-concave-l-room-v1'
 PROBE_SCHEMA = 'r100b-pffdtd-concave-artifact-1'
 PROBE_ID = 'pffdtd-concave-complex-pressure'
 ADAPTER_ID = 'htdt-r100b-pffdtd-concave'
-ADAPTER_VERSION = '1'
+ADAPTER_VERSION = '2'
 FMAX_HZ = 300.0
 GRID_SPACINGS_M = (0.5, 0.25, 0.125)
 THREAD_BUDGET = 4
@@ -237,8 +237,11 @@ def _validate_fixture_contract(fixture) -> None:
 
     environment = fixture.environment
     if (
-        float(environment.density_kg_m3) != 1.2
+        float(environment.temperature_c) != 20.0
         or float(environment.sound_speed_m_s) != 343.0
+        or float(environment.relative_humidity_percent or -1.0) != 50.0
+        or float(environment.pressure_pa or -1.0) != 101325.0
+        or float(environment.density_kg_m3) != 1.2
     ):
         raise ValueError('concave environment authority changed')
 
@@ -405,8 +408,13 @@ def _run_level(
     frequencies_hz: np.ndarray,
     warm_jit: bool,
 ) -> tuple[dict[str, object], dict[str, np.ndarray], float, float, float]:
-    internal_c = 343.2 * math.sqrt(float(fixture.environment.temperature_c) / 20.0)
-    ppw = internal_c / (FMAX_HZ * target_h_m)
+    authority_c = float(fixture.environment.sound_speed_m_s)
+    # PFFDTD aa319f6 exposes Tc instead of c and computes
+    # c = 343.2*sqrt(Tc/20). Use Tc only as a numerical control so the
+    # solver wave speed equals the frozen R100A-3 343.0 m/s exactly.
+    # Physical temperature authority remains 20 C and is recorded separately.
+    solver_tc_for_sound_speed = 20.0 * (authority_c / 343.2) ** 2
+    ppw = authority_c / (FMAX_HZ * target_h_m)
     duration_s = float(fixture.comparison.observation_time_s)
 
     setup_started = time.perf_counter()
@@ -419,7 +427,7 @@ def _run_level(
         mat_folder=material_dir,
         mat_files_dict={},
         duration=duration_s,
-        Tc=float(fixture.environment.temperature_c),
+        Tc=solver_tc_for_sound_speed,
         rh=float(fixture.environment.relative_humidity_percent or 50.0),
         source_num=1,
         draw_vox=False,
@@ -446,6 +454,10 @@ def _run_level(
     prepare_s = time.perf_counter() - prepare_started
     if not math.isclose(float(engine.h), target_h_m, rel_tol=0.0, abs_tol=1.0e-12):
         raise RuntimeError(f'PFFDTD grid spacing mismatch: {engine.h} != {target_h_m}')
+    if not math.isclose(float(engine.c), authority_c, rel_tol=0.0, abs_tol=1.0e-12):
+        raise RuntimeError(
+            f'PFFDTD sound-speed mapping mismatch: {engine.c} != {authority_c}'
+        )
 
     solve_started = time.perf_counter()
     engine.run_all(nsteps=int(engine.Nt))
@@ -498,6 +510,10 @@ def _run_level(
         'record_last_time_s': float((int(engine.Nt) - 1) * engine.Ts),
         'requested_observation_time_s': duration_s,
         'sound_speed_m_s': float(engine.c),
+        'authority_temperature_c': float(fixture.environment.temperature_c),
+        'solver_temperature_control_c': solver_tc_for_sound_speed,
+        'sound_speed_mapping': 'c=343.2*sqrt(Tc/20); Tc_control=20*(authority_c/343.2)^2',
+        'air_absorption_postprocess_applied': False,
         'courant': float(engine.l),
         'setup_s': setup_s,
         'warm_prepare_s': warm_prepare_s,
@@ -1110,6 +1126,7 @@ def _execute(
         notes=(
             'Exact concave candidate evidence; no rectangular approximation is permitted.',
             'Candidate self-convergence and independent-reference scoring are separate gates.',
+            'PFFDTD Tc is used only as a numerical control to reproduce the frozen 343.0 m/s wave speed; physical temperature authority remains 20 C and no air-absorption postprocess is applied.',
             'An unqualified independent reference cannot be used as expected truth.',
         ),
     )
