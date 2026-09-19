@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .cad_wall_models import WallTopology
 from .geometry import polygon_from_vertices
+from .semantic_geometry import SemanticAcousticGeometry
 
 
 class SceneValidationError(ValueError):
@@ -373,6 +374,7 @@ class SceneDocument(BaseModel):
     coordinate_system: Literal['htdt-x-right-y-rear-z-up-m'] = 'htdt-x-right-y-rear-z-up-m'
     room: RoomPrism | None
     wall_topology: WallTopology | None = None
+    r120_semantic_geometry: SemanticAcousticGeometry | None = None
     entities: tuple[SceneEntity, ...]
 
     @model_validator(mode='after')
@@ -388,6 +390,8 @@ class SceneDocument(BaseModel):
             from .cad_walls import validate_wall_topology
 
             validate_wall_topology(self.room, self.wall_topology)
+        if self.r120_semantic_geometry is not None and self.schema_version < 4:
+            raise ValueError('R120 semantic geometry requires scene schema_version >= 4')
         return self
 
     def entity(self, entity_id: str) -> SceneEntity:
@@ -413,6 +417,9 @@ def canonical_scene_json(document: SceneDocument) -> str:
     # Preserve N05-N30a hashes until a wall topology is explicitly created.
     if payload.get('wall_topology') is None:
         payload.pop('wall_topology', None)
+    # Preserve all pre-R120B hashes until semantic acoustic geometry is explicitly bound.
+    if payload.get('r120_semantic_geometry') is None:
+        payload.pop('r120_semantic_geometry', None)
     return json.dumps(
         payload,
         ensure_ascii=False,

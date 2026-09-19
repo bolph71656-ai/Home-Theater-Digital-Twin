@@ -46,6 +46,17 @@ class EditorViewRecord:
     locked_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SemanticGeometryBindingRecord:
+    scene_revision_id: str
+    source_scene_revision_id: str | None
+    geometry_id: str
+    geometry_semantic_hash: str
+    input_raw_mesh_id: str
+    input_asset_sha256: str
+    conversion_request_id: str
+
+
 class SceneRepository:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -114,7 +125,9 @@ class SceneRepository:
                 'SELECT * FROM scene_revisions WHERE document_id=? ORDER BY seq DESC LIMIT 1',
                 (document_id,),
             ).fetchone()
-        return self._row_to_revision(row) if row else None
+            if row is None:
+                return None
+            return self._row_to_revision(row)
 
     def get(self, revision_id: str) -> SceneRevision | None:
         with closing(self._connect()) as connection, connection:
@@ -122,7 +135,9 @@ class SceneRepository:
                 'SELECT * FROM scene_revisions WHERE revision_id=?',
                 (revision_id,),
             ).fetchone()
-        return self._row_to_revision(row) if row else None
+            if row is None:
+                return None
+            return self._row_to_revision(row)
 
     def save(self, document: SceneDocument, *, parent_revision_id: str | None) -> SaveResult:
         with closing(self._connect()) as connection, connection:
@@ -168,6 +183,22 @@ class SceneRepository:
                 )
                 return SaveResult(self._row_to_revision(parent), created=False)
 
+        geometry = document.r120_semantic_geometry
+        if geometry is not None:
+            if parent is None:
+                if geometry.source_scene_revision_id is not None:
+                    raise ValueError('root SceneRevision semantic geometry must have no source revision')
+            else:
+                parent_document = SceneDocument.model_validate(json.loads(parent['payload_json']))
+                parent_geometry = parent_document.r120_semantic_geometry
+                geometry_changed = (
+                    parent_geometry is None or parent_geometry.geometry_id != geometry.geometry_id
+                )
+                if geometry_changed and geometry.source_scene_revision_id != parent_revision_id:
+                    raise ValueError(
+                        'new R120 semantic geometry must bind to the exact parent SceneRevision'
+                    )
+
         revision_id = revision_id or str(uuid4())
         created_at = created_at_utc or datetime.now(timezone.utc).isoformat()
         connection.execute(
@@ -194,6 +225,21 @@ class SceneRepository:
             (revision_id,),
         ).fetchone()
         return SaveResult(self._row_to_revision(row), created=True)
+
+    def semantic_geometry_binding(self, revision_id: str) -> SemanticGeometryBindingRecord | None:
+        revision = self.get(revision_id)
+        if revision is None or revision.document.r120_semantic_geometry is None:
+            return None
+        geometry = revision.document.r120_semantic_geometry
+        return SemanticGeometryBindingRecord(
+            scene_revision_id=revision.revision_id,
+            source_scene_revision_id=geometry.source_scene_revision_id,
+            geometry_id=geometry.geometry_id,
+            geometry_semantic_hash=geometry.semantic_hash_sha256,
+            input_raw_mesh_id=geometry.input_raw_mesh_id,
+            input_asset_sha256=geometry.input_asset_sha256,
+            conversion_request_id=geometry.conversion_request_id,
+        )
 
     def save_recovery(
         self,
