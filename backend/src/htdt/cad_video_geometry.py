@@ -554,6 +554,7 @@ class ProjectionGeometryResult(BaseModel):
     lens_position: Position3
     screen_image_center: Position3
     image_plane_corners: tuple[Position3, Position3, Position3, Position3]
+    projection_cone_directions: tuple[Direction3, Direction3, Direction3, Direction3]
     optical_axis_intersection: Position3 | None
     throw_distance_m: float
     throw_ratio: float
@@ -796,6 +797,13 @@ def _projection_result(
             else 'FAIL'
         )
 
+    cone_directions = tuple(
+        Direction3(x=direction[0], y=direction[1], z=direction[2])
+        for direction in (
+            _unit(_sub(_v(corner), lens))
+            for corner in corners
+        )
+    )
     aperture_status = _screen_aperture_status(screen_entity, request.screen)
     aspect_status = _projector_aspect_status(specification, request.screen)
     status = _combine_status((
@@ -812,6 +820,7 @@ def _projection_result(
         lens_position=_position(lens),
         screen_image_center=_position(center),
         image_plane_corners=corners,
+        projection_cone_directions=cone_directions,  # type: ignore[arg-type]
         optical_axis_intersection=None if intersection is None else _position(intersection),
         throw_distance_m=throw_distance,
         throw_ratio=throw_ratio,
