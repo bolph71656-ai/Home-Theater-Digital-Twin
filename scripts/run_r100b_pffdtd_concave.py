@@ -349,12 +349,29 @@ def _validate_fixture_contract(fixture) -> None:
         or comparison.filter != 'none'
         or comparison.time_step_s is not None
         or float(comparison.observation_time_s or -1.0) != 2.0
+        or comparison.finite_record_transfer is None
         or grid.kind != 'uniform'
         or float(grid.start_hz) != 20.0
         or float(grid.stop_hz) != 300.0
         or float(grid.step_hz) != 1.0
     ):
         raise ValueError('concave comparison authority changed')
+
+    finite_record = comparison.finite_record_transfer
+    assert finite_record is not None
+    if (
+        finite_record.excitation_model != 'causal_discrete_unit_sample_volume_velocity'
+        or finite_record.sample_zero_reference != 'source_t0'
+        or finite_record.record_interval != 'half_open_0_T'
+        or finite_record.solver_time_step_policy != 'solver_native_recorded'
+        or finite_record.dtft_kernel != 'exp(-i*2*pi*f*n*dt)'
+        or finite_record.dtft_measure != 'dt_weighted_sum'
+        or finite_record.transfer_definition != 'pressure_over_volume_velocity'
+        or finite_record.frequency_evaluation != 'direct_scored_frequency_dtft'
+        or finite_record.source_spectrum_requirement != 'finite_nonzero_on_scored_grid'
+        or finite_record.zero_padding != 'none'
+    ):
+        raise ValueError('concave finite-record transfer authority changed')
 
     observable_by_id = {item.observable_id: item for item in fixture.observables}
     if set(observable_by_id) != {'lroom-fr', 'lroom-phase'}:
@@ -1211,6 +1228,8 @@ def _execute(
             'grid_spacings_m': list(GRID_SPACINGS_M),
             'thread_budget': min(THREAD_BUDGET, os.cpu_count() or 1),
             'setup_processes': NPROCS,
+            'finite_record_transfer': comparison.finite_record_transfer.model_dump(mode='json'),
+            'solver_time_step_policy': 'solver_native_recorded',
             'comparison_grid_hz': {
                 'start': float(frequencies_hz[0]),
                 'stop': float(frequencies_hz[-1]),
