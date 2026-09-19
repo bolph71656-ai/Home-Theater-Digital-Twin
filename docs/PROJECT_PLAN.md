@@ -38,8 +38,9 @@ global navigationの表示は「概要 / 部屋 / 測定 / 最適化」を基本
 6. scene上の対象からFR・比較を確認する。配置変更は新revisionにする。
 7. 制約内の候補をpreviewし、対応するモデルで予測、必要なら多目的比較する。
 8. system expansionを検討する場合はO100で現在存在しないspeaker/channelをProposed entityとして追加し、role・機種/source model・配置可能範囲を指定してbaseline topologyと比較する。
-9. 必要に応じてO90で既存/仮想speakerの設置誤差・aim誤差等へのばらつき耐性を評価し、nominal性能とのtrade-offを比較する。
-10. 選択案を実際に導入した場合はproposalを上書きせずAs-built SceneRevisionを作り、REW再測定と残差で仮説を評価する。
+9. 必要に応じてversioned StandardsProfileでexact SceneRevision/SystemVariantをcriterion別に評価する。規格適合性は音響最適性や総合scoreにせず、source/evidence不足はUNKNOWNのまま保持する。
+10. 必要に応じてO90で既存/仮想speakerの設置誤差・aim誤差等へのばらつき耐性を評価し、nominal性能とのtrade-offを比較する。
+11. 選択案を実際に導入した場合はproposalを上書きせずAs-built SceneRevisionを作り、REW再測定と残差で仮説を評価する。
 
 未測定でもCAD編集はできる。高度なCAD操作を覚えないと測定を登録できない設計にもせず、templateとInspectorによる入力経路を用意する。
 
@@ -72,7 +73,7 @@ N70/N80の完成をCAD previewや安定個人版の条件にしない。カレ�
 
 ## 6. 保存・意味の保持
 
-SceneRevisionは編集された物理空間、AcquisitionContextは測定時の条件を固定する。過去測定を現在配置へ自動で紐付け直さない。camera、hide、dockは測定条件を変えない。
+SceneRevisionは編集された物理空間、AcquisitionContextは測定時の条件を固定する。StandardsProfile/StandardsEvaluationはその物理truthを置換せず、exact SceneRevision / optional SystemVariantへ外部基準のcriterion evidenceを付与する。profile更新は過去evaluationを書き換えず、明示re-evaluationで新しいrecordを追加する。過去測定を現在配置へ自動で紐付け直さない。camera、hide、dockは測定条件を変えない。
 
 実測、実測由来、予測、仮説を識別する。予測は幾何・吸音・指向性・solverの適用範囲を持ち、未知条件を確定値として補わない。低音振分けがある時は入力チャンネルと実放射音源を分ける。位相/タイミングが不明ならその前提を要する計算を止める。
 
@@ -96,4 +97,4 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 
 native GUIをWindowsのDPI/mouse/keyboardで確認する。headless CIを操作品質の証拠にしない。仕様上の目標、過去のPoC報告、今回の再検証を分ける。
 
-変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。N05〜N90/O10〜O80 software pathは完了済み。O90はO90Aとcanonical O90Bまで実装済みで、O90C以降はplanned / 未実装。O100はO100B virtual topology/placement searchまで実装済みで、O100C以降はplanned / 未実装。現在はIssue #101のR100B solver bakeoff、Issue #118のUX100〜UX160 UI/UX overhaul、O90、O100を独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
+変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。Issue #170ではcriterion evaluator/profile data/persistenceをGUIやO100D objectiveから分離し、公開sourceに明示された境界だけをbuilt-in criteriaへ採用する。compliance FAILは明示hard-constraint opt-inなしにcandidateを削除しない。N05〜N90/O10〜O80 software pathは完了済み。O90はO90Aとcanonical O90Bまで実装済みで、O90C以降はplanned / 未実装。O100はO100B virtual topology/placement searchまで実装済みで、O100C以降はplanned / 未実装。現在はIssue #101のR100B solver bakeoff、Issue #118のUX100〜UX160 UI/UX overhaul、O90、O100を独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
