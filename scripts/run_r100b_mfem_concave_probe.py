@@ -958,7 +958,9 @@ def _execute(
         diagnostics=(
             'Exact frozen L-prism geometry represented by five conforming hexahedra; '
             'the concave notch is absent from the mesh rather than filled.',
-            f'p_refinement_orders={ORDER_MIN},{ORDER_MIN + 1},{ORDER_MIN + 2},{ORDER_MAX}',
+            'p_refinement_orders=' + ','.join(
+                str(order) for order in range(ORDER_MIN, ORDER_MAX + 1)
+            ),
             'Natural H1 boundary condition is rigid Neumann on every exterior face.',
             'No candidate trace participates in MFEM reference qualification.',
         ),
@@ -1008,6 +1010,7 @@ def _execute(
             'MFEM_USE_LAPACK': False,
             'MFEM_USE_OPENMP': False,
             'MFEM_USE_ZLIB': False,
+            'MFEM_USE_EXCEPTIONS': True,
             'BUILD_SHARED_LIBS': False,
             'cmake_cache_sha256': _sha256_file(cache_path) if cache_path.is_file() else None,
         },
