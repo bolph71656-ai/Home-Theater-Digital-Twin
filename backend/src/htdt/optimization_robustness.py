@@ -29,6 +29,7 @@ from .optimization_objectives import ObjectiveMetric, ObjectiveVector
 ROBUSTNESS_SCHEMA_VERSION = 1
 ROBUSTNESS_ALGORITHM_VERSION = 'o90a-local-stencil-1'
 ROBUSTNESS_MULTIDIMENSIONAL_ALGORITHM_VERSION = 'o90b-bounded-design-1'
+ROBUSTNESS_UNCERTAINTY_ALGORITHM_VERSION = 'o90b-uncertainty-design-1'
 RobustnessCandidate = CadCandidate | CadExtendedCandidate
 RobustnessCandidateKind = Literal['cad_candidate', 'extended_candidate']
 RobustnessAxisParameter = Literal[
@@ -148,6 +149,136 @@ class LinkedPerturbationGroup(BaseModel):
         return self
 
 
+class DistributionAxisUncertainty(BaseModel):
+    """Explicit probability distribution for one O90 input axis."""
+
+    model_config = ConfigDict(frozen=True)
+
+    axis_id: str = Field(min_length=1)
+    distribution: Literal['uniform', 'normal']
+    min_delta: float | None = None
+    max_delta: float | None = None
+    mean_delta: float = 0.0
+    stddev: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode='after')
+    def valid_distribution(self) -> 'DistributionAxisUncertainty':
+        values = (self.min_delta, self.max_delta, self.mean_delta, self.stddev)
+        if any(value is not None and not isfinite(float(value)) for value in values):
+            raise ValueError('distribution uncertainty values must be finite')
+        if self.distribution == 'uniform':
+            if self.min_delta is None or self.max_delta is None:
+                raise ValueError('uniform uncertainty requires explicit min/max deltas')
+            if self.max_delta <= self.min_delta:
+                raise ValueError('uniform uncertainty max_delta must exceed min_delta')
+            if self.stddev is not None or self.mean_delta != 0.0:
+                raise ValueError('uniform uncertainty uses only explicit min/max deltas')
+        else:
+            if self.stddev is None:
+                raise ValueError('normal uncertainty requires explicit stddev')
+            if (self.min_delta is None) != (self.max_delta is None):
+                raise ValueError(
+                    'truncated normal uncertainty requires both min/max deltas'
+                )
+            if (
+                self.min_delta is not None
+                and self.max_delta is not None
+                and self.max_delta <= self.min_delta
+            ):
+                raise ValueError('truncated normal max_delta must exceed min_delta')
+        return self
+
+
+class DistributionUncertaintyModel(BaseModel):
+    """Explicit joint probability model with declared independence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_kind: Literal['distribution'] = 'distribution'
+    model_id: str = Field(min_length=1)
+    dependence: Literal['independent'] = 'independent'
+    axes: tuple[DistributionAxisUncertainty, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def unique_axes(self) -> 'DistributionUncertaintyModel':
+        axis_ids = [axis.axis_id for axis in self.axes]
+        if len(axis_ids) != len(set(axis_ids)):
+            raise ValueError('distribution uncertainty axis IDs must be unique')
+        return self
+
+
+class ExplicitPerturbationState(BaseModel):
+    """One supplied empirical/discrete joint perturbation state."""
+
+    model_config = ConfigDict(frozen=True)
+
+    state_id: str = Field(min_length=1)
+    parameter_deltas: dict[str, float]
+    probability_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode='after')
+    def finite_deltas(self) -> 'ExplicitPerturbationState':
+        if any(not isfinite(float(value)) for value in self.parameter_deltas.values()):
+            raise ValueError('explicit perturbation deltas must be finite')
+        return self
+
+
+def _validate_explicit_state_weights(
+    states: Sequence[ExplicitPerturbationState],
+    *,
+    label: str,
+) -> None:
+    state_ids = [state.state_id for state in states]
+    if len(state_ids) != len(set(state_ids)):
+        raise ValueError(f'{label} state IDs must be unique')
+    weighted = [state.probability_weight is not None for state in states]
+    if any(weighted) and not all(weighted):
+        raise ValueError(
+            f'{label} probability weights must be supplied for every state or none'
+        )
+    if all(weighted):
+        total = sum(float(state.probability_weight or 0.0) for state in states)
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(f'{label} explicit probability weights must sum to 1')
+
+
+class EmpiricalUncertaintyModel(BaseModel):
+    """Supplied empirical samples; repeated observations are not implicit weights."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_kind: Literal['empirical'] = 'empirical'
+    model_id: str = Field(min_length=1)
+    samples: tuple[ExplicitPerturbationState, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_samples(self) -> 'EmpiricalUncertaintyModel':
+        _validate_explicit_state_weights(self.samples, label='empirical uncertainty')
+        return self
+
+
+class DiscreteUncertaintyModel(BaseModel):
+    """Finite alternatives, probabilistic only when all weights are explicit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_kind: Literal['discrete'] = 'discrete'
+    model_id: str = Field(min_length=1)
+    states: tuple[ExplicitPerturbationState, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_states(self) -> 'DiscreteUncertaintyModel':
+        _validate_explicit_state_weights(self.states, label='discrete uncertainty')
+        return self
+
+
+ExplicitInputUncertaintyModel = (
+    DistributionUncertaintyModel
+    | EmpiricalUncertaintyModel
+    | DiscreteUncertaintyModel
+)
+
+
 class RobustnessSpec(BaseModel):
     """Immutable O90A authority bound to existing Scene/Search/Objective evidence."""
 
@@ -177,14 +308,17 @@ class RobustnessSpec(BaseModel):
     sampling_strategy: Literal[
         'deterministic_local_stencil',
         'deterministic_multidimensional_bounded',
+        'deterministic_multidimensional_uncertainty',
     ] = 'deterministic_local_stencil'
     algorithm_version: Literal[
         'o90a-local-stencil-1',
         'o90b-bounded-design-1',
+        'o90b-uncertainty-design-1',
     ] = ROBUSTNESS_ALGORITHM_VERSION
     sampling_seed: int | None = None
-    sample_count: int | None = Field(default=None, ge=3)
+    sample_count: int | None = Field(default=None, ge=1)
     linked_groups: tuple[LinkedPerturbationGroup, ...] = ()
+    input_uncertainty_model: ExplicitInputUncertaintyModel | None = None
     parent_robustness_spec_id: str | None = Field(default=None, min_length=1)
     parent_robustness_spec_sha256: str | None = Field(
         default=None,
@@ -229,21 +363,30 @@ class RobustnessSpec(BaseModel):
                 self.sampling_seed is not None
                 or self.sample_count is not None
                 or self.linked_groups
+                or self.input_uncertainty_model is not None
                 or self.parent_robustness_spec_id is not None
                 or self.parent_robustness_spec_sha256 is not None
             ):
                 raise ValueError('O90A local spec cannot carry O90B sampling metadata')
-        else:
+        elif self.sampling_strategy == 'deterministic_multidimensional_bounded':
             if (
                 self.algorithm_version
                 != ROBUSTNESS_MULTIDIMENSIONAL_ALGORITHM_VERSION
             ):
                 raise ValueError(
-                    'multidimensional robustness spec requires O90B algorithm version'
+                    'bounded multidimensional robustness requires O90B bounded version'
                 )
             if self.sampling_seed is None or self.sample_count is None:
                 raise ValueError(
-                    'multidimensional robustness spec requires seed and sample_count'
+                    'bounded multidimensional robustness requires seed and sample_count'
+                )
+            if self.sample_count < 3:
+                raise ValueError(
+                    'bounded multidimensional robustness requires at least three samples'
+                )
+            if self.input_uncertainty_model is not None:
+                raise ValueError(
+                    'bounded interval sampling cannot carry a probability model'
                 )
             if (
                 self.parent_robustness_spec_id is None
@@ -252,6 +395,62 @@ class RobustnessSpec(BaseModel):
                 raise ValueError(
                     'multidimensional robustness spec requires exact O90A parent'
                 )
+        else:
+            if self.algorithm_version != ROBUSTNESS_UNCERTAINTY_ALGORITHM_VERSION:
+                raise ValueError(
+                    'explicit uncertainty sampling requires O90B uncertainty version'
+                )
+            if self.sample_count is None or self.input_uncertainty_model is None:
+                raise ValueError(
+                    'explicit uncertainty sampling requires model and sample_count'
+                )
+            if self.linked_groups:
+                raise ValueError(
+                    'probabilistic/empirical/discrete models do not reuse bounded linked groups'
+                )
+            if (
+                self.parent_robustness_spec_id is None
+                or self.parent_robustness_spec_sha256 is None
+            ):
+                raise ValueError(
+                    'explicit uncertainty spec requires exact O90A parent'
+                )
+            model = self.input_uncertainty_model
+            if isinstance(model, DistributionUncertaintyModel):
+                if self.sampling_seed is None:
+                    raise ValueError(
+                        'distribution uncertainty requires an explicit sampling seed'
+                    )
+                if self.sample_count < 3:
+                    raise ValueError(
+                        'distribution uncertainty requires nominal plus at least two samples'
+                    )
+                model_axis_ids = {axis.axis_id for axis in model.axes}
+                if model_axis_ids != known_axis_ids:
+                    raise ValueError(
+                        'distribution uncertainty must define every robustness axis'
+                    )
+            else:
+                if self.sampling_seed is not None:
+                    raise ValueError(
+                        'empirical/discrete enumeration has no sampling seed'
+                    )
+                states = (
+                    model.samples
+                    if isinstance(model, EmpiricalUncertaintyModel)
+                    else model.states
+                )
+                if self.sample_count != 1 + len(states):
+                    raise ValueError(
+                        'empirical/discrete sample_count must equal nominal plus states'
+                    )
+                for state in states:
+                    unknown = set(state.parameter_deltas) - known_axis_ids
+                    if unknown:
+                        raise ValueError(
+                            'explicit uncertainty state references unknown axes: '
+                            f'{sorted(unknown)}'
+                        )
         try:
             candidate_payload = json.loads(self.candidate_payload_json)
         except json.JSONDecodeError as exc:
@@ -308,6 +507,21 @@ class RobustnessSpec(BaseModel):
                     'linked_groups': [
                         group.model_dump(mode='json') for group in self.linked_groups
                     ],
+                    'parent_robustness_spec_id': self.parent_robustness_spec_id,
+                    'parent_robustness_spec_sha256': (
+                        self.parent_robustness_spec_sha256
+                    ),
+                }
+            )
+        elif self.sampling_strategy == 'deterministic_multidimensional_uncertainty':
+            assert self.input_uncertainty_model is not None
+            payload.update(
+                {
+                    'sampling_seed': self.sampling_seed,
+                    'sample_count': self.sample_count,
+                    'input_uncertainty_model': (
+                        self.input_uncertainty_model.model_dump(mode='json')
+                    ),
                     'parent_robustness_spec_id': self.parent_robustness_spec_id,
                     'parent_robustness_spec_sha256': (
                         self.parent_robustness_spec_sha256
