@@ -170,7 +170,6 @@ jobs:
             --build-dir $env:MFEM_BUILD_DIR `
             --work-dir $work `
             --output $env:PORTAL_OUTPUT `
-            --build-s $env:MFEM_PORTAL_BUILD_S `
             --blocked-reason "$env:MFEM_PORTAL_BLOCK_REASON"
 
       - name: Show MFEM Portal outcome
