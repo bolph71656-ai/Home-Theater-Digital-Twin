@@ -287,6 +287,6 @@ Measurementの旧 `quality_status` 等は既存import互換として保持する
 
 品質判定は一つのscoreへ縮約しない。clipping、SNR、usable band、timing、polarity、IR window/truncation、calibration provenance、repeatabilityを独立判定し、証拠不足を `UNKNOWN` または `NOT_EVALUATED` とする。`FAIL` は明示的に不適合な証拠がある場合だけ使用する。
 
-AcquisitionContextは既存設計上の別authorityである。Report側はID/hash参照のみを保持し、存在しないContextを推測生成しない。phase配列の存在だけではcommon timingを成立させず、reference identity、clock/sample rate、delay correction等の明示証拠を要求する。
+AcquisitionContextは既存設計上の別authorityである。Report側はID/hash/source-kind参照のみを保持し、存在しないContextを推測生成しない。source-kindがunknownの参照ではcontext依存claimを開放しない。phase配列の存在だけではcommon timingを成立させず、reference identity、clock/sample rate、delay correction等の明示証拠を要求する。calibrated responseはさらにno-clipping、SNR、usable band、calibration provenanceを要求する。
 
 retakeは別Measurementとして保持し、旧reportを上書きしない。supersedes/selected lineageはappend-onlyとし、O60のpreregistered calibration/holdout assignmentや既存validation evidenceを自動変更しない。詳細は[Measurement quality authority](MEASUREMENT_QUALITY.md)を参照。
