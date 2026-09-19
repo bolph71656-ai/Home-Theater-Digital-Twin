@@ -640,14 +640,17 @@ def make_raw_mesh_repair_lineage_ref(
 
 
 def repaired_triangle_ids(mesh: RepairedRawMesh) -> tuple[str, ...]:
-    return tuple(
-        f"repaired-raw-triangle:{_semantic_hash({
-            'repaired_mesh_id': mesh.repaired_mesh_id,
-            'triangle_index': index,
-            'triangle': triangle.model_dump(mode='json'),
-        })}"
-        for index, triangle in enumerate(mesh.triangles)
-    )
+    identifiers: list[str] = []
+    for index, triangle in enumerate(mesh.triangles):
+        identity = _semantic_hash(
+            {
+                'repaired_mesh_id': mesh.repaired_mesh_id,
+                'triangle_index': index,
+                'triangle': triangle.model_dump(mode='json'),
+            }
+        )
+        identifiers.append(f'repaired-raw-triangle:{identity}')
+    return tuple(identifiers)
 
 
 def serialize_raw_mesh_repair_plan(plan: RawMeshRepairPlan) -> str:
