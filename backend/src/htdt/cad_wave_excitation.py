@@ -192,8 +192,10 @@ def build_acoustic_wave_excitation_authority(
     approximation_note: str,
 ) -> AcousticWaveExcitationAuthority:
     sample_tuple = tuple(samples)
-    if not sample_tuple:
-        raise ValueError('wave-excitation authority requires at least one sample')
+    if len(sample_tuple) < 2:
+        raise ValueError(
+            'wave-excitation authority requires at least two frequency samples'
+        )
     frequencies = [float(item.frequency_hz) for item in sample_tuple]
     if frequencies != sorted(frequencies) or len(frequencies) != len(set(frequencies)):
         raise ValueError('wave-excitation frequencies must be unique and sorted')
