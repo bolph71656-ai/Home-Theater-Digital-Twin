@@ -223,6 +223,26 @@ def test_missing_source_is_rejected_and_measured_requirement_fails_closed() -> N
     assert evaluation.results[0].status == 'UNKNOWN'
     assert evaluation.results[0].reason_code == 'measurement_evidence_required'
 
+    measured_evaluation = evaluate_standards_profile(
+        profile=profile,
+        target=evaluation.target,
+        observations=(
+            CriterionObservation(
+                criterion_id='measured-only',
+                observed_value=0.5,
+                unit='m',
+                evidence_basis='measured',
+                evidence_refs=_evidence('measurement'),
+                provided_inputs=('measured_input',),
+                capabilities=('measurement-capability-v1',),
+            ),
+        ),
+        created_at_utc=NOW,
+    )
+    assert measured_evaluation.results[0].status == 'PASS'
+    assert measured_evaluation.results[0].evidence_basis == 'measured'
+    assert measured_evaluation.evaluation_id != evaluation.evaluation_id
+
 
 def test_published_boundaries_and_angle_wrap_are_explicit() -> None:
     rp22_profiles = tuple(rp22_spatial_profile(level) for level in range(1, 5))
