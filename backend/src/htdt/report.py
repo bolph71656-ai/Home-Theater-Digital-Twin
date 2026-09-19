@@ -972,7 +972,10 @@ def _projector_report_block(summary: InstallationProjectorSummary | None) -> str
         f'</tr></thead><tbody>{sightlines}</tbody></table>'
         '<h3>Collision / clearance</h3><table><thead><tr>'
         '<th>A</th><th>B</th><th>Status</th><th>Intersects/violates clearance</th>'
-        f'</tr></thead><tbody>{collisions}</tbody></table></section>'
+        f'</tr></thead><tbody>{collisions}</tbody></table>'
+        '<details><summary>Exact projector authority summary</summary><pre>'
+        f'{escape(json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=2))}'
+        '</pre></details></section>'
     )
 
 
@@ -1000,7 +1003,10 @@ def _standards_report_block(summary: InstallationStandardsSummary | None) -> str
         f'<code>{escape(summary.evaluation_sha256 or "UNKNOWN")}</code></p>'
         '<p class="muted">Criterion truth is reported directly; no aggregate compliance score or hard-constraint policy is inferred.</p>'
         '<table><thead><tr><th>Criterion</th><th>Status</th><th>Observed</th><th>Unit</th>'
-        f'<th>Target entities</th><th>Source/reference</th></tr></thead><tbody>{rows}</tbody></table></section>'
+        f'<th>Target entities</th><th>Source/reference</th></tr></thead><tbody>{rows}</tbody></table>'
+        '<details><summary>Exact standards authority summary</summary><pre>'
+        f'{escape(json.dumps(summary.model_dump(mode="json"), ensure_ascii=False, indent=2))}'
+        '</pre></details></section>'
     )
 
 
