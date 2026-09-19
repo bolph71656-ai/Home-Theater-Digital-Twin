@@ -90,6 +90,8 @@ Canonical JSON serializers/deserializers are provided for:
 - `R120CompiledGeometry`
 - `R120LeakPortalDiagnostic`
 
+`R120GeometryCompilerRepository` also provides append-only SQLite persistence in the native CAD database. Reopen validates the persisted compiled authority against the exact immutable SceneRevision id/content hash and the exact embedded SemanticAcousticGeometry id/hash. Diagnostic reopen validates the exact persisted compiled geometry id/hash before returning evidence.
+
 Model validators recompute identities on reopen, so stale/tampered hashes fail closed.
 
 ## Focused fixtures
