@@ -4,6 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from htdt.cad_measurement_models import CadFrequencyResponseDataset
 from htdt.cad_measurement_quality import (
@@ -227,8 +228,20 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
     quality_repository.save_report(report)
     assert quality_repository.latest_report(record.measurement_id) == report
 
+    with pytest.raises(ValidationError):
+        report.retake_recommendation = 'RETAKE'
+
     tampered = report.model_copy(update={'measurement_sha256': '0' * 64})
     with pytest.raises(ValueError, match='measurement hash mismatch'):
+        quality_repository.save_report(tampered)
+    tampered = report.model_copy(update={'dataset_sha256': '0' * 64})
+    with pytest.raises(ValueError, match='dataset hash mismatch'):
+        quality_repository.save_report(tampered)
+    tampered = report.model_copy(update={'raw_asset_sha256': '0' * 64})
+    with pytest.raises(ValueError, match='raw asset hash mismatch'):
+        quality_repository.save_report(tampered)
+    tampered = report.model_copy(update={'scene_revision_id': 'tampered-revision'})
+    with pytest.raises(ValueError, match='SceneRevision/entity/measurement-point binding mismatch'):
         quality_repository.save_report(tampered)
 
 
