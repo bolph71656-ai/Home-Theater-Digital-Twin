@@ -196,6 +196,49 @@ def _validate_authority(manifest, fixture) -> None:
         raise ValueError('radiation fixture capability authority changed')
     if len(fixture.regions) != 1 or fixture.regions[0].region_id != 'room':
         raise ValueError('radiation fixture region authority changed')
+    region = fixture.regions[0]
+    expected_vertices = {
+        'room-v000': (0.0, 0.0, 0.0),
+        'room-v100': (6.0, 0.0, 0.0),
+        'room-v110': (6.0, 4.0, 0.0),
+        'room-v010': (0.0, 4.0, 0.0),
+        'room-v001': (0.0, 0.0, 2.5),
+        'room-v101': (6.0, 0.0, 2.5),
+        'room-v111': (6.0, 4.0, 2.5),
+        'room-v011': (0.0, 4.0, 2.5),
+    }
+    actual_vertices = {
+        item.vertex_id: _position(item.position) for item in region.vertices
+    }
+    if actual_vertices != expected_vertices:
+        raise ValueError('radiation fixture room geometry authority changed')
+
+    expected_face_boundaries = {
+        'room-zmin': 'b-rigid',
+        'room-zmax': 'b-rigid',
+        'room-ymin': 'b-rigid',
+        'room-ymax': 'b-rigid',
+        'room-xmin': 'b-rigid',
+        'room-xmax': 'b-interface',
+    }
+    actual_face_boundaries = {
+        item.face_id: item.boundary_id for item in region.faces
+    }
+    if actual_face_boundaries != expected_face_boundaries:
+        raise ValueError('radiation fixture face/boundary authority changed')
+
+    material_by_id = {item.material_id: item for item in fixture.materials}
+    boundary_by_id = {item.boundary_id: item for item in fixture.boundaries}
+    rigid_binding = boundary_by_id.get('b-rigid')
+    interface_binding = boundary_by_id.get('b-interface')
+    if (
+        rigid_binding is None
+        or interface_binding is None
+        or material_by_id[rigid_binding.material_id].wave_model != 'rigid'
+        or material_by_id[interface_binding.material_id].wave_model != 'unsupported'
+    ):
+        raise ValueError('radiation fixture material/boundary mapping authority changed')
+
     if len(fixture.terminations) != 1:
         raise ValueError('radiation fixture must have exactly one termination')
     termination = fixture.terminations[0]
@@ -234,7 +277,11 @@ def _validate_authority(manifest, fixture) -> None:
         or source.normalization != 'volume_velocity_m3_s'
         or float(source.amplitude) != 1.0
         or float(source.phase_deg) != 0.0
+        or source.directivity != 'omnidirectional'
         or _position(receiver.position) != (5.0, 2.0, 1.0)
+        or receiver.calibration_state != 'ideal_flat'
+        or receiver.calibration_profile_id is not None
+        or receiver.timing_reference != 'source_t0'
     ):
         raise ValueError('radiation source/receiver authority changed')
 
