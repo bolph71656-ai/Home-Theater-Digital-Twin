@@ -109,3 +109,5 @@ Those require later typed result adapters and validation authorities.
 6. external artifact authority disappearance fails closed.
 
 RDC usage: 0.
+
+Validation authority: Final PR-head GitHub Actions must pass before merge; no earlier pre-fix run is reused as final evidence.
