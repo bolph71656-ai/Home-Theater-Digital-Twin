@@ -44,7 +44,7 @@ R100A-4 applies the finite-record contract **only** to `wave-rectangular-converg
 - solver `dt` is **not** common authority. It remains a discretization/refinement parameter and therefore `comparison.time_step_s` is null for these fixtures;
 - direct scored-frequency DTFT uses `exp(-i*2*pi*f*n*dt)` at the frozen frequency grid, with no window, filter or zero-padding interpolation;
 - finite-record spectra are `X_T(f)=dt*sum_n x[n]*exp(-i*2*pi*f*n*dt)`;
-- normalized transfer is `H_T(f)=P_T(f)/Q_T(f)` from the pressure and the **actual injected source record** on that same solver time grid;
+- normalized transfer is `H_T(f)=P_T(f)/Q_T(f)` from the pressure and the **actual injected source record** on that same solver time grid; the rectangular complex-convergence observable is therefore explicitly typed as `complex_pressure_transfer_pa_per_m3_s` with unit `Pa/(m3/s)`, not pressure `Pa`;
 - `Q_T(f)` must be finite and non-zero at every scored frequency; otherwise evidence is invalid/BLOCKED rather than replaced by an invented response.
 
 The common `dt` factor cancels in `P_T/Q_T`, but it is still part of the written authority so implementations cannot disagree on Fourier/normalization units. This formalizes the existing intent of the PFFDTD pressure adapter while avoiding any dependency on PFFDTD's internal source-grid scaling.
