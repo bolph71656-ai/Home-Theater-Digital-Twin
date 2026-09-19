@@ -21,6 +21,7 @@ from htdt.cad_standards import (
 )
 from htdt.cad_standards_profiles import (
     auro3d_home_v12_profile,
+    builtin_standards_profiles,
     dolby_atmos_home_5_1_2_profile,
     rp22_spatial_profile,
 )
@@ -347,6 +348,9 @@ def test_published_boundaries_and_angle_wrap_are_explicit() -> None:
 
     auro = auro3d_home_v12_profile()
     assert auro.version == 'rev12-2024-05-16'
+    assert auro.profile_id in {
+        profile.profile_id for profile in builtin_standards_profiles()
+    }
     height_criterion = next(
         criterion
         for criterion in auro.criteria
