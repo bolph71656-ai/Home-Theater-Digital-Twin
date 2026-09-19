@@ -204,6 +204,6 @@ Reportはexact Measurement/Dataset hash、raw asset SHA-256、SceneRevision/cont
 
 品質項目は clipping、noise/SNR、usable frequency band、timing reference、polarity、IR window/truncation、calibration-file provenance、repeatability を独立に `PASS | FAIL | UNKNOWN | NOT_EVALUATED` で保持する。FRのfrequency+dBだけからclipping/SNR/common timing等を推定せず、phase配列だけからcommon timing成立としない。詳細matrixとclaim gateは[Measurement quality authority](MEASUREMENT_QUALITY.md)を正本とする。
 
-downstreamは単一quality scoreではなくclaim別 `ALLOWED | BLOCKED | UNKNOWN` を消費する。FR-onlyはmagnitude表示を維持する一方、phase/arrival/decay/common timing/calibration/repeatabilityを証拠なしに開放しない。要求帯域があるconsumerは明示usable-band evidenceも満たす必要がある。
+downstreamは単一quality scoreではなくclaim別 `ALLOWED | BLOCKED | UNKNOWN` を消費する。FR-onlyはmagnitude表示を維持する一方、phase/arrival/decay/common timing/calibrated response/repeatability/polarityを証拠なしに開放しない。`calibrated_response` はno-clipping、SNR、usable band、calibration provenance、AcquisitionContextを要求する。要求帯域があるconsumerは明示usable-band evidenceも満たす必要がある。
 
 retakeは別Measurementとして保存し、append-only lineageでsupersedesとselected measurementを記録する。旧Measurement/Dataset/Reportは保持し、O50/O60のcalibration/holdout assignmentをretakeへ暗黙転送しない。
