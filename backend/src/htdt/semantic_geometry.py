@@ -306,8 +306,10 @@ class SemanticAcousticGeometry(BaseModel):
     conversion_request: SemanticGeometryConversionRequest
     conversion_request_id: str = Field(pattern=r'^semantic-geometry-request:[0-9a-f]{64}$')
     conversion_profile_semantic_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
-    lineage_root_geometry_hash: str = Field(pattern=r'^[0-9a-f]{64}    vertices: tuple[SemanticVertex, ...]
+    lineage_root_geometry_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     repair_lineage: tuple[RepairLineageStep, ...]
+    derived_geometry_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    vertices: tuple[SemanticVertex, ...]
     triangles: tuple[SemanticTriangle, ...]
     surfaces: tuple[SemanticSurface, ...]
     conversion_findings: tuple[RawMeshDiagnosticFinding, ...]
