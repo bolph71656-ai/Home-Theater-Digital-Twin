@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from itertools import combinations
+import json
 from math import isfinite, sqrt
-from typing import Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -10,10 +12,139 @@ from .comparison import ComparisonError, FrequencyResponse, compare_frequency_re
 
 
 OBJECTIVE_ALGORITHM_VERSION = 'objective-vector-1'
+OBJECTIVE_DEFINITION_VERSION = 'objective-definition-1'
+OBJECTIVE_COMPARISON_TRANSFORM_VERSION = 'identity-physical-value-1'
+
+ObjectiveDirection = Literal['minimize', 'maximize']
+ObjectiveState = Literal['available', 'missing', 'unsupported']
 
 
 class ObjectiveError(ValueError):
     pass
+
+
+def canonical_objective_definition_json(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(',', ':'),
+        allow_nan=False,
+    )
+
+
+def canonical_objective_definition_sha256(value: Any) -> str:
+    return sha256(canonical_objective_definition_json(value).encode('utf-8')).hexdigest()
+
+
+class ObjectiveValidDomain(BaseModel):
+    """Declared physical domain for one objective quantity."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal['finite_real', 'bounded_real']
+    minimum: float | None = None
+    maximum: float | None = None
+    minimum_inclusive: bool = True
+    maximum_inclusive: bool = True
+
+    @model_validator(mode='after')
+    def valid_domain(self) -> 'ObjectiveValidDomain':
+        if self.kind == 'finite_real':
+            if self.minimum is not None or self.maximum is not None:
+                raise ValueError('finite_real objective domain cannot carry bounds')
+            return self
+
+        if self.minimum is None and self.maximum is None:
+            raise ValueError('bounded_real objective domain requires at least one bound')
+        if self.minimum is not None and not isfinite(float(self.minimum)):
+            raise ValueError('objective domain minimum must be finite')
+        if self.maximum is not None and not isfinite(float(self.maximum)):
+            raise ValueError('objective domain maximum must be finite')
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.maximum < self.minimum
+        ):
+            raise ValueError('objective domain maximum must be >= minimum')
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.maximum == self.minimum
+            and not (self.minimum_inclusive and self.maximum_inclusive)
+        ):
+            raise ValueError('objective domain cannot be empty')
+        return self
+
+    def contains(self, value: float) -> bool:
+        numeric = float(value)
+        if not isfinite(numeric):
+            return False
+        if self.kind == 'finite_real':
+            return True
+        if self.minimum is not None:
+            if self.minimum_inclusive:
+                if numeric < self.minimum:
+                    return False
+            elif numeric <= self.minimum:
+                return False
+        if self.maximum is not None:
+            if self.maximum_inclusive:
+                if numeric > self.maximum:
+                    return False
+            elif numeric >= self.maximum:
+                return False
+        return True
+
+
+class ObjectiveDefinition(BaseModel):
+    """Versioned comparison authority for a physical optimization objective."""
+
+    model_config = ConfigDict(frozen=True)
+
+    definition_version: Literal['objective-definition-1'] = OBJECTIVE_DEFINITION_VERSION
+    objective_id: str = Field(min_length=1)
+    quantity: str = Field(min_length=1)
+    unit: str = Field(min_length=1)
+    direction: ObjectiveDirection
+    valid_domain: ObjectiveValidDomain
+    comparison_model_id: str = Field(min_length=1)
+    comparison_model_version: str = Field(min_length=1)
+    comparison_transform_version: Literal[
+        'identity-physical-value-1'
+    ] = OBJECTIVE_COMPARISON_TRANSFORM_VERSION
+
+    def identity_payload(self) -> dict[str, Any]:
+        return self.model_dump(mode='json')
+
+    @property
+    def semantic_hash(self) -> str:
+        return canonical_objective_definition_sha256(self.identity_payload())
+
+    @property
+    def definition_id(self) -> str:
+        return f'objdef-{self.semantic_hash}'
+
+    @classmethod
+    def legacy(
+        cls,
+        *,
+        objective_id: str,
+        unit: str,
+        direction: ObjectiveDirection = 'minimize',
+    ) -> 'ObjectiveDefinition':
+        return cls(
+            objective_id=objective_id,
+            quantity=objective_id,
+            unit=unit,
+            direction=direction,
+            valid_domain=ObjectiveValidDomain(kind='finite_real'),
+            comparison_model_id='legacy-objective-metric',
+            comparison_model_version='1',
+        )
+
+    def derived(self, objective_id: str) -> 'ObjectiveDefinition':
+        return self.model_copy(update={'objective_id': objective_id})
 
 
 class ResponseObjectiveSpec(BaseModel):
@@ -44,15 +175,88 @@ class ObjectiveMetric(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     objective_id: str = Field(min_length=1)
-    value: float
+    value: float | None
     unit: str = Field(min_length=1)
-    direction: Literal['minimize'] = 'minimize'
+    direction: ObjectiveDirection = 'minimize'
+    state: ObjectiveState = 'available'
+    definition: ObjectiveDefinition | None = None
 
     @model_validator(mode='after')
-    def finite_value(self) -> 'ObjectiveMetric':
-        if not isfinite(float(self.value)):
-            raise ValueError('objective metric value must be finite')
+    def valid_metric(self) -> 'ObjectiveMetric':
+        if self.definition is None:
+            if self.direction != 'minimize':
+                raise ValueError('maximize objective requires an explicit ObjectiveDefinition')
+            if self.state != 'available':
+                raise ValueError(
+                    'missing/unsupported objective requires an explicit ObjectiveDefinition'
+                )
+        else:
+            if (
+                self.definition.objective_id != self.objective_id
+                or self.definition.unit != self.unit
+                or self.definition.direction != self.direction
+            ):
+                raise ValueError(
+                    'objective metric id/unit/direction must match ObjectiveDefinition'
+                )
+
+        if self.state == 'available':
+            if self.value is None or not isfinite(float(self.value)):
+                raise ValueError('available objective metric value must be finite')
+            if (
+                self.definition is not None
+                and not self.definition.valid_domain.contains(float(self.value))
+            ):
+                raise ValueError('objective metric value is outside its declared valid domain')
+        elif self.value is not None:
+            raise ValueError('missing/unsupported objective metric must not carry a value')
         return self
+
+    @property
+    def is_legacy_minimize(self) -> bool:
+        return (
+            self.definition is None
+            and self.state == 'available'
+            and self.direction == 'minimize'
+        )
+
+    def effective_definition(self) -> ObjectiveDefinition:
+        if self.definition is not None:
+            return self.definition
+        return ObjectiveDefinition.legacy(
+            objective_id=self.objective_id,
+            unit=self.unit,
+            direction=self.direction,
+        )
+
+    @property
+    def definition_id(self) -> str:
+        return self.effective_definition().definition_id
+
+    def comparison_value(self) -> float:
+        if self.state != 'available' or self.value is None:
+            raise ObjectiveError(
+                f'objective {self.objective_id} is not comparison-eligible: {self.state}'
+            )
+        return float(self.value)
+
+    def identity_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            'objective_id': self.objective_id,
+            'value': self.value,
+            'unit': self.unit,
+            'direction': self.direction,
+        }
+        # Preserve the historical objective-vector-1 hash shape for legacy
+        # minimize metrics while making all new authority explicit.
+        if not self.is_legacy_minimize:
+            payload['state'] = self.state
+            payload['definition'] = (
+                None
+                if self.definition is None
+                else self.definition.model_dump(mode='json')
+            )
+        return payload
 
 
 class ObjectiveVector(BaseModel):
@@ -74,6 +278,13 @@ class ObjectiveVector(BaseModel):
             if metric.objective_id == objective_id:
                 return metric
         raise KeyError(objective_id)
+
+    def identity_payload(self) -> dict[str, Any]:
+        return {
+            'candidate_id': self.candidate_id,
+            'metrics': [metric.identity_payload() for metric in self.metrics],
+            'algorithm_version': self.algorithm_version,
+        }
 
 
 def _comparison(

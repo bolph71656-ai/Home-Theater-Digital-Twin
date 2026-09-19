@@ -27,7 +27,12 @@ from .cad_search_models import (
     CadSearchSpec,
     constraint_workspace_snapshot,
 )
-from .optimization_objectives import ObjectiveMetric, ObjectiveVector
+from .optimization_objectives import (
+    ObjectiveDefinition,
+    ObjectiveError,
+    ObjectiveMetric,
+    ObjectiveVector,
+)
 
 
 ROBUSTNESS_SCHEMA_VERSION = 1
@@ -703,7 +708,7 @@ class PerturbationSample(BaseModel):
             'objective_vector': (
                 None
                 if self.objective_vector is None
-                else self.objective_vector.model_dump(mode='json')
+                else self.objective_vector.identity_payload()
             ),
             'failure_reason': self.failure_reason,
         }
@@ -778,7 +783,8 @@ class RobustnessEvaluation(BaseModel):
     candidate_id: str = Field(min_length=1)
     objective_id: str = Field(min_length=1)
     objective_unit: str = Field(min_length=1)
-    direction: str = Field(min_length=1)
+    direction: Literal['minimize', 'maximize']
+    objective_definition: ObjectiveDefinition | None = None
     nominal_sample_id: str = Field(min_length=1)
     nominal_value: float
     local_sensitivities: tuple[LocalSensitivity, ...]
@@ -820,6 +826,15 @@ class RobustnessEvaluation(BaseModel):
         numeric = (self.nominal_value, self.sampled_worst_value)
         if not all(isfinite(float(value)) for value in numeric):
             raise ValueError('robustness evaluation values must be finite')
+        if self.objective_definition is not None:
+            if (
+                self.objective_definition.objective_id != self.objective_id
+                or self.objective_definition.unit != self.objective_unit
+                or self.objective_definition.direction != self.direction
+            ):
+                raise ValueError(
+                    'robustness objective definition does not match id/unit/direction'
+                )
         if len(self.sample_ids) != len(set(self.sample_ids)):
             raise ValueError('robustness evaluation sample IDs must be unique')
         if self.nominal_sample_id not in self.sample_ids:
@@ -910,6 +925,10 @@ class RobustnessEvaluation(BaseModel):
             'infeasible_sample_ids': list(self.infeasible_sample_ids),
             'failed_sample_ids': list(self.failed_sample_ids),
         }
+        if self.objective_definition is not None:
+            payload['objective_definition'] = self.objective_definition.model_dump(
+                mode='json'
+            )
         if self.sampled_envelope is not None:
             payload.update(
                 {
@@ -1028,9 +1047,9 @@ def _axis_value(document: SceneDocument, axis: UncertaintyAxis) -> float:
     raise ValueError(f'unsupported robustness axis: {axis.parameter}')
 
 
-def _metric_schema(vector: ObjectiveVector) -> tuple[tuple[str, str, str], ...]:
+def _metric_schema(vector: ObjectiveVector) -> tuple[tuple[str, str], ...]:
     return tuple(
-        (metric.objective_id, metric.unit, metric.direction)
+        (metric.objective_id, metric.definition_id)
         for metric in vector.metrics
     )
 
@@ -1067,6 +1086,13 @@ def build_robustness_spec(
         raise ValueError('robustness nominal objective authority mismatch')
     if nominal_objective.candidate_id != candidate.candidate_id:
         raise ValueError('robustness nominal objective candidate mismatch')
+    for metric in nominal_objective.vector.metrics:
+        try:
+            metric.comparison_value()
+        except ObjectiveError as exc:
+            raise ValueError(
+                f'robustness nominal objective is not comparison-eligible: {metric.objective_id}'
+            ) from exc
     if not any(
         ref.source_id == nominal_prediction_result_ref
         for ref in nominal_objective.input_refs
@@ -1356,7 +1382,7 @@ def _make_sample(
         'objective_vector': (
             None
             if objective_result is None
-            else objective_result.objective_vector.model_dump(mode='json')
+            else objective_result.objective_vector.identity_payload()
         ),
         'failure_reason': failure_reason,
     }
@@ -1501,7 +1527,7 @@ def evaluate_local_robustness(
             'objective_vector': (
                 None
                 if result is None
-                else result.objective_vector.model_dump(mode='json')
+                else result.objective_vector.identity_payload()
             ),
             'failure_reason': (
                 failure_reason
@@ -1531,9 +1557,12 @@ def _metric_for_sample(
     if sample.objective_vector is None:
         return None
     try:
-        return sample.objective_vector.metric(objective_id)
+        metric = sample.objective_vector.metric(objective_id)
     except KeyError:
         return None
+    if metric.state != 'available' or metric.value is None:
+        return None
+    return metric
 
 
 def build_robustness_evaluations(
@@ -1660,6 +1689,10 @@ def build_robustness_evaluations(
                 if item.feasible and item.objective_vector is None
             ],
         }
+        if nominal_metric.definition is not None:
+            identity['objective_definition'] = nominal_metric.definition.model_dump(
+                mode='json'
+            )
         digest = canonical_robustness_sha256(identity)
         evaluations.append(
             RobustnessEvaluation(

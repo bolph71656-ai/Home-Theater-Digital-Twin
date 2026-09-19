@@ -54,7 +54,7 @@ def build_objective_evaluation(
         'candidate_id': candidate_id,
         'input_refs': [ref.model_dump(mode='json') for ref in ordered_refs],
         'evaluation_spec': evaluation_spec,
-        'vector': vector.model_dump(mode='json'),
+        'vector': vector.identity_payload(),
     }
     return CadObjectiveEvaluation(
         evaluation_id=new_evaluation_id(),
