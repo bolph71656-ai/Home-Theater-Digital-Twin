@@ -684,7 +684,7 @@ def _pair_metrics(
 def _self_convergence(
     fixture,
     pressures: list[np.ndarray],
-) -> tuple[list[dict[str, object]], tuple[BakeoffObservableEvidence, BakeoffObservableEvidence], bool]:
+) -> tuple[list[dict[str, object]], dict[str, object], bool]:
     if len(pressures) != len(GRID_SPACINGS_M):
         raise ValueError('concave self-convergence requires exactly three grid levels')
     observable_by_id = {item.observable_id: item for item in fixture.observables}
@@ -710,68 +710,42 @@ def _self_convergence(
     )
     final = pair_metrics[-1]
 
-    magnitude_violations: list[str] = []
+    violations: list[str] = []
     if not monotonic:
-        magnitude_violations.append('complex RMS grid-refinement error is not strictly decreasing')
+        violations.append('complex RMS grid-refinement error is not strictly decreasing')
     if float(final['magnitude_max_abs_db']) > float(magnitude.tolerance.absolute):
-        magnitude_violations.append(
+        violations.append(
             f'final h=0.25->0.125 magnitude delta {final["magnitude_max_abs_db"]} dB '
-            f'exceeds frozen {magnitude.tolerance.absolute} dB tolerance'
+            f'exceeds frozen {magnitude.tolerance.absolute} dB candidate-qualification limit'
         )
     if float(final['magnitude_max_relative']) > float(magnitude.tolerance.relative):
-        magnitude_violations.append(
+        violations.append(
             f'final h=0.25->0.125 relative magnitude delta '
             f'{final["magnitude_max_relative"]} exceeds frozen '
-            f'{magnitude.tolerance.relative} tolerance'
+            f'{magnitude.tolerance.relative} candidate-qualification limit'
         )
-
-    phase_violations: list[str] = []
-    if not monotonic:
-        phase_violations.append('complex RMS grid-refinement error is not strictly decreasing')
     if float(final['phase_max_error_deg']) > float(phase.tolerance.phase_deg):
-        phase_violations.append(
+        violations.append(
             f'final h=0.25->0.125 phase delta {final["phase_max_error_deg"]} deg '
-            f'exceeds frozen {phase.tolerance.phase_deg} deg tolerance'
+            f'exceeds frozen {phase.tolerance.phase_deg} deg candidate-qualification limit'
         )
 
-    magnitude_evidence = BakeoffObservableEvidence(
-        observable_id='lroom-fr',
-        status='fail' if magnitude_violations else 'pass',
-        summary=(
-            '; '.join(magnitude_violations)
-            if magnitude_violations
-            else 'PFFDTD exact-concave grid refinement is within the frozen magnitude tolerance.'
+    qualification = {
+        'qualified': not violations,
+        'purpose': (
+            'candidate self-refinement qualification only; this is not '
+            'R100A independent_solver observable scoring'
         ),
-        absolute_error=float(final['magnitude_max_abs_db']),
-        relative_error=float(final['magnitude_max_relative']),
-    )
-    phase_evidence = BakeoffObservableEvidence(
-        observable_id='lroom-phase',
-        status='fail' if phase_violations else 'pass',
-        summary=(
-            '; '.join(phase_violations)
-            if phase_violations
-            else 'PFFDTD exact-concave grid refinement is within the frozen phase tolerance.'
-        ),
-        phase_error_deg=float(final['phase_max_error_deg']),
-    )
-
-    # Frozen observable tolerances remain the only numeric thresholds.
-    for expected, evidence in (
-        (magnitude, magnitude_evidence),
-        (phase, phase_evidence),
-    ):
-        if evidence.status == 'pass':
-            violations = observable_tolerance_violations(expected, evidence)
-            if violations:
-                raise ValueError(
-                    'concave self-convergence passed local checks but central tolerance '
-                    'authority rejected it: ' + '; '.join(violations)
-                )
-
-    qualified = not magnitude_violations and not phase_violations
-    return pair_metrics, (magnitude_evidence, phase_evidence), qualified
-
+        'complex_rms_relative_strictly_decreasing': monotonic,
+        'complex_rms_relative_sequence': sequence,
+        'limits_reused_from_frozen_observables': {
+            'magnitude_absolute_db': float(magnitude.tolerance.absolute),
+            'magnitude_relative': float(magnitude.tolerance.relative),
+            'phase_deg': float(phase.tolerance.phase_deg),
+        },
+        'violations': violations,
+    }
+    return pair_metrics, qualification, not violations
 
 def _raw_candidate_observation(
     fixture,
@@ -1070,7 +1044,7 @@ def _execute(
     output_mb = solver_output_mb + signal_mb
 
     convergence_started = time.perf_counter()
-    convergence, convergence_evidence, self_qualified = _self_convergence(
+    convergence, convergence_qualification, self_qualified = _self_convergence(
         fixture,
         pressures,
     )
@@ -1110,10 +1084,10 @@ def _execute(
             peak_ram_mb=peak_ram_mb,
             disk_mb=disk_mb,
             output_mb=output_mb,
-            observables=convergence_evidence,
             diagnostics=(
                 'Candidate failed its pre-reference exact-concave grid-convergence qualification.',
-                'No independent-reference comparison can promote a non-converged candidate.',
+                *tuple(str(item) for item in convergence_qualification['violations']),
+                'No independent-reference comparison was scored; R100A observable evidence remains absent.',
             ),
         )
     elif resource_violations:
@@ -1131,9 +1105,11 @@ def _execute(
             peak_ram_mb=peak_ram_mb,
             disk_mb=disk_mb,
             output_mb=output_mb,
-            observables=convergence_evidence,
             diagnostics=tuple(
-                ['Candidate self-convergence passed but frozen resource budget failed.']
+                [
+                    'Candidate self-convergence passed but frozen resource budget failed.',
+                    'No independent-reference comparison was scored; R100A observable evidence remains absent.',
+                ]
                 + resource_violations
             ),
         )
@@ -1245,6 +1221,7 @@ def _execute(
         'runtime_versions': _runtime_versions(),
         'levels': levels,
         'self_convergence': convergence,
+        'self_convergence_qualification': convergence_qualification,
         'self_convergence_qualified': self_qualified,
         'resource_violations': resource_violations,
         'reference_status': reference_status,
