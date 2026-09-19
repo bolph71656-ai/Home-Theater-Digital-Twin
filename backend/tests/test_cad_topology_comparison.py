@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from htdt.cad_repository import SceneRepository
-from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity
+from htdt.cad_scene import Position3, RoomPrism, SceneDocument, SceneEntity, Size3
 from htdt.cad_standards import (
     CriterionDefinition,
     CriterionEvidenceRef,
@@ -66,6 +66,7 @@ def _speaker(
         name=role,
         speaker_role=role,
         position=Position3(x_m=x_m, y_m=y_m, z_m=z_m),
+        size_m=Size3(x_m=0.24, y_m=0.28, z_m=0.42),
     )
 
 
