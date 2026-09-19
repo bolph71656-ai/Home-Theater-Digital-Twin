@@ -6,8 +6,10 @@ import pytest
 
 from htdt.comparison import FrequencyResponse
 from htdt.optimization_objectives import (
+    ObjectiveDefinition,
     ObjectiveError,
     ObjectiveMetric,
+    ObjectiveValidDomain,
     ObjectiveVector,
     ResponseObjectiveSpec,
     merge_objective_vectors,
@@ -148,3 +150,235 @@ def test_pareto_rejects_missing_objective_or_duplicate_candidate() -> None:
 
     with pytest.raises(ParetoError):
         pareto_front((vector('a', 1.0, 2.0), vector('a', 2.0, 1.0)))
+
+
+
+def _explicit_definition(
+    objective_id: str,
+    *,
+    quantity: str,
+    unit: str,
+    direction: str,
+    model_id: str = 'fixture-physical-model',
+    model_version: str = '1',
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> ObjectiveDefinition:
+    domain = (
+        ObjectiveValidDomain(kind='finite_real')
+        if minimum is None and maximum is None
+        else ObjectiveValidDomain(
+            kind='bounded_real',
+            minimum=minimum,
+            maximum=maximum,
+        )
+    )
+    return ObjectiveDefinition(
+        objective_id=objective_id,
+        quantity=quantity,
+        unit=unit,
+        direction=direction,
+        valid_domain=domain,
+        comparison_model_id=model_id,
+        comparison_model_version=model_version,
+    )
+
+
+def test_mixed_minimize_maximize_pareto_uses_physical_direction_without_sign_flip() -> None:
+    error = _explicit_definition(
+        'fixture.error',
+        quantity='response_error',
+        unit='dB',
+        direction='minimize',
+        minimum=0.0,
+    )
+    coverage = _explicit_definition(
+        'fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+    def mixed(candidate_id: str, error_value: float, coverage_value: float) -> ObjectiveVector:
+        return ObjectiveVector(
+            candidate_id=candidate_id,
+            metrics=(
+                ObjectiveMetric(
+                    objective_id=error.objective_id,
+                    value=error_value,
+                    unit=error.unit,
+                    direction=error.direction,
+                    definition=error,
+                ),
+                ObjectiveMetric(
+                    objective_id=coverage.objective_id,
+                    value=coverage_value,
+                    unit=coverage.unit,
+                    direction=coverage.direction,
+                    definition=coverage,
+                ),
+            ),
+        )
+
+    result = pareto_front((
+        mixed('a', 1.0, 0.70),
+        mixed('b', 2.0, 0.90),
+        mixed('c', 3.0, 0.60),
+    ))
+
+    assert result.algorithm_version == 'pareto-front-2'
+    assert result.non_dominated_candidate_ids == ('a', 'b')
+    assert result.dominated_by['c'] == ('a', 'b')
+
+
+@pytest.mark.parametrize(
+    ('second_definition', 'second_unit', 'second_direction'),
+    (
+        (
+            _explicit_definition(
+                'fixture.metric',
+                quantity='error',
+                unit='dB',
+                direction='minimize',
+                model_id='other-model',
+            ),
+            'dB',
+            'minimize',
+        ),
+        (
+            _explicit_definition(
+                'fixture.metric',
+                quantity='error',
+                unit='Pa',
+                direction='minimize',
+            ),
+            'Pa',
+            'minimize',
+        ),
+        (
+            _explicit_definition(
+                'fixture.metric',
+                quantity='error',
+                unit='dB',
+                direction='maximize',
+            ),
+            'dB',
+            'maximize',
+        ),
+    ),
+)
+def test_pareto_rejects_incompatible_definition_unit_direction_or_model(
+    second_definition: ObjectiveDefinition,
+    second_unit: str,
+    second_direction: str,
+) -> None:
+    first_definition = _explicit_definition(
+        'fixture.metric',
+        quantity='error',
+        unit='dB',
+        direction='minimize',
+    )
+    first = ObjectiveVector(
+        candidate_id='a',
+        metrics=(
+            ObjectiveMetric(
+                objective_id='fixture.metric',
+                value=1.0,
+                unit='dB',
+                direction='minimize',
+                definition=first_definition,
+            ),
+        ),
+    )
+    second = ObjectiveVector(
+        candidate_id='b',
+        metrics=(
+            ObjectiveMetric(
+                objective_id='fixture.metric',
+                value=2.0,
+                unit=second_unit,
+                direction=second_direction,
+                definition=second_definition,
+            ),
+        ),
+    )
+
+    with pytest.raises(ParetoError, match='definition/unit/direction/model mismatch'):
+        pareto_front((first, second))
+
+
+def test_missing_and_unsupported_objectives_have_no_numeric_substitute() -> None:
+    definition = _explicit_definition(
+        'fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        minimum=0.0,
+        maximum=1.0,
+    )
+    unavailable = ObjectiveMetric(
+        objective_id=definition.objective_id,
+        value=None,
+        unit=definition.unit,
+        direction=definition.direction,
+        state='unsupported',
+        definition=definition,
+    )
+    assert unavailable.value is None
+
+    available = ObjectiveMetric(
+        objective_id=definition.objective_id,
+        value=0.8,
+        unit=definition.unit,
+        direction=definition.direction,
+        definition=definition,
+    )
+    with pytest.raises(ParetoError, match='not comparison-eligible: unsupported'):
+        pareto_front((
+            ObjectiveVector(candidate_id='a', metrics=(available,)),
+            ObjectiveVector(candidate_id='b', metrics=(unavailable,)),
+        ))
+
+
+def test_objective_definition_identity_is_deterministic_and_domain_is_enforced() -> None:
+    first = _explicit_definition(
+        'fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        minimum=0.0,
+        maximum=1.0,
+    )
+    second = _explicit_definition(
+        'fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+    assert first.definition_id == second.definition_id
+    assert first.semantic_hash == second.semantic_hash
+    with pytest.raises(ValueError, match='outside its declared valid domain'):
+        ObjectiveMetric(
+            objective_id=first.objective_id,
+            value=1.1,
+            unit=first.unit,
+            direction=first.direction,
+            definition=first,
+        )
+    with pytest.raises(ValueError, match='requires an explicit ObjectiveDefinition'):
+        ObjectiveMetric(
+            objective_id='fixture.implicit-max',
+            value=1.0,
+            unit='1',
+            direction='maximize',
+        )
+
+
+def test_existing_minimize_only_pareto_retains_legacy_algorithm_identity() -> None:
+    result = pareto_front((vector('a', 1.0, 2.0), vector('b', 2.0, 1.0)))
+    assert result.algorithm_version == 'pareto-front-1'
