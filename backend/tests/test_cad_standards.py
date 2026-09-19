@@ -147,28 +147,23 @@ def test_status_evidence_basis_and_explicit_hard_constraint_semantics() -> None:
     assert by_id['unknown'].missing_capabilities == ('fixture-capability-v1',)
 
     # FAIL is advisory until the user explicitly selects the criterion.
-    assert explicit_hard_constraint_gate(advisory).allowed
-    constrained = evaluate_standards_profile(
-        profile=profile,
-        target=target,
-        observations=observations,
-        created_at_utc=NOW,
-        hard_constraint_ids=('fail',),
-    )
-    gate = explicit_hard_constraint_gate(constrained)
-    assert not gate.allowed
-    assert gate.blocking_criterion_ids == ('fail',)
-
-    unknown_constrained = evaluate_standards_profile(
-        profile=profile,
-        target=target,
-        observations=observations,
-        created_at_utc=NOW,
-        hard_constraint_ids=('unknown',),
-    )
     assert explicit_hard_constraint_gate(
-        unknown_constrained
+        advisory,
+        selected_criterion_ids=(),
+    ).allowed
+    fail_gate = explicit_hard_constraint_gate(
+        advisory,
+        selected_criterion_ids=('fail',),
+    )
+    assert not fail_gate.allowed
+    assert fail_gate.blocking_criterion_ids == ('fail',)
+    assert explicit_hard_constraint_gate(
+        advisory,
+        selected_criterion_ids=('unknown',),
     ).blocking_criterion_ids == ('unknown',)
+
+    # Downstream policy is not part of criterion evidence identity.
+    assert fail_gate.evaluation_id == advisory.evaluation_id
 
 
 def test_missing_source_is_rejected_and_measured_requirement_fails_closed() -> None:
