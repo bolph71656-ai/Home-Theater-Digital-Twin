@@ -227,6 +227,8 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
 
     quality_repository.save_report(report)
     assert quality_repository.latest_report(record.measurement_id) == report
+    reopened_repository = CadMeasurementQualityRepository(measurement_repository)
+    assert reopened_repository.get_report(report.report_id) == report
 
     with pytest.raises(ValidationError):
         report.retake_recommendation = 'RETAKE'
@@ -243,6 +245,43 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
     tampered = report.model_copy(update={'scene_revision_id': 'tampered-revision'})
     with pytest.raises(ValueError, match='SceneRevision/entity/measurement-point binding mismatch'):
         quality_repository.save_report(tampered)
+
+
+
+def test_calibration_match_does_not_open_calibrated_response_without_capture_quality(tmp_path: Path) -> None:
+    revision, measurement_repository, quality_repository = _repositories(tmp_path)
+    record, dataset = _save_measurement(
+        measurement_repository,
+        revision,
+        'cal-match-no-quality',
+        raw=b'cal-match-no-quality',
+        level_reference='spl',
+    )
+    calibration_sha = sha256(b'calibration').hexdigest()
+    report = build_measurement_quality_report(
+        measurement=record,
+        dataset=dataset,
+        evidence=CadMeasurementQualityEvidence(
+            calibration_filename='umik.txt',
+            calibration_file_sha256=calibration_sha,
+            expected_calibration_file_sha256=calibration_sha,
+        ),
+        profile=build_measurement_quality_profile(),
+        acquisition_context=CadAcquisitionContextBinding(
+            acquisition_context_id='acq-cal-match',
+            acquisition_context_sha256=sha256(b'acq-cal-match').hexdigest(),
+        ),
+        report_id='report-cal-match-no-quality',
+        created_at_utc='2026-09-19T00:03:30+00:00',
+    )
+
+    assert report.calibration.status == 'PASS'
+    assert report.clipping.status == 'UNKNOWN'
+    assert report.noise_snr.status == 'UNKNOWN'
+    assert report.usable_frequency_band.status == 'UNKNOWN'
+    assert report.capability('calibrated_response').decision == 'UNKNOWN'
+    assert report.capability('polarity').decision == 'UNKNOWN'
+    quality_repository.save_report(report)
 
 
 def test_calibration_file_mismatch_blocks_calibrated_claim_and_recommends_retake(tmp_path: Path) -> None:
