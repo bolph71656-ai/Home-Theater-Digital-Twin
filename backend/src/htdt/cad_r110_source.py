@@ -17,6 +17,7 @@ from .cad_equipment import (
     FrequencyDomain,
     InterpolationMethod,
     EquipmentDefinition,
+    SensitivityReference,
 )
 from .cad_repository import SceneRevision
 from .cad_scene import (
@@ -197,6 +198,7 @@ class R110CompiledSourceModel(BaseModel):
     frequency_domain_authority: R110FrequencyDomainAuthority
     coherent_phase_available: bool
     phase_reference: str | None = Field(default=None, min_length=1)
+    electrical_sensitivity_reference: SensitivityReference | None = None
     normalization: R110NormalizationSemantics
     interpolation_authority: R110InterpolationAuthorityRef | None = None
 
@@ -225,6 +227,24 @@ class R110CompiledSourceModel(BaseModel):
             raise ValueError(
                 'coherent phase availability must match explicit phase reference'
             )
+        electrical_status = next(
+            (
+                item
+                for item in self.capabilities
+                if item.capability == 'electrical_sensitivity_reference'
+            ),
+            None,
+        )
+        if electrical_status is not None:
+            expected_electrical = (
+                'SUPPORTED'
+                if self.electrical_sensitivity_reference is not None
+                else 'UNSUPPORTED'
+            )
+            if electrical_status.decision != expected_electrical:
+                raise ValueError(
+                    'electrical sensitivity capability does not match compiled reference'
+                )
         capability_names = [item.capability for item in self.capabilities]
         if len(capability_names) != len(set(capability_names)):
             raise ValueError('R110 capability status entries must be unique')
@@ -594,6 +614,11 @@ def compile_r110_source_model(
         'frequency_domain_authority': frequency_domain_authority,
         'coherent_phase_available': complex_data,
         'phase_reference': phase_reference,
+        'electrical_sensitivity_reference': (
+            None
+            if equipment_definition.sensitivity is None
+            else equipment_definition.sensitivity.model_dump(mode='json')
+        ),
         'normalization': R110NormalizationSemantics(
             directivity_normalization=directivity_normalization,
             wave_excitation_reason=wave_reason,
