@@ -69,7 +69,7 @@ class CadMeasurementQualityRepository:
                 '''
             )
 
-    def _validated_report(self, report: CadMeasurementQualityReport) -> None:
+    def _validate_report_bindings(self, report: CadMeasurementQualityReport) -> None:
         measurement = self.measurement_repository.get_measurement(report.measurement_id)
         if measurement is None:
             raise ValueError(f'quality report references unknown measurement: {report.measurement_id}')
@@ -109,9 +109,11 @@ class CadMeasurementQualityRepository:
             ):
                 raise ValueError('repeatability measurement binding mismatch')
 
+    def _validate_current_report(self, report: CadMeasurementQualityReport) -> None:
+        self._validate_report_bindings(report)
         rebuilt = build_measurement_quality_report(
-            measurement=measurement,
-            dataset=dataset,
+            measurement=self.measurement_repository.get_measurement(report.measurement_id),
+            dataset=self.measurement_repository.get_dataset(report.dataset_id),
             evidence=report.evidence,
             profile=report.profile,
             acquisition_context=report.acquisition_context,
@@ -122,7 +124,7 @@ class CadMeasurementQualityRepository:
             raise ValueError('quality report does not match canonical quality algorithm output')
 
     def save_report(self, report: CadMeasurementQualityReport) -> None:
-        self._validated_report(report)
+        self._validate_current_report(report)
         check_native_schema_compatibility(self.path)
         with closing(self._connect()) as connection, connection:
             if connection.execute(
@@ -156,11 +158,11 @@ class CadMeasurementQualityRepository:
                 'SELECT payload_json FROM cad_measurement_quality_reports WHERE report_id=?',
                 (report_id,),
             ).fetchone()
-        return (
-            None
-            if row is None
-            else CadMeasurementQualityReport.model_validate_json(row['payload_json'])
-        )
+        if row is None:
+            return None
+        report = CadMeasurementQualityReport.model_validate_json(row['payload_json'])
+        self._validate_report_bindings(report)
+        return report
 
     def list_reports(self, measurement_id: str) -> tuple[CadMeasurementQualityReport, ...]:
         check_native_schema_compatibility(self.path)
@@ -174,10 +176,13 @@ class CadMeasurementQualityRepository:
                 ''',
                 (measurement_id,),
             ).fetchall()
-        return tuple(
+        reports = tuple(
             CadMeasurementQualityReport.model_validate_json(row['payload_json'])
             for row in rows
         )
+        for report in reports:
+            self._validate_report_bindings(report)
+        return reports
 
     def latest_report(self, measurement_id: str) -> CadMeasurementQualityReport | None:
         reports = self.list_reports(measurement_id)
