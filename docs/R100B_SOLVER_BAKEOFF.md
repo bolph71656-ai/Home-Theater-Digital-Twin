@@ -122,6 +122,19 @@ PR #112 / merge `5725f8f2eecb150773202bf324132a34a40ba492` established the raw-o
 - direct distance, direct delay, first y-min reflection point and reflected path length all passed the R100A tolerances with zero error;
 - the candidate remains reference-only and this evidence does not authorize a wave solver.
 
+### pyroomacoustics stochastic seed / convergence evidence
+
+PR #155 extends the same pinned pyroomacoustics v0.10.1 candidate to the frozen R100A-2 `geometric-seed-repeatability-v1` stochastic gate. Dedicated workflow run `35409411713` completed successfully, but the candidate fixture evidence is **FAIL / non-converged** under the pre-registered controls.
+
+- same seed `20260918` reproduces the exact same raw selected-band histogram SHA-256 on both repeats;
+- extracted decay-curve repeatability remains FAIL because the frozen fine estimator has insufficient positive cumulative energy at 500 Hz / 240 ms;
+- four independent seeds are retained at each 8,192 / 32,768 / 131,072-ray level;
+- coarse and medium seed variation is retained, while all four fine independent seeds are `insufficient_support`; no zero response is invented;
+- the frozen medium-to-fine convergence criterion is therefore not satisfied and no tolerance/fixture control is relaxed;
+- exact R100A/fixture/stochastic-authority/candidate hashes, raw NPZ, official wheel/source provenance and per-budget resource scaling are recorded in `docs/R100B_PYROOM_STOCHASTIC_GATE.md`.
+
+This is valid bakeoff FAIL evidence and is not a production-solver selection.
+
 ### PFFDTD Windows source-checkout feasibility
 
 PR #113 / merge `ea5f5b8631e5097d37788210b2652b3089a28807` proved that pinned PFFDTD `aa319f6c86517cb95aabfae8656277da62c3ead5` can execute its existing Python/Numba CPU pipeline on GitHub-hosted Windows.
@@ -189,7 +202,7 @@ The numerical bakeoff proceeds in this order:
 1. R100A-2 replay and PFFDTD rectangular complex-pressure convergence: **implemented in PR #116**; workflow completes but the candidate convergence evidence remains FAIL under frozen tolerances.
 2. explicit complex-impedance reflection: **native PFFDTD DEF boundary/reflection-function gate PASS in PR #151**; this does not claim spatial FDTD incident/reflected propagation validation.
 3. extend the merged MFEM rigid reference toward concave/impedance fixtures where it provides independent authority;
-4. extend pyroomacoustics v0.10.1 evidence from direct/first-reflection to stochastic-seed/convergence controls;
+4. pyroomacoustics v0.10.1 stochastic seed/convergence: **implemented in PR #155**; workflow PASS, fixture FAIL/non-converged because the frozen fine estimator has insufficient support;
 5. cover remaining concave/portal/obstacle and applicable external-measured/resource gates without inventing unsupported capabilities;
 6. publish the R100B ADR only after applicable hard gates have real evidence.
 
