@@ -572,14 +572,21 @@ def derive_measurement_capabilities(
             reasons=('phase evidence is not verified',),
         )
 
-    if acquisition_context is None:
+    timing_check = checks['timing_reference']
+    authoritative_context = (
+        acquisition_context is not None
+        and acquisition_context.source_kind != 'unknown'
+    )
+    if timing_check.status == 'FAIL':
+        common_timing = _status_to_capability('common_timing', timing_check)
+    elif not authoritative_context:
         common_timing = CadMeasurementCapability(
             claim='common_timing',
             decision='UNKNOWN',
-            reasons=('AcquisitionContext binding is unavailable',),
+            reasons=('authoritative AcquisitionContext binding is unavailable',),
         )
     else:
-        common_timing = _status_to_capability('common_timing', checks['timing_reference'])
+        common_timing = _status_to_capability('common_timing', timing_check)
 
     if not evidence.has_impulse_response:
         arrival = CadMeasurementCapability(
@@ -616,17 +623,17 @@ def derive_measurement_capabilities(
         checks['calibration'],
     )
     calibrated_reasons = tuple(check.reason for check in calibrated_checks)
-    if acquisition_context is None:
-        calibrated = CadMeasurementCapability(
-            claim='calibrated_response',
-            decision='UNKNOWN',
-            reasons=calibrated_reasons + ('AcquisitionContext binding is unavailable',),
-        )
-    elif any(check.status == 'FAIL' for check in calibrated_checks):
+    if any(check.status == 'FAIL' for check in calibrated_checks):
         calibrated = CadMeasurementCapability(
             claim='calibrated_response',
             decision='BLOCKED',
             reasons=calibrated_reasons,
+        )
+    elif not authoritative_context:
+        calibrated = CadMeasurementCapability(
+            claim='calibrated_response',
+            decision='UNKNOWN',
+            reasons=calibrated_reasons + ('authoritative AcquisitionContext binding is unavailable',),
         )
     elif all(check.status == 'PASS' for check in calibrated_checks):
         calibrated = CadMeasurementCapability(
