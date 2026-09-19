@@ -14,6 +14,7 @@ from .cad_scene import Direction3, Position3
 BenchmarkCapability = Literal[
     'wave_rigid',
     'wave_impedance',
+    'wave_radiation_termination',
     'portal_continuity',
     'geometric_specular',
     'geometric_scattering',
@@ -170,9 +171,27 @@ class BoundaryTermination(BaseModel):
     aperture: tuple[Position3, ...] = Field(min_length=3)
     kind: Literal['radiation', 'anechoic', 'rigid', 'impedance']
     boundary_id: str | None = None
+    radiation_model: Literal['local_first_order_outgoing'] | None = None
+    normal_convention: Literal['outward_from_region'] | None = None
+    characteristic_impedance_model: Literal['rho_c_from_environment'] | None = None
+    pressure_velocity_equation: Literal['p_eq_rho_c_u_n'] | None = None
+    wavenumber_equation: Literal['k_eq_omega_over_c'] | None = None
+    helmholtz_robin_equation: Literal['dp_dn_minus_i_k_p_eq_0'] | None = None
 
     @model_validator(mode='after')
     def boundary_requirement(self) -> 'BoundaryTermination':
+        radiation_fields = (
+            self.radiation_model,
+            self.normal_convention,
+            self.characteristic_impedance_model,
+            self.pressure_velocity_equation,
+            self.wavenumber_equation,
+            self.helmholtz_robin_equation,
+        )
+        if self.kind != 'radiation' and any(value is not None for value in radiation_fields):
+            raise ValueError(
+                'radiation-specific authority is only valid for radiation termination'
+            )
         if self.kind == 'impedance' and self.boundary_id is None:
             raise ValueError('impedance termination requires boundary_id')
         return self
@@ -583,6 +602,12 @@ class AcousticBenchmarkFixture(BaseModel):
             item.wave_model == 'specific_impedance_table' for item in boundary_materials
         ):
             raise ValueError('wave_impedance capability requires explicit phase-bearing impedance data')
+        if 'wave_radiation_termination' in capabilities and not any(
+            item.kind == 'radiation' for item in self.terminations
+        ):
+            raise ValueError(
+                'wave_radiation_termination capability requires an explicit radiation termination'
+            )
         if 'portal_continuity' in capabilities and not self.portals:
             raise ValueError('portal_continuity capability requires an explicit AcousticPortal')
         if 'geometric_specular' in capabilities and not any(
@@ -604,7 +629,7 @@ class AcousticBenchmarkManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal['r100a-2'] = 'r100a-2'
+    schema_version: Literal['r100a-2', 'r100a-3'] = 'r100a-3'
     manifest_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     purpose: str = Field(min_length=1)
@@ -613,6 +638,12 @@ class AcousticBenchmarkManifest(BaseModel):
 
     @model_validator(mode='after')
     def unique_fixture_and_gate_ids(self) -> 'AcousticBenchmarkManifest':
+        expected_revision = {'r100a-2': 2, 'r100a-3': 3}[self.schema_version]
+        if self.revision != expected_revision:
+            raise ValueError(
+                f'{self.schema_version} requires revision {expected_revision}, got {self.revision}'
+            )
+
         fixture_ids = [item.fixture_id for item in self.fixtures]
         gate_ids = [item.gate_id for item in self.hard_gates]
         if len(fixture_ids) != len(set(fixture_ids)):
@@ -640,6 +671,57 @@ class AcousticBenchmarkManifest(BaseModel):
         ]
         if dangling_peers:
             raise ValueError(f'observables reference unknown peer fixtures: {dangling_peers}')
+
+        if self.schema_version == 'r100a-2':
+            for fixture in self.fixtures:
+                if 'wave_radiation_termination' in fixture.required_capabilities:
+                    raise ValueError(
+                        f'R100A-2 fixture {fixture.fixture_id} cannot declare '
+                        'wave_radiation_termination capability'
+                    )
+                for termination in fixture.terminations:
+                    radiation_fields = (
+                        termination.radiation_model,
+                        termination.normal_convention,
+                        termination.characteristic_impedance_model,
+                        termination.pressure_velocity_equation,
+                        termination.wavenumber_equation,
+                        termination.helmholtz_robin_equation,
+                    )
+                    if any(value is not None for value in radiation_fields):
+                        raise ValueError(
+                            f'R100A-2 radiation termination {termination.termination_id} '
+                            'cannot carry R100A-3 radiation semantics'
+                        )
+
+        if self.schema_version == 'r100a-3':
+            for fixture in self.fixtures:
+                radiation_terminations = [
+                    item for item in fixture.terminations if item.kind == 'radiation'
+                ]
+                if not radiation_terminations:
+                    continue
+                if 'wave_radiation_termination' not in fixture.required_capabilities:
+                    raise ValueError(
+                        f'R100A-3 radiation fixture {fixture.fixture_id} must require '
+                        'wave_radiation_termination capability'
+                    )
+                for termination in radiation_terminations:
+                    radiation_fields = (
+                        termination.radiation_model,
+                        termination.normal_convention,
+                        termination.characteristic_impedance_model,
+                        termination.pressure_velocity_equation,
+                        termination.wavenumber_equation,
+                        termination.helmholtz_robin_equation,
+                    )
+                    if termination.boundary_id is None or any(
+                        value is None for value in radiation_fields
+                    ):
+                        raise ValueError(
+                            f'R100A-3 radiation termination {termination.termination_id} '
+                            'requires explicit boundary/model/sign/normal authority'
+                        )
         return self
 
     def canonical_json(self) -> str:

@@ -1,7 +1,7 @@
 # R100A Acoustic Benchmark Authority
 
 > Issue #101 / R-series first implementation slice  
-> Schema: `r100a-2`  
+> Schema: `r100a-3`  
 > Canonical machine-readable manifest: `benchmarks/acoustics/r100a_manifest.json`
 
 ## Revision 2 pressure authority correction
@@ -11,6 +11,26 @@ R100B pressure-field work exposed an omission in revision 1: the research contra
 The complex-pressure convergence observable continues to use the original 0.02 Pa absolute and 2% relative tolerances. Its redundant `phase_deg: 0` field was removed because phase is already contained in the complex RMS error; keeping a second exact-zero-degree requirement would contradict an unsampled numerical convergence test.
 
 Revision 2 changes the manifest semantic SHA-256 intentionally. Revision-1 R100B artifacts remain historical records, but they cannot satisfy current solver-selection gates until replayed against revision 2.
+
+## Revision 3 radiation termination authority
+
+Revision 2 still left `BoundaryTermination(kind='radiation')` mathematically ambiguous. Revision 3 fixes that gap rather than allowing each solver adapter to assign its own meaning to the word `radiation`.
+
+For `wave-explicit-radiation-termination-v1`, R100A-3 now freezes:
+
+- outward normal from the modeled `AcousticRegion`;
+- local first-order outgoing model `p/u_n = rho*c`;
+- `k = omega/c` using the fixture's frozen environment;
+- under `exp(-i*omega*t)`, the equivalent Robin form `dp/dn - i*k*p = 0`;
+- explicit binding to boundary `b-interface` on the x=6 m aperture;
+- dedicated `wave_radiation_termination` capability, distinct from rigid or impedance support;
+- absolute transfer magnitude is explicitly `20*log10(|P/Q| / (1 Pa/(m3/s)))`, so it cannot be confused with SPL dB re 20 uPa.
+
+This is intentionally a local first-order/Sommerfeld-type approximation. It is not described as an exact exterior-domain radiation solution for arbitrary incidence.
+
+The same revision embeds 281 semi-analytical 20–300 Hz reference samples. A repository checker reconstructs them from normalized Neumann transverse modes plus the exact one-dimensional Green function for the frozen Robin boundary. The N=8 -> N=12 modal refinement must remain below `1e-9` complex RMS relative and `1e-8` maximum point-relative error before the N=12 samples are accepted as authority.
+
+Revision 3 intentionally changes the manifest semantic SHA-256. Earlier R100B artifacts remain historical evidence and must replay under the new hash before they can participate in a current selection decision.
 
 ## Purpose
 
@@ -22,7 +42,7 @@ The implementation is intentionally backend-independent:
 
 - `AcousticRegion` owns modeled air volumes.
 - `AcousticPortal` explicitly connects two modeled regions with pressure/velocity continuity semantics.
-- `BoundaryTermination` explicitly terminates an opening when the adjacent volume is not modeled.
+- `BoundaryTermination` explicitly terminates an opening when the adjacent volume is not modeled; radiation termination carries an exact model/sign/normal/impedance authority rather than a label alone.
 - `AcousticObstacle` represents participating solid/thin objects separately from editor visibility.
 - wave material capability and geometric material capability are independent.
 - phase-bearing wave impedance is explicit complex authority; it is never synthesized from scalar absorption.
@@ -90,6 +110,7 @@ The Pydantic authority models reject, among other cases:
 - dangling region/face/material/boundary/source/receiver references;
 - a Portal connecting a region to itself;
 - impedance termination without an impedance boundary;
+- radiation termination without explicit boundary/model/sign/normal/characteristic-impedance authority;
 - `wave_impedance` fixture capability without explicit phase-bearing impedance data;
 - geometric scattering capability without explicit non-zero scattering bands;
 - stochastic ray capability without a fixed seed;

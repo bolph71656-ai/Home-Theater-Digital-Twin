@@ -63,12 +63,12 @@ Performance never rescues a failed correctness gate.
 
 ## Current coverage
 
-The initial candidate capability envelope intentionally leaves two R100A fixtures without an authorized candidate:
+The current candidate capability envelope intentionally leaves two R100A-3 fixtures without an authorized candidate:
 
-- `wave-portal-split-room-v1`;
+- `wave-explicit-radiation-termination-v1`;
 - `hybrid-overlap-continuity-v1`.
 
-That is expected at this stage. Portal semantics must not be claimed until an adapter implements them. Hybrid overlap belongs after compatible wave/geometric evidence exists. The preflight command reports these gaps rather than silently assigning them to an unsuitable backend.
+MFEM now declares `portal_continuity` and PR #160 records a PASS for `wave-portal-split-room-v1`. Radiation termination remains intentionally uncovered until a candidate implements the exact R100A-3 Robin authority; hybrid overlap belongs after compatible wave/geometric evidence exists. The preflight command reports these gaps rather than silently assigning them to an unsuitable backend.
 
 ## Repeatable command
 
@@ -111,6 +111,14 @@ The first external probe is `pyroomacoustics v0.10.1` against `geometric-direct-
 PR #116 intentionally changes R100A identity before pressure-transfer evidence is accepted. Revision 1 omitted air density even though the research contract requires density/sound speed authority. R100A-2 adds explicit density and removes the contradictory duplicate zero-degree phase gate from the complex RMS convergence observable without changing its 0.02 Pa / 2% tolerances.
 
 Because every R100B run binds the whole manifest semantic hash, revision-1 artifacts below remain useful historical measurements but are stale for current solver selection until their dedicated workflows replay against R100A-2. This is expected fail-closed behavior, not a reason to weaken hash binding.
+
+## R100A-3 radiation termination boundary
+
+Issue #161 advances the benchmark authority because `BoundaryTermination(kind='radiation')` in R100A-2 did not define a mathematical boundary condition. R100A-3 freezes a dedicated `wave_radiation_termination` capability and the local first-order outgoing relation `p/u_n=rho*c`, outward normal from the modeled region, `k=omega/c`, and therefore `dp/dn-i*k*p=0` under the global `exp(-i*omega*t)` convention.
+
+The termination fixture also carries a semi-analytical rectangular-waveguide modal reference on the full 20–300 Hz / 1 Hz grid. `scripts/check_r100a_radiation_reference.py` independently reconstructs the reference and checks N=8 -> N=12 modal convergence before accepting the stored samples.
+
+This R100A revision intentionally changes the manifest semantic hash. It does **not** add `wave_radiation_termination` to any candidate merely to make adoption pass. Existing candidate evidence must replay under R100A-3; a later solver adapter may claim the new capability only after implementing and verifying the exact frozen boundary.
 
 ## Accepted external evidence so far
 
@@ -205,7 +213,7 @@ The candidate-manifest update adds `portal_continuity` only as probe permission.
 
 ## Low-band wave adoption profile
 
-R100B numerical runs and the final product-adoption decision are intentionally separate authorities. Historical run hashes remain bound to R100A-2 and the candidate manifest; the final low-band wave-solver selection additionally binds `benchmarks/acoustics/r100b_wave_adoption_profile.json`.
+R100B numerical runs and the final product-adoption decision are intentionally separate authorities. Historical run hashes remain bound to the exact R100A semantic hash and candidate manifest; the final low-band wave-solver selection additionally binds `benchmarks/acoustics/r100b_wave_adoption_profile.json`.
 
 The adoption profile requires one shipping wave candidate to cover and PASS all of:
 
@@ -216,11 +224,11 @@ The adoption profile requires one shipping wave candidate to cover and PASS all 
 - `wave-portal-split-room-v1`;
 - `wave-explicit-radiation-termination-v1`.
 
-The corresponding required capability union is `wave_rigid`, `wave_impedance`, and `portal_continuity`. A candidate cannot make a required fixture disappear from the selection gate merely by omitting a probe capability. Missing capability, missing/non-PASS required fixture, stale adoption-profile binding, or a failed hard gate blocks a `selected` decision.
+The corresponding required capability union is `wave_rigid`, `wave_impedance`, `wave_radiation_termination`, and `portal_continuity`. A candidate cannot make a required fixture disappear from the selection gate merely by omitting a probe capability. Missing capability, missing/non-PASS required fixture, stale adoption-profile binding, or a failed hard gate blocks a `selected` decision.
 
 Geometric-reference fixtures and `hybrid-overlap-continuity-v1` are deliberately deferred from this **low-band wave solver** adoption profile. Their exclusion is explicit scope separation, not implicit PASS evidence. R150/R160 own those later roles.
 
-This profile does not change the R100A-2 semantic hash or invalidate existing numerical artifacts. It only tightens the authority needed to turn evidence into a production selection.
+The adoption profile is independent authority from R100A. R100A-3 separately changes the benchmark semantic hash because radiation semantics were previously incomplete; historical artifacts remain preserved but are stale for current selection until replayed.
 
 ## Next R100B implementation slices
 
@@ -230,8 +238,9 @@ The numerical bakeoff proceeds in this order:
 2. explicit complex-impedance reflection: **native PFFDTD DEF boundary/reflection-function gate PASS in PR #151**; this does not claim spatial FDTD incident/reflected propagation validation.
 3. MFEM concave/impedance independent reference: **implemented in PR #154**; concave p-refinement FAIL, impedance independent complex-R extraction BLOCKED. Do not promote the finest non-converged trace to reference truth;
 4. pyroomacoustics v0.10.1 stochastic seed/convergence: **implemented in PR #155**; workflow PASS, fixture FAIL/non-converged because the frozen fine estimator has insufficient support. Same-seed raw histogram identity is repeatability evidence only;
-5. cover remaining concave/portal/obstacle and applicable external-measured/resource gates without inventing unsupported capabilities;
-6. publish the R100B ADR only after applicable hard gates have real evidence.
+5. R100A-3 explicit radiation termination semantic/reference authority: **Issue #161 implementation in progress**; candidate capability remains intentionally unclaimed until an adapter implements the exact Robin model;
+6. cover remaining PFFDTD spatial concave/reflection, radiation-candidate, obstacle and applicable external-measured/resource gates without inventing unsupported capabilities;
+7. publish the R100B ADR only after applicable hard gates have real evidence.
 
 If no shipping candidate clears the gates, R100B exits with a no-go ADR and a bounded next experiment. It must not force a winner.
 

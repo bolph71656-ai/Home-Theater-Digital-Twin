@@ -9,6 +9,7 @@
   "required_capabilities": [
     "wave_rigid",
     "wave_impedance",
+    "wave_radiation_termination",
     "portal_continuity"
   ],
   "required_fixture_ids": [
@@ -29,6 +30,7 @@
     "This profile is the fail-closed R100B adoption gate for the low-band production wave solver only.",
     "Geometric-reference and hybrid-overlap fixtures remain separate later-role evidence and are not silently treated as passed by this profile.",
     "Candidate probe_capabilities are permission to evaluate a fixture, not proof that the required capability has passed.",
-    "Changing this adoption profile does not alter R100A-2 or historical R100B run hashes; selected decisions bind the exact profile hash."
+    "R100A-3 makes explicit radiation termination a distinct required wave capability; omitting it cannot remove the termination fixture from selection.",
+    "Changing this adoption profile does not rewrite historical R100B run hashes; selected decisions bind the exact profile hash."
   ]
 }
