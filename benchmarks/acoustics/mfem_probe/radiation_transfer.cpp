@@ -28,6 +28,7 @@ struct SampleResult
    double pressure_imag_pa = 0.0;
    int iterations = 0;
    double relative_residual = 0.0;
+   bool converged = false;
 };
 
 struct OrderResult
@@ -267,15 +268,8 @@ OrderResult SolveOrder(
 
       if (!have_initial_guess) { solution = 0.0; }
       gmres.Mult(rhs, solution);
-      if (!gmres.GetConverged())
-      {
-         throw std::runtime_error(
-            "GMRES did not converge at order=" + std::to_string(order)
-            + " frequency_hz=" + std::to_string(frequency_hz)
-            + " iterations=" + std::to_string(gmres.GetNumIterations())
-            + " final_norm=" + std::to_string(gmres.GetFinalNorm()));
-      }
-      have_initial_guess = true;
+      const bool converged = gmres.GetConverged();
+      have_initial_guess = converged;
 
       mfem::BlockVector residual(offsets);
       block_operator.Mult(solution, residual);
@@ -290,6 +284,7 @@ OrderResult SolveOrder(
       sample.pressure_imag_pa = receiver_functional * solution.GetBlock(1);
       sample.iterations = gmres.GetNumIterations();
       sample.relative_residual = relative_residual;
+      sample.converged = converged;
       result.samples.push_back(sample);
       result.max_iterations = std::max(result.max_iterations, sample.iterations);
       result.max_relative_residual =
@@ -325,7 +320,8 @@ void WriteOrder(std::ofstream &os, const OrderResult &value, bool trailing_comma
          << "\"pressure_real_pa\":" << sample.pressure_real_pa << ","
          << "\"pressure_imag_pa\":" << sample.pressure_imag_pa << ","
          << "\"iterations\":" << sample.iterations << ","
-         << "\"relative_residual\":" << sample.relative_residual
+         << "\"relative_residual\":" << sample.relative_residual << ","
+         << "\"converged\":" << (sample.converged ? "true" : "false")
          << "}" << (i + 1 == value.samples.size() ? "" : ",") << "\n";
    }
    os << "      ]\n";
