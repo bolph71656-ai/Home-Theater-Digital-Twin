@@ -123,12 +123,15 @@ class CadRobustnessRepository:
                 (spec.robustness_spec_id,),
             ).fetchone()
             if row is not None:
-                self._same_payload(
-                    str(row['payload_json']),
-                    payload,
-                    label='RobustnessSpec',
+                existing = RobustnessSpec.model_validate_json(
+                    str(row['payload_json'])
                 )
-                return spec
+                if (
+                    existing.robustness_spec_sha256
+                    != spec.robustness_spec_sha256
+                ):
+                    raise ValueError('RobustnessSpec immutable identity conflict')
+                return existing
             connection.execute(
                 """
                 INSERT INTO cad_robustness_specs (
@@ -179,7 +182,12 @@ class CadRobustnessRepository:
         return RobustnessSpec.model_validate_json(str(row['payload_json']))
 
     def save_sample(self, sample: PerturbationSample) -> PerturbationSample:
-        self.get_spec(sample.robustness_spec_id)
+        spec = self.get_spec(sample.robustness_spec_id)
+        if (
+            sample.robustness_spec_sha256 != spec.robustness_spec_sha256
+            or sample.candidate_id != spec.candidate_id
+        ):
+            raise ValueError('PerturbationSample robustness authority mismatch')
         payload = self._payload(sample)
         with self._connect() as connection:
             row = connection.execute(
@@ -191,12 +199,12 @@ class CadRobustnessRepository:
                 (sample.sample_id,),
             ).fetchone()
             if row is not None:
-                self._same_payload(
-                    str(row['payload_json']),
-                    payload,
-                    label='PerturbationSample',
+                existing = PerturbationSample.model_validate_json(
+                    str(row['payload_json'])
                 )
-                return sample
+                if existing.sample_sha256 != sample.sample_sha256:
+                    raise ValueError('PerturbationSample immutable identity conflict')
+                return existing
             connection.execute(
                 """
                 INSERT INTO cad_perturbation_samples (
@@ -251,11 +259,39 @@ class CadRobustnessRepository:
             for row in rows
         )
 
+    def list_reusable_samples(
+        self,
+        spec: RobustnessSpec,
+    ) -> tuple[PerturbationSample, ...]:
+        """Return cache evidence only for the exact immutable O90 spec."""
+
+        persisted = self.get_spec(spec.robustness_spec_id)
+        if persisted.robustness_spec_sha256 != spec.robustness_spec_sha256:
+            raise ValueError('robustness cache spec identity mismatch')
+        samples = self.list_samples(spec.robustness_spec_id)
+        if any(
+            sample.robustness_spec_sha256 != spec.robustness_spec_sha256
+            or sample.candidate_id != spec.candidate_id
+            or sample.model_id != spec.model_id
+            or sample.model_version != spec.model_version
+            or sample.prediction_provider_id != spec.prediction_provider_id
+            or sample.objective_evaluation_spec_sha256
+            != spec.objective_evaluation_spec_sha256
+            for sample in samples
+        ):
+            raise ValueError('robustness cache contains stale sample evidence')
+        return samples
+
     def save_evaluation(
         self,
         evaluation: RobustnessEvaluation,
     ) -> RobustnessEvaluation:
-        self.get_spec(evaluation.robustness_spec_id)
+        spec = self.get_spec(evaluation.robustness_spec_id)
+        if (
+            evaluation.robustness_spec_sha256 != spec.robustness_spec_sha256
+            or evaluation.candidate_id != spec.candidate_id
+        ):
+            raise ValueError('RobustnessEvaluation robustness authority mismatch')
         payload = self._payload(evaluation)
         with self._connect() as connection:
             row = connection.execute(
@@ -267,12 +303,12 @@ class CadRobustnessRepository:
                 (evaluation.evaluation_id,),
             ).fetchone()
             if row is not None:
-                self._same_payload(
-                    str(row['payload_json']),
-                    payload,
-                    label='RobustnessEvaluation',
+                existing = RobustnessEvaluation.model_validate_json(
+                    str(row['payload_json'])
                 )
-                return evaluation
+                if existing.evaluation_sha256 != evaluation.evaluation_sha256:
+                    raise ValueError('RobustnessEvaluation immutable identity conflict')
+                return existing
             connection.execute(
                 """
                 INSERT INTO cad_robustness_evaluations (

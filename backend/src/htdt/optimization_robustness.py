@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from math import asin, cos, degrees, isfinite, radians, sin
-from typing import Any, Callable, Literal, Sequence
+from typing import Any, Callable, Literal, Protocol, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -29,6 +29,7 @@ from .optimization_objectives import ObjectiveMetric, ObjectiveVector
 ROBUSTNESS_SCHEMA_VERSION = 1
 ROBUSTNESS_ALGORITHM_VERSION = 'o90a-local-stencil-1'
 ROBUSTNESS_MULTIDIMENSIONAL_ALGORITHM_VERSION = 'o90b-bounded-design-1'
+ROBUSTNESS_UNCERTAINTY_ALGORITHM_VERSION = 'o90b-uncertainty-design-1'
 RobustnessCandidate = CadCandidate | CadExtendedCandidate
 RobustnessCandidateKind = Literal['cad_candidate', 'extended_candidate']
 RobustnessAxisParameter = Literal[
@@ -148,6 +149,136 @@ class LinkedPerturbationGroup(BaseModel):
         return self
 
 
+class DistributionAxisUncertainty(BaseModel):
+    """Explicit probability distribution for one O90 input axis."""
+
+    model_config = ConfigDict(frozen=True)
+
+    axis_id: str = Field(min_length=1)
+    distribution: Literal['uniform', 'normal']
+    min_delta: float | None = None
+    max_delta: float | None = None
+    mean_delta: float = 0.0
+    stddev: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode='after')
+    def valid_distribution(self) -> 'DistributionAxisUncertainty':
+        values = (self.min_delta, self.max_delta, self.mean_delta, self.stddev)
+        if any(value is not None and not isfinite(float(value)) for value in values):
+            raise ValueError('distribution uncertainty values must be finite')
+        if self.distribution == 'uniform':
+            if self.min_delta is None or self.max_delta is None:
+                raise ValueError('uniform uncertainty requires explicit min/max deltas')
+            if self.max_delta <= self.min_delta:
+                raise ValueError('uniform uncertainty max_delta must exceed min_delta')
+            if self.stddev is not None or self.mean_delta != 0.0:
+                raise ValueError('uniform uncertainty uses only explicit min/max deltas')
+        else:
+            if self.stddev is None:
+                raise ValueError('normal uncertainty requires explicit stddev')
+            if (self.min_delta is None) != (self.max_delta is None):
+                raise ValueError(
+                    'truncated normal uncertainty requires both min/max deltas'
+                )
+            if (
+                self.min_delta is not None
+                and self.max_delta is not None
+                and self.max_delta <= self.min_delta
+            ):
+                raise ValueError('truncated normal max_delta must exceed min_delta')
+        return self
+
+
+class DistributionUncertaintyModel(BaseModel):
+    """Explicit joint probability model with declared independence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_kind: Literal['distribution'] = 'distribution'
+    model_id: str = Field(min_length=1)
+    dependence: Literal['independent'] = 'independent'
+    axes: tuple[DistributionAxisUncertainty, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def unique_axes(self) -> 'DistributionUncertaintyModel':
+        axis_ids = [axis.axis_id for axis in self.axes]
+        if len(axis_ids) != len(set(axis_ids)):
+            raise ValueError('distribution uncertainty axis IDs must be unique')
+        return self
+
+
+class ExplicitPerturbationState(BaseModel):
+    """One supplied empirical/discrete joint perturbation state."""
+
+    model_config = ConfigDict(frozen=True)
+
+    state_id: str = Field(min_length=1)
+    parameter_deltas: dict[str, float]
+    probability_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode='after')
+    def finite_deltas(self) -> 'ExplicitPerturbationState':
+        if any(not isfinite(float(value)) for value in self.parameter_deltas.values()):
+            raise ValueError('explicit perturbation deltas must be finite')
+        return self
+
+
+def _validate_explicit_state_weights(
+    states: Sequence[ExplicitPerturbationState],
+    *,
+    label: str,
+) -> None:
+    state_ids = [state.state_id for state in states]
+    if len(state_ids) != len(set(state_ids)):
+        raise ValueError(f'{label} state IDs must be unique')
+    weighted = [state.probability_weight is not None for state in states]
+    if any(weighted) and not all(weighted):
+        raise ValueError(
+            f'{label} probability weights must be supplied for every state or none'
+        )
+    if all(weighted):
+        total = sum(float(state.probability_weight or 0.0) for state in states)
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(f'{label} explicit probability weights must sum to 1')
+
+
+class EmpiricalUncertaintyModel(BaseModel):
+    """Supplied empirical samples; repeated observations are not implicit weights."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_kind: Literal['empirical'] = 'empirical'
+    model_id: str = Field(min_length=1)
+    samples: tuple[ExplicitPerturbationState, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_samples(self) -> 'EmpiricalUncertaintyModel':
+        _validate_explicit_state_weights(self.samples, label='empirical uncertainty')
+        return self
+
+
+class DiscreteUncertaintyModel(BaseModel):
+    """Finite alternatives, probabilistic only when all weights are explicit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_kind: Literal['discrete'] = 'discrete'
+    model_id: str = Field(min_length=1)
+    states: tuple[ExplicitPerturbationState, ...] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_states(self) -> 'DiscreteUncertaintyModel':
+        _validate_explicit_state_weights(self.states, label='discrete uncertainty')
+        return self
+
+
+ExplicitInputUncertaintyModel = (
+    DistributionUncertaintyModel
+    | EmpiricalUncertaintyModel
+    | DiscreteUncertaintyModel
+)
+
+
 class RobustnessSpec(BaseModel):
     """Immutable O90A authority bound to existing Scene/Search/Objective evidence."""
 
@@ -177,14 +308,17 @@ class RobustnessSpec(BaseModel):
     sampling_strategy: Literal[
         'deterministic_local_stencil',
         'deterministic_multidimensional_bounded',
+        'deterministic_multidimensional_uncertainty',
     ] = 'deterministic_local_stencil'
     algorithm_version: Literal[
         'o90a-local-stencil-1',
         'o90b-bounded-design-1',
+        'o90b-uncertainty-design-1',
     ] = ROBUSTNESS_ALGORITHM_VERSION
     sampling_seed: int | None = None
-    sample_count: int | None = Field(default=None, ge=3)
+    sample_count: int | None = Field(default=None, ge=1)
     linked_groups: tuple[LinkedPerturbationGroup, ...] = ()
+    input_uncertainty_model: ExplicitInputUncertaintyModel | None = None
     parent_robustness_spec_id: str | None = Field(default=None, min_length=1)
     parent_robustness_spec_sha256: str | None = Field(
         default=None,
@@ -229,21 +363,30 @@ class RobustnessSpec(BaseModel):
                 self.sampling_seed is not None
                 or self.sample_count is not None
                 or self.linked_groups
+                or self.input_uncertainty_model is not None
                 or self.parent_robustness_spec_id is not None
                 or self.parent_robustness_spec_sha256 is not None
             ):
                 raise ValueError('O90A local spec cannot carry O90B sampling metadata')
-        else:
+        elif self.sampling_strategy == 'deterministic_multidimensional_bounded':
             if (
                 self.algorithm_version
                 != ROBUSTNESS_MULTIDIMENSIONAL_ALGORITHM_VERSION
             ):
                 raise ValueError(
-                    'multidimensional robustness spec requires O90B algorithm version'
+                    'bounded multidimensional robustness requires O90B bounded version'
                 )
             if self.sampling_seed is None or self.sample_count is None:
                 raise ValueError(
-                    'multidimensional robustness spec requires seed and sample_count'
+                    'bounded multidimensional robustness requires seed and sample_count'
+                )
+            if self.sample_count < 3:
+                raise ValueError(
+                    'bounded multidimensional robustness requires at least three samples'
+                )
+            if self.input_uncertainty_model is not None:
+                raise ValueError(
+                    'bounded interval sampling cannot carry a probability model'
                 )
             if (
                 self.parent_robustness_spec_id is None
@@ -252,6 +395,62 @@ class RobustnessSpec(BaseModel):
                 raise ValueError(
                     'multidimensional robustness spec requires exact O90A parent'
                 )
+        else:
+            if self.algorithm_version != ROBUSTNESS_UNCERTAINTY_ALGORITHM_VERSION:
+                raise ValueError(
+                    'explicit uncertainty sampling requires O90B uncertainty version'
+                )
+            if self.sample_count is None or self.input_uncertainty_model is None:
+                raise ValueError(
+                    'explicit uncertainty sampling requires model and sample_count'
+                )
+            if self.linked_groups:
+                raise ValueError(
+                    'probabilistic/empirical/discrete models do not reuse bounded linked groups'
+                )
+            if (
+                self.parent_robustness_spec_id is None
+                or self.parent_robustness_spec_sha256 is None
+            ):
+                raise ValueError(
+                    'explicit uncertainty spec requires exact O90A parent'
+                )
+            model = self.input_uncertainty_model
+            if isinstance(model, DistributionUncertaintyModel):
+                if self.sampling_seed is None:
+                    raise ValueError(
+                        'distribution uncertainty requires an explicit sampling seed'
+                    )
+                if self.sample_count < 3:
+                    raise ValueError(
+                        'distribution uncertainty requires nominal plus at least two samples'
+                    )
+                model_axis_ids = {axis.axis_id for axis in model.axes}
+                if model_axis_ids != known_axis_ids:
+                    raise ValueError(
+                        'distribution uncertainty must define every robustness axis'
+                    )
+            else:
+                if self.sampling_seed is not None:
+                    raise ValueError(
+                        'empirical/discrete enumeration has no sampling seed'
+                    )
+                states = (
+                    model.samples
+                    if isinstance(model, EmpiricalUncertaintyModel)
+                    else model.states
+                )
+                if self.sample_count != 1 + len(states):
+                    raise ValueError(
+                        'empirical/discrete sample_count must equal nominal plus states'
+                    )
+                for state in states:
+                    unknown = set(state.parameter_deltas) - known_axis_ids
+                    if unknown:
+                        raise ValueError(
+                            'explicit uncertainty state references unknown axes: '
+                            f'{sorted(unknown)}'
+                        )
         try:
             candidate_payload = json.loads(self.candidate_payload_json)
         except json.JSONDecodeError as exc:
@@ -314,6 +513,21 @@ class RobustnessSpec(BaseModel):
                     ),
                 }
             )
+        elif self.sampling_strategy == 'deterministic_multidimensional_uncertainty':
+            assert self.input_uncertainty_model is not None
+            payload.update(
+                {
+                    'sampling_seed': self.sampling_seed,
+                    'sample_count': self.sample_count,
+                    'input_uncertainty_model': (
+                        self.input_uncertainty_model.model_dump(mode='json')
+                    ),
+                    'parent_robustness_spec_id': self.parent_robustness_spec_id,
+                    'parent_robustness_spec_sha256': (
+                        self.parent_robustness_spec_sha256
+                    ),
+                }
+            )
         return payload
 
 
@@ -323,20 +537,26 @@ class LocalPerturbation(BaseModel):
     sample_id: str = Field(min_length=1)
     sample_index: int = Field(ge=0)
     axis_id: str | None = None
-    step: Literal['nominal', 'minus', 'plus', 'multidimensional']
+    step: Literal['nominal', 'minus', 'plus', 'multidimensional', 'uncertainty']
     parameter_deltas: dict[str, float]
+    uncertainty_model_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    uncertainty_item_id: str | None = Field(default=None, min_length=1)
+    probability_weight: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @model_validator(mode='after')
     def valid_delta(self) -> 'LocalPerturbation':
         if self.step == 'nominal':
             if self.axis_id is not None or self.parameter_deltas:
                 raise ValueError('nominal perturbation must not contain an axis delta')
-        elif self.step == 'multidimensional':
+        elif self.step in {'multidimensional', 'uncertainty'}:
             if self.axis_id is not None:
                 raise ValueError(
-                    'multidimensional perturbation must not name one local axis'
+                    'multi-axis perturbation must not name one local axis'
                 )
-            if not self.parameter_deltas:
+            if self.step == 'multidimensional' and not self.parameter_deltas:
                 raise ValueError(
                     'multidimensional perturbation requires parameter deltas'
                 )
@@ -371,8 +591,14 @@ class PerturbationSample(BaseModel):
     candidate_id: str = Field(min_length=1)
     sample_index: int = Field(ge=0)
     axis_id: str | None = None
-    step: Literal['nominal', 'minus', 'plus', 'multidimensional']
+    step: Literal['nominal', 'minus', 'plus', 'multidimensional', 'uncertainty']
     parameter_deltas: dict[str, float]
+    uncertainty_model_sha256: str | None = Field(
+        default=None,
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    uncertainty_item_id: str | None = Field(default=None, min_length=1)
+    probability_weight: float | None = Field(default=None, ge=0.0, le=1.0)
     perturbed_scene_content_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     feasible: bool
     g10_results: tuple[CadConstraintResult, ...] = ()
@@ -409,13 +635,27 @@ class PerturbationSample(BaseModel):
                 )
         if not self.feasible and self.objective_vector is not None:
             raise ValueError('infeasible perturbations must remain unscored evidence')
+        uncertainty_values = (
+            self.uncertainty_model_sha256,
+            self.uncertainty_item_id,
+            self.probability_weight,
+        )
+        if any(value is not None for value in uncertainty_values):
+            if self.uncertainty_model_sha256 is None or self.uncertainty_item_id is None:
+                raise ValueError(
+                    'uncertainty sample provenance requires model hash and item ID'
+                )
+            if self.step not in {'nominal', 'uncertainty'}:
+                raise ValueError(
+                    'explicit uncertainty provenance requires uncertainty/nominal step'
+                )
         expected = canonical_robustness_sha256(self.identity_payload())
         if expected != self.sample_sha256:
             raise ValueError('perturbation sample evidence hash mismatch')
         return self
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             'schema_version': self.schema_version,
             'sample_id': self.sample_id,
             'robustness_spec_id': self.robustness_spec_id,
@@ -447,6 +687,15 @@ class PerturbationSample(BaseModel):
             ),
             'failure_reason': self.failure_reason,
         }
+        if self.uncertainty_model_sha256 is not None:
+            payload.update(
+                {
+                    'uncertainty_model_sha256': self.uncertainty_model_sha256,
+                    'uncertainty_item_id': self.uncertainty_item_id,
+                    'probability_weight': self.probability_weight,
+                }
+            )
+        return payload
 
 
 class LocalSensitivity(BaseModel):
@@ -525,7 +774,24 @@ class RobustnessEvaluation(BaseModel):
         default=None,
         pattern=r'^[0-9a-f]{64}$',
     )
-    percentile_semantics: Literal['not_available_bounded_interval'] | None = None
+    percentile_semantics: Literal[
+        'not_available_bounded_interval',
+        'not_available_empirical_unweighted',
+        'not_available_discrete_unweighted',
+        'explicit_probability_model',
+    ] | None = None
+    probability_semantics: Literal[
+        'explicit_distribution',
+        'explicit_empirical_weights',
+        'explicit_discrete_weights',
+    ] | None = None
+    mean_value: float | None = None
+    constraint_violation_probability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+    probability_sample_ids: tuple[str, ...] = ()
     evaluation_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     created_at_utc: str = Field(min_length=1)
 
@@ -552,15 +818,50 @@ class RobustnessEvaluation(BaseModel):
                     'multidimensional robustness summary must be complete'
                 )
             assert self.sampled_envelope is not None
-            if self.sampled_envelope.percentile_values is not None:
-                raise ValueError(
-                    'bounded interval sampling cannot expose percentile values'
-                )
             if (
                 self.sampled_envelope.sampled_min_sample_id not in self.sample_ids
                 or self.sampled_envelope.sampled_max_sample_id not in self.sample_ids
             ):
                 raise ValueError('sampled envelope samples must belong to evaluation')
+            unavailable = {
+                'not_available_bounded_interval',
+                'not_available_empirical_unweighted',
+                'not_available_discrete_unweighted',
+            }
+            if self.percentile_semantics in unavailable:
+                if self.sampled_envelope.percentile_values is not None:
+                    raise ValueError(
+                        'non-probabilistic uncertainty cannot expose percentiles'
+                    )
+                if (
+                    self.probability_semantics is not None
+                    or self.mean_value is not None
+                    or self.constraint_violation_probability is not None
+                    or self.probability_sample_ids
+                ):
+                    raise ValueError(
+                        'non-probabilistic uncertainty cannot expose probability outputs'
+                    )
+            else:
+                if self.sampled_envelope.percentile_values is None:
+                    raise ValueError(
+                        'explicit probability summary requires percentile values'
+                    )
+                if (
+                    self.probability_semantics is None
+                    or self.mean_value is None
+                    or self.constraint_violation_probability is None
+                    or not self.probability_sample_ids
+                ):
+                    raise ValueError(
+                        'explicit probability summary requires complete probability outputs'
+                    )
+                if not set(self.probability_sample_ids).issubset(self.sample_ids):
+                    raise ValueError(
+                        'probability samples must belong to robustness evaluation'
+                    )
+        if self.mean_value is not None and not isfinite(float(self.mean_value)):
+            raise ValueError('robustness mean value must be finite')
         expected = canonical_robustness_sha256(self.identity_payload())
         if expected != self.evaluation_sha256:
             raise ValueError('robustness evaluation identity hash mismatch')
@@ -598,7 +899,56 @@ class RobustnessEvaluation(BaseModel):
                     'percentile_semantics': self.percentile_semantics,
                 }
             )
+        if (
+            self.probability_semantics is not None
+            or self.mean_value is not None
+            or self.constraint_violation_probability is not None
+            or self.probability_sample_ids
+        ):
+            payload.update(
+                {
+                    'probability_semantics': self.probability_semantics,
+                    'mean_value': self.mean_value,
+                    'constraint_violation_probability': (
+                        self.constraint_violation_probability
+                    ),
+                    'probability_sample_ids': list(self.probability_sample_ids),
+                }
+            )
         return payload
+
+
+class RobustnessSampleCache(Protocol):
+    """Append-only cache authority for exact O90 sample reuse."""
+
+    def save_spec(self, spec: RobustnessSpec) -> RobustnessSpec: ...
+
+    def list_reusable_samples(
+        self,
+        spec: RobustnessSpec,
+    ) -> tuple[PerturbationSample, ...]: ...
+
+    def save_sample(self, sample: PerturbationSample) -> PerturbationSample: ...
+
+    def save_evaluations(
+        self,
+        evaluations: tuple[RobustnessEvaluation, ...],
+    ) -> tuple[RobustnessEvaluation, ...]: ...
+
+
+class RobustnessExecutionResult(BaseModel):
+    """One resumable O90 execution attempt."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal['completed', 'cancelled']
+    robustness_spec_id: str = Field(min_length=1)
+    robustness_spec_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    samples: tuple[PerturbationSample, ...]
+    evaluations: tuple[RobustnessEvaluation, ...] = ()
+    reused_sample_ids: tuple[str, ...] = ()
+    computed_sample_ids: tuple[str, ...] = ()
+
 
 
 def _semantic_id(prefix: str, digest: str) -> str:

@@ -1,6 +1,6 @@
 # O90 — Robust / Tolerance-aware Optimization
 
-> Status: **O90A + bounded multidimensional O90B slice implemented / canonical O90B remainder + O90C–E planned** — tracking: [Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140) / O90B remainder: [Issue #146](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/146)
+> Status: **O90A + canonical O90B implemented / O90C–E planned** — tracking: [Issue #140](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/140) / O90B: [Issue #146](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/146)
 >
 > This document is the detailed authority for O90. Implementation order remains `docs/IMPLEMENTATION_ROADMAP.md`.
 >
@@ -498,7 +498,7 @@ A selected candidate can show position/aim tolerance evidence in 3D with clear d
 - O40 robust Pareto integration;
 - cancel/cache/resume.
 
-Implemented bounded O90B slice: PR #149 adds deterministic multidimensional bounded sampling, explicit linked-axis design, feasible/infeasible retention, sampled envelopes, feasible fraction and O40-compatible nominal vs `sampled_worst` Pareto dimensions. Issue #146 remains open for the canonical O90B remainder: explicit distribution/empirical/discrete uncertainty semantics plus cancel/cache/resume/stale safeguards.
+PR #149 provides the bounded multidimensional foundation. The Issue #146 completion adds explicit distribution/empirical/discrete uncertainty semantics, probability-gated mean/percentile/constraint-violation outputs, and exact cancel/cache/resume/stale safeguards. Probability is never inferred from bounded intervals or unweighted empirical/discrete states. O90B is complete at this authority boundary; O90C multi-fidelity/scheduler integration remains a separate later slice.
 
 ### O90C — multi-fidelity / adaptive robustness
 
