@@ -936,3 +936,66 @@ def test_o90b_cancel_cache_resume_and_stale_reuse_protection(tmp_path) -> None:
             evaluator=_o90b_linear_evaluator,
             created_at_utc='2026-09-19T00:20:00+00:00',
         )
+
+
+
+def test_o90b_bounded_cancel_resume_reuses_pr149_samples(tmp_path) -> None:
+    from htdt.optimization_robustness_multidimensional import (
+        derive_multidimensional_robustness_spec,
+        execute_multidimensional_robustness,
+    )
+
+    revision, constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    spec = derive_multidimensional_robustness_spec(
+        base_spec,
+        sample_count=5,
+        seed=91,
+        created_at_utc='2026-09-19T00:21:00+00:00',
+    )
+    repository = CadRobustnessRepository(tmp_path / 'o90b-bounded-resume.sqlite3')
+    cancel_calls = {'count': 0}
+
+    def cancel_after_one_perturbation() -> bool:
+        cancel_calls['count'] += 1
+        return cancel_calls['count'] > 2
+
+    cancelled = execute_multidimensional_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        cache=repository,
+        cancel_requested=cancel_after_one_perturbation,
+        created_at_utc='2026-09-19T00:22:00+00:00',
+    )
+    assert cancelled.status == 'cancelled'
+    assert len(cancelled.samples) == 2
+
+    replay_spec = derive_multidimensional_robustness_spec(
+        base_spec,
+        sample_count=5,
+        seed=91,
+        created_at_utc='2026-09-19T00:22:30+00:00',
+    )
+    assert replay_spec.robustness_spec_sha256 == spec.robustness_spec_sha256
+
+    resumed = execute_multidimensional_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=replay_spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        cache=repository,
+        created_at_utc='2026-09-19T00:22:00+00:00',
+    )
+    assert resumed.status == 'completed'
+    assert resumed.reused_sample_ids == tuple(
+        sample.sample_id for sample in cancelled.samples
+    )
+    assert len(resumed.computed_sample_ids) == spec.sample_count - len(
+        cancelled.samples
+    )
+    assert repository.list_samples(spec.robustness_spec_id) == resumed.samples
