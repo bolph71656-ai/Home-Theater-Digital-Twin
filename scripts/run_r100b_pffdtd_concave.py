@@ -801,11 +801,10 @@ def _raw_candidate_observation(
     disk_mb: float,
     output_mb: float,
 ) -> RawFixtureObservation:
-    source_q = float(fixture.sources[0].amplitude)
     magnitude_samples: list[RawObservationSample] = []
     phase_samples: list[RawObservationSample] = []
-    for frequency_hz, pressure_value in zip(frequencies_hz, pressure, strict=True):
-        transfer = complex(pressure_value) / source_q
+    for frequency_hz, transfer_value in zip(frequencies_hz, pressure, strict=True):
+        transfer = complex(transfer_value)
         key = f'f={float(frequency_hz):.12g}Hz'
         magnitude_samples.append(
             RawObservationSample(
@@ -897,6 +896,14 @@ def _reference_observations(
     raw_by_id = {item.observable_id: item for item in raw.observations}
     if set(raw_by_id) != {'lroom-fr', 'lroom-phase'}:
         raise ValueError('independent reference observable ids differ from concave authority')
+    expected_by_id = {item.observable_id: item for item in fixture.observables}
+    for observable_id, observation in raw_by_id.items():
+        expected = expected_by_id[observable_id]
+        if observation.kind != expected.kind or observation.unit != expected.unit:
+            raise ValueError(
+                f'independent reference {observable_id} kind/unit differs from concave authority: '
+                f'{observation.kind}/{observation.unit} != {expected.kind}/{expected.unit}'
+            )
     return raw_by_id, payload
 
 
