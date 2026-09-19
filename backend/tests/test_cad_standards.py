@@ -40,7 +40,7 @@ SOURCE = CriterionSource(
 def _criterion(
     criterion_id: str,
     *,
-    maximum: float,
+    maximum: float = 1.0,
     domain: str = 'room',
     capability: str = 'fixture-capability-v1',
 ) -> CriterionDefinition:
