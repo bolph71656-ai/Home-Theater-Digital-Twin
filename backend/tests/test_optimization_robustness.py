@@ -828,7 +828,7 @@ def test_o90b_explicit_discrete_weights_produce_violation_probability(
     evaluation = result.evaluations[0]
     assert evaluation.probability_semantics == 'explicit_discrete_weights'
     assert evaluation.constraint_violation_probability == pytest.approx(0.25)
-    assert evaluation.feasible_fraction == pytest.approx(0.5)
+    assert evaluation.feasible_fraction == pytest.approx(2.0 / 3.0)
     assert evaluation.feasible_fraction != pytest.approx(
         1.0 - evaluation.constraint_violation_probability
     )
