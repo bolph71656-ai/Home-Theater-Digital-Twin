@@ -1041,43 +1041,61 @@ def _execute(
         reference_status['reason'] = reason
     else:
         payload = json.loads(reference_artifact.read_text(encoding='utf-8'))
+        reference_errors: list[str] = []
         if payload.get('r100a_semantic_hash') != benchmark.semantic_hash():
-            raise ValueError('independent reference R100A semantic hash is stale')
+            reference_errors.append('independent reference R100A semantic hash is stale')
         if payload.get('candidate_manifest_hash') != candidates.semantic_hash():
-            raise ValueError('independent reference candidate-manifest hash is stale')
-        reference_by_id, payload = _reference_observations(
-            fixture,
-            reference_artifact,
-        )
-        cross_evidence = _cross_solver_evidence(fixture, raw, reference_by_id)
-        reference_status.update(
-            {
-                'qualified': True,
-                'artifact_schema': payload.get('schema_version'),
-                'reference_run_id': payload.get('bakeoff_run', {}).get('run_id'),
-            }
-        )
-        status = 'pass' if all(item.status == 'pass' for item in cross_evidence) else 'fail'
-        fixture_evidence = BakeoffFixtureEvidence(
-            fixture_id=fixture.fixture_id,
-            status=status,
-            evidence_ref=evidence_ref,
-            adapter_id=ADAPTER_ID,
-            adapter_version=ADAPTER_VERSION,
-            backend_version=candidate.source_commit_sha[:12],
-            precision='float64',
-            compile_s=compile_s,
-            solve_s=solve_s,
-            postprocess_s=postprocess_s,
-            peak_ram_mb=peak_ram_mb,
-            disk_mb=disk_mb,
-            output_mb=output_mb,
-            observables=cross_evidence,
-            diagnostics=(
-                'Candidate passed pre-reference grid-convergence qualification.',
-                'Finest h=0.125 m trace is scored only against a separately qualified independent reference.',
-            ),
-        )
+            reference_errors.append('independent reference candidate-manifest hash is stale')
+        if payload.get('concave_reference_outcome') != 'pass':
+            reference_errors.append(
+                f'independent reference outcome is {payload.get("concave_reference_outcome")!r}, not PASS'
+            )
+
+        if reference_errors:
+            reason = '; '.join(reference_errors)
+            fixture_evidence = _blocked_fixture(candidate, reason)
+            reference_status.update(
+                {
+                    'qualified': False,
+                    'artifact_schema': payload.get('schema_version'),
+                    'reference_run_id': payload.get('bakeoff_run', {}).get('run_id'),
+                    'reason': reason,
+                }
+            )
+        else:
+            reference_by_id, payload = _reference_observations(
+                fixture,
+                reference_artifact,
+            )
+            cross_evidence = _cross_solver_evidence(fixture, raw, reference_by_id)
+            reference_status.update(
+                {
+                    'qualified': True,
+                    'artifact_schema': payload.get('schema_version'),
+                    'reference_run_id': payload.get('bakeoff_run', {}).get('run_id'),
+                }
+            )
+            status = 'pass' if all(item.status == 'pass' for item in cross_evidence) else 'fail'
+            fixture_evidence = BakeoffFixtureEvidence(
+                fixture_id=fixture.fixture_id,
+                status=status,
+                evidence_ref=evidence_ref,
+                adapter_id=ADAPTER_ID,
+                adapter_version=ADAPTER_VERSION,
+                backend_version=candidate.source_commit_sha[:12],
+                precision='float64',
+                compile_s=compile_s,
+                solve_s=solve_s,
+                postprocess_s=postprocess_s,
+                peak_ram_mb=peak_ram_mb,
+                disk_mb=disk_mb,
+                output_mb=output_mb,
+                observables=cross_evidence,
+                diagnostics=(
+                    'Candidate passed pre-reference grid-convergence qualification.',
+                    'Finest h=0.125 m trace is scored only against a separately qualified independent reference.',
+                ),
+            )
 
     run = BakeoffRun(
         run_id=f'pffdtd-concave-{os.environ.get("GITHUB_RUN_ID", "manual")}',
