@@ -52,9 +52,10 @@
       "gpu_path_status": "probe_pending",
       "required_representation": "volume_mesh",
       "probe_capabilities": [
-        "wave_rigid",
+        "portal_continuity",
         "wave_impedance",
-        "portal_continuity"
+        "wave_radiation_termination",
+        "wave_rigid"
       ],
       "notes": [
         "Acts as the primary independent wave reference/production alternative in R100B.",
