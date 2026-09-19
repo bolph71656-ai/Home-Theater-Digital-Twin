@@ -207,7 +207,7 @@ def rp22_spatial_profile(level: int) -> StandardsProfile:
 
 
 def dolby_atmos_home_5_1_2_profile() -> StandardsProfile:
-    """Public Dolby 5.1.2 speaker azimuth ranges from Figure 12."""
+    """Public Dolby 5.1.2 azimuth ranges mapped to HTDT signed azimuth.\n\n    HTDT uses 0 degrees toward the screen/front, positive toward +X/right,\n    negative toward -X/left, normalized to [-180, 180).\n    """
 
     criteria = (
         CriterionDefinition(
@@ -221,10 +221,9 @@ def dolby_atmos_home_5_1_2_profile() -> StandardsProfile:
             required_capabilities=('layout-angle-v1',),
             rule=CriterionRule(
                 operator='range',
-                minimum=22.0,
-                maximum=30.0,
+                minimum=-30.0,
+                maximum=-22.0,
                 angle_wrap='signed_180',
-                absolute_value=True,
             ),
         ),
         CriterionDefinition(
@@ -241,7 +240,6 @@ def dolby_atmos_home_5_1_2_profile() -> StandardsProfile:
                 minimum=22.0,
                 maximum=30.0,
                 angle_wrap='signed_180',
-                absolute_value=True,
             ),
         ),
         CriterionDefinition(
@@ -255,10 +253,9 @@ def dolby_atmos_home_5_1_2_profile() -> StandardsProfile:
             required_capabilities=('layout-angle-v1',),
             rule=CriterionRule(
                 operator='range',
-                minimum=90.0,
-                maximum=110.0,
+                minimum=-110.0,
+                maximum=-90.0,
                 angle_wrap='signed_180',
-                absolute_value=True,
             ),
         ),
         CriterionDefinition(
@@ -275,7 +272,6 @@ def dolby_atmos_home_5_1_2_profile() -> StandardsProfile:
                 minimum=90.0,
                 maximum=110.0,
                 angle_wrap='signed_180',
-                absolute_value=True,
             ),
         ),
     )
