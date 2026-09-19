@@ -123,11 +123,11 @@ class CadRobustnessRepository:
                 (spec.robustness_spec_id,),
             ).fetchone()
             if row is not None:
-                self._same_payload(
-                    str(row['payload_json']),
-                    payload,
-                    label='RobustnessSpec',
+                existing = RobustnessSpec.model_validate_json(
+                    str(row['payload_json'])
                 )
+                if existing != spec:
+                    raise ValueError('RobustnessSpec immutable identity conflict')
                 return spec
             connection.execute(
                 """
@@ -191,11 +191,11 @@ class CadRobustnessRepository:
                 (sample.sample_id,),
             ).fetchone()
             if row is not None:
-                self._same_payload(
-                    str(row['payload_json']),
-                    payload,
-                    label='PerturbationSample',
+                existing = PerturbationSample.model_validate_json(
+                    str(row['payload_json'])
                 )
+                if existing != sample:
+                    raise ValueError('PerturbationSample immutable identity conflict')
                 return sample
             connection.execute(
                 """
@@ -251,6 +251,29 @@ class CadRobustnessRepository:
             for row in rows
         )
 
+    def list_reusable_samples(
+        self,
+        spec: RobustnessSpec,
+    ) -> tuple[PerturbationSample, ...]:
+        """Return cache evidence only for the exact immutable O90 spec."""
+
+        persisted = self.get_spec(spec.robustness_spec_id)
+        if persisted != spec:
+            raise ValueError('robustness cache spec identity mismatch')
+        samples = self.list_samples(spec.robustness_spec_id)
+        if any(
+            sample.robustness_spec_sha256 != spec.robustness_spec_sha256
+            or sample.candidate_id != spec.candidate_id
+            or sample.model_id != spec.model_id
+            or sample.model_version != spec.model_version
+            or sample.prediction_provider_id != spec.prediction_provider_id
+            or sample.objective_evaluation_spec_sha256
+            != spec.objective_evaluation_spec_sha256
+            for sample in samples
+        ):
+            raise ValueError('robustness cache contains stale sample evidence')
+        return samples
+
     def save_evaluation(
         self,
         evaluation: RobustnessEvaluation,
@@ -267,11 +290,11 @@ class CadRobustnessRepository:
                 (evaluation.evaluation_id,),
             ).fetchone()
             if row is not None:
-                self._same_payload(
-                    str(row['payload_json']),
-                    payload,
-                    label='RobustnessEvaluation',
+                existing = RobustnessEvaluation.model_validate_json(
+                    str(row['payload_json'])
                 )
+                if existing != evaluation:
+                    raise ValueError('RobustnessEvaluation immutable identity conflict')
                 return evaluation
             connection.execute(
                 """
