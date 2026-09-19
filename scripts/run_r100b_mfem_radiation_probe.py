@@ -652,21 +652,42 @@ def _raw_finest_observation(
     )
 
 
-def _resource_violations(fixture, raw: RawFixtureObservation) -> list[str]:
+def _resource_violations_values(
+    fixture,
+    *,
+    compile_s: float,
+    solve_s: float,
+    postprocess_s: float,
+    peak_ram_mb: float,
+    disk_mb: float,
+    output_mb: float,
+) -> list[str]:
     budget = fixture.resource_budget
     checks = (
-        ('compile_s', raw.compile_s, float(budget.max_compile_s)),
-        ('solve_s', raw.solve_s, float(budget.max_solve_s)),
-        ('postprocess_s', raw.postprocess_s, float(budget.max_postprocess_s)),
-        ('peak_ram_mb', raw.peak_ram_mb, float(budget.ram_budget_mb)),
-        ('disk_mb', raw.disk_mb, float(budget.disk_budget_mb)),
-        ('output_mb', raw.output_mb, float(budget.max_output_mb)),
+        ('compile_s', compile_s, float(budget.max_compile_s)),
+        ('solve_s', solve_s, float(budget.max_solve_s)),
+        ('postprocess_s', postprocess_s, float(budget.max_postprocess_s)),
+        ('peak_ram_mb', peak_ram_mb, float(budget.ram_budget_mb)),
+        ('disk_mb', disk_mb, float(budget.disk_budget_mb)),
+        ('output_mb', output_mb, float(budget.max_output_mb)),
     )
     return [
         f'{name}={value} exceeds budget {limit}'
         for name, value, limit in checks
         if value > limit
     ]
+
+
+def _resource_violations(fixture, raw: RawFixtureObservation) -> list[str]:
+    return _resource_violations_values(
+        fixture,
+        compile_s=float(raw.compile_s),
+        solve_s=float(raw.solve_s),
+        postprocess_s=float(raw.postprocess_s),
+        peak_ram_mb=float(raw.peak_ram_mb),
+        disk_mb=float(raw.disk_mb),
+        output_mb=float(raw.output_mb),
+    )
 
 
 def _blocked_fixture(*, backend_version: str, reason: str) -> BakeoffFixtureEvidence:
@@ -860,11 +881,8 @@ def _execute(
 
     if solver_violations:
         pre_postprocess_s = time.perf_counter() - post_started
-        raw_finest = _raw_finest_observation(
+        resource_violations = _resource_violations_values(
             fixture,
-            orders[-1],
-            evidence_ref=evidence_ref,
-            backend_version=backend_version,
             compile_s=compile_s,
             solve_s=solve_s,
             postprocess_s=pre_postprocess_s,
@@ -872,7 +890,6 @@ def _execute(
             disk_mb=disk_mb,
             output_mb=output_mb,
         )
-        resource_violations = _resource_violations(fixture, raw_finest)
         fixture_evidence = BakeoffFixtureEvidence(
             fixture_id=fixture.fixture_id,
             status='fail',
