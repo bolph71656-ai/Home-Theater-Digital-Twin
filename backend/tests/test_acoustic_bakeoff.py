@@ -129,7 +129,6 @@ def test_candidate_manifest_is_version_pinned_and_covers_primary_roles() -> None
     profile = _adoption_profile()
     summary = preflight_summary(benchmark, candidates, profile)
     assert set(summary['uncovered_fixture_ids']) == {
-        'wave-portal-split-room-v1',
         'hybrid-overlap-continuity-v1',
     }
     assert summary['adoption_profile']['profile_id'] == profile.profile_id
@@ -137,6 +136,11 @@ def test_candidate_manifest_is_version_pinned_and_covers_primary_roles() -> None
         item for item in summary['candidates'] if item['candidate_id'] == pffdtd.candidate_id
     )
     assert pffdtd_summary['adoption_missing_capabilities'] == ['portal_continuity']
+    mfem_summary = next(
+        item for item in summary['candidates'] if item['candidate_id'] == mfem.candidate_id
+    )
+    assert mfem_summary['adoption_missing_capabilities'] == []
+    assert 'wave-portal-split-room-v1' in mfem_summary['applicable_fixture_ids']
 
 
 def test_adoption_profile_must_classify_every_r100a_fixture() -> None:
