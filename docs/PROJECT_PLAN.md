@@ -98,3 +98,39 @@ Qt shell → editor service → domain/repository/adapterの境界を置く。na
 native GUIをWindowsのDPI/mouse/keyboardで確認する。headless CIを操作品質の証拠にしない。仕様上の目標、過去のPoC報告、今回の再検証を分ける。
 
 変更に適した検証だけを行い、可逆・低影響変更へ不要なtestを追加しない。Issue #170ではcriterion evaluator/profile data/persistenceをGUIやO100D objectiveから分離し、公開sourceに明示された境界だけをbuilt-in criteriaへ採用する。compliance FAILは明示hard-constraint opt-inなしにcandidateを削除しない。N05〜N90/O10〜O80 software pathは完了済み。O90はO90Aとcanonical O90Bまで実装済みで、O90C以降はplanned / 未実装。O100はO100B virtual topology/placement searchまで実装済みで、O100C以降はplanned / 未実装。現在はIssue #101のR100B solver bakeoff、Issue #118のUX100〜UX160 UI/UX overhaul、O90、O100を独立trackとして管理する。R100BはUI非依存で並行可能だが、R110+の新しいuser-facing acoustic inputを現行dock shellへ増築しない。採用gateはR-series fixture/ADRとUX acceptance、進捗は[実装状況](IMPLEMENTATION_STATUS.md)へ残す。
+
+
+## Competitive gap closure lifecycle — Issue #166
+
+HTDTの実用上のgap closureは、既存N/O/R authorityを置換せず、次のend-to-end lifecycleで設計判断とevidenceを切らさないことを製品scopeとする。
+
+```text
+Capture / Import
+→ Semantic 3D Room
+→ Equipment / Directivity / Materials
+→ Standards / Physical Constraints
+→ SystemVariant
+→ Acoustic Prediction
+→ Multi-objective / Robust Optimization
+→ Installation Plan
+→ As-built
+→ Guided Measurement / Quality Gate
+→ Predicted-vs-Measured Validation
+→ Calibration Plan / Export
+→ Re-measure
+→ Validated Final System
+```
+
+Issue #167–#176の正本状態・依存・残gateは[IMPLEMENTATION_ROADMAP](IMPLEMENTATION_ROADMAP.md)の「Competitive gap closure — Issue #166 canonical tracking」を参照する。
+
+製品上の境界は以下を維持する。
+
+- raw visual meshをsilent repairやsolver-ready truthへ昇格しない。
+- EquipmentDefinition、materials、treatment、standards、measurement、DSP evidenceのprovenanceを分離する。
+- no-treatment/current/proposed/as-built/measuredをsynthetic valueで代替しない。
+- unsupported prediction capabilityからSPL、phase、impedance、source strength等を捏造しない。
+- named comparison / Paretoは独立objectiveとexact evidenceを保持し、hidden総合scoreを作らない。
+- REW等の専門engineは再利用し、HTDTはSceneRevision/SystemVariant/measurement/evidence lineageを保持する。
+- domain/software completionと、#118 Windows visual acceptance、#101 numerical solver validation、#83 owned-room evidenceを別gateとして扱う。
+
+2026-09-20時点で#167/#168/#169/#170/#172/#173/#174/#175/#176はdomain acceptance完了。#171はtreatment named comparisonを収束中。#101 arbitrary-room acousticsはsolver-neutral snapshot/dispatch authorityまで進んでいるが、production solver selectionとowned-room numerical validationは未完了である。
