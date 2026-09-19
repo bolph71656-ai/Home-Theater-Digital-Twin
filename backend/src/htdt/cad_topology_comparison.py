@@ -692,6 +692,7 @@ class TopologyComparisonEvaluation(BaseModel):
                 if self.pareto_result is None
                 else self.pareto_result.model_dump(mode='json')
             ),
+            'created_at_utc': self.created_at_utc,
         }
 
 
@@ -868,6 +869,12 @@ def evaluate_topology_comparison(
                 _bundle_required_issues(spec=spec, bundle=bundle)
             )
 
+    ordered_bundles = tuple(
+        bundle_by_variant[item.variant_id]
+        for item in spec.candidate_variants
+        if item.variant_id in bundle_by_variant
+    )
+
     provisionally_eligible = [
         bundle_by_variant[item.variant_id]
         for item in spec.candidate_variants
@@ -955,7 +962,7 @@ def evaluate_topology_comparison(
             variant_id=item.variant_id,
             variant_sha256=item.variant_sha256,
         )
-        for item in bundles
+        for item in ordered_bundles
     )
     payload = {
         'schema_version': TOPOLOGY_COMPARISON_SCHEMA_VERSION,
@@ -968,6 +975,7 @@ def evaluate_topology_comparison(
         'pareto_result': (
             None if pareto_result is None else pareto_result.model_dump(mode='json')
         ),
+        'created_at_utc': created_at_utc,
     }
     digest = canonical_topology_comparison_sha256(payload)
     return TopologyComparisonEvaluation(
