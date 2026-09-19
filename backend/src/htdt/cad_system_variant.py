@@ -85,7 +85,7 @@ class EquipmentBindingRef(BaseModel):
     equipment_definition_id: str = Field(min_length=1)
     equipment_definition_version: str = Field(min_length=1)
     equipment_definition_sha256: str = Field(
-        pattern=r'^[0-9a-f]{64}\\Z',
+        pattern=r"^[0-9a-f]{64}$",
     )
 
 
