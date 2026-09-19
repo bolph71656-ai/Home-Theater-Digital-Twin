@@ -521,18 +521,26 @@ class FrequencyConditioningEvidence(BaseModel):
     state: ConditioningState
     determinant: ComplexPressureValue
     abs_determinant: float = Field(ge=0.0)
-    condition_number_2: float
+    condition_number_2: float | None = Field(default=None, gt=0.0)
+    condition_number_is_infinite: bool = False
     minimum_abs_determinant: float = Field(gt=0.0)
     maximum_condition_number_2: float = Field(gt=1.0)
 
     @model_validator(mode='after')
-    def finite_or_infinite_condition_number(
+    def exact_condition_number_representation(
         self,
     ) -> 'FrequencyConditioningEvidence':
         if not isfinite(float(self.abs_determinant)):
             raise ValueError('determinant magnitude must be finite')
-        if float(self.condition_number_2) <= 0.0:
-            raise ValueError('condition number must be positive')
+        if self.condition_number_is_infinite:
+            if self.condition_number_2 is not None:
+                raise ValueError(
+                    'infinite condition number must not carry a fabricated finite value'
+                )
+        elif self.condition_number_2 is None:
+            raise ValueError('finite condition number requires an exact numeric value')
+        elif not isfinite(float(self.condition_number_2)):
+            raise ValueError('finite condition number representation must be finite')
         return self
 
 
@@ -708,11 +716,15 @@ def _conditioning_evidence(
     condition_number: float,
     policy: SpatialDecompositionConditioningPolicy,
 ) -> FrequencyConditioningEvidence:
+    finite_condition_number = isfinite(float(condition_number))
     return FrequencyConditioningEvidence(
         state=state,
         determinant=ComplexPressureValue.from_complex(determinant),
         abs_determinant=abs_determinant,
-        condition_number_2=condition_number,
+        condition_number_2=(
+            float(condition_number) if finite_condition_number else None
+        ),
+        condition_number_is_infinite=not finite_condition_number,
         minimum_abs_determinant=policy.minimum_abs_determinant,
         maximum_condition_number_2=policy.maximum_condition_number_2,
     )
