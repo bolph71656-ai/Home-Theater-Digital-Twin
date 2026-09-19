@@ -1,6 +1,6 @@
 # 実装ステータス
 
-> 更新: 2026-09-19 / N05〜N90 + O10〜O80 software path実装済み / O90A + canonical O90B実装済み・O90C以降未実装 / O100A–O100B実装済み・O100C以降未実装 / Issue #101 R100A-2 authority + R100B bakeoff実装中 / synthetic acceptance対象 / 実室model gate未通過
+> 更新: 2026-09-19 / N05〜N90 + O10〜O80 software path実装済み / O90A + canonical O90B実装済み・O90C以降未実装 / O100A–O100B実装済み・O100C以降未実装 / Issue #170 StandardsProfile PR #192実装 / Issue #101 R100A-2 authority + R100B bakeoff実装中 / synthetic acceptance対象 / 実室model gate未通過
 > 実装順は[ロードマップ](IMPLEMENTATION_ROADMAP.md)。旧browser/backendの詳細履歴は[2026-09-16 archive](IMPLEMENTATION_STATUS_ARCHIVE_2026-09-16.md)へ保存する。
 
 ## Native CAD — 現在地
@@ -16,6 +16,7 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | O60 tracking | Issue #75 / PR #76（implementation history） / PR #78 merged。final head `ce92d6d04e3ca7463fdf8cfc002e271ffdc00bc3`、CI #427 PASS |
 | O90 tracking | Issue #140 / #146。O90AをPR #145、bounded multidimensional sampling / linked axes / sampled envelope / feasible fraction / O40 robust ParetoをPR #149でmain反映済み。Issue #146 completionでexplicit distribution/empirical/discrete、明示weight/seed semantics、mean/percentile/probability gate、constraint-violation probability、cancel/cache/resume/stale protectionを実装。O90C以降は未実装 |
 | O100 tracking | Issue #142。O100A `SystemVariant` / proposed lifecycleをPR #144、O100B TopologySearchSpec / virtual XYZ・height・aim/toe-in / linked SL/SR / O10+G10+O80 searchをPR #150でmain反映済み。O100C以降はplanned / 未実装 |
+| StandardsProfile tracking | Issue #170 / PR #192。immutable/versioned profile、criterion source/version/reference、PASS/FAIL/UNKNOWN/NOT_APPLICABLE、predicted/measured distinction、exact SceneRevision/SystemVariant/entity binding、append-only historical re-evaluation、user-defined profile、explicit hard-constraint opt-inを実装。built-inは公開sourceで境界を明示できるRP22 spatial/layout subset、Dolby 5.1.2 azimuth range、AURO-3D Rev.12 elevation/opening-angle criteria。DTS:X推定criteria、Auro source上の不整合を補正したazimuth criteria、GUI、O100D SPL/headroom objectiveは未実装 |
 | O60 validation state | software gate実装済み。owned-room calibration/holdout/repeatability evidence未登録のため、実model validatedとは扱わない |
 | N80a last product-code head | `c6cc15e76edbc1ac263911ee084803ca1e32b42c` |
 | N80a accepted gate head | `ff4dc8078eb9ca0b3effaed66b523cff175fea1a` |

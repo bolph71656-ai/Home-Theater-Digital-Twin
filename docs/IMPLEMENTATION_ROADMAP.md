@@ -1,6 +1,6 @@
 # HTDT 実装ロードマップ — CAD-first 正本
 
-> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization＋O100 system expansion計画＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
+> 改訂: 2026-09-19 / N05〜N90・O10〜O80 software completion＋O90 robust optimization＋O100 system expansion＋Issue #170 StandardsProfile＋Issue #101 acoustics＋Issue #118 UI/UX overhaul反映
 > 対象: Windows 11 x64・個人利用
 > **今後の実装順・milestone・受入条件の正本。計画上の成果を実装済みと扱わない。**
 
@@ -23,6 +23,7 @@ PySide6/Qt Widgets＋PyVista/VTK/PyVistaQtを第一実装方針として維持�
 | [PLACEMENT_OPTIMIZATION_ROADMAP](PLACEMENT_OPTIMIZATION_ROADMAP.md) | 予測・最適化の算法詳細。作業順は本書に従う |
 | [O90_ROBUST_OPTIMIZATION](O90_ROBUST_OPTIMIZATION.md) | O90設置誤差・入力不確かさ・robust Paretoのauthority / acceptance |
 | [O100_SYSTEM_EXPANSION_OPTIMIZATION](O100_SYSTEM_EXPANSION_OPTIMIZATION.md) | O100仮想speaker/channel追加・system topology/equipment/placement比較のauthority / acceptance |
+| [STANDARDS_PROFILES](STANDARDS_PROFILES.md) | Issue #170 versioned standards/layout criterion、source provenance、evaluation、hard-constraint opt-in authority |
 | [ACOUSTIC_SOLVER_RESEARCH_2026-09-18](ACOUSTIC_SOLVER_RESEARCH_2026-09-18.md) | Issue #101の数値手法/OSS調査、hybrid solver方針、R100〜R180の技術根拠 |
 | [PLAN_REVIEW](PLAN_REVIEW.md) | 指摘・修正・検証記録 |
 
@@ -133,6 +134,19 @@ O100は既存speakerの位置最適化だけでなく、**現在存在しないS
 | O100G — UX / as-built / measurement loop | O100B〜F + UX120/UX140 | Roomで仮想speaker追加・配置範囲作図、Optimizeで構成比較、proposed ghost表示、選択案→As-built→MeasurementPlan→REW実測のlineage。proposedにfake measured evidenceを付けない |
 
 O100はO80/O90を置換しない。O80はexact topology内のextended placement parameter、O90はexact candidateのtolerance robustnessを担当する。O100のproduction claimも対象observable/modelのO60/R180 gateを迂回しない。channel topologyが違う候補のmulti-channel比較では、per-channel transferと明示excitation/routing scenarioを分離し、未定義のcoherent sumを生成しない。
+
+### Post-0.1 / StandardsProfile — versioned layout/compliance evidence ([Issue #170](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/170))
+
+規格・layout guidanceはSceneの物理truthやO30/O40/O90の最適化scoreではなく、exact SceneRevision / optional SystemVariantへ付く独立criterion evidenceとして扱う。詳細は[StandardsProfile authority](STANDARDS_PROFILES.md)。
+
+| ID | 先行条件 | 成果 / 完了gate |
+|---|---|---|
+| S100 — profile / evaluator authority | SceneRevision + O100A SystemVariant authority | **Issue #170で実装**。immutable/versioned StandardsProfile、criterion source/version/reference、required input/capability/evidence、PASS/FAIL/UNKNOWN/NOT_APPLICABLE、predicted/measured distinction、deterministic semantic identity |
+| S110 — persistence / historical re-evaluation | S100 | **Issue #170で実装**。exact SceneRevision/SystemVariant/entity binding、append-only SQLite persistence/reopen、旧evaluationを保持した明示re-evaluation、user-defined profile |
+| S120 — explicit hard-constraint adapter | S100 | **Issue #170でinterface実装**。選択criterionのみFAIL/UNKNOWNをfail-closedでblock。未選択FAILはcandidateを削除せず、complianceをPareto objectiveへ暗黙変換しない |
+| S130 — workspace integration | S100 + UX140 | 未実装。criterion別provenance/status/evidence basisを表示し、hard constraint opt-inを明示操作にする。GUIはIssue #170 scope外 |
+
+初期built-in dataは公開根拠でpass/fail boundaryを明示できる範囲だけに限定する。CEDIA/CTA-RP22 v1.2はspatial/layout subset、Dolby Atmos Home Theater Installation Guidelines R3.1は5.1.2の公開azimuth range、AURO-3D Home Theater Setup Rev.12は公開Table 3/§3.3.1.1の明示elevation/opening-angle criteriaを収録する。DTS:Xは明示public criterionを確認できないためbuilt-in未収録。Auroのhorizontal azimuth表に見られるsource上の符号不整合は黙って補正せず初期profileから除外する。RP22のSPL/headroom等をO100Dより先に実装したことにはしない。
 
 ### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
 
@@ -272,12 +286,12 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationはO90AをPR #145、O90B bounded foundationをPR #149、canonical O90B completionをPR #156で実装。O90C以降は未実装。O100 system expansion / virtual channel topology optimizationはO100AをPR #144、O100B virtual topology/placement searchをPR #150で実装し、O100C以降は未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationはO90AをPR #145、O90B bounded foundationをPR #149、canonical O90B completionをPR #156で実装。O90C以降は未実装。O100 system expansion / virtual channel topology optimizationはO100AをPR #144、O100B virtual topology/placement searchをPR #150で実装し、O100C以降は未実装。Issue #170 StandardsProfileはversioned criterion/evaluation authority、public-source RP22 spatial subset / Dolby 5.1.2 / AURO-3D Rev.12 explicit layout profiles、criterionごとのentity binding、historical re-evaluation、explicit hard-constraint opt-inを実装し、GUIとO100D acoustic objectivesは未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
 現行O10〜O80 modelをproduction-owned-roomへ昇格させる未完了gateは [Issue #83 — O60R owned-room campaign execution / hardware evidence](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/83)。これはsoftware実装ではなく、実際のspeaker/setup移動とREW測定を伴う実室model validationである。eligible campaign-backed owned-room ValidationRecordとO60R audit PASSが成立するまで、O70 `production_owned_room` recommendationとO80 owned-room directional capabilityはfail-closedを維持する。
 
-新規software feature trackとして [Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101)、[Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102)、[Issue #118 — native UI/UX overhaul](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/118) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#118はUX100〜UX160として、HTMをUX benchmarkにしつつnavigation/workspace/layoutを再構成する。R100Bは並行可能だが、R110+の新しい入力UIを旧dock shellへ増築しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
+新規software feature trackとして [Issue #170 — StandardsProfile](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/170)、[Issue #101 — arbitrary-room hybrid acoustics](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/101)、[Issue #102 — GUI backup/restore/migration](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/102)、[Issue #118 — native UI/UX overhaul](https://github.com/bolph71656-ai/Home-Theater-Digital-Twin/issues/118) がopen。#101はR100〜R180として本書へ組み込み、#83の実測gateを迂回しない。#118はUX100〜UX160として、HTMをUX benchmarkにしつつnavigation/workspace/layoutを再構成する。R100Bは並行可能だが、R110+の新しい入力UIを旧dock shellへ増築しない。#102はN90 backup authorityを再利用するUI改善であり、archive semanticsを二重実装しない。
 
 旧Issue #41等の初期milestoneは履歴としてclose済みであり、今後の再開点として扱わない。追加機能を実装する場合は、この完成済みmainを起点に新しいIssue/PRを作り、既存authority契約を弱めない。
