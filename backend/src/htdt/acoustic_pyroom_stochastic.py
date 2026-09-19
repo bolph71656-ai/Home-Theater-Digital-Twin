@@ -151,6 +151,7 @@ class PyroomStochasticObservation(BaseModel):
     histogram_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
     archive_member: str = Field(min_length=1)
     histogram_total_energy: float = Field(ge=0.0)
+    nonzero_bin_count: int = Field(ge=0)
     setup_s: float = Field(ge=0.0)
     solve_s: float = Field(ge=0.0)
     postprocess_s: float = Field(ge=0.0)
@@ -234,6 +235,24 @@ class StochasticBudgetVariation(BaseModel):
     max_point_stddev_db: float = Field(ge=0.0)
 
 
+class StochasticBudgetResourceScaling(BaseModel):
+    """Descriptive per-budget resource evidence for the independent-seed set."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ray_budget: int = Field(gt=0)
+    receiver_radius_m: float = Field(gt=0.0)
+    histogram_bin_size_s: float = Field(gt=0.0)
+    observation_count: int = Field(ge=1)
+    supported_observation_count: int = Field(ge=0)
+    setup_s_total: float = Field(ge=0.0)
+    solve_s_total: float = Field(ge=0.0)
+    solve_s_mean: float = Field(ge=0.0)
+    postprocess_s_total: float = Field(ge=0.0)
+    peak_ram_mb: float = Field(ge=0.0)
+    raw_output_bytes_total: int = Field(ge=0)
+
+
 class PyroomStochasticEvaluation(BaseModel):
     """Explicitly separates seed replay from statistical convergence."""
 
@@ -252,6 +271,7 @@ class PyroomStochasticEvaluation(BaseModel):
     final_budget_relative_rms_delta: float | None = Field(default=None, ge=0.0)
     finest_budget_seed_stddev_max_db: float | None = Field(default=None, ge=0.0)
     budget_variation: tuple[StochasticBudgetVariation, ...] = ()
+    resource_scaling: tuple[StochasticBudgetResourceScaling, ...] = ()
     insufficient_observation_ids: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
@@ -406,7 +426,7 @@ def evaluate_pyroom_stochastic_fixture(
 
     replay = tuple(observation_by_identity[identity] for identity in replay_identities)
     replay_ok = not any(item.status != 'ok' for item in replay)
-    exact_histogram_replay = replay_ok and len({item.histogram_sha256 for item in replay}) == 1
+    exact_histogram_replay = len({item.histogram_sha256 for item in replay}) == 1
     exact_curve_replay = replay_ok and all(
         item.values_db == replay[0].values_db for item in replay[1:]
     )
@@ -428,37 +448,63 @@ def evaluate_pyroom_stochastic_fixture(
     )
 
     variation: list[StochasticBudgetVariation] = []
+    resource_scaling: list[StochasticBudgetResourceScaling] = []
     means_by_budget: dict[int, tuple[float, ...]] = {}
-    convergence_data_complete = not insufficient
-    if convergence_data_complete:
-        for budget in authority.ray_budgets:
-            observations = tuple(
-                observation_by_identity[(seed, budget, 0)]
-                for seed in authority.independent_seeds
+    independent_insufficient: list[str] = []
+    for budget in authority.ray_budgets:
+        observations = tuple(
+            observation_by_identity[(seed, budget, 0)]
+            for seed in authority.independent_seeds
+        )
+        supported = tuple(item for item in observations if item.status == 'ok')
+        resource_scaling.append(
+            StochasticBudgetResourceScaling(
+                ray_budget=budget,
+                receiver_radius_m=authority.receiver_radius_sequence_m[
+                    authority.ray_budgets.index(budget)
+                ],
+                histogram_bin_size_s=authority.histogram_bin_size_sequence_s[
+                    authority.ray_budgets.index(budget)
+                ],
+                observation_count=len(observations),
+                supported_observation_count=len(supported),
+                setup_s_total=sum(item.setup_s for item in observations),
+                solve_s_total=sum(item.solve_s for item in observations),
+                solve_s_mean=mean(item.solve_s for item in observations),
+                postprocess_s_total=sum(item.postprocess_s for item in observations),
+                peak_ram_mb=max(item.peak_ram_mb for item in observations),
+                raw_output_bytes_total=sum(item.raw_output_bytes for item in observations),
             )
-            point_values = tuple(
-                tuple(item.values_db[index] for item in observations)
-                for index in range(len(expected_keys))
+        )
+        if len(supported) != len(observations):
+            independent_insufficient.extend(
+                item.observation_id for item in observations if item.status != 'ok'
             )
-            mean_curve = tuple(mean(values) for values in point_values)
-            point_stddev = tuple(stdev(values) for values in point_values)
-            means_by_budget[budget] = mean_curve
-            variation.append(
-                StochasticBudgetVariation(
-                    ray_budget=budget,
-                    receiver_radius_m=authority.receiver_radius_sequence_m[
-                        authority.ray_budgets.index(budget)
-                    ],
-                    histogram_bin_size_s=authority.histogram_bin_size_sequence_s[
-                        authority.ray_budgets.index(budget)
-                    ],
-                    seed_count=len(observations),
-                    mean_curve_db=mean_curve,
-                    point_stddev_db=point_stddev,
-                    max_point_stddev_db=max(point_stddev),
-                )
+            continue
+        point_values = tuple(
+            tuple(item.values_db[index] for item in observations)
+            for index in range(len(expected_keys))
+        )
+        mean_curve = tuple(mean(values) for values in point_values)
+        point_stddev = tuple(stdev(values) for values in point_values)
+        means_by_budget[budget] = mean_curve
+        variation.append(
+            StochasticBudgetVariation(
+                ray_budget=budget,
+                receiver_radius_m=authority.receiver_radius_sequence_m[
+                    authority.ray_budgets.index(budget)
+                ],
+                histogram_bin_size_s=authority.histogram_bin_size_sequence_s[
+                    authority.ray_budgets.index(budget)
+                ],
+                seed_count=len(observations),
+                mean_curve_db=mean_curve,
+                point_stddev_db=point_stddev,
+                max_point_stddev_db=max(point_stddev),
             )
+        )
 
+    convergence_data_complete = not independent_insufficient
     deltas: tuple[float, ...] = ()
     monotonic = False
     final_abs: float | None = None
@@ -497,8 +543,8 @@ def evaluate_pyroom_stochastic_fixture(
             )
     else:
         convergence_violations.append(
-            'one or more ray-budget observations have insufficient positive cumulative energy; '
-            'no zero response was substituted'
+            'one or more independent-seed ray-budget observations have insufficient positive '
+            'cumulative energy; no zero response was substituted'
         )
 
     convergence_pass = not convergence_violations
@@ -599,6 +645,7 @@ def evaluate_pyroom_stochastic_fixture(
         final_budget_relative_rms_delta=final_rel,
         finest_budget_seed_stddev_max_db=finest_stddev,
         budget_variation=tuple(variation),
+        resource_scaling=tuple(resource_scaling),
         insufficient_observation_ids=insufficient,
         diagnostics=(
             'Seed repeatability and statistical convergence are evaluated separately.',
