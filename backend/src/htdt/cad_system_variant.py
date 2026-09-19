@@ -14,9 +14,11 @@ from .cad_scene import PHYSICAL_ENTITY_KINDS, SceneDocument, SceneEntity, scene_
 
 SYSTEM_VARIANT_SCHEMA_VERSION = 1
 SYSTEM_VARIANT_AUTHORITY_VERSION = 'o100a-system-variant-2'
+SYSTEM_VARIANT_EQUIPMENT_AUTHORITY_VERSION = 'o100a-system-variant-3'
 SystemVariantAuthorityVersion = Literal[
     'o100a-system-variant-1',
     'o100a-system-variant-2',
+    'o100a-system-variant-3',
 ]
 
 LifecycleState = Literal['current', 'proposed', 'as_built', 'measured']
@@ -73,6 +75,17 @@ class ChannelRoleBinding(BaseModel):
         if len(keys) != len(set(keys)):
             raise ValueError('channel role provenance keys must be unique')
         return self
+
+
+class EquipmentBindingRef(BaseModel):
+    """Exact source-entity reference to immutable O100C equipment authority."""
+
+    model_config = ConfigDict(frozen=True)
+
+    entity_id: str = Field(min_length=1)
+    equipment_definition_id: str = Field(min_length=1)
+    equipment_definition_version: str = Field(min_length=1)
+    equipment_definition_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ProposedEntitySpec(BaseModel):
@@ -180,6 +193,7 @@ class SystemVariant(BaseModel):
     proposed_entities: tuple[ProposedEntitySpec, ...]
     diff: tuple[VariantEntityDiff, ...]
     entity_lifecycle: tuple[EntityLifecycleBinding, ...]
+    equipment_bindings: tuple[EquipmentBindingRef, ...] = ()
     proposal_evidence: tuple[ProposalEvidenceRef, ...] = ()
     provenance: tuple[VariantProvenanceItem, ...] = ()
     created_at_utc: str = Field(min_length=1)
@@ -224,6 +238,17 @@ class SystemVariant(BaseModel):
         }
         if lifecycle_proposed_set != proposed_set:
             raise ValueError('proposed lifecycle bindings must exactly match ProposedEntitySpec set')
+        equipment_entity_ids = [item.entity_id for item in self.equipment_bindings]
+        if len(equipment_entity_ids) != len(set(equipment_entity_ids)):
+            raise ValueError('SystemVariant equipment bindings must be unique per entity')
+        if self.authority_version != 'o100a-system-variant-3' and self.equipment_bindings:
+            raise ValueError(
+                'legacy SystemVariant authority cannot carry equipment bindings'
+            )
+        if not set(equipment_entity_ids).issubset(set(lifecycle_ids)):
+            raise ValueError(
+                'SystemVariant equipment binding references an untracked entity'
+            )
         provenance_keys = [item.key for item in self.provenance]
         if len(provenance_keys) != len(set(provenance_keys)):
             raise ValueError('SystemVariant provenance keys must be unique')
@@ -232,7 +257,7 @@ class SystemVariant(BaseModel):
         return self
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             'schema_version': self.schema_version,
             'authority_version': self.authority_version,
             'name': self.name,
@@ -247,6 +272,12 @@ class SystemVariant(BaseModel):
             'proposal_evidence': [item.model_dump(mode='json') for item in self.proposal_evidence],
             'provenance': [item.model_dump(mode='json') for item in self.provenance],
         }
+        if self.authority_version == 'o100a-system-variant-3':
+            payload['equipment_bindings'] = [
+                item.model_dump(mode='json')
+                for item in self.equipment_bindings
+            ]
+        return payload
 
 
 def _validate_baseline(variant: SystemVariant, baseline: SceneRevision) -> None:
@@ -348,6 +379,7 @@ def build_system_variant(
     proposed_entities: Sequence[ProposedEntitySpec],
     remove_entity_ids: Sequence[str] = (),
     lifecycle_overrides: Sequence[EntityLifecycleBinding] = (),
+    equipment_bindings: Sequence[EquipmentBindingRef] = (),
     proposal_evidence: Sequence[ProposalEvidenceRef] = (),
     provenance: Sequence[VariantProvenanceItem] = (),
     parent_variant_id: str | None = None,
@@ -358,6 +390,7 @@ def build_system_variant(
     roles = tuple(role_bindings)
     proposals = tuple(proposed_entities)
     removals = tuple(dict.fromkeys(remove_entity_ids))
+    binding_items = tuple(equipment_bindings)
     evidence = tuple(proposal_evidence)
     provenance_items = tuple(provenance)
 
@@ -489,9 +522,29 @@ def build_system_variant(
                 EntityLifecycleBinding(entity_id=entity_id, state='current'),
             ))
 
+    binding_entity_ids = [item.entity_id for item in binding_items]
+    if len(binding_entity_ids) != len(set(binding_entity_ids)):
+        raise ValueError('equipment bindings must be unique per source entity')
+    invalid_binding_targets = {
+        item.entity_id
+        for item in binding_items
+        if item.entity_id not in final_by_id
+        or final_by_id[item.entity_id].kind != 'speaker'
+    }
+    if invalid_binding_targets:
+        raise ValueError(
+            'equipment bindings require final speaker source entities: '
+            f'{sorted(invalid_binding_targets)}'
+        )
+
+    authority_version: SystemVariantAuthorityVersion = (
+        SYSTEM_VARIANT_EQUIPMENT_AUTHORITY_VERSION
+        if binding_items
+        else SYSTEM_VARIANT_AUTHORITY_VERSION
+    )
     identity = {
         'schema_version': SYSTEM_VARIANT_SCHEMA_VERSION,
-        'authority_version': SYSTEM_VARIANT_AUTHORITY_VERSION,
+        'authority_version': authority_version,
         'name': name,
         'document_id': baseline.document_id,
         'baseline_revision_id': baseline.revision_id,
@@ -504,7 +557,13 @@ def build_system_variant(
         'proposal_evidence': [item.model_dump(mode='json') for item in evidence],
         'provenance': [item.model_dump(mode='json') for item in provenance_items],
     }
+    if binding_items:
+        identity['equipment_bindings'] = [
+            item.model_dump(mode='json')
+            for item in binding_items
+        ]
     variant = SystemVariant(
+        authority_version=authority_version,
         variant_id=str(uuid4()),
         name=name,
         document_id=baseline.document_id,
@@ -515,6 +574,7 @@ def build_system_variant(
         proposed_entities=proposals,
         diff=tuple(diff),
         entity_lifecycle=tuple(lifecycle),
+        equipment_bindings=binding_items,
         proposal_evidence=evidence,
         provenance=provenance_items,
         created_at_utc=created_at_utc,

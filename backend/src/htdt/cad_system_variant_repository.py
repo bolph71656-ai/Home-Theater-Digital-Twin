@@ -152,8 +152,48 @@ class CadSystemVariantRepository:
                 """
             )
 
+    def _validate_equipment_bindings_persisted(
+        self,
+        variant: SystemVariant,
+    ) -> None:
+        if not variant.equipment_bindings:
+            return
+        with closing(self._connect()) as connection, connection:
+            table = connection.execute(
+                """
+                SELECT 1
+                FROM sqlite_master
+                WHERE type='table' AND name='cad_equipment_definitions'
+                """
+            ).fetchone()
+            if table is None:
+                raise ValueError(
+                    'SystemVariant equipment binding requires persisted EquipmentDefinition authority'
+                )
+            for binding in variant.equipment_bindings:
+                row = connection.execute(
+                    """
+                    SELECT definition_id, version
+                    FROM cad_equipment_definitions
+                    WHERE semantic_sha256=?
+                    """,
+                    (binding.equipment_definition_sha256,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(
+                        'SystemVariant equipment binding references an unpersisted definition'
+                    )
+                if (
+                    row['definition_id'] != binding.equipment_definition_id
+                    or row['version'] != binding.equipment_definition_version
+                ):
+                    raise ValueError(
+                        'SystemVariant equipment binding definition identity mismatch'
+                    )
+
     def save_variant(self, variant: SystemVariant) -> None:
         variant = SystemVariant.model_validate(variant.model_dump(mode='python'))
+        self._validate_equipment_bindings_persisted(variant)
         baseline = self.scene_repository.get(variant.baseline_revision_id)
         if baseline is None:
             raise ValueError('SystemVariant baseline SceneRevision does not exist')
