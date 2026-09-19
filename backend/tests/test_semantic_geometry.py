@@ -212,6 +212,7 @@ def test_semantic_geometry_round_trip_preserves_exact_identity() -> None:
     )
 
     assert reopened == geometry
+    assert reopened.conversion_request == request
     assert reopened.geometry_id == geometry.geometry_id
     assert reopened.semantic_hash() == geometry.semantic_hash()
     assert reopened.surfaces[0].surface_id == geometry.surfaces[0].surface_id
@@ -264,6 +265,7 @@ def test_scene_revision_binding_save_and_reopen_tracks_same_semantic_result(tmp_
     reopened = repository.get(saved.revision_id)
     assert reopened is not None
     assert reopened.document.r120_semantic_geometry == geometry
+    assert reopened.document.r120_semantic_geometry.conversion_request == request
     assert reopened.document.r120_semantic_geometry.semantic_hash() == geometry.semantic_hash()
     assert repository.latest(document.document_id).revision_id == saved.revision_id
 
