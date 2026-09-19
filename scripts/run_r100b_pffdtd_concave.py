@@ -433,10 +433,10 @@ def _validate_compiled_concave_mesh(
         area = sum(
             abs(
                 float(
-                    np.cross(
-                        points[triangle[1], :2] - points[triangle[0], :2],
-                        points[triangle[2], :2] - points[triangle[0], :2],
-                    )
+                    (points[triangle[1], 0] - points[triangle[0], 0])
+                    * (points[triangle[2], 1] - points[triangle[0], 1])
+                    - (points[triangle[1], 1] - points[triangle[0], 1])
+                    * (points[triangle[2], 0] - points[triangle[0], 0])
                 )
             )
             * 0.5
