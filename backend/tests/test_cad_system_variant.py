@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import pytest
 from pydantic import ValidationError
@@ -218,6 +219,133 @@ def test_variant_persistence_explicit_apply_and_proposal_lineage(tmp_path: Path)
     )
     assert repeated == application
     assert scene_repository.latest(DOCUMENT_ID).revision_id == applied.revision_id
+
+
+def test_apply_variant_validates_application_before_scene_persistence(tmp_path: Path) -> None:
+    scene_repository, baseline = _baseline(tmp_path)
+    repository = CadSystemVariantRepository(scene_repository)
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Proposed 5.0.2',
+        role_bindings=_roles('FL', 'C', 'FR', 'TFL', 'TFR', 'SL', 'SR'),
+        proposed_entities=(
+            _proposal('sl', 'SL', 0.6),
+            _proposal('sr', 'SR', 5.4),
+        ),
+        created_at_utc=NOW,
+    )
+    repository.save_variant(variant)
+
+    with pytest.raises(ValidationError, match='selected_by'):
+        repository.apply_variant(
+            variant.variant_id,
+            selected_by='',
+            selected_at_utc='2026-09-19T00:01:00+00:00',
+        )
+
+    assert scene_repository.latest(DOCUMENT_ID) == baseline
+    assert scene_repository.get(baseline.revision_id) == baseline
+    assert repository.application_for_variant(variant.variant_id) is None
+    with sqlite3.connect(scene_repository.path) as connection:
+        revision_count = connection.execute(
+            'SELECT COUNT(*) FROM scene_revisions WHERE document_id=?',
+            (DOCUMENT_ID,),
+        ).fetchone()[0]
+        application_count = connection.execute(
+            'SELECT COUNT(*) FROM cad_system_variant_applications WHERE variant_id=?',
+            (variant.variant_id,),
+        ).fetchone()[0]
+    assert revision_count == 1
+    assert application_count == 0
+
+
+def test_application_insert_failure_rolls_back_scene_and_allows_retry(tmp_path: Path) -> None:
+    scene_repository, baseline = _baseline(tmp_path)
+    repository = CadSystemVariantRepository(scene_repository)
+    variant = build_system_variant(
+        baseline=baseline,
+        name='Proposed 5.0.2',
+        role_bindings=_roles('FL', 'C', 'FR', 'TFL', 'TFR', 'SL', 'SR'),
+        proposed_entities=(
+            _proposal('sl', 'SL', 0.6),
+            _proposal('sr', 'SR', 5.4),
+        ),
+        created_at_utc=NOW,
+    )
+    repository.save_variant(variant)
+
+    recovery_document = WorkingDocument(
+        baseline.document,
+        source_revision_id=baseline.revision_id,
+        saved_content_hash=baseline.content_hash,
+    )
+    assert recovery_document.move_entity(
+        'fl',
+        Position3(x_m=1.25, y_m=0.8, z_m=1.0),
+    )
+    recovery_before = scene_repository.save_recovery(
+        recovery_document.committed_document,
+        source_revision_id=baseline.revision_id,
+    )
+    assert recovery_before is not None
+
+    with sqlite3.connect(scene_repository.path) as connection:
+        connection.execute(
+            '''
+            CREATE TRIGGER fail_system_variant_application_insert
+            BEFORE INSERT ON cad_system_variant_applications
+            BEGIN
+                SELECT RAISE(ABORT, 'injected application insert failure');
+            END
+            '''
+        )
+
+    with pytest.raises(sqlite3.DatabaseError, match='injected application insert failure'):
+        repository.apply_variant(
+            variant.variant_id,
+            selected_by='failure-injection',
+            selected_at_utc='2026-09-19T00:01:00+00:00',
+        )
+
+    assert scene_repository.latest(DOCUMENT_ID) == baseline
+    assert scene_repository.get(baseline.revision_id) == baseline
+    assert scene_repository.recovery(DOCUMENT_ID) == recovery_before
+    assert repository.application_for_variant(variant.variant_id) is None
+    assert repository.proposal_lineage_for_revision(baseline.revision_id) is None
+    with sqlite3.connect(scene_repository.path) as connection:
+        assert connection.execute(
+            'SELECT COUNT(*) FROM scene_revisions WHERE document_id=?',
+            (DOCUMENT_ID,),
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            'SELECT COUNT(*) FROM cad_system_variant_applications WHERE variant_id=?',
+            (variant.variant_id,),
+        ).fetchone()[0] == 0
+        connection.execute('DROP TRIGGER fail_system_variant_application_insert')
+
+    application = repository.apply_variant(
+        variant.variant_id,
+        selected_by='retry-after-failure',
+        selected_at_utc='2026-09-19T00:02:00+00:00',
+    )
+    applied = scene_repository.get(application.applied_revision_id)
+    assert applied is not None
+    assert applied.parent_revision_id == baseline.revision_id
+    assert scene_repository.get(baseline.revision_id) == baseline
+    assert scene_repository.recovery(DOCUMENT_ID) is None
+    assert repository.proposal_lineage_for_revision(application.applied_revision_id) == (
+        application,
+        variant,
+    )
+    with sqlite3.connect(scene_repository.path) as connection:
+        assert connection.execute(
+            'SELECT COUNT(*) FROM scene_revisions WHERE document_id=?',
+            (DOCUMENT_ID,),
+        ).fetchone()[0] == 2
+        assert connection.execute(
+            'SELECT COUNT(*) FROM cad_system_variant_applications WHERE variant_id=?',
+            (variant.variant_id,),
+        ).fetchone()[0] == 1
 
 
 def test_proposed_lifecycle_cannot_claim_measurement_evidence() -> None:
