@@ -192,7 +192,7 @@ def _validate_fixture_contract(fixture) -> None:
         or finite_record.sample_zero_reference != 'source_t0'
         or finite_record.record_interval != 'half_open_0_T'
         or finite_record.solver_time_step_policy != 'solver_native_recorded'
-        or finite_record.dtft_kernel != 'exp(-i*2*pi*f*n*dt)'
+        or finite_record.dtft_kernel != 'exp(+i*2*pi*f*n*dt)'
         or finite_record.dtft_measure != 'dt_weighted_sum'
         or finite_record.numerator_quantity != 'physical_pressure'
         or finite_record.numerator_record_policy != 'solver_pressure_or_declared_primary_field_conversion'
@@ -365,7 +365,7 @@ def _run_level(
             f'R100A sound speed={float(fixture.environment.sound_speed_m_s):.12g} m/s',
             f'R100A density={float(fixture.environment.density_kg_m3):.12g} kg/m3',
             'PFFDTD velocity potential is converted to a physical pressure time record with the declared second-order adapter derivative p=rho*d(phi)/dt.',
-            'R100A-4 transfer uses dt-weighted direct scored-frequency DTFT of the pressure record and physical volume-velocity source record, then P_T/Q_T.',
+            'R100A-4 transfer uses dt-weighted direct scored-frequency analysis DTFT of the pressure record and physical volume-velocity source record, then P_T/Q_T.',
         ),
     )
     detail = {
