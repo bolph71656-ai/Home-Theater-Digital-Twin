@@ -267,34 +267,22 @@ class CadSystemVariantRepository:
         baseline = self.scene_repository.get(variant.baseline_revision_id)
         if baseline is None:
             raise ValueError('SystemVariant baseline SceneRevision does not exist')
-        latest = self.scene_repository.latest(variant.document_id)
-        if (
-            latest is None
-            or latest.revision_id != baseline.revision_id
-            or latest.content_hash != baseline.content_hash
-        ):
-            raise ValueError('cannot apply SystemVariant from a stale baseline SceneRevision')
         proposed = materialize_system_variant(baseline, variant)
         proposed_hash = scene_content_hash(proposed)
         if proposed_hash == baseline.content_hash:
             raise ValueError('cannot apply a no-op SystemVariant as a new SceneRevision')
 
-        saved = self.scene_repository.save(
-            proposed,
-            parent_revision_id=baseline.revision_id,
-        )
-        if not saved.created:
-            raise ValueError('SystemVariant apply did not create a new SceneRevision')
-
-        selected_at = selected_at_utc or _utc_now()
+        selected_at = _utc_now() if selected_at_utc is None else selected_at_utc
+        applied_revision_id = str(uuid4())
+        applied_created_at = _utc_now()
         identity = {
             'variant_id': variant.variant_id,
             'variant_sha256': variant.variant_sha256,
             'document_id': variant.document_id,
             'baseline_revision_id': baseline.revision_id,
             'baseline_content_hash': baseline.content_hash,
-            'applied_revision_id': saved.revision.revision_id,
-            'applied_content_hash': saved.revision.content_hash,
+            'applied_revision_id': applied_revision_id,
+            'applied_content_hash': proposed_hash,
             'selected_by': selected_by,
             'selected_at_utc': selected_at,
         }
@@ -305,13 +293,55 @@ class CadSystemVariantRepository:
             document_id=variant.document_id,
             baseline_revision_id=baseline.revision_id,
             baseline_content_hash=baseline.content_hash,
-            applied_revision_id=saved.revision.revision_id,
-            applied_content_hash=saved.revision.content_hash,
+            applied_revision_id=applied_revision_id,
+            applied_content_hash=proposed_hash,
             selected_by=selected_by,
             selected_at_utc=selected_at,
             application_sha256=_digest(identity),
         )
+
         with closing(self._connect()) as connection, connection:
+            connection.execute('BEGIN IMMEDIATE')
+
+            existing_row = connection.execute(
+                'SELECT payload_json FROM cad_system_variant_applications '
+                'WHERE variant_id=?',
+                (variant.variant_id,),
+            ).fetchone()
+            if existing_row is not None:
+                return SystemVariantApplication.model_validate_json(
+                    existing_row['payload_json']
+                )
+
+            latest_row = connection.execute(
+                'SELECT revision_id, content_hash FROM scene_revisions '
+                'WHERE document_id=? ORDER BY seq DESC LIMIT 1',
+                (variant.document_id,),
+            ).fetchone()
+            if (
+                latest_row is None
+                or latest_row['revision_id'] != baseline.revision_id
+                or latest_row['content_hash'] != baseline.content_hash
+            ):
+                raise ValueError(
+                    'cannot apply SystemVariant from a stale baseline SceneRevision'
+                )
+
+            saved = self.scene_repository._save_in_transaction(
+                connection,
+                proposed,
+                parent_revision_id=baseline.revision_id,
+                revision_id=applied_revision_id,
+                created_at_utc=applied_created_at,
+            )
+            if not saved.created:
+                raise ValueError('SystemVariant apply did not create a new SceneRevision')
+            if (
+                saved.revision.revision_id != application.applied_revision_id
+                or saved.revision.content_hash != application.applied_content_hash
+            ):
+                raise ValueError('SystemVariant application SceneRevision mismatch')
+
             connection.execute(
                 """
                 INSERT INTO cad_system_variant_applications(
