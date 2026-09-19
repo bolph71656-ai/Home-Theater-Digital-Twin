@@ -232,7 +232,7 @@ class RepairLineageStep(BaseModel):
 
     @model_validator(mode='after')
     def validate_operation_id(self) -> 'RepairLineageStep':
-        expected = repair_operation_id(self.action)
+        expected = repair_operation_id(self.action, self.input_geometry_hash)
         if self.operation_id != expected:
             raise ValueError('repair operation_id does not match the explicit repair action')
         return self
@@ -361,12 +361,18 @@ def raw_triangle_ids(mesh: RawVisualMesh) -> tuple[str, ...]:
     return tuple(_raw_triangle_id(mesh, index, triangle) for index, triangle in enumerate(mesh.triangles))
 
 
-def repair_operation_id(action: RepairAction) -> str:
-    return f"semantic-geometry-repair:{_semantic_hash(action.model_dump(mode='json'))}"
+def repair_operation_id(action: RepairAction, input_geometry_hash: str) -> str:
+    identity = _semantic_hash(
+        {
+            'input_geometry_hash': input_geometry_hash,
+            'action': action.model_dump(mode='json'),
+        }
+    )
+    return f'semantic-geometry-repair:{identity}'
 
 
-def added_triangle_id(action: AddTriangleRepair) -> str:
-    return f"semantic-triangle-added:{_semantic_hash({'operation_id': repair_operation_id(action), 'repair_label': action.repair_label})}"
+def added_triangle_id(action: AddTriangleRepair, operation_id: str) -> str:
+    return f"semantic-triangle-added:{_semantic_hash({'operation_id': operation_id, 'repair_label': action.repair_label})}"
 
 
 def make_semantic_geometry_conversion_request(
@@ -422,8 +428,8 @@ def convert_raw_visual_mesh_to_semantic_geometry(
     current_hash = root_hash
     lineage: list[RepairLineageStep] = []
     for action in request.repairs:
-        operation_id = repair_operation_id(action)
         before_hash = current_hash
+        operation_id = repair_operation_id(action, before_hash)
         vertices, triangles = _apply_repair(vertices, triangles, action, operation_id)
         current_hash = _topology_hash(tuple(vertices), tuple(triangles))
         lineage.append(
@@ -575,7 +581,7 @@ def _apply_repair(
     elif isinstance(action, AddTriangleRepair):
         if max(action.a, action.b, action.c) >= len(next_vertices):
             raise SemanticGeometryConversionError('added triangle references an unknown vertex')
-        triangle_id = added_triangle_id(action)
+        triangle_id = added_triangle_id(action, operation_id)
         if any(item.triangle_id == triangle_id for item in next_triangles):
             raise SemanticGeometryConversionError(f'added triangle already exists: {triangle_id}')
         next_triangles.append(
