@@ -32,6 +32,7 @@ from .optimization_robustness import (
     _domain_rejections,
     _metric_schema,
     _semantic_id,
+    _validate_constraint_workspace_authority,
     apply_local_perturbation,
     canonical_robustness_sha256,
     robustness_timestamp_utc,
@@ -259,8 +260,7 @@ def _validate_evaluation_authority(
         or nominal_objective.candidate_id != spec.candidate_id
     ):
         raise ValueError('robustness O30 objective authority mismatch')
-    if constraint_set.document_id != spec.document_id:
-        raise ValueError('robustness constraint workspace belongs to another document')
+    _validate_constraint_workspace_authority(search_spec, constraint_set)
 
 
 def _multidimensional_sample(
