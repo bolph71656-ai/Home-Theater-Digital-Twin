@@ -37,8 +37,8 @@ N70はIssue #63 / PR #64、N80 workspaceはIssue #65 / PR #74、O60 software val
 | N90 accepted gate head | `3ee2fb91b4976d7b0cac7b13718222cd6e359b76` / A15 owned-Windows PASS |
 | stable version | `0.1.0` |
 | R100A tracking | PR #110 merged `1714c078d4063f59da93f0d733171547f7eb486d`。CI #582 / Windows Release Artifact #109 PASS。solver-neutral authority + 10 canonical fixturesをmain反映済み |
-| R100B tracking | PR #111 authority / #112 pyroom direct+first-reflection / #113 PFFDTD platform / #114 MFEM rigid reference / #115 PFFDTD rigid modes / #116 R100A-2 complex-pressure convergence / #151 PFFDTD impedance / #154 MFEM concave independent reference / #155 pyroom stochastic evidenceまでmain反映済み。#151はPASS、#154 concaveはFAIL・impedance extractionはBLOCKED、#155 stochasticはFAIL/non-converged。workflow PASSとcandidate/reference outcomeは分離 |
-| 次工程 | **R100BはPFFDTD spatial concave/reflection、Portal/explicit termination、geometric obstacle、candidate-wide Windows/package/license/resource hard gateとADR readinessへ進む。#151 PASS、#154/#155のnegative evidenceだけでproduction solverを選定しない。O90はO90C以降を別sliceとして進め、O100はR110 interface確定までO100C source authorityを先走らない。Issue #83 owned-room gateも未完了** |
+| R100B tracking | PR #111 authority / #112 pyroom direct+first-reflection / #113 PFFDTD platform / #114 MFEM rigid reference / #115 PFFDTD rigid modes / #116 R100A-2 complex-pressure convergence / #151 PFFDTD impedance / #154 MFEM concave independent reference / #155 pyroom stochastic evidence / #158 fail-closed low-band wave adoption profileまでmain反映済み。#158は6 wave fixture + `wave_rigid` / `wave_impedance` / `portal_continuity`をselection必須authorityとして固定し、current PFFDTD/MFEMのPortal不足を選定blockとして可視化 |
+| 次工程 | **R100B adoption profileが最初にblockしているPortal continuityを独立reference/candidate capabilityとして検証し、その後explicit termination、PFFDTD spatial concave/reflection、candidate-wide hard gateとADR readinessへ進む。#151 PASS、#154/#155のnegative evidenceだけでproduction solverを選定しない。O90はO90C以降を別sliceとして進め、O100はR110 interface確定までO100C source authorityを先走らない。Issue #83 owned-room gateも未完了** |
 
 ## R100B — solver bakeoff authority / implementation in progress
 
