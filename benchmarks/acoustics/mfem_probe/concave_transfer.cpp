@@ -257,7 +257,7 @@ void WriteJson(
    os << "  \"boundary_model\": \"natural-neumann-rigid\",\n";
    os << "  \"fourier_sign\": \"exp(-i*omega*t)\",\n";
    os << "  \"linear_system\": \"K-k^2M\",\n";
-   os << "  \"preconditioner\": \"gauss-seidel-on-K+k^2M\",\n";
+   os << "  \"preconditioner\": \"diagonal-jacobi-on-K+k^2M\",\n";
    os << "  \"source_rhs\": \"-i*omega*rho*Q*delta\",\n";
    os << "  \"density_kg_m3\": " << density_kg_m3 << ",\n";
    os << "  \"sound_speed_m_s\": " << sound_speed_m_s << ",\n";
@@ -413,25 +413,6 @@ int main(int argc, char *argv[])
    catch (const std::exception &exc)
    {
       std::cerr << "R100B_MFEM_CONCAVE_FATAL: " << exc.what() << std::endl;
-      return 2;
-   }
-   catch (...)
-   {
-      std::cerr << "R100B_MFEM_CONCAVE_FATAL: unknown exception" << std::endl;
-      return 3;
-   }
-}
-
-
-int main(int argc, char *argv[])
-{
-   try
-   {
-      return ProbeMain(argc, argv);
-   }
-   catch (const std::exception &error)
-   {
-      std::cerr << "R100B_MFEM_CONCAVE_FATAL: " << error.what() << std::endl;
       return 2;
    }
    catch (...)
