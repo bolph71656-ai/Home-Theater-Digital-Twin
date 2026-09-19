@@ -361,7 +361,7 @@ def _multidimensional_sample(
         'objective_vector': (
             None
             if result is None
-            else result.objective_vector.model_dump(mode='json')
+            else result.objective_vector.identity_payload()
         ),
         'failure_reason': failure_reason,
     }
@@ -672,6 +672,10 @@ def build_multidimensional_robustness_evaluations(
             'sampling_provenance_sha256': sampling_provenance_sha256,
             'percentile_semantics': 'not_available_bounded_interval',
         }
+        if nominal_metric.definition is not None:
+            identity['objective_definition'] = nominal_metric.definition.model_dump(
+                mode='json'
+            )
         digest = canonical_robustness_sha256(identity)
         evaluations.append(
             RobustnessEvaluation(
@@ -699,12 +703,18 @@ def build_nominal_robust_pareto_vector(
 
     for objective_id in selection.nominal_objective_ids:
         nominal = nominal_vector.metric(objective_id)
+        derived_id = f'nominal::{objective_id}'
         metrics.append(
             ObjectiveMetric(
-                objective_id=f'nominal::{objective_id}',
-                value=float(nominal.value),
+                objective_id=derived_id,
+                value=nominal.comparison_value(),
                 unit=nominal.unit,
                 direction=nominal.direction,
+                definition=(
+                    None
+                    if nominal.definition is None
+                    else nominal.definition.derived(derived_id)
+                ),
             )
         )
 
@@ -717,12 +727,32 @@ def build_nominal_robust_pareto_vector(
             ) from exc
         if robust.candidate_id != nominal_vector.candidate_id:
             raise ValueError('nominal and robustness candidate IDs must match')
+        nominal = nominal_vector.metric(objective_id)
+        if robust.objective_definition is None:
+            if (
+                nominal.definition is not None
+                or robust.objective_unit != nominal.unit
+                or robust.direction != nominal.direction
+            ):
+                raise ValueError(
+                    f'robust objective authority mismatch for {objective_id}'
+                )
+        elif robust.objective_definition.definition_id != nominal.definition_id:
+            raise ValueError(
+                f'robust objective definition mismatch for {objective_id}'
+            )
+        derived_id = f'robust.sampled_worst::{objective_id}'
         metrics.append(
             ObjectiveMetric(
-                objective_id=f'robust.sampled_worst::{objective_id}',
+                objective_id=derived_id,
                 value=float(robust.sampled_worst_value),
                 unit=robust.objective_unit,
-                direction='minimize',
+                direction=robust.direction,
+                definition=(
+                    None
+                    if robust.objective_definition is None
+                    else robust.objective_definition.derived(derived_id)
+                ),
             )
         )
 
