@@ -766,29 +766,22 @@ def build_acoustic_scene_snapshot(
         'readiness': readiness,
         'unresolved_conditions': tuple(unresolved),
     }
-    digest = _digest(
-        AcousticSceneSnapshot(
-            snapshot_id=f'acoustic-scene-snapshot:{"0" * 64}',
-            semantic_sha256='0' * 64,
-            **core,
-        ).semantic_payload()
-        if False
-        else {
-            key: (
-                value.model_dump(mode='json')
-                if isinstance(value, BaseModel)
-                else [
-                    item.model_dump(mode='json')
-                    if isinstance(item, BaseModel)
-                    else item
-                    for item in value
-                ]
-                if isinstance(value, tuple)
-                else value
-            )
-            for key, value in core.items()
-        }
-    )
+    semantic_payload = {
+        key: (
+            value.model_dump(mode='json')
+            if isinstance(value, BaseModel)
+            else [
+                item.model_dump(mode='json')
+                if isinstance(item, BaseModel)
+                else item
+                for item in value
+            ]
+            if isinstance(value, tuple)
+            else value
+        )
+        for key, value in core.items()
+    }
+    digest = _digest(semantic_payload)
     return AcousticSceneSnapshot(
         snapshot_id=f'acoustic-scene-snapshot:{digest}',
         semantic_sha256=digest,
