@@ -16,6 +16,15 @@ from .raw_mesh import (
     diagnose_raw_visual_mesh,
 )
 
+from .raw_mesh_repair import (
+    RawMeshRepairLineageRef,
+    RepairedRawMesh,
+    RepairedRawMeshDiagnosticResult,
+    diagnose_repaired_raw_mesh,
+    make_raw_mesh_repair_lineage_ref,
+    repaired_triangle_ids,
+)
+
 
 SEMANTIC_GEOMETRY_ALGORITHM = 'htdt.r120.semantic_geometry_conversion'
 SEMANTIC_GEOMETRY_ALGORITHM_VERSION = '1'
@@ -36,6 +45,12 @@ def _canonical_json(payload: object) -> str:
         separators=(',', ':'),
         allow_nan=False,
     )
+
+
+def _remove_absent_raw_mesh_repair_lineage(payload: dict[str, object]) -> None:
+    request = payload.get('conversion_request')
+    if isinstance(request, dict) and request.get('raw_mesh_repair_lineage') is None:
+        request.pop('raw_mesh_repair_lineage', None)
 
 
 def _semantic_hash(payload: object) -> str:
@@ -198,8 +213,11 @@ class SemanticGeometryConversionRequest(BaseModel):
     input_raw_mesh_id: str = Field(pattern=r'^raw-mesh:[0-9a-f]{64}$')
     input_raw_mesh_semantic_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     input_asset_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
-    input_diagnostic_id: str = Field(pattern=r'^raw-mesh-diagnostic:[0-9a-f]{64}$')
+    input_diagnostic_id: str = Field(
+        pattern=r'^(?:raw-mesh-diagnostic|repaired-raw-mesh-diagnostic):[0-9a-f]{64}$'
+    )
     input_diagnostic_semantic_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
+    raw_mesh_repair_lineage: RawMeshRepairLineageRef | None = None
     source_scene_revision_id: str | None
     source_to_scene_transform: SemanticCoordinateTransform
     profile: SemanticGeometryConversionProfile
@@ -211,14 +229,31 @@ class SemanticGeometryConversionRequest(BaseModel):
     def validate_identity(self) -> 'SemanticGeometryConversionRequest':
         if self.profile_semantic_hash != self.profile.semantic_hash():
             raise ValueError('semantic geometry conversion profile hash mismatch')
-        payload = self.model_dump(mode='json', exclude={'request_id'})
+        lineage = self.raw_mesh_repair_lineage
+        if lineage is not None:
+            if lineage.source_raw_mesh_id != self.input_raw_mesh_id:
+                raise ValueError('raw-mesh repair lineage source id mismatch')
+            if lineage.source_raw_mesh_semantic_hash != self.input_raw_mesh_semantic_hash:
+                raise ValueError('raw-mesh repair lineage source hash mismatch')
+            if lineage.post_repair_diagnostic_id != self.input_diagnostic_id:
+                raise ValueError('raw-mesh repair lineage post diagnostic id mismatch')
+            if (
+                lineage.post_repair_diagnostic_semantic_hash
+                != self.input_diagnostic_semantic_hash
+            ):
+                raise ValueError('raw-mesh repair lineage post diagnostic hash mismatch')
+        exclude = {'request_id'}
+        if lineage is None:
+            exclude.add('raw_mesh_repair_lineage')
+        payload = self.model_dump(mode='json', exclude=exclude)
         expected = f"semantic-geometry-request:{_semantic_hash(payload)}"
         if self.request_id != expected:
             raise ValueError('semantic geometry conversion request_id does not match inputs')
         return self
 
     def semantic_hash(self) -> str:
-        return _semantic_hash(self.model_dump(mode='json'))
+        exclude = {'raw_mesh_repair_lineage'} if self.raw_mesh_repair_lineage is None else set()
+        return _semantic_hash(self.model_dump(mode='json', exclude=exclude))
 
 
 class RepairLineageStep(BaseModel):
@@ -299,7 +334,9 @@ class SemanticAcousticGeometry(BaseModel):
     input_raw_mesh_id: str = Field(pattern=r'^raw-mesh:[0-9a-f]{64}$')
     input_raw_mesh_semantic_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     input_asset_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
-    input_diagnostic_id: str = Field(pattern=r'^raw-mesh-diagnostic:[0-9a-f]{64}$')
+    input_diagnostic_id: str = Field(
+        pattern=r'^(?:raw-mesh-diagnostic|repaired-raw-mesh-diagnostic):[0-9a-f]{64}$'
+    )
     input_diagnostic_semantic_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     source_scene_revision_id: str | None
     source_to_scene_transform: SemanticCoordinateTransform
@@ -366,6 +403,7 @@ class SemanticAcousticGeometry(BaseModel):
             raise ValueError('every semantic triangle must belong to exactly one semantic surface')
 
         core = self.model_dump(mode='json', exclude={'geometry_id', 'semantic_hash_sha256'})
+        _remove_absent_raw_mesh_repair_lineage(core)
         expected_hash = _semantic_hash(core)
         if self.semantic_hash_sha256 != expected_hash:
             raise ValueError('semantic acoustic geometry hash mismatch')
@@ -403,15 +441,48 @@ def make_semantic_geometry_conversion_request(
     profile: SemanticGeometryConversionProfile | None = None,
     repairs: tuple[RepairAction, ...] = (),
     surface_assignments: tuple[SurfaceSemanticAssignment, ...] = (),
+    repaired_mesh: RepairedRawMesh | None = None,
+    repaired_diagnostic: RepairedRawMeshDiagnosticResult | None = None,
 ) -> SemanticGeometryConversionRequest:
     profile = profile or SemanticGeometryConversionProfile()
-    diagnostic = diagnose_raw_visual_mesh(mesh, profile=profile.diagnostic_profile)
+    if (repaired_mesh is None) != (repaired_diagnostic is None):
+        raise SemanticGeometryConversionError(
+            'repaired_mesh and repaired_diagnostic must be supplied together'
+        )
+    repair_lineage: RawMeshRepairLineageRef | None = None
+    if repaired_mesh is None:
+        diagnostic = diagnose_raw_visual_mesh(mesh, profile=profile.diagnostic_profile)
+        input_diagnostic_id = diagnostic.diagnostic_id
+        input_diagnostic_hash = diagnostic.semantic_hash()
+    else:
+        assert repaired_diagnostic is not None
+        _validate_repair_conversion_inputs(mesh, repaired_mesh, repaired_diagnostic)
+        if repaired_diagnostic.profile != profile.diagnostic_profile:
+            raise SemanticGeometryConversionError(
+                'repaired diagnostic profile must match conversion diagnostic profile'
+            )
+        recomputed = diagnose_repaired_raw_mesh(
+            mesh,
+            repaired_mesh,
+            profile=repaired_diagnostic.profile,
+        )
+        if recomputed != repaired_diagnostic:
+            raise SemanticGeometryConversionError(
+                'repaired diagnostic does not match exact repaired mesh'
+            )
+        input_diagnostic_id = repaired_diagnostic.diagnostic_id
+        input_diagnostic_hash = repaired_diagnostic.semantic_hash()
+        repair_lineage = make_raw_mesh_repair_lineage_ref(
+            repaired_mesh,
+            repaired_diagnostic,
+        )
+
     payload = {
         'input_raw_mesh_id': mesh.mesh_id,
         'input_raw_mesh_semantic_hash': mesh.semantic_hash(),
         'input_asset_sha256': mesh.provenance.original_asset_sha256,
-        'input_diagnostic_id': diagnostic.diagnostic_id,
-        'input_diagnostic_semantic_hash': diagnostic.semantic_hash(),
+        'input_diagnostic_id': input_diagnostic_id,
+        'input_diagnostic_semantic_hash': input_diagnostic_hash,
         'source_scene_revision_id': source_scene_revision_id,
         'source_to_scene_transform': source_to_scene_transform.model_dump(mode='json'),
         'profile': profile.model_dump(mode='json'),
@@ -419,6 +490,8 @@ def make_semantic_geometry_conversion_request(
         'repairs': [repair.model_dump(mode='json') for repair in repairs],
         'surface_assignments': [assignment.model_dump(mode='json') for assignment in surface_assignments],
     }
+    if repair_lineage is not None:
+        payload['raw_mesh_repair_lineage'] = repair_lineage.model_dump(mode='json')
     request_id = f"semantic-geometry-request:{_semantic_hash(payload)}"
     return SemanticGeometryConversionRequest(request_id=request_id, **payload)
 
@@ -426,22 +499,40 @@ def make_semantic_geometry_conversion_request(
 def convert_raw_visual_mesh_to_semantic_geometry(
     mesh: RawVisualMesh,
     request: SemanticGeometryConversionRequest,
+    *,
+    repaired_mesh: RepairedRawMesh | None = None,
+    repaired_diagnostic: RepairedRawMeshDiagnosticResult | None = None,
 ) -> SemanticAcousticGeometry:
-    _validate_request_inputs(mesh, request)
+    _validate_request_inputs(
+        mesh,
+        request,
+        repaired_mesh=repaired_mesh,
+        repaired_diagnostic=repaired_diagnostic,
+    )
+    if request.raw_mesh_repair_lineage is None:
+        source_vertices = mesh.vertices
+        source_triangles = mesh.triangles
+        source_triangle_ids = raw_triangle_ids(mesh)
+    else:
+        assert repaired_mesh is not None
+        source_vertices = repaired_mesh.vertices
+        source_triangles = repaired_mesh.triangles
+        source_triangle_ids = repaired_triangle_ids(repaired_mesh)
+
     vertices = [
         _transform_source_vertex(vertex, request.source_to_scene_transform)
-        for vertex in mesh.vertices
+        for vertex in source_vertices
     ]
     triangles = [
         SemanticTriangle(
-            triangle_id=_raw_triangle_id(mesh, index, triangle),
+            triangle_id=source_triangle_ids[index],
             a=triangle.a,
             b=triangle.b,
             c=triangle.c,
-            source_triangle_id=_raw_triangle_id(mesh, index, triangle),
+            source_triangle_id=source_triangle_ids[index],
             source_primitive=triangle.source_primitive,
         )
-        for index, triangle in enumerate(mesh.triangles)
+        for index, triangle in enumerate(source_triangles)
     ]
 
     root_hash = _topology_hash(tuple(vertices), tuple(triangles))
@@ -521,12 +612,12 @@ def convert_raw_visual_mesh_to_semantic_geometry(
         semantic_hash_sha256='0' * 64,
         **core,
     )
-    semantic_hash = _semantic_hash(
-        provisional.model_dump(
-            mode='json',
-            exclude={'geometry_id', 'semantic_hash_sha256'},
-        )
+    identity_payload = provisional.model_dump(
+        mode='json',
+        exclude={'geometry_id', 'semantic_hash_sha256'},
     )
+    _remove_absent_raw_mesh_repair_lineage(identity_payload)
+    semantic_hash = _semantic_hash(identity_payload)
     return SemanticAcousticGeometry(
         geometry_id=f'semantic-acoustic-geometry:{semantic_hash}',
         semantic_hash_sha256=semantic_hash,
@@ -535,7 +626,9 @@ def convert_raw_visual_mesh_to_semantic_geometry(
 
 
 def serialize_semantic_acoustic_geometry(geometry: SemanticAcousticGeometry) -> str:
-    return _canonical_json(geometry.model_dump(mode='json'))
+    payload = geometry.model_dump(mode='json')
+    _remove_absent_raw_mesh_repair_lineage(payload)
+    return _canonical_json(payload)
 
 
 def deserialize_semantic_acoustic_geometry(payload: str) -> SemanticAcousticGeometry:
@@ -573,6 +666,9 @@ def _raw_triangle_id(mesh: RawVisualMesh, index: int, triangle: RawMeshTriangle)
 def _validate_request_inputs(
     mesh: RawVisualMesh,
     request: SemanticGeometryConversionRequest,
+    *,
+    repaired_mesh: RepairedRawMesh | None,
+    repaired_diagnostic: RepairedRawMeshDiagnosticResult | None,
 ) -> None:
     if request.input_raw_mesh_id != mesh.mesh_id:
         raise SemanticGeometryConversionError('conversion request raw mesh id mismatch')
@@ -580,11 +676,65 @@ def _validate_request_inputs(
         raise SemanticGeometryConversionError('conversion request raw mesh semantic hash mismatch')
     if request.input_asset_sha256 != mesh.provenance.original_asset_sha256:
         raise SemanticGeometryConversionError('conversion request original asset hash mismatch')
-    diagnostic = diagnose_raw_visual_mesh(mesh, profile=request.profile.diagnostic_profile)
-    if request.input_diagnostic_id != diagnostic.diagnostic_id:
-        raise SemanticGeometryConversionError('conversion request input diagnostic id mismatch')
-    if request.input_diagnostic_semantic_hash != diagnostic.semantic_hash():
-        raise SemanticGeometryConversionError('conversion request input diagnostic hash mismatch')
+
+    lineage = request.raw_mesh_repair_lineage
+    if lineage is None:
+        if repaired_mesh is not None or repaired_diagnostic is not None:
+            raise SemanticGeometryConversionError(
+                'conversion request has no repaired-mesh lineage'
+            )
+        diagnostic = diagnose_raw_visual_mesh(mesh, profile=request.profile.diagnostic_profile)
+        if request.input_diagnostic_id != diagnostic.diagnostic_id:
+            raise SemanticGeometryConversionError('conversion request input diagnostic id mismatch')
+        if request.input_diagnostic_semantic_hash != diagnostic.semantic_hash():
+            raise SemanticGeometryConversionError('conversion request input diagnostic hash mismatch')
+        return
+
+    if repaired_mesh is None or repaired_diagnostic is None:
+        raise SemanticGeometryConversionError(
+            'conversion request requires exact repaired mesh and diagnostic'
+        )
+    _validate_repair_conversion_inputs(mesh, repaired_mesh, repaired_diagnostic)
+    if repaired_diagnostic.profile != request.profile.diagnostic_profile:
+        raise SemanticGeometryConversionError(
+            'conversion request repaired diagnostic profile mismatch'
+        )
+    if lineage != make_raw_mesh_repair_lineage_ref(repaired_mesh, repaired_diagnostic):
+        raise SemanticGeometryConversionError('conversion request raw-mesh repair lineage mismatch')
+    if request.input_diagnostic_id != repaired_diagnostic.diagnostic_id:
+        raise SemanticGeometryConversionError('conversion request repaired diagnostic id mismatch')
+    if request.input_diagnostic_semantic_hash != repaired_diagnostic.semantic_hash():
+        raise SemanticGeometryConversionError('conversion request repaired diagnostic hash mismatch')
+    recomputed = diagnose_repaired_raw_mesh(
+        mesh,
+        repaired_mesh,
+        profile=repaired_diagnostic.profile,
+    )
+    if recomputed != repaired_diagnostic:
+        raise SemanticGeometryConversionError(
+            'conversion request repaired diagnostic does not recompute exactly'
+        )
+
+
+def _validate_repair_conversion_inputs(
+    mesh: RawVisualMesh,
+    repaired_mesh: RepairedRawMesh,
+    repaired_diagnostic: RepairedRawMeshDiagnosticResult,
+) -> None:
+    if repaired_mesh.source_raw_mesh_id != mesh.mesh_id:
+        raise SemanticGeometryConversionError('repaired mesh source raw mesh id mismatch')
+    if repaired_mesh.source_raw_mesh_semantic_hash != mesh.semantic_hash():
+        raise SemanticGeometryConversionError('repaired mesh source raw mesh hash mismatch')
+    if repaired_mesh.original_asset_sha256 != mesh.provenance.original_asset_sha256:
+        raise SemanticGeometryConversionError('repaired mesh original asset hash mismatch')
+    if repaired_diagnostic.repaired_mesh_id != repaired_mesh.repaired_mesh_id:
+        raise SemanticGeometryConversionError('repaired diagnostic repaired mesh id mismatch')
+    if repaired_diagnostic.repaired_mesh_semantic_hash != repaired_mesh.semantic_hash():
+        raise SemanticGeometryConversionError('repaired diagnostic repaired mesh hash mismatch')
+    if repaired_diagnostic.source_raw_mesh_id != mesh.mesh_id:
+        raise SemanticGeometryConversionError('repaired diagnostic source raw mesh id mismatch')
+    if repaired_diagnostic.source_raw_mesh_semantic_hash != mesh.semantic_hash():
+        raise SemanticGeometryConversionError('repaired diagnostic source raw mesh hash mismatch')
 
 
 def _apply_repair(
