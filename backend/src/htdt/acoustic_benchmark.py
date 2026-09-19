@@ -31,6 +31,7 @@ BenchmarkObservableKind = Literal[
     'reflection_point_m',
     'reflected_path_length_m',
     'field_pressure_pa',
+    'complex_pressure_transfer_pa_per_m3_s',
     'energy_decay_db',
     'hybrid_overlap_level_db',
 ]
