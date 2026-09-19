@@ -189,6 +189,10 @@ class DirectivityCapability(BaseModel):
 
         if self.valid_domain is None:
             raise ValueError('known directivity requires an explicit valid domain')
+        if self.interpolation is None:
+            raise ValueError(
+                'known directivity requires explicit interpolation method/provenance'
+            )
 
         if self.tier == 'analytic':
             if self.data_format != 'analytic_model' or self.analytic_model is None:
