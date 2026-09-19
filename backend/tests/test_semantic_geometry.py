@@ -125,6 +125,22 @@ def test_clean_geometry_without_explicit_semantics_is_not_promoted() -> None:
     assert explicit.surfaces[0].semantic_class == 'room_boundary'
     assert explicit.surfaces[0].surface_id.startswith('semantic-surface:')
 
+    reordered_request = make_semantic_geometry_conversion_request(
+        mesh,
+        source_scene_revision_id=None,
+        source_to_scene_transform=_identity_transform(),
+        surface_assignments=(
+            SurfaceSemanticAssignment(
+                surface_key='room-shell',
+                triangle_ids=tuple(reversed(raw_triangle_ids(mesh))),
+                semantic_class='room_boundary',
+            ),
+        ),
+    )
+    reordered = convert_raw_visual_mesh_to_semantic_geometry(mesh, reordered_request)
+    assert reordered.surfaces[0].surface_id == explicit.surfaces[0].surface_id
+    assert reordered.surfaces[0].triangle_ids == explicit.surfaces[0].triangle_ids
+
 
 def test_semantic_geometry_round_trip_preserves_exact_identity() -> None:
     mesh = _closed_tetra_mesh()
