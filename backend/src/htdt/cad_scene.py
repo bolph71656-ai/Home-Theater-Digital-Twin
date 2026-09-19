@@ -294,9 +294,26 @@ def make_polygon_room(
     )
 
 
-PhysicalEntityKind = Literal['speaker', 'seat', 'screen', 'furniture', 'av_equipment']
-EntityKind = Literal['speaker', 'seat', 'screen', 'furniture', 'av_equipment', 'measurement_point']
-PHYSICAL_ENTITY_KINDS = frozenset({'speaker', 'seat', 'screen', 'furniture', 'av_equipment'})
+PhysicalEntityKind = Literal['speaker', 'seat', 'screen', 'projector', 'riser', 'furniture', 'av_equipment']
+EntityKind = Literal[
+    'speaker',
+    'seat',
+    'screen',
+    'projector',
+    'riser',
+    'furniture',
+    'av_equipment',
+    'measurement_point',
+]
+PHYSICAL_ENTITY_KINDS = frozenset({
+    'speaker',
+    'seat',
+    'screen',
+    'projector',
+    'riser',
+    'furniture',
+    'av_equipment',
+})
 
 
 class SceneEntity(BaseModel):
