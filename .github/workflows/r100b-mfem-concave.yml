@@ -10,6 +10,7 @@ on:
       - 'benchmarks/acoustics/mfem_probe/**'
       - 'scripts/run_r100b_mfem_concave_probe.py'
       - 'scripts/run_r100b_mfem_portal_probe.py'
+      - 'scripts/run_r100b_mfem_radiation_probe.py'
       - '.github/workflows/r100b-mfem-concave.yml'
   workflow_dispatch:
 
