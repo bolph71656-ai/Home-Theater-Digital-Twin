@@ -1082,3 +1082,143 @@ def test_solver_build_or_configuration_changes_dispatch_identity(
     )
     assert first.binding_id != changed_solver.binding_id
     assert first.binding_id != changed_config.binding_id
+
+
+from htdt.cad_acoustic_solver_dispatch_repository import (
+    CadAcousticSolverDispatchRepository,
+)
+
+
+def _exact_ref_registry(*refs: ExactExternalAuthorityRef):
+    registry = {
+        (
+            ref.authority_id,
+            ref.authority_version,
+            ref.semantic_hash_sha256,
+        ): ref
+        for ref in refs
+    }
+
+    def resolve(ref: ExactExternalAuthorityRef):
+        return registry.get(
+            (
+                ref.authority_id,
+                ref.authority_version,
+                ref.semantic_hash_sha256,
+            )
+        )
+
+    return registry, resolve
+
+
+def _persisted_geometric_dispatch(tmp_path: Path):
+    fx = _fixture(tmp_path)
+    snapshot_repository = CadAcousticSnapshotRepository(
+        fx['scene_repository'],
+        variant_repository=fx['variant_repository'],
+        r110_repository=fx['r110_repository'],
+        r120_repository=fx['r120_repository'],
+    )
+    snapshot_repository.save_snapshot(fx['snapshot'])
+    request = build_acoustic_prediction_request(
+        snapshot=fx['snapshot'],
+        model_solver_role_id='future-r150-geometric-role',
+        requested_frequency_domain=fx['snapshot'].requested_frequency_domain,
+        requested_observables=('deterministic_paths',),
+        numerical_fidelity_policy_ref=_policy(),
+    )
+    snapshot_repository.save_prediction_request(request)
+
+    adapter = _adapter_descriptor(
+        role='future-r150-geometric-role',
+        domain='geometric',
+        observables=('deterministic_paths',),
+    )
+    configuration = _ref('fixture-geometric-config', '3')
+    registry, resolver = _exact_ref_registry(
+        adapter.solver_implementation_ref,
+        adapter.solver_configuration_schema_ref,
+        configuration,
+    )
+    repository = CadAcousticSolverDispatchRepository(
+        fx['scene_repository'],
+        snapshot_repository=snapshot_repository,
+        external_authority_resolver=resolver,
+    )
+    repository.save_descriptor(adapter)
+    binding = bind_prediction_request_to_solver_adapter(
+        snapshot=fx['snapshot'],
+        request=request,
+        adapter=adapter,
+        solver_configuration_ref=configuration,
+    )
+    repository.save_dispatch(binding)
+    return fx, registry, resolver, adapter, configuration, binding
+
+
+def test_solver_dispatch_repository_save_reopen_recomputes_exact_authorities(
+    tmp_path: Path,
+) -> None:
+    fx, _registry, resolver, adapter, configuration, binding = (
+        _persisted_geometric_dispatch(tmp_path)
+    )
+
+    reopened_scene = SceneRepository(fx['scene_repository'].path)
+    reopened = CadAcousticSolverDispatchRepository(
+        reopened_scene,
+        external_authority_resolver=resolver,
+    )
+
+    assert reopened.get_descriptor(adapter.descriptor_id) == adapter
+    assert reopened.get_dispatch(binding.binding_id) == binding
+    assert binding.state == 'READY'
+    assert binding.solver_configuration_ref == configuration
+
+
+def test_solver_adapter_descriptor_requires_resolvable_external_authorities(
+    tmp_path: Path,
+) -> None:
+    fx = _fixture(tmp_path)
+    adapter = _adapter_descriptor(
+        role='future-r150-geometric-role',
+        domain='geometric',
+        observables=('deterministic_paths',),
+    )
+    _registry, resolver = _exact_ref_registry(
+        adapter.solver_configuration_schema_ref,
+    )
+    repository = CadAcousticSolverDispatchRepository(
+        fx['scene_repository'],
+        external_authority_resolver=resolver,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match='solver implementation exact external authority does not exist',
+    ):
+        repository.save_descriptor(adapter)
+
+
+def test_solver_dispatch_reopen_fails_closed_when_configuration_authority_stales(
+    tmp_path: Path,
+) -> None:
+    fx, registry, resolver, _adapter, configuration, binding = (
+        _persisted_geometric_dispatch(tmp_path)
+    )
+    registry.pop(
+        (
+            configuration.authority_id,
+            configuration.authority_version,
+            configuration.semantic_hash_sha256,
+        )
+    )
+
+    reopened = CadAcousticSolverDispatchRepository(
+        SceneRepository(fx['scene_repository'].path),
+        external_authority_resolver=resolver,
+    )
+    with pytest.raises(
+        ValueError,
+        match='solver configuration exact external authority does not exist',
+    ):
+        reopened.get_dispatch(binding.binding_id)
