@@ -99,6 +99,7 @@ class ProposedEntitySpec(BaseModel):
     role_binding_id: str | None = Field(default=None, min_length=1)
     lifecycle: Literal['proposed'] = 'proposed'
     provenance: tuple[VariantProvenanceItem, ...] = ()
+
     @model_validator(mode='after')
     def valid_proposed_entity(self) -> 'ProposedEntitySpec':
         if self.entity.kind not in PHYSICAL_ENTITY_KINDS:
