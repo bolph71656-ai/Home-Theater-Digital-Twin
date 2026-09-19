@@ -272,7 +272,7 @@ def evaluate_monotonic_convergence_observable(
     expected,
     levels: tuple[RawConvergenceLevel, ...],
 ) -> BakeoffObservableEvidence:
-    """Evaluate an unsampled R100A complex-field convergence observable.
+    """Evaluate an unsampled R100A complex pressure-transfer convergence observable.
 
     Every level is compared on the exact same keyed frequency grid against the
     finest representation. Complex RMS error carries magnitude and phase
@@ -288,9 +288,13 @@ def evaluate_monotonic_convergence_observable(
             f'observable {expected.observable_id} has explicit expected samples; '
             'use the sampled evaluator instead'
         )
-    if expected.kind != 'field_pressure_pa' or expected.unit != 'Pa':
+    if (
+        expected.kind != 'complex_pressure_transfer_pa_per_m3_s'
+        or expected.unit != 'Pa/(m3/s)'
+    ):
         raise ValueError(
-            f'convergence evaluator requires field_pressure_pa / Pa authority, got '
+            'convergence evaluator requires '
+            'complex_pressure_transfer_pa_per_m3_s / Pa/(m3/s) authority, got '
             f'{expected.kind} / {expected.unit}'
         )
     if len(levels) < 3:
