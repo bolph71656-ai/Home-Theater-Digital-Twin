@@ -126,6 +126,8 @@ def test_opening_authority_is_explicit_portal_or_termination() -> None:
     observable_by_id = {
         item.observable_id: item for item in termination_fixture.observables
     }
+    assert observable_by_id['termination-fr'].unit == 'dB re 1 Pa/(m3/s)'
+    assert observable_by_id['termination-complex-pressure'].unit == 'Pa'
     assert len(observable_by_id['termination-fr'].samples) == 281
     assert len(observable_by_id['termination-complex-pressure'].samples) == 281
 
