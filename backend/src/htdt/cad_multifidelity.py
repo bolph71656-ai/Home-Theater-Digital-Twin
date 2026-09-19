@@ -576,21 +576,24 @@ def finalize_o100_multifidelity(
         raise ValueError(
             'final O100 comparison eligible set must equal exact screening survivors'
         )
+    bundle_by_variant = {
+        bundle.variant_id: bundle
+        for bundle in final_comparison.bundles
+    }
     for item in final_comparison.eligibility:
         candidate = candidate_by_id.get(item.variant_id)
         if candidate is None:
             raise ValueError(
                 'final O100 comparison contains candidate outside multi-fidelity plan'
             )
-        bundle_ref = next(
-            (
-                bundle
-                for bundle in final_comparison.bundles
-                if bundle.variant_id == item.variant_id
-            ),
-            None,
-        )
-        if bundle_ref is not None and candidate.semantic_sha256 != bundle_ref.variant_sha256:
+        if item.state != 'ELIGIBLE':
+            continue
+        bundle_ref = bundle_by_variant.get(item.variant_id)
+        if bundle_ref is None:
+            raise ValueError(
+                'final O100 eligible candidate requires exact VariantEvaluationBundle ref'
+            )
+        if candidate.semantic_sha256 != bundle_ref.variant_sha256:
             raise ValueError(
                 'final O100 comparison SystemVariant hash differs from plan candidate'
             )
