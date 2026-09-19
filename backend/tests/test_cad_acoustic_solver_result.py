@@ -159,8 +159,6 @@ def _artifact(
             minimum_hz=minimum_hz,
             maximum_hz=maximum_hz,
         ),
-        source_entity_ids=('speaker-fl',),
-        receiver_ids=('receiver-mlp',),
     )
 
 
