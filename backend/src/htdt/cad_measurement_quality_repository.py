@@ -253,22 +253,26 @@ class CadMeasurementQualityRepository:
             raise KeyError(measurement_id)
         events = self.list_lineage(measurement.document_id)
         connected = {measurement_id}
-        relevant: list[CadMeasurementLineageRecord] = []
         changed = True
         while changed:
             changed = False
             for event in events:
-                if event in relevant:
-                    continue
                 if (
                     event.measurement_id in connected
                     or event.supersedes_measurement_id in connected
                 ):
-                    relevant.append(event)
                     before = len(connected)
                     connected.add(event.measurement_id)
                     connected.add(event.supersedes_measurement_id)
                     changed = changed or len(connected) != before
+        relevant = [
+            event
+            for event in events
+            if (
+                event.measurement_id in connected
+                and event.supersedes_measurement_id in connected
+            )
+        ]
         if not relevant:
             return measurement_id
         return relevant[-1].selected_measurement_id
