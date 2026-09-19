@@ -146,7 +146,7 @@ O100はO80/O90を置換しない。O80はexact topology内のextended placement 
 | S120 — explicit hard-constraint adapter | S100 | **Issue #170でinterface実装**。選択criterionのみFAIL/UNKNOWNをfail-closedでblock。未選択FAILはcandidateを削除せず、complianceをPareto objectiveへ暗黙変換しない |
 | S130 — workspace integration | S100 + UX140 | 未実装。criterion別provenance/status/evidence basisを表示し、hard constraint opt-inを明示操作にする。GUIはIssue #170 scope外 |
 
-初期built-in dataは公開根拠でpass/fail boundaryを明示できる範囲だけに限定する。CEDIA/CTA-RP22 v1.2はspatial/layout subset、Dolby Atmos Home Theater Installation Guidelines R3.1は5.1.2の公開azimuth rangeを収録する。DTS:Xは明示public criterionを確認できないためbuilt-in未収録。Auro-3Dの公開target angleはtolerance/boundaryを推定せずbuilt-in pass/fail criterionへ変換しない。RP22のSPL/headroom等をO100Dより先に実装したことにはしない。
+初期built-in dataは公開根拠でpass/fail boundaryを明示できる範囲だけに限定する。CEDIA/CTA-RP22 v1.2はspatial/layout subset、Dolby Atmos Home Theater Installation Guidelines R3.1は5.1.2の公開azimuth range、AURO-3D Home Theater Setup Rev.12は公開Table 3/§3.3.1.1の明示elevation/opening-angle criteriaを収録する。DTS:Xは明示public criterionを確認できないためbuilt-in未収録。Auroのhorizontal azimuth表に見られるsource上の符号不整合は黙って補正せず初期profileから除外する。RP22のSPL/headroom等をO100Dより先に実装したことにはしない。
 
 ### Post-0.1 / R-series — arbitrary-room acoustics (Issue #101)
 
@@ -286,7 +286,7 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationはO90AをPR #145、O90B bounded foundationをPR #149、canonical O90B completionをPR #156で実装。O90C以降は未実装。O100 system expansion / virtual channel topology optimizationはO100AをPR #144、O100B virtual topology/placement searchをPR #150で実装し、O100C以降は未実装。Issue #170 StandardsProfileはversioned criterion/evaluation authority、public-source RP22 spatial subset / Dolby 5.1.2 profile、historical re-evaluation、explicit hard-constraint opt-inを実装し、GUIとO100D acoustic objectivesは未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationはO90AをPR #145、O90B bounded foundationをPR #149、canonical O90B completionをPR #156で実装。O90C以降は未実装。O100 system expansion / virtual channel topology optimizationはO100AをPR #144、O100B virtual topology/placement searchをPR #150で実装し、O100C以降は未実装。Issue #170 StandardsProfileはversioned criterion/evaluation authority、public-source RP22 spatial subset / Dolby 5.1.2 / AURO-3D Rev.12 explicit layout profiles、criterionごとのentity binding、historical re-evaluation、explicit hard-constraint opt-inを実装し、GUIとO100D acoustic objectivesは未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
