@@ -1,4 +1,4 @@
-name: R100B MFEM Concave Independent Reference
+name: R100B MFEM Wave References
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ on:
       - 'benchmarks/acoustics/r100b_candidates.json'
       - 'benchmarks/acoustics/mfem_probe/**'
       - 'scripts/run_r100b_mfem_concave_probe.py'
+      - 'scripts/run_r100b_mfem_portal_probe.py'
       - '.github/workflows/r100b-mfem-concave.yml'
   workflow_dispatch:
 
@@ -19,6 +20,7 @@ jobs:
       PYTHONUTF8: '1'
       MFEM_SHA: d964264cdb9a13e94a201b6c236c7721e0c8765f
       PROBE_OUTPUT: artifacts/r100b/mfem_concave_reference.json
+      PORTAL_OUTPUT: artifacts/r100b/mfem_portal_continuity.json
       HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -32,8 +34,8 @@ jobs:
       - name: Install focused HTDT probe runtime
         run: python -m pip install -e ".\backend" psutil
 
-      - name: Preflight MFEM reference probe script
-        run: python -m py_compile scripts\\run_r100b_mfem_concave_probe.py
+      - name: Preflight MFEM reference probe scripts
+        run: python -m py_compile scripts\\run_r100b_mfem_concave_probe.py scripts\\run_r100b_mfem_portal_probe.py
 
       - name: Checkout pinned MFEM source
         shell: pwsh
@@ -57,7 +59,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             $timer.Stop()
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BLOCK_REASON=MFEM v4.10 serial CMake configure failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_BLOCK_REASON=MFEM v4.10 serial CMake configure failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BUILD_S=$($timer.Elapsed.TotalSeconds.ToString('R',[Globalization.CultureInfo]::InvariantCulture))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BUILD_DIR=$build" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             exit 0
@@ -71,19 +75,43 @@ jobs:
 
           if ($buildExit -ne 0) {
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BLOCK_REASON=MFEM v4.10 serial library/concave probe build failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_BLOCK_REASON=MFEM v4.10 serial library build failed before Portal probe build." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             exit 0
           }
 
           $exe = Get-ChildItem -Path $build -Recurse -Filter 'r100b_mfem_concave_transfer.exe' | Select-Object -First 1
           if ($null -eq $exe) {
             "MFEM_RUNTIME_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             "MFEM_BLOCK_REASON=MFEM build succeeded but the concave reference executable was not found." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_BLOCK_REASON=Common MFEM build did not produce the expected concave executable." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
             exit 0
           }
 
           "MFEM_RUNTIME_AVAILABLE=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MFEM_PROBE_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $portalTimer = [System.Diagnostics.Stopwatch]::StartNew()
+          cmake --build $build --config Release --target r100b_mfem_portal_transfer --parallel 4
+          $portalBuildExit = $LASTEXITCODE
+          $portalTimer.Stop()
+          "MFEM_PORTAL_BUILD_S=$($portalTimer.Elapsed.TotalSeconds.ToString('R',[Globalization.CultureInfo]::InvariantCulture))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          if ($portalBuildExit -ne 0) {
+            "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_BLOCK_REASON=MFEM v4.10 Portal probe build failed on GitHub-hosted Windows." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            exit 0
+          }
+
+          $portalExe = Get-ChildItem -Path $build -Recurse -Filter 'r100b_mfem_portal_transfer.exe' | Select-Object -First 1
+          if ($null -eq $portalExe) {
+            "MFEM_PORTAL_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            "MFEM_PORTAL_BLOCK_REASON=MFEM Portal build succeeded but the executable was not found." | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            exit 0
+          }
+          "MFEM_PORTAL_AVAILABLE=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MFEM_PORTAL_EXE=$($portalExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Run independent MFEM concave numerical reference
         if: env.MFEM_RUNTIME_AVAILABLE == '1'
@@ -114,6 +142,51 @@ jobs:
             --output $env:PROBE_OUTPUT `
             --build-s $env:MFEM_BUILD_S `
             --blocked-reason "$env:MFEM_BLOCK_REASON"
+
+      - name: Run MFEM Portal continuity cross-fixture gate
+        if: env.MFEM_PORTAL_AVAILABLE == '1'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'mfem-r100b-portal-work'
+          python scripts\run_r100b_mfem_portal_probe.py `
+            --manifest benchmarks\acoustics\r100a_manifest.json `
+            --candidates benchmarks\acoustics\r100b_candidates.json `
+            --mfem-root $env:MFEM_ROOT `
+            --build-dir $env:MFEM_BUILD_DIR `
+            --executable $env:MFEM_PORTAL_EXE `
+            --work-dir $work `
+            --output $env:PORTAL_OUTPUT `
+            --build-s $env:MFEM_PORTAL_BUILD_S
+
+      - name: Record blocked MFEM Portal gate
+        if: env.MFEM_PORTAL_AVAILABLE != '1'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'mfem-r100b-portal-work'
+          python scripts\run_r100b_mfem_portal_probe.py `
+            --manifest benchmarks\acoustics\r100a_manifest.json `
+            --candidates benchmarks\acoustics\r100b_candidates.json `
+            --mfem-root $env:MFEM_ROOT `
+            --build-dir $env:MFEM_BUILD_DIR `
+            --work-dir $work `
+            --output $env:PORTAL_OUTPUT `
+            --build-s $env:MFEM_PORTAL_BUILD_S `
+            --blocked-reason "$env:MFEM_PORTAL_BLOCK_REASON"
+
+      - name: Show MFEM Portal outcome
+        shell: pwsh
+        run: |
+          $probe = Get-Content -Raw $env:PORTAL_OUTPUT | ConvertFrom-Json
+          Write-Host "R100B_MFEM_PORTAL_OUTCOME=$($probe.portal_fixture_outcome)"
+          Write-Host "R100B_MFEM_PORTAL_WORKFLOW_IS_FIXTURE_RESULT=$($probe.workflow_result_is_fixture_result)"
+          Write-Host "R100B_MFEM_PORTAL_R100A_HASH=$($probe.r100a_semantic_hash)"
+          Write-Host "R100B_MFEM_PORTAL_CANDIDATE_HASH=$($probe.candidate_manifest_hash)"
+          if ($null -ne $probe.details.cross_fixture_metrics) {
+            Write-Host "R100B_MFEM_PORTAL_METRICS=$($probe.details.cross_fixture_metrics | ConvertTo-Json -Compress)"
+          }
+          if ($null -ne $probe.details.topology_evidence) {
+            Write-Host "R100B_MFEM_PORTAL_TOPOLOGY=$($probe.details.topology_evidence | ConvertTo-Json -Compress)"
+          }
 
       - name: Show independent-reference outcome
         shell: pwsh
@@ -147,9 +220,11 @@ jobs:
             Write-Host "R100B_MFEM_REFERENCE_ERROR=$($probe.details.error)"
           }
 
-      - name: Upload R100B MFEM independent-reference evidence
+      - name: Upload R100B MFEM wave-reference evidence
         uses: actions/upload-artifact@v4
         with:
-          name: r100b-mfem-concave-reference
-          path: artifacts/r100b/mfem_concave_reference.json
+          name: r100b-mfem-wave-references
+          path: |
+            artifacts/r100b/mfem_concave_reference.json
+            artifacts/r100b/mfem_portal_continuity.json
           if-no-files-found: error
