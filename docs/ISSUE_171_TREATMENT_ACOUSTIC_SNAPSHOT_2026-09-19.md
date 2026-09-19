@@ -115,7 +115,15 @@ It covers the requested fixtures:
 15. persisted v1 payload compatibility
 16. blocked treatment result never promoted to AVAILABLE, while an independently bound geometric domain remains usable
 
-Validation results are recorded below once CI completes.
+## Validation
+
+PR #219 GitHub Actions CI run #1088 completed successfully on the implementation head:
+
+- `python -m pytest backend\\tests`: **701 passed, 1 skipped, 2 warnings**
+- the focused `test_cad_acoustic_snapshot_treatment.py` coverage is included in that backend suite
+- all CI authority preflights, launcher checks, acceptance-harness compilation, and PowerShell syntax checks passed
+- repository comparison remained based on the task-start latest `main` commit with no other agent branch incorporated
+- RDC remained **0**
 
 ## Deferred
 
