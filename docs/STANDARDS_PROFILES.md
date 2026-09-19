@@ -136,7 +136,7 @@ Source:
   16 May 2024.
 - Public source:
   <https://www.auro-3d.com/wp-content/uploads/2024/05/Auro-3D-Home-Theater-Setup-Guidelines-v12-20240516.pdf>
-- Encoded references: §3.3.1.1 and Table 3 “Normative Speaker Positions”, pages 24–26.
+- Encoded references: §3.3.1.1 (pages 23–24) and §3.3.2 Table 3 “Normative Speaker Positions” (page 26).
 
 Profile identity: `auro3d-home-layout`, version `rev12-2024-05-16`.
 
