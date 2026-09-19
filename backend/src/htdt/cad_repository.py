@@ -137,9 +137,7 @@ class SceneRepository:
             ).fetchone()
             if row is None:
                 return None
-            revision = self._row_to_revision(row)
-            self._validate_semantic_geometry_binding(connection, revision)
-            return revision
+            return self._row_to_revision(row)
 
     def save(self, document: SceneDocument, *, parent_revision_id: str | None) -> SaveResult:
         with closing(self._connect()) as connection, connection:
