@@ -6,6 +6,10 @@ from typing import Any, Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .cad_amplifier_headroom import (
+    OBJECTIVE_COMPARISON_MODEL_ID as AMPLIFIER_OBJECTIVE_COMPARISON_MODEL_ID,
+    PlaybackChainEvaluation,
+)
 from .cad_coverage import CoverageEvaluation
 from .cad_direct_level import DirectLevelEvaluation
 from .cad_repository import SceneRevision
@@ -328,6 +332,28 @@ def direct_level_evaluation_ref(
         model_id='o100d-direct-equipment-derived-objective',
         model_version=evaluation.scenario.scenario_sha256,
         fidelity='direct-equipment-derived',
+    )
+
+
+def amplifier_headroom_evaluation_ref(
+    evaluation: PlaybackChainEvaluation,
+) -> ExactAuthorityRef:
+    """Return the exact topology-comparison handle for playback-chain headroom.
+
+    The evaluation hash binds the complete embedded PlaybackChainScenario.  The
+    declared model identity uses the scenario comparison hash because that is
+    the existing authority that defines quantity/load/duration/channel/routing
+    comparability across different SystemVariant instances.  No separate
+    fidelity claim is added because PlaybackChainEvaluation does not define one.
+    """
+
+    return ExactAuthorityRef(
+        authority_kind='amplifier_headroom_evaluation',
+        authority_id=evaluation.evaluation_id,
+        authority_version=evaluation.authority_version,
+        semantic_sha256=evaluation.evaluation_sha256,
+        model_id=AMPLIFIER_OBJECTIVE_COMPARISON_MODEL_ID,
+        model_version=evaluation.scenario.comparison_sha256,
     )
 
 
