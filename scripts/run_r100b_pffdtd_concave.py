@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import subprocess
 import sys
 import threading
 import time
@@ -161,6 +162,35 @@ def _directory_size_mb(path: Path) -> float:
         for item in path.rglob('*')
         if item.is_file()
     ) / (1024.0 * 1024.0)
+
+
+def _git_rev_parse(revision: str) -> str | None:
+    completed = subprocess.run(
+        ['git', 'rev-parse', '--verify', revision],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip().lower()
+    return value or None
+
+
+def _htdt_git_provenance() -> dict[str, str]:
+    checkout = _git_rev_parse('HEAD')
+    if checkout is None:
+        raise RuntimeError('cannot resolve HTDT checkout commit')
+    event_head = os.environ.get('HTDT_PR_HEAD_SHA', '').strip().lower()
+    if len(event_head) == 40 and all(character in '0123456789abcdef' for character in event_head):
+        pr_head = event_head
+    else:
+        pr_head = _git_rev_parse('HEAD^2') or checkout
+    return {
+        'checkout_commit_sha': checkout,
+        'pr_head_commit_sha': pr_head,
+    }
 
 
 def _file_sha256(path: Path) -> str:
@@ -1169,9 +1199,24 @@ def _execute(
     )
     validate_bakeoff_run(benchmark, candidates, run)
 
+    root = Path(__file__).resolve().parents[1]
     details = {
         'candidate_source_commit_sha': candidate.source_commit_sha,
         'compatibility_patch': compatibility,
+        'source_provenance': {
+            **_htdt_git_provenance(),
+            'pffdtd_source_commit_sha': actual_head,
+            'harness_source_sha256': _file_sha256(Path(__file__).resolve()),
+            'adapter_source_sha256': _file_sha256(
+                root / 'backend' / 'src' / 'htdt' / 'acoustic_pffdtd_adapter.py'
+            ),
+            'upstream_sim_consts_sha256': _file_sha256(
+                upstream_root / 'python' / 'fdtd' / 'sim_consts.py'
+            ),
+            'upstream_sim_setup_sha256': _file_sha256(
+                upstream_root / 'python' / 'sim_setup.py'
+            ),
+        },
         'compiled_model': {
             'model_json_sha256': _file_sha256(model_path),
             **compiled_geometry,
