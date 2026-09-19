@@ -374,8 +374,8 @@ class FiniteRecordTransferContract(BaseModel):
         'solver_pressure_or_declared_primary_field_conversion'
     ] = 'solver_pressure_or_declared_primary_field_conversion'
     denominator_record: Literal[
-        'actual_injected_volume_velocity_samples'
-    ] = 'actual_injected_volume_velocity_samples'
+        'physical_volume_velocity_samples_on_solver_time_grid'
+    ] = 'physical_volume_velocity_samples_on_solver_time_grid'
     transfer_definition: Literal[
         'pressure_over_volume_velocity'
     ] = 'pressure_over_volume_velocity'
