@@ -910,8 +910,11 @@ def test_o90b_cancel_cache_resume_and_stale_reuse_protection(tmp_path) -> None:
             created_at_utc='2026-09-19T00:20:00+00:00',
         )
 
-    changed_revision = revision.model_copy(
-        update={'revision_id': f'{revision.revision_id}-changed'}
+    from dataclasses import replace
+
+    changed_revision = replace(
+        revision,
+        revision_id=f'{revision.revision_id}-changed',
     )
     with pytest.raises(ValueError, match='SceneRevision authority mismatch'):
         evaluate_uncertainty_robustness(
