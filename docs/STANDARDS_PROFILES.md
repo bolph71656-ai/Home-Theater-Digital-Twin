@@ -15,8 +15,9 @@ numeric angle semantics.
 
 `StandardsEvaluation` binds the exact profile semantic hash to one exact
 `SceneRevision` and, when applicable, one exact `SystemVariant` semantic hash and an
-explicit set of target entity IDs. The repository re-validates those bindings before
-persistence. A newer profile creates a new evaluation linked by `reevaluation_of_id`; it
+explicit set of target entity IDs. Each `CriterionObservation` may additionally bind the
+exact entity subset that produced that criterion value; those entity IDs must be a subset
+of the evaluation target. The repository re-validates those bindings before persistence. A newer profile creates a new evaluation linked by `reevaluation_of_id`; it
 never rewrites the historical profile or evaluation.
 
 The evaluator consumes explicit observations. It does **not** derive a missing physical
@@ -127,20 +128,37 @@ an added tolerance.
 The profile intentionally does not infer top-speaker, elevation, room, or performance
 criteria not encoded by this profile.
 
-### DTS:X and Auro-3D
+### AURO-3D Home Theater Setup Rev.12
+
+Source:
+
+- NEWAURO BV, **AURO-3D Home Theater Setup — Installation Guidelines**, Rev. 12,
+  16 May 2024.
+- Public source:
+  <https://www.auro-3d.com/wp-content/uploads/2024/05/Auro-3D-Home-Theater-Setup-Guidelines-v12-20240516.pdf>
+- Encoded references: §3.3.1.1 and Table 3 “Normative Speaker Positions”, pages 24–26.
+
+Profile identity: `auro3d-home-layout`, version `rev12-2024-05-16`.
+
+Encoded criteria are limited to unambiguous public min/max statements:
+
+| Criterion ID | Source rule encoded |
+|---|---|
+| `auro.v12.lower-layer-max-elevation` | lower-layer elevation maximum 10°; no unstated lower bound |
+| `auro.v12.height-layer-elevation` | Height-layer elevation 25°–40° |
+| `auro.v12.top-speaker-elevation` | Top speaker elevation 65°–100° |
+| `auro.v12.surround-height-opening-angle` | Surround-to-Height opening angle at least 25° |
+| `auro.v12.screen-height-opening-angle` | Height screen-channel opening angle at least 22° |
+
+The Rev.12 table also publishes horizontal azimuth rows. HTDT does not encode those rows
+in this initial profile because the published Height Right row contains an apparent sign
+inconsistency in its maximum azimuth entry. The source is not silently corrected.
+
+### DTS:X
 
 No built-in DTS:X criterion is included in Issue #170 because an official public source
 with a sufficiently explicit criterion boundary/provenance was not established for this
 slice.
-
-The public **Auro-3D Home Theater Setup Guidelines** was reviewed, including §§3.3 and
-3.3.1.1 and their stated speaker target angles. Reviewed source:
-<https://www.auro-3d.com/wp-content/uploads/2022/09/Auro-3D-Home-Theater-Setup-Guidelines_lores.pdf>.
-The reviewed PDF is copyright 2015; no revision identifier is stated in the reviewed
-source, so HTDT does not invent one. Issue #170 does not encode those targets as pass/fail
-criteria because the public guidance does not establish the tolerance/boundary semantics
-needed to convert a target angle into a compliance interval without inference. HTDT does
-not invent that interval.
 
 Users can represent an independently sourced criterion through
 `build_user_standards_profile()`; every such criterion still requires explicit source
@@ -161,8 +179,9 @@ Persistence checks include:
    authority;
 3. the exact SceneRevision ID/document/content hash exists;
 4. an optional SystemVariant ID/hash belongs to that exact baseline SceneRevision;
-5. bound entity IDs exist in the exact scene or materialized variant;
-6. an explicit re-evaluation points to a persisted historical evaluation with the exact
+5. evaluation target entity IDs exist in the exact scene or materialized variant;
+6. each criterion observation's entity IDs are an exact subset of that target binding;
+7. an explicit re-evaluation points to a persisted historical evaluation with the exact
    same target.
 
 Reopening reads the serialized immutable payload and re-runs its model hash validation.
@@ -180,7 +199,7 @@ Issue #170 does not implement:
 - automatic candidate deletion based on advisory `FAIL`;
 - GUI;
 - private/commercial document content that is not available in the cited public source;
-- inferred DTS:X/Auro-3D tolerances;
+- inferred DTS:X tolerances or silent repair of ambiguous/inconsistent source data;
 - physical geometry/measurement derivation engines for every criterion. Those providers
   must declare their own input/evidence capability before a criterion can move from
   `UNKNOWN`.
