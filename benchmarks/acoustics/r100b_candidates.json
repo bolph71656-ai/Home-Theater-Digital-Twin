@@ -53,12 +53,14 @@
       "required_representation": "volume_mesh",
       "probe_capabilities": [
         "wave_rigid",
-        "wave_impedance"
+        "wave_impedance",
+        "portal_continuity"
       ],
       "notes": [
         "Acts as the primary independent wave reference/production alternative in R100B.",
         "A Gmsh/PETSc dependency is not assumed; exact meshing/linear-solver choices remain benchmark-gated.",
-        "Portal continuity is not claimed until an acoustic adapter implements and verifies it."
+        "Portal continuity is not claimed until an acoustic adapter implements and verifies it.",
+        "Portal continuity adapter permission was added with Issue #159; probe_capabilities authorize execution but do not constitute PASS evidence."
       ]
     },
     {
