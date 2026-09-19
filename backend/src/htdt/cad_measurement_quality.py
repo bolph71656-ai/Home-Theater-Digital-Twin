@@ -270,7 +270,8 @@ class CadMeasurementQualityReport(BaseModel):
     acquisition_context: CadAcquisitionContextBinding | None = None
 
     algorithm_version: str = Field(min_length=1)
-    algorithm_sha256: str = Field(pattern=r'^[0-9a-f]{64}
+    algorithm_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+    profile: CadMeasurementQualityProfile
     evidence: CadMeasurementQualityEvidence
 
     clipping: CadMeasurementQualityCheck
