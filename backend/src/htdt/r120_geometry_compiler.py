@@ -400,7 +400,9 @@ class R120CompiledGeometry(BaseModel):
     approximation_operations: tuple[ApproximationOperation, ...]
     dropped_features: tuple[DroppedFeature, ...]
     geometric_tolerance_m: float = Field(gt=0)
-    maximum_recorded_approximation_error_m: float = Field(ge=0)
+    approximation_error_bound_m: float | None = Field(default=None, ge=0)
+    approximation_error_status: Literal['exact_preservation', 'not_computed_for_dropped_features']
+    maximum_dropped_feature_extent_m: float = Field(ge=0)
     compiler_warnings: tuple[str, ...]
     unresolved_conditions: tuple[str, ...]
     readiness: R120GeometryReadiness
@@ -418,12 +420,10 @@ class R120CompiledGeometry(BaseModel):
             raise ValueError('compiled geometry semantic geometry id does not match request')
         if self.exact_semantic_geometry_hash_sha256 != self.request.semantic_geometry_hash_sha256:
             raise ValueError('compiled geometry semantic geometry hash does not match request')
-        expected_topology = _semantic_hash(
-            {
-                'vertices': [item.model_dump(mode='json') for item in self.vertices],
-                'triangles': [item.model_dump(mode='json') for item in self.triangles],
-                'surface_mapping': [item.model_dump(mode='json') for item in self.surface_mapping],
-            }
+        expected_topology = _compiled_topology_identity(
+            self.vertices,
+            self.triangles,
+            self.surface_mapping,
         )
         if self.topology_identity_sha256 != expected_topology:
             raise ValueError('compiled geometry topology identity mismatch')
@@ -759,12 +759,10 @@ def compile_r120_geometry(
         )
     surface_mapping = tuple(mapping)
 
-    topology_identity = _semantic_hash(
-        {
-            'vertices': [item.model_dump(mode='json') for item in vertices],
-            'triangles': [item.model_dump(mode='json') for item in triangles],
-            'surface_mapping': [item.model_dump(mode='json') for item in surface_mapping],
-        }
+    topology_identity = _compiled_topology_identity(
+        vertices,
+        triangles,
+        surface_mapping,
     )
     bounds = _bounding_volume(vertices)
     edge_uses = _edge_uses(triangles)
@@ -845,9 +843,14 @@ def compile_r120_geometry(
         boundary_physics_missing=boundary_physics_missing,
         unresolved_conditions=tuple(unresolved),
     )
-    maximum_error = max(
+    maximum_dropped_extent = max(
         (item.measured_max_edge_m for item in dropped),
         default=0.0,
+    )
+    approximation_error_status = (
+        'not_computed_for_dropped_features'
+        if dropped
+        else 'exact_preservation'
     )
     region_ref = _authority_ref(region_authority) if region_authority else None
     portal_ref = _authority_ref(portal_authority) if portal_authority else None
@@ -872,7 +875,9 @@ def compile_r120_geometry(
         'approximation_operations': tuple(operations),
         'dropped_features': tuple(dropped),
         'geometric_tolerance_m': request.geometric_tolerance_m,
-        'maximum_recorded_approximation_error_m': maximum_error,
+        'approximation_error_bound_m': None,
+        'approximation_error_status': approximation_error_status,
+        'maximum_dropped_feature_extent_m': maximum_dropped_extent,
         'compiler_warnings': tuple(warnings),
         'unresolved_conditions': tuple(unresolved),
         'readiness': readiness,
@@ -1176,6 +1181,34 @@ def _distance(left: CompiledVertex, right: CompiledVertex) -> float:
         (left.x_m - right.x_m) ** 2
         + (left.y_m - right.y_m) ** 2
         + (left.z_m - right.z_m) ** 2
+    )
+
+
+def _compiled_topology_identity(
+    vertices: tuple[CompiledVertex, ...],
+    triangles: tuple[CompiledTriangle, ...],
+    surface_mapping: tuple[CompiledSurfaceMapping, ...],
+) -> str:
+    # Topology identity deliberately excludes material/boundary physics authorities.
+    # Those authorities remain part of the compiled semantic hash, but changing
+    # physics must not pretend that vertex/triangle/surface topology changed.
+    topology_mapping = [
+        {
+            'source_surface_id': item.source_surface_id,
+            'source_surface_key': item.source_surface_key,
+            'semantic_class': item.semantic_class,
+            'source_triangle_ids': list(item.source_triangle_ids),
+            'compiled_triangle_indices': list(item.compiled_triangle_indices),
+            'dropped_source_triangle_ids': list(item.dropped_source_triangle_ids),
+        }
+        for item in surface_mapping
+    ]
+    return _semantic_hash(
+        {
+            'vertices': [item.model_dump(mode='json') for item in vertices],
+            'triangles': [item.model_dump(mode='json') for item in triangles],
+            'surface_mapping': topology_mapping,
+        }
     )
 
 
