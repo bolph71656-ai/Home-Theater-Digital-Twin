@@ -163,7 +163,7 @@ def test_finite_record_pressure_transfer_matches_direct_dtft_definition() -> Non
     source = np.asarray([2.0, 0.0, 0.0, 0.0], dtype=np.float64)
     frequencies = np.asarray([100.0, 200.0], dtype=np.float64)
     times = np.arange(pressure.size, dtype=np.float64) * dt
-    kernel = np.exp(-2j * np.pi * frequencies[:, None] * times[None, :])
+    kernel = np.exp(+2j * np.pi * frequencies[:, None] * times[None, :])
     expected = (dt * (kernel @ pressure)) / (dt * (kernel @ source))
 
     actual = finite_record_pressure_transfer(
