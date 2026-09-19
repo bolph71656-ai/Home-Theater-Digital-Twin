@@ -482,27 +482,45 @@ def test_installed_lifecycle_is_bound_exactly_and_changes_identity(
     tmp_path: Path,
 ) -> None:
     fx = _fixture(tmp_path)
-    proposed, _ = _compile_result(
+    proposed, proposed_item = _compile_result(
         fx,
         kind='both',
-        instance_id='panel-proposed-for-lifecycle',
+        instance_id='panel-lifecycle',
         target_domain='wave',
-        suffix='-proposed',
     )
-    installed, _ = _compile_result(
-        fx,
-        kind='both',
-        instance_id='panel-installed',
+    installed_placement = revise_treatment_placement(
+        proposed_item.placement,
+        revision=fx['revision'],
+        lifecycle='installed',
+    )
+    fx['treatment_repository'].save_placement(installed_placement)
+    installed_evaluation = (
+        fx['treatment_repository'].evaluate_placement_surface_binding(
+            installed_placement,
+            scene_revision_id=fx['revision'].revision_id,
+        )
+    )
+    installed_item = TreatmentBoundaryCompileInput(
+        definition=proposed_item.definition,
+        placement=installed_placement,
+        surface_binding_evaluation=installed_evaluation,
+    )
+    installed = compile_treatment_boundary_overlays(
+        fx['revision'],
+        fx['compiled'],
+        (installed_item,),
         target_domain='wave',
-        suffix='-installed',
-        installed=True,
-    )
+        base_surface_bindings=(fx['base_binding'],),
+    )[0]
     proposed_snapshot = _snapshot(fx, proposed)
     installed_snapshot = _snapshot(fx, installed)
 
     assert installed.status == 'AVAILABLE'
     assert installed_snapshot.treatment_boundary_bindings[0].lifecycle == 'installed'
     assert installed_snapshot.semantic_sha256 != proposed_snapshot.semantic_sha256
+    assert _prediction(installed_snapshot).deterministic_input_hash != (
+        _prediction(proposed_snapshot).deterministic_input_hash
+    )
 
 
 def test_base_material_and_boundary_remain_separate_from_treatment(
