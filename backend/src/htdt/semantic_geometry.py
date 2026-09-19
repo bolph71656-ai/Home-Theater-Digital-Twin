@@ -335,11 +335,8 @@ class SemanticAcousticGeometry(BaseModel):
                 raise ValueError(f'triangle assigned to multiple semantic surfaces: {sorted(overlap)}')
             assigned.update(surface.triangle_ids)
             expected_surface_id = _surface_id(
-                self.derived_geometry_hash,
+                self.input_raw_mesh_id,
                 surface.surface_key,
-                surface.semantic_class,
-                surface.triangle_ids,
-                surface.assignment_provenance,
             )
             if surface.surface_id != expected_surface_id:
                 raise ValueError('semantic surface_id does not match geometry and assignment')
@@ -450,7 +447,7 @@ def convert_raw_visual_mesh_to_semantic_geometry(
         triangles,
         profile=request.profile.diagnostic_profile,
     )
-    surfaces = _build_surfaces(derived_hash, triangles, request.surface_assignments)
+    surfaces = _build_surfaces(mesh.mesh_id, triangles, request.surface_assignments)
 
     geometry_failures = tuple(
         finding.code for finding in post_diagnostic.findings if finding.state != 'pass'
@@ -699,7 +696,7 @@ def _diagnose_derived_geometry(
 
 
 def _build_surfaces(
-    derived_geometry_hash: str,
+    input_raw_mesh_id: str,
     triangles: list[SemanticTriangle],
     assignments: tuple[SurfaceSemanticAssignment, ...],
 ) -> tuple[SemanticSurface, ...]:
@@ -731,11 +728,8 @@ def _build_surfaces(
         surfaces.append(
             SemanticSurface(
                 surface_id=_surface_id(
-                    derived_geometry_hash,
+                    input_raw_mesh_id,
                     assignment.surface_key,
-                    assignment.semantic_class,
-                    canonical_members,
-                    'explicit',
                 ),
                 surface_key=assignment.surface_key,
                 semantic_class=assignment.semantic_class,
@@ -751,11 +745,8 @@ def _build_surfaces(
         surfaces.append(
             SemanticSurface(
                 surface_id=_surface_id(
-                    derived_geometry_hash,
+                    input_raw_mesh_id,
                     '__unassigned__',
-                    'unknown',
-                    unassigned,
-                    'unassigned',
                 ),
                 surface_key='__unassigned__',
                 semantic_class='unknown',
@@ -766,20 +757,11 @@ def _build_surfaces(
     return tuple(surfaces)
 
 
-def _surface_id(
-    derived_geometry_hash: str,
-    surface_key: str,
-    semantic_class: SemanticSurfaceClass,
-    triangle_ids: tuple[str, ...],
-    assignment_provenance: Literal['explicit', 'unassigned'],
-) -> str:
+def _surface_id(input_raw_mesh_id: str, surface_key: str) -> str:
     identity = _semantic_hash(
         {
-            'derived_geometry_hash': derived_geometry_hash,
+            'input_raw_mesh_id': input_raw_mesh_id,
             'surface_key': surface_key,
-            'semantic_class': semantic_class,
-            'triangle_ids': list(triangle_ids),
-            'assignment_provenance': assignment_provenance,
         }
     )
     return f'semantic-surface:{identity}'
