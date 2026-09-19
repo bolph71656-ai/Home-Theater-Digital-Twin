@@ -734,6 +734,30 @@ def _definition_issues(
     return tuple(issues)
 
 
+def _source_definition_issues(
+    *,
+    expected: ObjectiveDefinition,
+    bundle: VariantEvaluationBundle,
+) -> tuple[ComparisonEligibilityIssue, ...]:
+    source = bundle.evidence_source(expected.objective_id)
+    issues: list[ComparisonEligibilityIssue] = []
+    if source.model_id is not None and (
+        source.model_id != expected.comparison_model_id
+        or source.model_version != expected.comparison_model_version
+    ):
+        issues.append(
+            ComparisonEligibilityIssue(
+                code='incompatible_source_model',
+                objective_id=expected.objective_id,
+                detail=(
+                    'objective evidence source model id/version differs from '
+                    'the exact ObjectiveDefinition comparison model'
+                ),
+            )
+        )
+    return tuple(issues)
+
+
 def _metric_for(
     bundle: VariantEvaluationBundle,
     objective_id: str,
@@ -814,7 +838,18 @@ def _bundle_required_issues(
                 )
             )
             continue
-        issues.extend(_definition_issues(expected=definition, metric=metric))
+        definition_issues = _definition_issues(
+            expected=definition,
+            metric=metric,
+        )
+        issues.extend(definition_issues)
+        if not definition_issues:
+            issues.extend(
+                _source_definition_issues(
+                    expected=definition,
+                    bundle=bundle,
+                )
+            )
     return tuple(issues)
 
 
@@ -829,6 +864,8 @@ def _optional_is_common_and_compatible(
         if metric is None or metric.state != 'available':
             return False
         if _definition_issues(expected=definition, metric=metric):
+            return False
+        if _source_definition_issues(expected=definition, bundle=bundle):
             return False
     if _declared_signature_issue_codes(bundles, definition.objective_id):
         return False
