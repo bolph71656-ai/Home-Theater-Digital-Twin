@@ -251,6 +251,11 @@ def test_baseline_projection_and_viewing_are_deterministic_but_rear_sightline_fa
     assert first.projection.required_horizontal_lens_shift_fraction == pytest.approx(0.0)
     assert first.projection.required_vertical_lens_shift_fraction == pytest.approx(-0.5)
     assert first.projection.image_plane_corners[0].x_m == pytest.approx(3.0 - 4.0 / 3.0)
+    assert len(first.projection.projection_cone_directions) == 4
+    assert all(
+        direction.y < 0.0
+        for direction in first.projection.projection_cone_directions
+    )
     assert all(item.horizontal_status == 'PASS' for item in first.viewing)
     assert all(item.vertical_status == 'PASS' for item in first.viewing)
     sightline = {item.seat_entity_id: item for item in first.sightlines}
