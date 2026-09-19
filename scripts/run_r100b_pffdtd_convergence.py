@@ -35,8 +35,9 @@ from htdt.acoustic_benchmark import load_acoustic_benchmark_manifest
 from htdt.acoustic_pffdtd_adapter import (
     apply_pffdtd_runtime_compatibility_patches,
     compile_rigid_fixture_model,
+    finite_record_pressure_transfer,
     pffdtd_git_head,
-    pffdtd_velocity_potential_to_pressure_transfer,
+    pffdtd_velocity_potential_to_pressure_trace,
     recombine_pffdtd_receiver_traces,
 )
 
@@ -46,7 +47,7 @@ FIXTURE_ID = 'wave-rectangular-convergence-v1'
 PROBE_SCHEMA = 'r100b-pffdtd-complex-convergence-artifact-1'
 PROBE_ID = 'pffdtd-rectangular-complex-pressure-convergence'
 ADAPTER_ID = 'htdt-r100b-pffdtd-complex-pressure-convergence'
-ADAPTER_VERSION = '1'
+ADAPTER_VERSION = '2'
 FMAX_HZ = 300.0
 GRID_SPACINGS_M = (0.5, 0.25, 0.125)
 THREAD_BUDGET = 4
@@ -181,6 +182,27 @@ def _validate_fixture_contract(fixture) -> None:
         raise ValueError('PFFDTD convergence probe requires linear_complex comparison')
     if fixture.comparison.observation_time_s is None:
         raise ValueError('PFFDTD convergence probe requires observation_time_s')
+    if fixture.comparison.time_step_s is not None:
+        raise ValueError('R100A-4 convergence time_step_s must remain solver-native')
+    finite_record = fixture.comparison.finite_record_transfer
+    if finite_record is None:
+        raise ValueError('PFFDTD convergence probe requires R100A-4 finite-record transfer authority')
+    if (
+        finite_record.excitation_model != 'causal_discrete_unit_sample_volume_velocity'
+        or finite_record.sample_zero_reference != 'source_t0'
+        or finite_record.record_interval != 'half_open_0_T'
+        or finite_record.solver_time_step_policy != 'solver_native_recorded'
+        or finite_record.dtft_kernel != 'exp(+i*2*pi*f*n*dt)'
+        or finite_record.dtft_measure != 'dt_weighted_sum'
+        or finite_record.numerator_quantity != 'physical_pressure'
+        or finite_record.numerator_record_policy != 'solver_pressure_or_declared_primary_field_conversion'
+        or finite_record.denominator_record != 'physical_volume_velocity_samples_on_solver_time_grid'
+        or finite_record.transfer_definition != 'pressure_over_volume_velocity'
+        or finite_record.frequency_evaluation != 'direct_scored_frequency_dtft'
+        or finite_record.source_spectrum_requirement != 'finite_nonzero_on_scored_grid'
+        or finite_record.zero_padding != 'none'
+    ):
+        raise ValueError('PFFDTD convergence finite-record transfer authority changed')
     if len(fixture.sources) != 1 or len(fixture.receivers) != 1:
         raise ValueError('PFFDTD convergence probe requires one source and one receiver')
     source = fixture.sources[0]
@@ -197,8 +219,12 @@ def _validate_fixture_contract(fixture) -> None:
     if len(fixture.observables) != 1:
         raise ValueError('PFFDTD convergence probe requires exactly one convergence observable')
     observable = fixture.observables[0]
-    if observable.kind != 'field_pressure_pa' or observable.acceptance_relation != 'monotonic_convergence':
-        raise ValueError('PFFDTD convergence probe received incompatible observable authority')
+    if (
+        observable.kind != 'complex_pressure_transfer_pa_per_m3_s'
+        or observable.unit != 'Pa/(m3/s)'
+        or observable.acceptance_relation != 'monotonic_convergence'
+    ):
+        raise ValueError('PFFDTD convergence probe received incompatible P/Q observable authority')
 
 
 def _prepare_engine(SimEngine, sim_dir: Path):
@@ -227,8 +253,9 @@ def _run_level(
     frequencies_hz: np.ndarray,
     warm_jit: bool,
 ) -> tuple[RawConvergenceLevel, dict[str, object], dict[str, np.ndarray], float, float, float]:
-    internal_c = 343.2 * math.sqrt(float(fixture.environment.temperature_c) / 20.0)
-    ppw = internal_c / (FMAX_HZ * target_h_m)
+    authority_c = float(fixture.environment.sound_speed_m_s)
+    solver_tc_for_sound_speed = 20.0 * (authority_c / 343.2) ** 2
+    ppw = authority_c / (FMAX_HZ * target_h_m)
     duration_s = float(fixture.comparison.observation_time_s)
 
     setup_started = time.perf_counter()
@@ -241,7 +268,7 @@ def _run_level(
         mat_folder=material_dir,
         mat_files_dict={},
         duration=duration_s,
-        Tc=float(fixture.environment.temperature_c),
+        Tc=solver_tc_for_sound_speed,
         rh=float(fixture.environment.relative_humidity_percent or 50.0),
         source_num=1,
         draw_vox=False,
@@ -268,6 +295,22 @@ def _run_level(
     prepare_s = time.perf_counter() - prepare_started
     if not math.isclose(float(engine.h), target_h_m, rel_tol=0.0, abs_tol=1e-12):
         raise RuntimeError(f'PFFDTD grid spacing mismatch: {engine.h} != {target_h_m}')
+    if not math.isclose(float(engine.c), authority_c, rel_tol=0.0, abs_tol=1e-12):
+        raise RuntimeError(
+            f'PFFDTD sound-speed mapping mismatch: {engine.c} != {authority_c}'
+        )
+
+    record_last_time_s = float((int(engine.Nt) - 1) * engine.Ts)
+    record_next_time_s = float(int(engine.Nt) * engine.Ts)
+    record_tolerance_s = max(1.0e-12, abs(float(engine.Ts)) * 1.0e-9)
+    if not (
+        record_last_time_s < duration_s
+        and record_next_time_s + record_tolerance_s >= duration_s
+    ):
+        raise RuntimeError(
+            'PFFDTD finite-record samples do not satisfy the frozen [0,T) contract: '
+            f'last={record_last_time_s}, next={record_next_time_s}, T={duration_s}'
+        )
 
     solve_started = time.perf_counter()
     engine.run_all(nsteps=int(engine.Nt))
@@ -287,28 +330,30 @@ def _run_level(
     if receiver_potential.shape != (1, int(engine.Nt)):
         raise RuntimeError(f'unexpected PFFDTD receiver trace shape: {receiver_potential.shape}')
 
+    source = fixture.sources[0]
     physical_source = np.zeros(int(engine.Nt), dtype=np.float64)
-    physical_source[0] = 1.0
-    pressure_transfer = pffdtd_velocity_potential_to_pressure_transfer(
+    physical_source[0] = float(source.amplitude)
+    pressure_record = pffdtd_velocity_potential_to_pressure_trace(
         receiver_potential[0],
+        time_step_s=float(engine.Ts),
+        density_kg_m3=float(fixture.environment.density_kg_m3),
+    )
+    pressure_transfer = finite_record_pressure_transfer(
+        pressure_record,
         physical_source,
         time_step_s=float(engine.Ts),
         frequency_hz=frequencies_hz,
-        density_kg_m3=float(fixture.environment.density_kg_m3),
     )
-    source = fixture.sources[0]
-    source_excitation = float(source.amplitude) * np.exp(1j * np.deg2rad(float(source.phase_deg)))
-    pressure = pressure_transfer * source_excitation
     post_s = time.perf_counter() - post_started
 
     samples = tuple(
         RawObservationSample(
-            sample_key=f'p@{float(frequency_hz):g}Hz',
+            sample_key=f'H@{float(frequency_hz):g}Hz',
             frequency_hz=float(frequency_hz),
             real_value=float(value.real),
             imag_value=float(value.imag),
         )
-        for frequency_hz, value in zip(frequencies_hz, pressure)
+        for frequency_hz, value in zip(frequencies_hz, pressure_transfer)
     )
     level = RawConvergenceLevel(
         level_id=f'h={target_h_m:g}m',
@@ -319,8 +364,8 @@ def _run_level(
             f'PFFDTD internal sound speed={float(engine.c):.12g} m/s',
             f'R100A sound speed={float(fixture.environment.sound_speed_m_s):.12g} m/s',
             f'R100A density={float(fixture.environment.density_kg_m3):.12g} kg/m3',
-            'Pressure conversion: P/Q=-i*omega*rho*Phi/Q under exp(-i*omega*t).',
-            'Physical source DTFT uses the unit pre-grid volume-velocity impulse at source_excitation_t0.',
+            'PFFDTD velocity potential is converted to a physical pressure time record with the declared second-order adapter derivative p=rho*d(phi)/dt.',
+            'R100A-4 transfer uses dt-weighted direct scored-frequency analysis DTFT of the pressure record and physical volume-velocity source record, then P_T/Q_T.',
         ),
     )
     detail = {
@@ -336,9 +381,16 @@ def _run_level(
         'h_m': float(engine.h),
         'time_step_s': float(engine.Ts),
         'sample_rate_hz': float(1.0 / engine.Ts),
-        'record_last_time_s': float((int(engine.Nt) - 1) * engine.Ts),
+        'record_last_time_s': record_last_time_s,
+        'record_next_time_s': record_next_time_s,
+        'record_interval_authority': '[0,T)',
         'requested_observation_time_s': duration_s,
         'sound_speed_m_s': float(engine.c),
+        'authority_temperature_c': float(fixture.environment.temperature_c),
+        'solver_temperature_control_c': solver_tc_for_sound_speed,
+        'sound_speed_mapping': 'c=343.2*sqrt(Tc/20); Tc_control=20*(authority_c/343.2)^2',
+        'pressure_record_conversion': 'p=rho*d(phi)/dt; second-order centered interior and one-sided endpoints',
+        'finite_record_transfer': 'dt-weighted direct DTFT P_T/Q_T from physical pressure/source records',
         'courant': float(engine.l),
         'setup_s': setup_s,
         'warm_prepare_s': warm_prepare_s,
@@ -349,12 +401,15 @@ def _run_level(
         'sim_outs_mb': output_path.stat().st_size / (1024.0 * 1024.0),
         'generated_disk_mb': _directory_size_mb(level_dir),
         'receiver_potential_max_abs': float(np.max(np.abs(receiver_potential))),
-        'pressure_max_abs_pa': float(np.max(np.abs(pressure))),
+        'pressure_record_max_abs_pa': float(np.max(np.abs(pressure_record))),
+        'pressure_transfer_max_abs_pa_per_m3_s': float(np.max(np.abs(pressure_transfer))),
     }
     traces = {
         'receiver_velocity_potential': receiver_potential,
-        'pressure_real_pa': pressure.real,
-        'pressure_imag_pa': pressure.imag,
+        'receiver_pressure_pa': pressure_record,
+        'source_volume_velocity_m3_s': physical_source,
+        'pressure_transfer_real_pa_per_m3_s': pressure_transfer.real,
+        'pressure_transfer_imag_pa_per_m3_s': pressure_transfer.imag,
         'frequency_hz': frequencies_hz,
     }
     compile_s = setup_s + warm_prepare_s + jit_s + prepare_s
@@ -515,6 +570,8 @@ def _execute(
             'source_normalization': fixture.sources[0].normalization,
             'source_amplitude': fixture.sources[0].amplitude,
             'source_phase_deg': fixture.sources[0].phase_deg,
+            'finite_record_transfer': fixture.comparison.finite_record_transfer.model_dump(mode='json'),
+            'solver_time_step_policy': 'solver_native_recorded',
             'density_kg_m3': fixture.environment.density_kg_m3,
             'thread_budget': min(THREAD_BUDGET, os.cpu_count() or 1),
             'setup_processes': NPROCS,

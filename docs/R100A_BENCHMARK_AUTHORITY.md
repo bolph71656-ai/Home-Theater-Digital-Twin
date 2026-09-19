@@ -1,7 +1,7 @@
 # R100A Acoustic Benchmark Authority
 
 > Issue #101 / R-series first implementation slice  
-> Schema: `r100a-3`  
+> Schema: `r100a-4`  
 > Canonical machine-readable manifest: `benchmarks/acoustics/r100a_manifest.json`
 
 ## Revision 2 pressure authority correction
@@ -31,6 +31,30 @@ This is intentionally a local first-order/Sommerfeld-type approximation. It is n
 The same revision embeds 281 semi-analytical 20–300 Hz reference samples. A repository checker reconstructs them from normalized Neumann transverse modes plus the exact one-dimensional Green function for the frozen Robin boundary. The N=8 -> N=12 modal refinement must remain below `1e-9` complex RMS relative and `1e-8` maximum point-relative error before the N=12 samples are accepted as authority.
 
 Revision 3 intentionally changes the manifest semantic SHA-256. Earlier R100B artifacts remain historical evidence and must replay under the new hash before they can participate in a current selection decision.
+
+## Revision 4 finite-record transfer authority
+
+Revision 3 still left finite-record wave transfer partially adapter-defined. In particular, the rectangular convergence and concave L-room fixtures used a 2 s record, but did not freeze a solver-neutral temporal excitation / record interval / direct-DTFT normalization contract. Revision 4 fixes that gap without forcing independent solvers onto one common numerical time step.
+
+R100A-4 applies the finite-record contract **only** to `wave-rectangular-convergence-v1` and `wave-concave-l-room-v1`:
+
+- source excitation is a causal discrete unit-sample volume-velocity record on the solver's own time grid: `q[0]=source.amplitude`, `q[n>0]=0`, with source phase 0 deg;
+- sample zero is exactly `source_t0`;
+- scored samples are exactly the half-open interval `[0,T)` with frozen `T=2 s`; each solver records its actual `dt`, sample count and last/next sample times as provenance;
+- solver `dt` is **not** common authority. It remains a discretization/refinement parameter and therefore `comparison.time_step_s` is null for these fixtures;
+- `comparison.fourier_sign = exp(-i*omega*t)` is the time-harmonic/phasor dependence; the corresponding analysis transform is its dual;
+- direct scored-frequency DTFT therefore uses `exp(+i*2*pi*f*n*dt)` at the frozen frequency grid, with no window, filter or zero-padding interpolation;
+- finite-record spectra are `X_T(f)=dt*sum_n x[n]*exp(+i*2*pi*f*n*dt)`;
+- the numerator record is **physical pressure**. A solver that stores another primary field may use a declared conversion to physical pressure, but that conversion and its numerical stencil must be recorded as adapter provenance before the DTFT is taken;
+- normalized transfer is `H_T(f)=P_T(f)/Q_T(f)` from the physical pressure record and the **physical volume-velocity source samples on that same solver time grid, before solver-internal numerical scaling**; the rectangular complex-convergence observable is therefore explicitly typed as `complex_pressure_transfer_pa_per_m3_s` with unit `Pa/(m3/s)`, not pressure `Pa`;
+- the concave magnitude observable is absolute transfer level `dB re 1 Pa/(m3/s)`, i.e. `20*log10(|P_T/Q_T|/(1 Pa/(m3/s)))`;
+- `Q_T(f)` must be finite and non-zero at every scored frequency; otherwise evidence is invalid/BLOCKED rather than replaced by an invented response.
+
+The common `dt` factor cancels in `P_T/Q_T`, but it is still part of the written authority so implementations cannot disagree on Fourier/normalization units. For PFFDTD specifically, native `u` is treated as velocity potential and HTDT first forms the finite physical pressure record with the declared `p=rho*d(phi)/dt` adapter conversion (second-order centered interior derivative with second-order one-sided endpoints), then applies the common direct DTFT. HTDT does **not** substitute `-i*omega*rho*Phi_T` for the DTFT of a truncated finite pressure record, because finite-window endpoint terms would make those quantities non-equivalent.
+
+Portal continuity and the explicit radiation-termination analytical reference are **not** inferred to be finite-record fixtures merely because they carry timing metadata. Applicability is explicit: a fixture uses finite-record transfer semantics only when `comparison.finite_record_transfer` is present.
+
+Revision 4 intentionally changes the manifest semantic SHA-256. Earlier R100B artifacts remain historical evidence and must replay under the R100A-4 hash before they can participate in a current adoption decision.
 
 ## Purpose
 
@@ -116,7 +140,8 @@ The Pydantic authority models reject, among other cases:
 - stochastic ray capability without a fixed seed;
 - analytical/closed-form observable without expected samples;
 - peer-comparison observable referencing an unknown fixture;
-- malformed frequency/time/tolerance authority.
+- malformed frequency/time/tolerance authority;
+- R100A-4 finite-record transfer attached to any fixture outside the exact rectangular-convergence / concave set, fixed common `time_step_s`, wrong source phase/normalization, or missing `[0,T)` / direct-DTFT / `P/Q` semantics.
 
 Unsupported physics stays unsupported. No default material, anechoic exterior, rectangular room, coherent phase or zero response is invented to make a candidate pass.
 

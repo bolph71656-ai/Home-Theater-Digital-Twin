@@ -463,6 +463,103 @@ def recombine_pffdtd_receiver_traces(
     return recombined
 
 
+def pffdtd_velocity_potential_to_pressure_trace(
+    velocity_potential_trace: np.ndarray,
+    *,
+    time_step_s: float,
+    density_kg_m3: float,
+) -> np.ndarray:
+    """Derive physical pressure samples from PFFDTD velocity potential.
+
+    PFFDTD's primary state u is velocity potential. Its acoustic convention
+    is p = rho * d(phi)/dt. The R100A-4 finite-record authority scores a
+    physical pressure record, so the adapter must form that record before
+    Fourier analysis instead of multiplying a truncated potential spectrum by
+    -i*omega*rho (which would omit finite-window endpoint terms).
+
+    A declared second-order derivative is used on the solver-native integer
+    time grid: centered in the interior and second-order one-sided at both
+    record endpoints. This derivative is adapter provenance, not benchmark
+    physics authority, and therefore remains subject to grid/time refinement.
+    """
+
+    phi = np.asarray(velocity_potential_trace, dtype=np.float64)
+    if phi.ndim != 1 or phi.size < 3:
+        raise ValueError(
+            'PFFDTD pressure trace conversion requires at least three 1D potential samples'
+        )
+    if not np.all(np.isfinite(phi)):
+        raise ValueError('PFFDTD velocity-potential trace must be finite')
+    if not np.isfinite(time_step_s) or time_step_s <= 0.0:
+        raise ValueError('PFFDTD pressure trace time_step_s must be finite and positive')
+    if not np.isfinite(density_kg_m3) or density_kg_m3 <= 0.0:
+        raise ValueError('PFFDTD pressure trace density_kg_m3 must be finite and positive')
+
+    dt = float(time_step_s)
+    derivative = np.empty_like(phi)
+    derivative[0] = (-3.0 * phi[0] + 4.0 * phi[1] - phi[2]) / (2.0 * dt)
+    derivative[1:-1] = (phi[2:] - phi[:-2]) / (2.0 * dt)
+    derivative[-1] = (3.0 * phi[-1] - 4.0 * phi[-2] + phi[-3]) / (2.0 * dt)
+    pressure = float(density_kg_m3) * derivative
+    if not np.all(np.isfinite(pressure)):
+        raise ValueError('PFFDTD derived pressure trace contains non-finite values')
+    return pressure
+
+
+def finite_record_pressure_transfer(
+    pressure_trace: np.ndarray,
+    source_volume_velocity_trace: np.ndarray,
+    *,
+    time_step_s: float,
+    frequency_hz: np.ndarray,
+) -> np.ndarray:
+    """Compute the R100A-4 finite-record P_T/Q_T transfer.
+
+    Both spectra use the exact dt-weighted direct-frequency analysis transform over the same
+    half-open record. The shared dt factor cancels numerically in the ratio,
+    but it is included explicitly so units and normalization match authority.
+    """
+
+    pressure = np.asarray(pressure_trace, dtype=np.float64)
+    source = np.asarray(source_volume_velocity_trace, dtype=np.float64)
+    frequencies = np.asarray(frequency_hz, dtype=np.float64)
+
+    if pressure.ndim != 1 or source.ndim != 1 or pressure.shape != source.shape:
+        raise ValueError(
+            f'finite-record P/Q requires matching 1D pressure/source traces: '
+            f'pressure={pressure.shape}, source={source.shape}'
+        )
+    if pressure.size < 2:
+        raise ValueError('finite-record P/Q requires at least two time samples')
+    if not np.all(np.isfinite(pressure)) or not np.all(np.isfinite(source)):
+        raise ValueError('finite-record pressure/source traces must be finite')
+    if frequencies.ndim != 1 or frequencies.size == 0:
+        raise ValueError('finite-record P/Q requires a non-empty 1D frequency grid')
+    if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0.0):
+        raise ValueError('finite-record P/Q frequencies must be finite and positive')
+    if not np.isfinite(time_step_s) or time_step_s <= 0.0:
+        raise ValueError('finite-record P/Q time_step_s must be finite and positive')
+
+    dt = float(time_step_s)
+    times = np.arange(pressure.size, dtype=np.float64) * dt
+    kernel = np.exp(+2j * np.pi * frequencies[:, None] * times[None, :])
+    pressure_spectrum = dt * (kernel @ pressure)
+    source_spectrum = dt * (kernel @ source)
+
+    source_floor = np.finfo(np.float64).eps * max(
+        1.0, float(np.max(np.abs(source_spectrum)))
+    )
+    if np.any(~np.isfinite(source_spectrum.real)) or np.any(~np.isfinite(source_spectrum.imag)):
+        raise ValueError('finite-record physical source spectrum is non-finite')
+    if np.any(np.abs(source_spectrum) <= source_floor):
+        raise ValueError('finite-record physical source spectrum is zero on the comparison grid')
+
+    transfer = pressure_spectrum / source_spectrum
+    if not np.all(np.isfinite(transfer.real)) or not np.all(np.isfinite(transfer.imag)):
+        raise ValueError('finite-record pressure transfer contains non-finite values')
+    return transfer
+
+
 def pffdtd_velocity_potential_to_pressure_transfer(
     velocity_potential_trace: np.ndarray,
     source_volume_velocity_trace: np.ndarray,
@@ -471,50 +568,22 @@ def pffdtd_velocity_potential_to_pressure_transfer(
     frequency_hz: np.ndarray,
     density_kg_m3: float,
 ) -> np.ndarray:
-    """Convert PFFDTD velocity potential to pressure/volume-velocity transfer.
+    """Convert a finite PFFDTD potential record to R100A-4 pressure transfer.
 
-    PFFDTD state u is acoustic velocity potential. With HTDT's
-    exp(-i*omega*t) convention, p = -rho * d(phi)/dt becomes
-    P = -i*omega*rho*Phi. The same finite-record DTFT is applied to the
-    physical pre-grid source volume-velocity samples, so the common time-step
-    factor cancels in P/Q.
+    This compatibility wrapper keeps the established adapter API while making
+    finite-record semantics explicit: first derive physical pressure samples
+    from PFFDTD velocity potential, then evaluate P_T/Q_T from pressure and
+    actual injected source records.
     """
 
-    phi = np.asarray(velocity_potential_trace, dtype=np.float64)
-    source = np.asarray(source_volume_velocity_trace, dtype=np.float64)
-    frequencies = np.asarray(frequency_hz, dtype=np.float64)
-
-    if phi.ndim != 1 or source.ndim != 1 or phi.shape != source.shape:
-        raise ValueError(
-            f'PFFDTD pressure conversion requires matching 1D traces: '
-            f'phi={phi.shape}, source={source.shape}'
-        )
-    if phi.size < 2:
-        raise ValueError('PFFDTD pressure conversion requires at least two time samples')
-    if not np.all(np.isfinite(phi)) or not np.all(np.isfinite(source)):
-        raise ValueError('PFFDTD pressure conversion traces must be finite')
-    if frequencies.ndim != 1 or frequencies.size == 0:
-        raise ValueError('PFFDTD pressure conversion requires a non-empty 1D frequency grid')
-    if not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0.0):
-        raise ValueError('PFFDTD pressure conversion frequencies must be finite and positive')
-    if not np.isfinite(time_step_s) or time_step_s <= 0.0:
-        raise ValueError('PFFDTD pressure conversion time_step_s must be finite and positive')
-    if not np.isfinite(density_kg_m3) or density_kg_m3 <= 0.0:
-        raise ValueError('PFFDTD pressure conversion density_kg_m3 must be finite and positive')
-
-    times = np.arange(phi.size, dtype=np.float64) * float(time_step_s)
-    kernel = np.exp(-2j * np.pi * frequencies[:, None] * times[None, :])
-    phi_spectrum = kernel @ phi
-    source_spectrum = kernel @ source
-
-    source_floor = np.finfo(np.float64).eps * max(
-        1.0, float(np.max(np.abs(source_spectrum)))
+    pressure = pffdtd_velocity_potential_to_pressure_trace(
+        velocity_potential_trace,
+        time_step_s=time_step_s,
+        density_kg_m3=density_kg_m3,
     )
-    if np.any(np.abs(source_spectrum) <= source_floor):
-        raise ValueError('PFFDTD physical source spectrum is zero on the comparison grid')
-
-    omega = 2.0 * np.pi * frequencies
-    transfer = (-1j * omega * float(density_kg_m3)) * phi_spectrum / source_spectrum
-    if not np.all(np.isfinite(transfer.real)) or not np.all(np.isfinite(transfer.imag)):
-        raise ValueError('PFFDTD pressure transfer contains non-finite values')
-    return transfer
+    return finite_record_pressure_transfer(
+        pressure,
+        source_volume_velocity_trace,
+        time_step_s=time_step_s,
+        frequency_hz=frequency_hz,
+    )

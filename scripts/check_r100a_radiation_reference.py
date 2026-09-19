@@ -187,8 +187,9 @@ def _frequency_grid(fixture) -> tuple[float, ...]:
 
 
 def _validate_authority(manifest, fixture) -> None:
-    if manifest.schema_version != 'r100a-3' or manifest.revision != 3:
-        raise ValueError('radiation reference requires R100A-3 revision 3')
+    expected_revision = {'r100a-3': 3, 'r100a-4': 4}.get(manifest.schema_version)
+    if expected_revision is None or manifest.revision != expected_revision:
+        raise ValueError('radiation reference requires R100A-3/4 with matching revision')
     if tuple(fixture.required_capabilities) != (
         'wave_rigid',
         'wave_radiation_termination',

@@ -333,10 +333,41 @@ def _validate_common_authority(portal, peer) -> None:
             or float(comparison.frequency_grid.start_hz) != 20.0
             or float(comparison.frequency_grid.stop_hz) != 300.0
             or float(comparison.frequency_grid.step_hz) != 1.0
-            or float(comparison.time_step_s) != (1.0 / 6000.0)
-            or float(comparison.observation_time_s) != 2.0
         ):
             raise ValueError(f'{fixture.fixture_id} comparison authority changed')
+
+    portal_comparison = portal.comparison
+    if (
+        portal_comparison.time_step_s != (1.0 / 6000.0)
+        or portal_comparison.observation_time_s != 2.0
+        or portal_comparison.finite_record_transfer is not None
+    ):
+        raise ValueError('Portal time-domain comparison authority changed')
+
+    peer_comparison = peer.comparison
+    peer_transfer = peer_comparison.finite_record_transfer
+    expected_peer_transfer = {
+        'excitation_model': 'causal_discrete_unit_sample_volume_velocity',
+        'sample_zero_reference': 'source_t0',
+        'record_interval': 'half_open_0_T',
+        'solver_time_step_policy': 'solver_native_recorded',
+        'dtft_kernel': 'exp(+i*2*pi*f*n*dt)',
+        'dtft_measure': 'dt_weighted_sum',
+        'numerator_quantity': 'physical_pressure',
+        'numerator_record_policy': 'solver_pressure_or_declared_primary_field_conversion',
+        'denominator_record': 'physical_volume_velocity_samples_on_solver_time_grid',
+        'transfer_definition': 'pressure_over_volume_velocity',
+        'frequency_evaluation': 'direct_scored_frequency_dtft',
+        'source_spectrum_requirement': 'finite_nonzero_on_scored_grid',
+        'zero_padding': 'none',
+    }
+    if (
+        peer_comparison.time_step_s is not None
+        or peer_comparison.observation_time_s != 2.0
+        or peer_transfer is None
+        or peer_transfer.model_dump(mode='json') != expected_peer_transfer
+    ):
+        raise ValueError('peer finite-record comparison authority changed')
 
     if portal.sources[0].region_id != 'left' or portal.receivers[0].region_id != 'right':
         raise ValueError('Portal source/receiver region binding changed')

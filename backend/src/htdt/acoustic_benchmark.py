@@ -31,6 +31,7 @@ BenchmarkObservableKind = Literal[
     'reflection_point_m',
     'reflected_path_length_m',
     'field_pressure_pa',
+    'complex_pressure_transfer_pa_per_m3_s',
     'energy_decay_db',
     'hybrid_overlap_level_db',
 ]
@@ -351,6 +352,30 @@ class BenchmarkFrequencyGrid(BaseModel):
         return self
 
 
+class FiniteRecordTransferContract(BaseModel):
+    """Solver-neutral finite-record transfer authority for R100A-4."""
+
+    model_config = ConfigDict(frozen=True)
+
+    excitation_model: Literal['causal_discrete_unit_sample_volume_velocity']
+    sample_zero_reference: Literal['source_t0']
+    record_interval: Literal['half_open_0_T']
+    solver_time_step_policy: Literal['solver_native_recorded']
+    dtft_kernel: Literal['exp(+i*2*pi*f*n*dt)']
+    dtft_measure: Literal['dt_weighted_sum']
+    numerator_quantity: Literal['physical_pressure']
+    numerator_record_policy: Literal[
+        'solver_pressure_or_declared_primary_field_conversion'
+    ]
+    denominator_record: Literal[
+        'physical_volume_velocity_samples_on_solver_time_grid'
+    ]
+    transfer_definition: Literal['pressure_over_volume_velocity']
+    frequency_evaluation: Literal['direct_scored_frequency_dtft']
+    source_spectrum_requirement: Literal['finite_nonzero_on_scored_grid']
+    zero_padding: Literal['none']
+
+
 class NumericalComparisonContract(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -367,6 +392,7 @@ class NumericalComparisonContract(BaseModel):
     frequency_grid: BenchmarkFrequencyGrid
     time_step_s: float | None = Field(default=None, gt=0.0)
     observation_time_s: float | None = Field(default=None, gt=0.0)
+    finite_record_transfer: FiniteRecordTransferContract | None = None
 
     @model_validator(mode='after')
     def finite_time_contract(self) -> 'NumericalComparisonContract':
@@ -629,7 +655,7 @@ class AcousticBenchmarkManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal['r100a-2', 'r100a-3'] = 'r100a-3'
+    schema_version: Literal['r100a-2', 'r100a-3', 'r100a-4'] = 'r100a-4'
     manifest_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     purpose: str = Field(min_length=1)
@@ -638,7 +664,7 @@ class AcousticBenchmarkManifest(BaseModel):
 
     @model_validator(mode='after')
     def unique_fixture_and_gate_ids(self) -> 'AcousticBenchmarkManifest':
-        expected_revision = {'r100a-2': 2, 'r100a-3': 3}[self.schema_version]
+        expected_revision = {'r100a-2': 2, 'r100a-3': 3, 'r100a-4': 4}[self.schema_version]
         if self.revision != expected_revision:
             raise ValueError(
                 f'{self.schema_version} requires revision {expected_revision}, got {self.revision}'
@@ -674,6 +700,11 @@ class AcousticBenchmarkManifest(BaseModel):
 
         if self.schema_version == 'r100a-2':
             for fixture in self.fixtures:
+                if fixture.comparison.finite_record_transfer is not None:
+                    raise ValueError(
+                        f'R100A-2 fixture {fixture.fixture_id} cannot carry '
+                        'R100A-4 finite-record transfer semantics'
+                    )
                 if 'wave_radiation_termination' in fixture.required_capabilities:
                     raise ValueError(
                         f'R100A-2 fixture {fixture.fixture_id} cannot declare '
@@ -694,7 +725,23 @@ class AcousticBenchmarkManifest(BaseModel):
                             'cannot carry R100A-3 radiation semantics'
                         )
 
-        if self.schema_version == 'r100a-3':
+        if self.schema_version in {'r100a-2', 'r100a-3'}:
+            for fixture in self.fixtures:
+                if fixture.comparison.finite_record_transfer is not None:
+                    raise ValueError(
+                        f'{self.schema_version.upper()} fixture {fixture.fixture_id} cannot carry '
+                        'R100A-4 finite-record transfer semantics'
+                    )
+                if any(
+                    observable.kind == 'complex_pressure_transfer_pa_per_m3_s'
+                    for observable in fixture.observables
+                ):
+                    raise ValueError(
+                        f'{self.schema_version.upper()} fixture {fixture.fixture_id} cannot carry '
+                        'R100A-4 complex pressure-transfer observable semantics'
+                    )
+
+        if self.schema_version in {'r100a-3', 'r100a-4'}:
             for fixture in self.fixtures:
                 radiation_terminations = [
                     item for item in fixture.terminations if item.kind == 'radiation'
@@ -703,7 +750,8 @@ class AcousticBenchmarkManifest(BaseModel):
                     continue
                 if 'wave_radiation_termination' not in fixture.required_capabilities:
                     raise ValueError(
-                        f'R100A-3 radiation fixture {fixture.fixture_id} must require '
+                        f'{self.schema_version.upper()} radiation fixture '
+                        f'{fixture.fixture_id} must require '
                         'wave_radiation_termination capability'
                     )
                 for termination in radiation_terminations:
@@ -719,8 +767,96 @@ class AcousticBenchmarkManifest(BaseModel):
                         value is None for value in radiation_fields
                     ):
                         raise ValueError(
-                            f'R100A-3 radiation termination {termination.termination_id} '
-                            'requires explicit boundary/model/sign/normal authority'
+                            f'{self.schema_version.upper()} radiation termination '
+                            f'{termination.termination_id} requires explicit '
+                            'boundary/model/sign/normal authority'
+                        )
+
+        if self.schema_version == 'r100a-4':
+            finite_record_fixture_ids = {
+                fixture.fixture_id
+                for fixture in self.fixtures
+                if fixture.comparison.finite_record_transfer is not None
+            }
+            required_finite_record_fixture_ids = {
+                fixture.fixture_id
+                for fixture in self.fixtures
+                if fixture.comparison.observation_time_s is not None
+                and any(
+                    observable.acceptance_relation == 'monotonic_convergence'
+                    or observable.reference_kind == 'independent_solver'
+                    for observable in fixture.observables
+                )
+            }
+            if finite_record_fixture_ids != required_finite_record_fixture_ids:
+                raise ValueError(
+                    'R100A-4 finite-record transfer fixtures must be exactly '
+                    f'{sorted(required_finite_record_fixture_ids)}, got '
+                    f'{sorted(finite_record_fixture_ids)}'
+                )
+
+            for fixture in self.fixtures:
+                contract = fixture.comparison.finite_record_transfer
+                if contract is None:
+                    continue
+                comparison = fixture.comparison
+                if comparison.time_step_s is not None:
+                    raise ValueError(
+                        f'R100A-4 finite-record fixture {fixture.fixture_id} '
+                        'must leave time_step_s solver-native'
+                    )
+                if comparison.observation_time_s != 2.0:
+                    raise ValueError(
+                        f'R100A-4 finite-record fixture {fixture.fixture_id} '
+                        'must use the frozen 2 s record'
+                    )
+                if (
+                    comparison.time_zero_reference != 'source_excitation_t0'
+                    or comparison.fourier_sign != 'exp(-i*omega*t)'
+                    or comparison.window != 'none'
+                    or comparison.filter != 'none'
+                ):
+                    raise ValueError(
+                        f'R100A-4 finite-record fixture {fixture.fixture_id} '
+                        'has incompatible time/Fourier/window/filter authority'
+                    )
+                if len(fixture.sources) != 1:
+                    raise ValueError(
+                        f'R100A-4 finite-record fixture {fixture.fixture_id} '
+                        'requires exactly one source'
+                    )
+                source = fixture.sources[0]
+                if (
+                    source.normalization != 'volume_velocity_m3_s'
+                    or float(source.amplitude) != 1.0
+                    or float(source.phase_deg) != 0.0
+                    or source.directivity != 'omnidirectional'
+                ):
+                    raise ValueError(
+                        f'R100A-4 finite-record fixture {fixture.fixture_id} '
+                        'requires the frozen unit volume-velocity source'
+                    )
+
+                for observable in fixture.observables:
+                    if observable.acceptance_relation == 'monotonic_convergence':
+                        if (
+                            observable.kind != 'complex_pressure_transfer_pa_per_m3_s'
+                            or observable.unit != 'Pa/(m3/s)'
+                        ):
+                            raise ValueError(
+                                f'R100A-4 finite-record convergence observable '
+                                f'{fixture.fixture_id}:{observable.observable_id} must use '
+                                'complex_pressure_transfer_pa_per_m3_s / Pa/(m3/s)'
+                            )
+                    if (
+                        observable.reference_kind == 'independent_solver'
+                        and observable.kind == 'transfer_magnitude_db'
+                        and observable.unit != 'dB re 1 Pa/(m3/s)'
+                    ):
+                        raise ValueError(
+                            f'R100A-4 finite-record independent transfer magnitude '
+                            f'{fixture.fixture_id}:{observable.observable_id} must use '
+                            'dB re 1 Pa/(m3/s)'
                         )
         return self
 
