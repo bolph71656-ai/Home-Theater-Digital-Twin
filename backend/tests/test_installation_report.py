@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from htdt.cad_repository import SceneRepository
 from htdt.cad_scene import (
     Offset3,
@@ -86,8 +88,8 @@ def test_installation_output_is_semantic_and_generation_metadata_free(tmp_path: 
 
     output = build_installation_output(saved.revision, variant=variant)
     speaker = next(item for item in output.entities if item.entity_id == 'speaker-fl')
-    assert speaker.body_yaw_deg == 12.0
-    assert speaker.body_pitch_deg == -4.0
+    assert speaker.body_yaw_deg == pytest.approx(12.0)
+    assert speaker.body_pitch_deg == pytest.approx(-4.0)
     assert speaker.mounting_height_m == speaker.z_m
     assert speaker.mounting_height_reference == 'scene_entity_origin_z'
     assert {item.entity_kind for item in output.entities} >= {
