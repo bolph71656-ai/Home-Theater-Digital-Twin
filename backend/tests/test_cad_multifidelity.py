@@ -28,6 +28,24 @@ from htdt.pareto import ParetoResult
 NOW = '2026-09-20T00:00:00+00:00'
 
 
+class _TopologyComparisonResolver:
+    def __init__(
+        self,
+        path: Path,
+        evaluation: TopologyComparisonEvaluation,
+    ) -> None:
+        self.path = Path(path)
+        self._evaluation = evaluation
+
+    def get_evaluation(
+        self,
+        evaluation_id: str,
+    ) -> TopologyComparisonEvaluation | None:
+        if evaluation_id == self._evaluation.evaluation_id:
+            return self._evaluation
+        return None
+
+
 def _ref(
     kind: str,
     identity: str,
@@ -364,17 +382,82 @@ def test_multifidelity_plan_stage_results_and_screening_save_reopen(
     )
     plan = _plan()
     geometry, coverage, screening = _screening(plan)
-    repository = CadMultiFidelityRepository(scene_repository)
+    final_comparison = _final_comparison()
+    resolver = _TopologyComparisonResolver(
+        scene_repository.path,
+        final_comparison,
+    )
+    repository = CadMultiFidelityRepository(
+        scene_repository,
+        topology_comparison_repository=resolver,
+    )
 
     repository.save_plan(plan)
     repository.save_stage_result(geometry)
     repository.save_stage_result(coverage)
     repository.save_screening(screening)
+    finalization = finalize_o100_multifidelity(
+        plan=plan,
+        screening=screening,
+        final_comparison=final_comparison,
+    )
+    repository.save_finalization(finalization)
 
+    reopened_scene = SceneRepository(scene_repository.path)
+    reopened_resolver = _TopologyComparisonResolver(
+        reopened_scene.path,
+        final_comparison,
+    )
     reopened = CadMultiFidelityRepository(
-        SceneRepository(scene_repository.path)
+        reopened_scene,
+        topology_comparison_repository=reopened_resolver,
     )
     assert reopened.get_plan(plan.plan_id) == plan
     assert reopened.get_stage_result(geometry.result_id) == geometry
     assert reopened.get_stage_result(coverage.result_id) == coverage
     assert reopened.get_screening(screening.evaluation_id) == screening
+    assert reopened.get_finalization(finalization.finalization_id) == finalization
+
+
+def test_o100_finalization_reopen_requires_typed_final_comparison_resolver(
+    tmp_path: Path,
+) -> None:
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    scene_repository.save(
+        SceneDocument(
+            document_id='multifidelity-finalization-fixture',
+            room=RoomPrism(width_m=5.0, depth_m=4.0, height_m=2.4),
+            entities=(),
+        ),
+        parent_revision_id=None,
+    )
+    plan = _plan()
+    geometry, coverage, screening = _screening(plan)
+    final_comparison = _final_comparison()
+    resolver = _TopologyComparisonResolver(
+        scene_repository.path,
+        final_comparison,
+    )
+    repository = CadMultiFidelityRepository(
+        scene_repository,
+        topology_comparison_repository=resolver,
+    )
+    repository.save_plan(plan)
+    repository.save_stage_result(geometry)
+    repository.save_stage_result(coverage)
+    repository.save_screening(screening)
+    finalization = finalize_o100_multifidelity(
+        plan=plan,
+        screening=screening,
+        final_comparison=final_comparison,
+    )
+    repository.save_finalization(finalization)
+
+    unresolved = CadMultiFidelityRepository(
+        SceneRepository(scene_repository.path)
+    )
+    with pytest.raises(
+        ValueError,
+        match='requires a typed topology comparison repository',
+    ):
+        unresolved.get_finalization(finalization.finalization_id)
