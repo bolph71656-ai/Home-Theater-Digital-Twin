@@ -206,7 +206,36 @@ def _validate_fixture_contract(fixture) -> None:
     if actual_vertices != expected_vertices:
         raise ValueError('concave fixture geometry authority changed')
 
-    if len(fixture.materials) != 1 or fixture.materials[0].wave_model != 'rigid':
+    expected_faces = {
+        'lroom-bottom': (
+            ('lroom-b0', 'lroom-b1', 'lroom-b2', 'lroom-b3', 'lroom-b4', 'lroom-b5', 'lroom-b6', 'lroom-b7'),
+            'b-rigid',
+        ),
+        'lroom-top': (
+            ('lroom-t7', 'lroom-t6', 'lroom-t5', 'lroom-t4', 'lroom-t3', 'lroom-t2', 'lroom-t1', 'lroom-t0'),
+            'b-rigid',
+        ),
+        'lroom-side0': (('lroom-b0', 'lroom-b1', 'lroom-t1', 'lroom-t0'), 'b-rigid'),
+        'lroom-side1': (('lroom-b1', 'lroom-b2', 'lroom-t2', 'lroom-t1'), 'b-rigid'),
+        'lroom-side2': (('lroom-b2', 'lroom-b3', 'lroom-t3', 'lroom-t2'), 'b-rigid'),
+        'lroom-side3': (('lroom-b3', 'lroom-b4', 'lroom-t4', 'lroom-t3'), 'b-rigid'),
+        'lroom-side4': (('lroom-b4', 'lroom-b5', 'lroom-t5', 'lroom-t4'), 'b-rigid'),
+        'lroom-side5': (('lroom-b5', 'lroom-b6', 'lroom-t6', 'lroom-t5'), 'b-rigid'),
+        'lroom-side6': (('lroom-b6', 'lroom-b7', 'lroom-t7', 'lroom-t6'), 'b-rigid'),
+        'lroom-side7': (('lroom-b7', 'lroom-b0', 'lroom-t0', 'lroom-t7'), 'b-rigid'),
+    }
+    actual_faces = {
+        face.face_id: (tuple(face.vertex_ids), face.boundary_id)
+        for face in fixture.regions[0].faces
+    }
+    if actual_faces != expected_faces:
+        raise ValueError('concave fixture face topology authority changed')
+
+    if (
+        len(fixture.materials) != 1
+        or fixture.materials[0].material_id != 'rigid'
+        or fixture.materials[0].wave_model != 'rigid'
+    ):
         raise ValueError('concave fixture rigid material authority changed')
     if len(fixture.boundaries) != 1:
         raise ValueError('concave fixture boundary authority changed')
@@ -223,12 +252,19 @@ def _validate_fixture_contract(fixture) -> None:
     source = fixture.sources[0]
     receiver = fixture.receivers[0]
     if (
-        _position(source.position) != (1.0, 1.0, 1.0)
+        source.region_id != 'lroom'
+        or _position(source.position) != (1.0, 1.0, 1.0)
         or source.normalization != 'volume_velocity_m3_s'
         or float(source.amplitude) != 1.0
         or float(source.phase_deg) != 0.0
         or source.directivity != 'omnidirectional'
+        or receiver.region_id != 'lroom'
         or _position(receiver.position) != (5.0, 1.0, 1.0)
+        or (
+            float(receiver.forward.x),
+            float(receiver.forward.y),
+            float(receiver.forward.z),
+        ) != (0.0, 1.0, 0.0)
         or receiver.calibration_state != 'ideal_flat'
         or receiver.calibration_profile_id is not None
         or receiver.timing_reference != 'source_t0'
@@ -258,6 +294,7 @@ def _validate_fixture_contract(fixture) -> None:
         or comparison.interpolation != 'linear_complex'
         or comparison.window != 'none'
         or comparison.filter != 'none'
+        or comparison.time_step_s is not None
         or float(comparison.observation_time_s or -1.0) != 2.0
         or grid.kind != 'uniform'
         or float(grid.start_hz) != 20.0
