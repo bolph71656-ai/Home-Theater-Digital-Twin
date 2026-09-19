@@ -250,6 +250,48 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
 
 
 
+
+def test_unconfigured_thresholds_never_turn_explicit_evidence_into_pass(tmp_path: Path) -> None:
+    revision, measurement_repository, quality_repository = _repositories(tmp_path)
+    first, _ = _save_measurement(
+        measurement_repository,
+        revision,
+        'unconfigured-a',
+        raw=b'unconfigured-a',
+    )
+    record, dataset = _save_measurement(
+        measurement_repository,
+        revision,
+        'unconfigured-b',
+        raw=b'unconfigured-b',
+    )
+    report = build_measurement_quality_report(
+        measurement=record,
+        dataset=dataset,
+        evidence=CadMeasurementQualityEvidence(
+            clipping_detected=False,
+            snr_db=40.0,
+            usable_frequency_band_hz=(20.0, 80.0),
+            polarity_correct=True,
+            polarity_confidence=0.99,
+            repeat_measurement_ids=(first.measurement_id, record.measurement_id),
+            repeatability_rms_db=0.2,
+        ),
+        profile=build_measurement_quality_profile(profile_version='unconfigured-thresholds-1'),
+        report_id='report-unconfigured-thresholds',
+        created_at_utc='2026-09-19T00:03:10+00:00',
+    )
+
+    assert report.clipping.status == 'PASS'
+    assert report.usable_frequency_band.status == 'PASS'
+    assert report.noise_snr.status == 'NOT_EVALUATED'
+    assert report.polarity.status == 'NOT_EVALUATED'
+    assert report.repeatability.status == 'NOT_EVALUATED'
+    assert report.capability('polarity').decision == 'UNKNOWN'
+    assert report.capability('repeatability').decision == 'UNKNOWN'
+    quality_repository.save_report(report)
+
+
 def test_explicit_quality_failures_block_their_downstream_claims(tmp_path: Path) -> None:
     revision, measurement_repository, quality_repository = _repositories(tmp_path)
     first, _ = _save_measurement(
