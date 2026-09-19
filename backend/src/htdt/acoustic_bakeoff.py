@@ -159,7 +159,6 @@ class BakeoffAdoptionProfile(BaseModel):
     def semantic_hash(self) -> str:
         return sha256(self.canonical_json().encode('utf-8')).hexdigest()
 
-
 class BakeoffObservableEvidence(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -308,7 +307,29 @@ class BakeoffDecision(BaseModel):
     adoption_profile_id: str | None = Field(default=None, min_length=1)
     adoption_profile_sha256: str | None = Field(
         default=None,
-        pattern=r'^[0-9a-f]{64}
+        pattern=r'^[0-9a-f]{64}$',
+    )
+    rationale: str = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def selection_fields(self) -> 'BakeoffDecision':
+        if self.status == 'selected':
+            if not self.selected_candidate_id or not self.accepted_run_id:
+                raise ValueError('selected decision requires candidate and accepted run ids')
+            if not self.adoption_profile_id or not self.adoption_profile_sha256:
+                raise ValueError('selected decision requires exact adoption profile binding')
+        elif (
+            self.selected_candidate_id is not None
+            or self.accepted_run_id is not None
+            or self.adoption_profile_id is not None
+            or self.adoption_profile_sha256 is not None
+        ):
+            raise ValueError(
+                'non-selected decision must not name an accepted candidate/run/adoption profile'
+            )
+        return self
+
+
 
 def load_bakeoff_candidate_manifest(path: str | Path) -> BakeoffCandidateManifest:
     return BakeoffCandidateManifest.model_validate_json(Path(path).read_text(encoding='utf-8'))
@@ -316,7 +337,6 @@ def load_bakeoff_candidate_manifest(path: str | Path) -> BakeoffCandidateManifes
 
 def load_bakeoff_adoption_profile(path: str | Path) -> BakeoffAdoptionProfile:
     return BakeoffAdoptionProfile.model_validate_json(Path(path).read_text(encoding='utf-8'))
-
 
 def load_bakeoff_run(path: str | Path) -> BakeoffRun:
     return BakeoffRun.model_validate_json(Path(path).read_text(encoding='utf-8'))
@@ -356,7 +376,6 @@ def validate_bakeoff_adoption_profile(
         raise ValueError(
             f'adoption profile required capabilities do not cover required fixtures: {missing}'
         )
-
 
 def _required_gate_categories(
     benchmark: AcousticBenchmarkManifest,
@@ -573,7 +592,9 @@ def validate_bakeoff_decision(
 
     required_gates = _required_gate_categories(benchmark, candidate)
     gate_by_category = {item.category: item.status for item in run.hard_gates}
-    failed = sorted(category for category in required_gates if gate_by_category.get(category) != 'pass')
+    failed = sorted(
+        category for category in required_gates if gate_by_category.get(category) != 'pass'
+    )
     if failed:
         raise ValueError(f'production selection is blocked by hard gates: {failed}')
 
@@ -587,6 +608,7 @@ def validate_bakeoff_decision(
         raise ValueError(
             f'production selection is blocked by required adoption fixtures: {incomplete}'
         )
+
 
 
 def preflight_summary(
@@ -645,6 +667,7 @@ def preflight_summary(
     }
 
 
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='R100B solver bakeoff authority/preflight')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -679,329 +702,6 @@ def main(argv: list[str] | None = None) -> int:
                 sort_keys=True,
             )
         )
-        return 0
-
-    run = load_bakeoff_run(args.run)
-    validate_bakeoff_run(benchmark, candidates, run)
-    print(
-        json.dumps(
-            {
-                'status': 'valid',
-                'run_id': run.run_id,
-                'run_semantic_hash': run.semantic_hash(),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
-,
-    )
-    rationale: str = Field(min_length=1)
-
-    @model_validator(mode='after')
-    def selection_fields(self) -> 'BakeoffDecision':
-        if self.status == 'selected':
-            if not self.selected_candidate_id or not self.accepted_run_id:
-                raise ValueError('selected decision requires candidate and accepted run ids')
-            if not self.adoption_profile_id or not self.adoption_profile_sha256:
-                raise ValueError('selected decision requires exact adoption profile binding')
-        elif (
-            self.selected_candidate_id is not None
-            or self.accepted_run_id is not None
-            or self.adoption_profile_id is not None
-            or self.adoption_profile_sha256 is not None
-        ):
-            raise ValueError(
-                'non-selected decision must not name an accepted candidate/run/adoption profile'
-            )
-        return self
-
-
-def load_bakeoff_candidate_manifest(path: str | Path) -> BakeoffCandidateManifest:
-    return BakeoffCandidateManifest.model_validate_json(Path(path).read_text(encoding='utf-8'))
-
-
-def load_bakeoff_run(path: str | Path) -> BakeoffRun:
-    return BakeoffRun.model_validate_json(Path(path).read_text(encoding='utf-8'))
-
-
-def applicable_fixture_ids(
-    benchmark: AcousticBenchmarkManifest,
-    candidate: BakeoffCandidate,
-) -> tuple[str, ...]:
-    capabilities = set(candidate.probe_capabilities)
-    return tuple(
-        fixture.fixture_id
-        for fixture in benchmark.fixtures
-        if set(fixture.required_capabilities).issubset(capabilities)
-    )
-
-
-def _required_gate_categories(
-    benchmark: AcousticBenchmarkManifest,
-    candidate: BakeoffCandidate,
-) -> set[str]:
-    if candidate.evaluation_scope == 'shipping_candidate':
-        return {
-            gate.category
-            for gate in benchmark.hard_gates
-            if gate.applies_to in {'candidate', 'both'}
-        }
-    return {
-        gate.category
-        for gate in benchmark.hard_gates
-        if gate.applies_to == 'both'
-    }
-
-
-def observable_tolerance_violations(expected, evidence: BakeoffObservableEvidence) -> tuple[str, ...]:
-    """Return R100A tolerance violations for one evaluated observable."""
-
-    tolerance = expected.tolerance
-    violations: list[str] = []
-
-    def require_and_bound(name: str, value: float | None, limit: float | None) -> None:
-        if limit is None:
-            return
-        if value is None:
-            violations.append(
-                f'passing observable {expected.observable_id} is missing {name} evidence'
-            )
-        elif value > limit:
-            violations.append(
-                f'passing observable {expected.observable_id} exceeds {name} tolerance: '
-                f'{value} > {limit}'
-            )
-
-    if expected.acceptance_relation == 'must_differ_from_peer':
-        minimum = tolerance.minimum_difference
-        if minimum is None:
-            violations.append('must-differ observable authority is missing minimum_difference')
-        elif evidence.difference_from_peer is None:
-            violations.append(
-                f'passing observable {expected.observable_id} is missing difference_from_peer'
-            )
-        elif evidence.difference_from_peer < minimum:
-            violations.append(
-                f'passing observable {expected.observable_id} does not meet minimum difference: '
-                f'{evidence.difference_from_peer} < {minimum}'
-            )
-        return tuple(violations)
-
-    if expected.kind == 'transfer_phase_deg':
-        require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
-    elif expected.kind == 'complex_reflection_coefficient':
-        require_and_bound('absolute_error', evidence.absolute_error, tolerance.absolute)
-        require_and_bound('relative_error', evidence.relative_error, tolerance.relative)
-        require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
-    else:
-        require_and_bound('absolute_error', evidence.absolute_error, tolerance.absolute)
-        require_and_bound('relative_error', evidence.relative_error, tolerance.relative)
-        if tolerance.phase_deg is not None:
-            require_and_bound('phase_error_deg', evidence.phase_error_deg, tolerance.phase_deg)
-
-    if tolerance.statistical_stddev_max is not None:
-        require_and_bound(
-            'statistical_stddev',
-            evidence.statistical_stddev,
-            tolerance.statistical_stddev_max,
-        )
-
-    return tuple(violations)
-
-
-def _validate_observable_tolerance(expected, evidence: BakeoffObservableEvidence) -> None:
-    if evidence.status != 'pass':
-        return
-    violations = observable_tolerance_violations(expected, evidence)
-    if violations:
-        raise ValueError(violations[0])
-
-def validate_bakeoff_run(
-    benchmark: AcousticBenchmarkManifest,
-    candidates: BakeoffCandidateManifest,
-    run: BakeoffRun,
-) -> None:
-    if run.r100a_manifest_id != benchmark.manifest_id:
-        raise ValueError('bakeoff run references the wrong R100A manifest id')
-    if run.r100a_semantic_hash != benchmark.semantic_hash():
-        raise ValueError('bakeoff run R100A semantic hash does not match authority')
-    if run.candidate_manifest_hash != candidates.semantic_hash():
-        raise ValueError('bakeoff run candidate manifest hash does not match authority')
-
-    candidate_by_id = {item.candidate_id: item for item in candidates.candidates}
-    candidate = candidate_by_id.get(run.candidate_id)
-    if candidate is None:
-        raise ValueError(f'unknown bakeoff candidate: {run.candidate_id}')
-    if run.candidate_source_commit_sha != candidate.source_commit_sha:
-        raise ValueError('bakeoff run candidate source commit does not match pinned candidate')
-
-    fixture_by_id = {item.fixture_id: item for item in benchmark.fixtures}
-    applicable = set(applicable_fixture_ids(benchmark, candidate))
-    for evidence in run.fixture_evidence:
-        fixture = fixture_by_id.get(evidence.fixture_id)
-        if fixture is None:
-            raise ValueError(f'unknown R100A fixture evidence: {evidence.fixture_id}')
-        if evidence.fixture_id not in applicable and evidence.status in {'pass', 'fail'}:
-            raise ValueError(
-                f'candidate cannot execute {evidence.fixture_id} without all required probe capabilities'
-            )
-
-        if evidence.status == 'pass':
-            required_observables = {item.observable_id for item in fixture.observables}
-            observed = {item.observable_id for item in evidence.observables}
-            if observed != required_observables:
-                raise ValueError(
-                    f'passing fixture {evidence.fixture_id} must report every required observable'
-                )
-            expected_by_id = {item.observable_id: item for item in fixture.observables}
-            for observable_evidence in evidence.observables:
-                _validate_observable_tolerance(
-                    expected_by_id[observable_evidence.observable_id],
-                    observable_evidence,
-                )
-
-        budget = fixture.resource_budget
-        resource_checks = (
-            ('compile_s', evidence.compile_s, budget.max_compile_s),
-            ('solve_s', evidence.solve_s, budget.max_solve_s),
-            ('postprocess_s', evidence.postprocess_s, budget.max_postprocess_s),
-            ('peak_ram_mb', evidence.peak_ram_mb, float(budget.ram_budget_mb)),
-            ('disk_mb', evidence.disk_mb, float(budget.disk_budget_mb)),
-            ('output_mb', evidence.output_mb, budget.max_output_mb),
-        )
-        if evidence.status == 'pass':
-            missing = [name for name, value, _ in resource_checks if value is None]
-            if missing:
-                raise ValueError(
-                    f'passing fixture {evidence.fixture_id} is missing resource evidence: {missing}'
-                )
-            exceeded = [
-                f'{name}={value} > {limit}'
-                for name, value, limit in resource_checks
-                if value is not None and value > limit
-            ]
-            if run.platform.thread_budget > budget.cpu_thread_budget:
-                exceeded.append(
-                    f'thread_budget={run.platform.thread_budget} > {budget.cpu_thread_budget}'
-                )
-            if exceeded:
-                raise ValueError(
-                    f'passing fixture {evidence.fixture_id} exceeds resource budget: {exceeded}'
-                )
-
-    required_gates = _required_gate_categories(benchmark, candidate)
-    gate_by_category = {item.category: item for item in run.hard_gates}
-    missing_gates = sorted(required_gates - set(gate_by_category))
-    if missing_gates:
-        raise ValueError(f'bakeoff run is missing required hard-gate evidence: {missing_gates}')
-
-    unexpected_na = sorted(
-        category
-        for category in required_gates
-        if gate_by_category[category].status == 'not_applicable'
-    )
-    if unexpected_na:
-        raise ValueError(f'required hard gates cannot be not_applicable: {unexpected_na}')
-
-
-def validate_bakeoff_decision(
-    benchmark: AcousticBenchmarkManifest,
-    candidates: BakeoffCandidateManifest,
-    runs: tuple[BakeoffRun, ...],
-    decision: BakeoffDecision,
-) -> None:
-    if decision.status != 'selected':
-        return
-
-    candidate = next(
-        (item for item in candidates.candidates if item.candidate_id == decision.selected_candidate_id),
-        None,
-    )
-    if candidate is None:
-        raise ValueError('selected bakeoff candidate is unknown')
-    if candidate.evaluation_scope != 'shipping_candidate':
-        raise ValueError('reference-only candidate cannot be selected for the production stack')
-
-    run = next((item for item in runs if item.run_id == decision.accepted_run_id), None)
-    if run is None or run.candidate_id != candidate.candidate_id:
-        raise ValueError('accepted run does not belong to the selected candidate')
-    validate_bakeoff_run(benchmark, candidates, run)
-
-    required_gates = _required_gate_categories(benchmark, candidate)
-    gate_by_category = {item.category: item.status for item in run.hard_gates}
-    failed = sorted(category for category in required_gates if gate_by_category.get(category) != 'pass')
-    if failed:
-        raise ValueError(f'production selection is blocked by hard gates: {failed}')
-
-    applicable = set(applicable_fixture_ids(benchmark, candidate))
-    evidence_by_fixture = {item.fixture_id: item.status for item in run.fixture_evidence}
-    incomplete = sorted(
-        fixture_id for fixture_id in applicable if evidence_by_fixture.get(fixture_id) != 'pass'
-    )
-    if incomplete:
-        raise ValueError(f'production selection is blocked by applicable fixtures: {incomplete}')
-
-
-def preflight_summary(
-    benchmark: AcousticBenchmarkManifest,
-    candidates: BakeoffCandidateManifest,
-) -> dict[str, object]:
-    coverage = {
-        candidate.candidate_id: set(applicable_fixture_ids(benchmark, candidate))
-        for candidate in candidates.candidates
-    }
-    covered = set().union(*coverage.values()) if coverage else set()
-    return {
-        'r100a_manifest_id': benchmark.manifest_id,
-        'r100a_semantic_hash': benchmark.semantic_hash(),
-        'candidate_manifest_id': candidates.manifest_id,
-        'candidate_manifest_hash': candidates.semantic_hash(),
-        'uncovered_fixture_ids': sorted(
-            fixture.fixture_id for fixture in benchmark.fixtures if fixture.fixture_id not in covered
-        ),
-        'candidates': [
-            {
-                'candidate_id': candidate.candidate_id,
-                'role': candidate.role,
-                'evaluation_scope': candidate.evaluation_scope,
-                'source_ref': candidate.source_ref,
-                'source_commit_sha': candidate.source_commit_sha,
-                'applicable_fixture_ids': list(applicable_fixture_ids(benchmark, candidate)),
-                'required_gate_categories': sorted(_required_gate_categories(benchmark, candidate)),
-            }
-            for candidate in candidates.candidates
-        ],
-    }
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='R100B solver bakeoff authority/preflight')
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    preflight = subparsers.add_parser('preflight', help='validate authorities and print candidate coverage')
-    preflight.add_argument('--manifest', required=True, type=Path)
-    preflight.add_argument('--candidates', required=True, type=Path)
-
-    validate = subparsers.add_parser('validate-run', help='validate a recorded R100B evidence run')
-    validate.add_argument('--manifest', required=True, type=Path)
-    validate.add_argument('--candidates', required=True, type=Path)
-    validate.add_argument('--run', required=True, type=Path)
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
-    benchmark = load_acoustic_benchmark_manifest(args.manifest)
-    candidates = load_bakeoff_candidate_manifest(args.candidates)
-
-    if args.command == 'preflight':
-        print(json.dumps(preflight_summary(benchmark, candidates), indent=2, sort_keys=True))
         return 0
 
     run = load_bakeoff_run(args.run)
