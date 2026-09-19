@@ -17,7 +17,7 @@ def _minimal_glb() -> bytes:
     positions = struct.pack('<9f', 0, 0, 0, 1, 0, 0, 0, 1, 0)
     indices = struct.pack('<3H', 0, 1, 2)
     binary = positions + indices
-    binary += b'\\x00' * ((-len(binary)) % 4)
+    binary += b'\x00' * ((-len(binary)) % 4)
     document = {
         'asset': {'version': '2.0'},
         'buffers': [{'byteLength': len(binary)}],
