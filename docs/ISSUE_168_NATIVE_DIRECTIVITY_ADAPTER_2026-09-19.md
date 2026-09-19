@@ -4,7 +4,7 @@
 
 **BLOCKED — no native CLF or CF2 adapter is promoted to SUPPORTED in this slice.**
 
-The requested gate was intentionally fail-closed: one real native format may be supported only when both its exact format/version semantics and a legally reproducible CI fixture can be established without inference. The investigation established useful CLF/CF2 facts, but not a lossless, exact mapping from the native balloon coordinates into the current HTDT `DirectivityDataset` authority. Implementing a parser anyway would require prohibited coordinate resampling, symmetry expansion, or undocumented binary decoding.
+The requested gate was intentionally fail-closed: one real native format may be supported only when both its exact format/version semantics and a legally reproducible CI fixture can be established without inference. The investigation established useful CLF/CF2 facts, but not an authoritative, lossless mapping from the native balloon coordinate/order semantics into the current HTDT `DirectivityDataset` authority. Implementing a parser anyway would require assuming coordinate/arc semantics, performing unapproved resampling or symmetry expansion, or undocumented binary decoding.
 
 RDC usage: **0**.
 
@@ -51,12 +51,16 @@ Primary / authoritative sources used:
 5. Audiomatica, *CLIO Directivity / CLF export application note*:
    https://www.audiomatica.com/wp/wp-content/uploads/appnote_002.pdf
    - Vendor documentation showing a real CLF2 version-1 text export.
-   - Documents the measurement coordinate system as polar angle from the loudspeaker front axis plus azimuth around that axis.
+   - Documents its measurement coordinate system as polar angle from the loudspeaker front axis plus azimuth around that axis.
    - Documents regular 5 degree full-sphere measurement grids and the CLF authoring/export workflow.
 
-6. ODEON documentation, CLF import description:
-   https://odeon.dk/pdf/ReleaseNotesVersion15.pdf
-   - Documents import of CLF TAB-separated authoring text and its relationship to CF1/CF2 distribution files.
+6. ODEON, *Odeon 15 Features — Import of source directivity files in the CLF text format*:
+   https://odeon.dk/product/whatsnew/previous-versions/odeon-15-features/
+   - Documents import of the TAB-separated CLF authoring text used to generate CF1/CF2 distribution files.
+
+7. ODEON, *Directivity files*:
+   https://odeon.dk/downloads/directivity-files/
+   - Describes CLF directivity as a spherical polar-coordinate grid and the 10 degree CF1 / 5 degree CF2 discretization.
 
 A reverse-engineered third-party CLF grammar was found during research but was deliberately **not** treated as specification authority.
 
@@ -64,7 +68,7 @@ A reverse-engineered third-party CLF grammar was found during research but was d
 
 ### Native coordinate semantics do not match the current HTDT dataset authority
 
-The authoritative CLIO documentation defines the measured balloon using a **front-axis polar angle** plus **azimuth around the front axis**.
+Authoritative vendor documentation does not give this slice one unambiguous, version-specific mapping from every CLF text balloon ordering convention into HTDT coordinates. Audiomatica documents its CLF export workflow from measurements expressed as a **front-axis polar angle** plus **azimuth around the front axis**, while ODEON describes the CLF balloon as a spherical polar-coordinate grid. The available official CLF material was not retrievable with the complete arc-order/axis grammar needed to prove the exact transform.
 
 Current HTDT `DirectivityDataset` stores and downstream evaluates a rectangular product grid of:
 
@@ -73,7 +77,7 @@ Current HTDT `DirectivityDataset` stores and downstream evaluates a rectangular 
 - with an acoustic reference axis at horizontal=0, vertical=0,
 - and requires every frequency × horizontal × vertical cell exactly once.
 
-A full CLF polar/azimuth lattice rotated into HTDT horizontal/elevation coordinates is not, in general, the same rectangular product lattice. A correct conversion would therefore require at least one of:
+Without the authoritative CLF axis, arc-order, symmetry, and pole rules, accepting a native balloon as the HTDT grid would be an assumption. Depending on the native convention and symmetry mode, normalization could require one or more of:
 
 - angular reprojection/resampling,
 - interpolation onto a new grid,
@@ -81,7 +85,7 @@ A full CLF polar/azimuth lattice rotated into HTDT horizontal/elevation coordina
 - direction deduplication at spherical poles,
 - or a new native spherical-coordinate authority consumed by downstream evaluators.
 
-All of those are outside this slice, and several are explicitly forbidden to infer. Labeling CLF polar angle as HTDT elevation would be semantically false.
+All of those are outside this slice, and several are explicitly forbidden to infer. In particular, this slice does not relabel or rotate native angles without an exact versioned authority.
 
 ### Exact grammar / required-sample authority is incomplete in the available official material
 
