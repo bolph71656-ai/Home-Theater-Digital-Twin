@@ -27,7 +27,7 @@ Every `CadMeasurementQualityReport` is bound to:
 - exact raw-asset SHA-256 already used by N60 content-addressed storage;
 - document ID, SceneRevision ID/content hash, measurement entity ID, and frozen measurement position;
 - optional exact AcquisitionContext ID/hash reference;
-- quality algorithm version;
+- quality algorithm version plus deterministic semantics SHA-256;
 - complete quality profile plus deterministic profile SHA-256;
 - complete explicit evidence payload and per-check decisions.
 
@@ -38,6 +38,19 @@ Changing a threshold/profile creates another report. Existing reports are append
 ## Quality decisions
 
 The report has independent checks for clipping, noise/SNR, usable frequency band, timing reference, polarity, IR window/truncation, calibration provenance, and repeatability.
+
+The evidence contract is explicit rather than inferred from FR samples:
+
+| Quality item | Required evidence / acquisition method | Unit / scope | Profile / threshold | Stored reason | Downstream claim |
+| --- | --- | --- | --- | --- | --- |
+| Clipping | REW/raw acquisition metadata stating whether clipping occurred; optional peak level | boolean, optional dBFS | algorithm/profile identity is frozen; no FR-derived threshold | explicit no-clipping / clipping / metadata unavailable | supports trust in captured response; failure drives retake |
+| Noise / SNR | explicit noise-floor + signal metadata or explicit SNR from acquisition evidence | dB SPL metadata and dB SNR | `minimum_snr_db` | measured SNR vs profile threshold, or unavailable | quality-dependent magnitude/calibration consumers |
+| Usable band | explicit quality-qualified low/high frequency limits | Hz band | optional `required_usable_band_hz` plus consumer requested band | coverage pass/fail/unknown | every band-aware downstream claim via `gate_measurement_claim` |
+| Timing reference | explicit timing-reference validity, reference ID, clock source, sample rate and delay correction | ID, Hz, seconds | no inference threshold; completeness required | valid / invalid / incomplete | `common_timing`, then `arrival_time` |
+| Polarity | explicit polarity observation plus confidence | boolean + 0..1 confidence | `minimum_polarity_confidence` | correct / reversed / confidence insufficient | polarity-sensitive downstream work |
+| IR window / truncation | an actual IR plus window bounds and explicit truncation metadata | seconds | algorithm completeness rule | window valid / truncated / incomplete / no IR | `arrival_time`, `decay` |
+| Calibration provenance | applied calibration raw-asset SHA and expected calibration SHA; filename is descriptive only | SHA-256 | exact hash equality | match / mismatch / incomplete | `calibrated_response` |
+| Repeatability | at least two explicitly linked same-binding measurements plus a repeatability metric | RMS dB | `maximum_repeatability_rms_db` | metric vs profile threshold or not evaluated | `repeatability` |
 
 | Check | PASS evidence | FAIL evidence | Missing / not applicable |
 | --- | --- | --- | --- |
