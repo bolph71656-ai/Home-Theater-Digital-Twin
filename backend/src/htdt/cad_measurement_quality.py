@@ -782,7 +782,14 @@ def gate_measurement_claim(
     closed without inventing coverage from the imported FR grid.
     """
 
-    capability = report.capability(claim)
+    try:
+        capability = report.capability(claim)
+    except KeyError:
+        return CadMeasurementCapability(
+            claim=claim,
+            decision='UNKNOWN',
+            reasons=('claim was not evaluated by this historical quality report',),
+        )
     if capability.decision != 'ALLOWED' or required_band_hz is None:
         return capability
 
