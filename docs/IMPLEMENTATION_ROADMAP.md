@@ -111,7 +111,7 @@ O90は完成済みO10〜O80のnominal探索authorityを置き換えず、**現�
 | ID | 先行条件 | 成果 / 完了gate |
 |---|---|---|
 | O90A — authority / local sensitivity | O30/O40/O80 | immutable RobustnessSpec / UncertaintyAxis / PerturbationSample / RobustnessEvaluation。position/seat/aim等の±local stencil、G10/O80 constraint再評価、exact provenance |
-| O90B — multidimensional robust Pareto | O90A | **部分実装: PR #149でbounded deterministic multidimensional / linked axes / sampled envelope / feasible fraction / O40 Paretoを実装**。Issue #146にdistribution/empirical/discrete uncertainty、distribution時のみpercentile、cancel/cache/resume/staleが残る。有限sampleをworst-caseと誤表示しない |
+| O90B — multidimensional robust Pareto | O90A | **PR #149 + #156で実装済み**。bounded / distribution / empirical / discrete uncertainty、明示independence・linked semantics、distribution時のみmean/percentile/probability、feasible fraction / violation probability、cancel/cache/resume/stale protection、O40 Pareto統合。有限sampleをworst-caseと誤表示しない |
 | O90C — multi-fidelity robustness | O90B + 使用prediction capability | nominal Pareto→local sensitivity→coarse sampling→shortlist→common-fidelity refinement。R140 cache/schedulerを利用可能だがR175はcorrectness依存にしない |
 | O90D — UX140 integration | O90B + UX140 | 「最適化 > ばらつき耐性」。nominal/robust比較、感度、性能分布、3D tolerance/aim envelope、infeasible feedback、Advanced provenance |
 | O90E — owned-room robust validation | O90B + eligible O60/R180 evidence | preregistered perturbation validation、O60 sensitivity evidence再利用。対象model/observable/perturbation domainがvalidation scope外ならproduction robustness recommendationをfail-closed |
@@ -272,7 +272,7 @@ N05/N20で根本的な操作・DPI・配布問題が残る場合、一回の改�
 
 ## 7. 現在の追跡先
 
-2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationはO90AをPR #145、bounded multidimensional O90B sliceをPR #149で実装。Issue #146のcanonical O90B残件とO90C以降は未実装。O100 system expansion / virtual channel topology optimizationはO100AをPR #144、O100B virtual topology/placement searchをPR #150で実装し、O100C以降は未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
+2026-09-19時点で、CAD-first roadmapのN05〜N90と配置最適化software pathのO10〜O80はmainへ実装済み。O90 robust/tolerance-aware optimizationはO90AをPR #145、O90B bounded foundationをPR #149、canonical O90B completionをPR #156で実装。O90C以降は未実装。O100 system expansion / virtual channel topology optimizationはO100AをPR #144、O100B virtual topology/placement searchをPR #150で実装し、O100C以降は未実装。O70はPR #92/#93、O80はPR #94で完了し、PR #94 merge `6faf554bcf3670f64ff13c530fa4fc79ab1881b8` をCI #548 / run `35313405578` とWindows Release Artifact #93 / run `35313405629` がPASSした。
 
 Issue #90のsynthetic software-completion laneは完了。real-repository fixtureでScene→Search→prediction→Measurement Plan→synthetic measurement→Objective→O60→O70→O80を通し、packaged executableからのseedも検証済み。synthetic evidenceは `synthetic_fixture` / `physical_measurement=false` のまま保持し、production authorityへ昇格しない。
 
