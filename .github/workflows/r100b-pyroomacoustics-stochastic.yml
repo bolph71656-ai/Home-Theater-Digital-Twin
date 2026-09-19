@@ -22,6 +22,7 @@ jobs:
       PYTHONPATH: backend/src
       PROBE_OUTPUT: artifacts/r100b/pyroomacoustics_stochastic.json
       RAW_OUTPUT: artifacts/r100b/pyroomacoustics_stochastic_raw.npz
+      HTDT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
