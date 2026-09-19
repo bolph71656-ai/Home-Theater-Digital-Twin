@@ -225,6 +225,12 @@ def test_explicit_quality_metadata_opens_only_supported_claims(tmp_path: Path) -
     assert gate_measurement_claim(
         report, 'phase_response', required_band_hz=(10.0, 100.0)
     ).decision == 'BLOCKED'
+    historical_without_polarity = report.model_copy(
+        update={'capabilities': report.capabilities[:-1]}
+    )
+    assert gate_measurement_claim(
+        historical_without_polarity, 'polarity'
+    ).decision == 'UNKNOWN'
 
     quality_repository.save_report(report)
     assert quality_repository.latest_report(record.measurement_id) == report
