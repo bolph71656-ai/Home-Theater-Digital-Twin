@@ -1,8 +1,8 @@
 {
-  "schema_version": "r100a-3",
+  "schema_version": "r100a-4",
   "manifest_id": "htdt-issue-101-r100a-benchmark-authority",
-  "revision": 3,
-  "purpose": "Freeze solver-neutral geometry, boundary/material, source/receiver/environment, numerical comparison, observable/tolerance and resource contracts before R100B solver bakeoff; revision 3 explicitly freezes local first-order radiation termination semantics and its semi-analytical reference.",
+  "revision": 4,
+  "purpose": "Frozen solver-neutral R100A-4 benchmark authority for R100B bakeoff, including explicit radiation termination and finite-record P/Q transfer semantics.",
   "hard_gates": [
     {
       "gate_id": "physics-correctness",
@@ -262,7 +262,8 @@
           "values_hz": []
         },
         "time_step_s": null,
-        "observation_time_s": null
+        "observation_time_s": null,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -592,8 +593,20 @@
           "step_hz": 1,
           "values_hz": []
         },
-        "time_step_s": 0.00016666666666666666,
-        "observation_time_s": 2
+        "time_step_s": null,
+        "observation_time_s": 2,
+        "finite_record_transfer": {
+          "excitation_model": "causal_discrete_unit_sample_volume_velocity",
+          "sample_zero_reference": "source_t0",
+          "record_interval": "half_open_0_T",
+          "solver_time_step_policy": "solver_native_recorded",
+          "dtft_kernel": "exp(-i*2*pi*f*n*dt)",
+          "dtft_measure": "dt_weighted_sum",
+          "transfer_definition": "pressure_over_volume_velocity",
+          "frequency_evaluation": "direct_scored_frequency_dtft",
+          "source_spectrum_requirement": "finite_nonzero_on_scored_grid",
+          "zero_padding": "none"
+        }
       },
       "observables": [
         {
@@ -629,7 +642,8 @@
       "notes": [
         "Refinement parameter and interpolation location must be recorded by the adapter.",
         "Finite-time/FR postprocessing must use the declared source normalization and time reference.",
-        "Complex field convergence uses complex RMS absolute/relative error; phase is not double-scored as a separate zero-degree tolerance."
+        "Complex field convergence uses complex RMS absolute/relative error; phase is not double-scored as a separate zero-degree tolerance.",
+        "R100A-4 finite-record authority: use solver-native recorded dt, samples with 0 <= n*dt < 2 s, direct scored-frequency DTFT, and P(f)/Q(f) normalization from the actual injected unit-sample volume-velocity record."
       ]
     },
     {
@@ -886,7 +900,8 @@
           ]
         },
         "time_step_s": null,
-        "observation_time_s": null
+        "observation_time_s": null,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -1274,7 +1289,19 @@
           "values_hz": []
         },
         "time_step_s": null,
-        "observation_time_s": 2
+        "observation_time_s": 2,
+        "finite_record_transfer": {
+          "excitation_model": "causal_discrete_unit_sample_volume_velocity",
+          "sample_zero_reference": "source_t0",
+          "record_interval": "half_open_0_T",
+          "solver_time_step_policy": "solver_native_recorded",
+          "dtft_kernel": "exp(-i*2*pi*f*n*dt)",
+          "dtft_measure": "dt_weighted_sum",
+          "transfer_definition": "pressure_over_volume_velocity",
+          "frequency_evaluation": "direct_scored_frequency_dtft",
+          "source_spectrum_requirement": "finite_nonzero_on_scored_grid",
+          "zero_padding": "none"
+        }
       },
       "observables": [
         {
@@ -1326,7 +1353,8 @@
       },
       "random_seed": null,
       "notes": [
-        "No rectangular approximation is permitted."
+        "No rectangular approximation is permitted.",
+        "R100A-4 finite-record authority: use solver-native recorded dt, samples with 0 <= n*dt < 2 s, direct scored-frequency DTFT, and P(f)/Q(f) normalization from the actual injected unit-sample volume-velocity record."
       ]
     },
     {
@@ -1723,7 +1751,8 @@
           "values_hz": []
         },
         "time_step_s": 0.00016666666666666666,
-        "observation_time_s": 2
+        "observation_time_s": 2,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -2047,7 +2076,8 @@
           "values_hz": []
         },
         "time_step_s": null,
-        "observation_time_s": 2
+        "observation_time_s": 2,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -5450,7 +5480,8 @@
           "values_hz": []
         },
         "time_step_s": null,
-        "observation_time_s": null
+        "observation_time_s": null,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -5950,7 +5981,8 @@
           "values_hz": []
         },
         "time_step_s": null,
-        "observation_time_s": null
+        "observation_time_s": null,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -6244,7 +6276,8 @@
           ]
         },
         "time_step_s": null,
-        "observation_time_s": null
+        "observation_time_s": null,
+        "finite_record_transfer": null
       },
       "observables": [
         {
@@ -6501,7 +6534,8 @@
           "values_hz": []
         },
         "time_step_s": null,
-        "observation_time_s": null
+        "observation_time_s": null,
+        "finite_record_transfer": null
       },
       "observables": [
         {
