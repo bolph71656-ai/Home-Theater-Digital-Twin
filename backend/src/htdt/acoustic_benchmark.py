@@ -369,6 +369,13 @@ class FiniteRecordTransferContract(BaseModel):
         'exp(-i*2*pi*f*n*dt)'
     ] = 'exp(-i*2*pi*f*n*dt)'
     dtft_measure: Literal['dt_weighted_sum'] = 'dt_weighted_sum'
+    numerator_quantity: Literal['physical_pressure'] = 'physical_pressure'
+    numerator_record_policy: Literal[
+        'solver_pressure_or_declared_primary_field_conversion'
+    ] = 'solver_pressure_or_declared_primary_field_conversion'
+    denominator_record: Literal[
+        'actual_injected_volume_velocity_samples'
+    ] = 'actual_injected_volume_velocity_samples'
     transfer_definition: Literal[
         'pressure_over_volume_velocity'
     ] = 'pressure_over_volume_velocity'
@@ -730,12 +737,20 @@ class AcousticBenchmarkManifest(BaseModel):
                             'cannot carry R100A-3 radiation semantics'
                         )
 
-        if self.schema_version == 'r100a-3':
+        if self.schema_version in {'r100a-2', 'r100a-3'}:
             for fixture in self.fixtures:
                 if fixture.comparison.finite_record_transfer is not None:
                     raise ValueError(
-                        f'R100A-3 fixture {fixture.fixture_id} cannot carry '
+                        f'{self.schema_version.upper()} fixture {fixture.fixture_id} cannot carry '
                         'R100A-4 finite-record transfer semantics'
+                    )
+                if any(
+                    observable.kind == 'complex_pressure_transfer_pa_per_m3_s'
+                    for observable in fixture.observables
+                ):
+                    raise ValueError(
+                        f'{self.schema_version.upper()} fixture {fixture.fixture_id} cannot carry '
+                        'R100A-4 complex pressure-transfer observable semantics'
                     )
 
         if self.schema_version in {'r100a-3', 'r100a-4'}:
@@ -827,6 +842,28 @@ class AcousticBenchmarkManifest(BaseModel):
                         f'R100A-4 finite-record fixture {fixture.fixture_id} '
                         'requires the frozen unit volume-velocity source'
                     )
+
+                for observable in fixture.observables:
+                    if observable.acceptance_relation == 'monotonic_convergence':
+                        if (
+                            observable.kind != 'complex_pressure_transfer_pa_per_m3_s'
+                            or observable.unit != 'Pa/(m3/s)'
+                        ):
+                            raise ValueError(
+                                f'R100A-4 finite-record convergence observable '
+                                f'{fixture.fixture_id}:{observable.observable_id} must use '
+                                'complex_pressure_transfer_pa_per_m3_s / Pa/(m3/s)'
+                            )
+                    if (
+                        observable.reference_kind == 'independent_solver'
+                        and observable.kind == 'transfer_magnitude_db'
+                        and observable.unit != 'dB re 1 Pa/(m3/s)'
+                    ):
+                        raise ValueError(
+                            f'R100A-4 finite-record independent transfer magnitude '
+                            f'{fixture.fixture_id}:{observable.observable_id} must use '
+                            'dB re 1 Pa/(m3/s)'
+                        )
         return self
 
     def canonical_json(self) -> str:
