@@ -9,6 +9,7 @@ from .cad_acoustic_snapshot import (
     AcousticPredictionRequest,
     AcousticSceneSnapshot,
     SurfaceBoundaryConfiguration,
+    TreatmentBoundaryOverlaySnapshotRef,
     source_binding_from_r110,
 )
 from .cad_r110_source_repository import CadR110SourceRepository
@@ -18,6 +19,7 @@ from .cad_schema import ensure_native_schema
 from .cad_system_variant import materialize_system_variant
 from .cad_system_variant_repository import CadSystemVariantRepository
 from .r120_geometry_compiler_repository import R120GeometryCompilerRepository
+from .treatment_boundary_overlay_repository import TreatmentBoundaryOverlayRepository
 
 
 def _utc_now() -> str:
@@ -34,6 +36,7 @@ class CadAcousticSnapshotRepository:
         variant_repository: CadSystemVariantRepository | None = None,
         r110_repository: CadR110SourceRepository | None = None,
         r120_repository: R120GeometryCompilerRepository | None = None,
+        treatment_boundary_repository: TreatmentBoundaryOverlayRepository | None = None,
     ) -> None:
         self.scene_repository = scene_repository
         self.variant_repository = (
@@ -54,6 +57,7 @@ class CadAcousticSnapshotRepository:
             if r120_repository is not None
             else R120GeometryCompilerRepository(scene_repository)
         )
+        self.treatment_boundary_repository = treatment_boundary_repository
         self.path = Path(scene_repository.path)
         ensure_native_schema(self.path)
         self._initialize()
@@ -240,6 +244,160 @@ class CadAcousticSnapshotRepository:
             raise ValueError(
                 'AcousticSceneSnapshot BoundaryTermination authority mismatch'
             )
+
+        if snapshot.treatment_boundary_bindings:
+            if self.treatment_boundary_repository is None:
+                raise ValueError(
+                    'AcousticSceneSnapshot treatment bindings require typed '
+                    'TreatmentBoundaryOverlayRepository resolution'
+                )
+            mapping_by_surface = {
+                item.source_surface_id: item
+                for item in compiled.surface_mapping
+            }
+            for binding in snapshot.treatment_boundary_bindings:
+                mapping = mapping_by_surface.get(binding.host_surface_id)
+                if mapping is None:
+                    raise ValueError(
+                        'AcousticSceneSnapshot treatment host surface is missing '
+                        'from R120CompiledGeometry'
+                    )
+                if (
+                    binding.base_material_authority != mapping.material_authority
+                    or binding.base_boundary_physics_authority
+                    != mapping.boundary_physics_authority
+                ):
+                    raise ValueError(
+                        'AcousticSceneSnapshot treatment base boundary mismatch'
+                    )
+
+                resolved_overlays = []
+                for overlay_binding in binding.attached_treatment_overlays:
+                    overlay = self.treatment_boundary_repository.get_overlay(
+                        overlay_binding.overlay_ref.authority_id
+                    )
+                    if overlay is None:
+                        raise ValueError(
+                            'AcousticSceneSnapshot references missing treatment overlay'
+                        )
+                    expected_overlay_binding = TreatmentBoundaryOverlaySnapshotRef(
+                        overlay_ref=overlay.as_external_authority_ref(),
+                        host_surface_authority_sha256=(
+                            overlay.host_surface_authority_sha256
+                        ),
+                        lifecycle=overlay.lifecycle,
+                        treatment_definition_id=overlay.treatment_definition_id,
+                        treatment_definition_version=(
+                            overlay.treatment_definition_version
+                        ),
+                        treatment_definition_hash_sha256=(
+                            overlay.treatment_definition_hash_sha256
+                        ),
+                        treatment_placement_instance_id=(
+                            overlay.treatment_placement_instance_id
+                        ),
+                        treatment_placement_version=(
+                            overlay.treatment_placement_version
+                        ),
+                        treatment_placement_hash_sha256=(
+                            overlay.treatment_placement_hash_sha256
+                        ),
+                        surface_binding_evaluation_id=(
+                            overlay.surface_binding_evaluation_id
+                        ),
+                        surface_binding_evaluation_hash_sha256=(
+                            overlay.surface_binding_evaluation_hash_sha256
+                        ),
+                        wave_capability_state=overlay.wave_capability_state,
+                        geometric_capability_state=(
+                            overlay.geometric_capability_state
+                        ),
+                    )
+                    if (
+                        expected_overlay_binding != overlay_binding
+                        or overlay.host_surface_id != binding.host_surface_id
+                        or overlay.exact_scene_revision_id != revision.revision_id
+                        or overlay.exact_scene_revision_content_hash
+                        != revision.content_hash
+                        or overlay.exact_semantic_geometry_id != geometry.geometry_id
+                        or overlay.exact_semantic_geometry_hash_sha256
+                        != geometry.semantic_hash_sha256
+                        or overlay.exact_r120_compiled_geometry_id
+                        != compiled.compiled_geometry_id
+                        or overlay.exact_r120_compiled_geometry_hash_sha256
+                        != compiled.compiled_hash_sha256
+                    ):
+                        raise ValueError(
+                            'AcousticSceneSnapshot treatment overlay exact identity mismatch'
+                        )
+                    resolved_overlays.append(overlay)
+
+                if binding.status == 'AVAILABLE':
+                    assert binding.composition_id is not None
+                    composition = self.treatment_boundary_repository.get_composition(
+                        binding.composition_id
+                    )
+                    if composition is None:
+                        raise ValueError(
+                            'AcousticSceneSnapshot references missing treatment composition'
+                        )
+                    if (
+                        composition.composition_hash_sha256
+                        != binding.composition_hash_sha256
+                        or composition.authority_version
+                        != binding.composition_authority_version
+                        or composition.target_domain != binding.target_domain
+                        or composition.host_surface_id != binding.host_surface_id
+                        or composition.exact_scene_revision_id
+                        != revision.revision_id
+                        or composition.exact_scene_revision_content_hash
+                        != revision.content_hash
+                        or composition.exact_semantic_geometry_id
+                        != geometry.geometry_id
+                        or composition.exact_semantic_geometry_hash_sha256
+                        != geometry.semantic_hash_sha256
+                        or composition.exact_r120_compiled_geometry_id
+                        != compiled.compiled_geometry_id
+                        or composition.exact_r120_compiled_geometry_hash_sha256
+                        != compiled.compiled_hash_sha256
+                        or composition.selected_treatment_lifecycle
+                        != binding.lifecycle
+                        or composition.base_material_authority
+                        != binding.base_material_authority
+                        or composition.base_boundary_physics_authority
+                        != binding.base_boundary_physics_authority
+                        or composition.attached_treatment_overlays
+                        != tuple(
+                            item.overlay_ref
+                            for item in binding.attached_treatment_overlays
+                        )
+                        or composition.selected_treatment_material_authorities
+                        != binding.selected_treatment_material_authorities
+                    ):
+                        raise ValueError(
+                            'AcousticSceneSnapshot treatment composition exact identity mismatch'
+                        )
+                    for overlay in resolved_overlays:
+                        expected_material = (
+                            overlay.wave_material_candidate_ref
+                            if binding.target_domain == 'wave'
+                            else overlay.geometric_material_candidate_ref
+                        )
+                        if (
+                            expected_material is None
+                            or expected_material
+                            not in binding.selected_treatment_material_authorities
+                            or overlay.lifecycle != binding.lifecycle
+                        ):
+                            raise ValueError(
+                                'AcousticSceneSnapshot treatment composition '
+                                'capability/lifecycle mismatch'
+                            )
+                elif binding.composition_id is not None:
+                    raise ValueError(
+                        'blocked AcousticSceneSnapshot treatment binding cannot '
+                        'resolve as AVAILABLE composition'
+                    )
 
         if snapshot.sources and variant is None:
             raise ValueError(
