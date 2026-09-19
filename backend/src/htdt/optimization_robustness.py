@@ -22,7 +22,11 @@ from .cad_orientation_constraints import orientation_constraint_rejections
 from .cad_repository import SceneRevision
 from .cad_scene import Direction3, Position3, SceneDocument, scene_content_hash
 from .cad_search import candidate_preview_document
-from .cad_search_models import CadCandidate, CadSearchSpec
+from .cad_search_models import (
+    CadCandidate,
+    CadSearchSpec,
+    constraint_workspace_snapshot,
+)
 from .optimization_objectives import ObjectiveMetric, ObjectiveVector
 
 
@@ -61,6 +65,22 @@ def canonical_robustness_sha256(value: Any) -> str:
 
 def robustness_timestamp_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _validate_constraint_workspace_authority(
+    search_spec: CadSearchSpec,
+    constraint_set: CadConstraintSet,
+) -> None:
+    """Require the exact immutable G10/O80 constraint workspace frozen by SearchSpec."""
+
+    if constraint_set.document_id != search_spec.document_id:
+        raise ValueError('robustness constraint workspace belongs to another document')
+    snapshot_json, workspace_hash = constraint_workspace_snapshot(constraint_set)
+    if (
+        workspace_hash != search_spec.constraint_workspace_hash
+        or snapshot_json != search_spec.constraint_snapshot_json
+    ):
+        raise ValueError('robustness constraint workspace authority mismatch')
 
 
 class UncertaintyAxis(BaseModel):
@@ -1378,8 +1398,7 @@ def evaluate_local_robustness(
         != spec.objective_evaluation_spec_sha256
     ):
         raise ValueError('robustness O30 objective authority mismatch')
-    if constraint_set.document_id != spec.document_id:
-        raise ValueError('robustness constraint workspace belongs to another document')
+    _validate_constraint_workspace_authority(search_spec, constraint_set)
 
     candidate = _candidate_from_payload(
         spec.candidate_kind,

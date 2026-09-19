@@ -402,6 +402,10 @@ Semantic identity includes:
 Changing camera/view state does not invalidate O90.
 Changing physical/acoustic inputs does.
 
+The exact G10/O80 constraint workspace frozen into the originating SearchSpec is part of the evaluation authority. Local, bounded, distribution, empirical, and discrete evaluation paths must compare the supplied constraint snapshot/hash with that frozen SearchSpec before reading reusable samples or writing new sample/evaluation evidence. A changed allowed region, exclusion region, wall clearance, or other constraint therefore requires a new SearchSpec/O90 authority; stale evidence remains immutable and is not attached to the changed workspace.
+
+O90 SQLite persistence uses the central native-schema authority before repository DDL/DML. Future, malformed, or unrelated databases are rejected before O90 tables are changed; supported legacy adoption remains owned by the central native migration path. Repository connections are transaction-scoped and deterministically closed after commit or rollback rather than relying on garbage collection.
+
 ## 13. Compute, cancel, cache and resume
 
 O90 follows existing job semantics:
@@ -498,7 +502,7 @@ A selected candidate can show position/aim tolerance evidence in 3D with clear d
 - O40 robust Pareto integration;
 - cancel/cache/resume.
 
-PR #149 provides the bounded multidimensional foundation. The Issue #146 completion adds explicit distribution/empirical/discrete uncertainty semantics, probability-gated mean/percentile/constraint-violation outputs, and exact cancel/cache/resume/stale safeguards. Probability is never inferred from bounded intervals or unweighted empirical/discrete states. O90B is complete at this authority boundary; O90C multi-fidelity/scheduler integration remains a separate later slice.
+PR #149 provides the bounded multidimensional foundation. The Issue #146 completion adds explicit distribution/empirical/discrete uncertainty semantics, probability-gated mean/percentile/constraint-violation outputs, and exact cancel/cache/resume/stale safeguards. Probability is never inferred from bounded intervals or unweighted empirical/discrete states. O90B is complete at this authority boundary; O90C multi-fidelity/scheduler integration remains a separate later slice. The #183/#186/#187 repository hardening requires the exact frozen constraint workspace before any cache access, deterministic SQLite close on every transaction path, and the central native-schema gate before O90 repository DDL/DML; these are authority/persistence safeguards and do not change O90A/O90B sampling or probability semantics.
 
 ### O90C — multi-fidelity / adaptive robustness
 

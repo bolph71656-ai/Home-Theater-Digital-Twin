@@ -999,3 +999,363 @@ def test_o90b_bounded_cancel_resume_reuses_pr149_samples(tmp_path) -> None:
         cancelled.samples
     )
     assert repository.list_samples(spec.robustness_spec_id) == resumed.samples
+
+def _o90_changed_constraint_set(document_id: str, kind: str) -> CadConstraintSet:
+    from htdt.cad_constraint_models import (
+        CadAllowedRegionConstraint,
+        CadConstraintPoint2D,
+        CadExclusionRegionConstraint,
+        CadWallClearanceConstraint,
+    )
+
+    if kind == 'allowed':
+        constraint = CadAllowedRegionConstraint(
+            constraint_id='changed-allowed',
+            name='Changed allowed region',
+            entity_ids=('speaker-fl',),
+            vertices=(
+                CadConstraintPoint2D(x_m=4.0, y_m=0.0),
+                CadConstraintPoint2D(x_m=5.0, y_m=0.0),
+                CadConstraintPoint2D(x_m=5.0, y_m=2.0),
+                CadConstraintPoint2D(x_m=4.0, y_m=2.0),
+            ),
+        )
+    elif kind == 'exclusion':
+        constraint = CadExclusionRegionConstraint(
+            constraint_id='changed-exclusion',
+            name='Changed exclusion region',
+            entity_ids=('speaker-fl',),
+            vertices=(
+                CadConstraintPoint2D(x_m=0.5, y_m=0.5),
+                CadConstraintPoint2D(x_m=1.5, y_m=0.5),
+                CadConstraintPoint2D(x_m=1.5, y_m=1.5),
+                CadConstraintPoint2D(x_m=0.5, y_m=1.5),
+            ),
+        )
+    elif kind == 'wall':
+        constraint = CadWallClearanceConstraint(
+            constraint_id='changed-wall',
+            name='Changed wall clearance',
+            entity_ids=('speaker-fl',),
+            wall_id='left',
+            min_m=2.0,
+        )
+    else:
+        raise AssertionError(kind)
+    return CadConstraintSet(document_id=document_id, constraints=(constraint,))
+
+
+@pytest.mark.parametrize('constraint_kind', ('allowed', 'exclusion', 'wall'))
+def test_o90a_rejects_changed_constraint_snapshot_before_evaluation(
+    tmp_path,
+    constraint_kind,
+) -> None:
+    revision, _constraints, search_spec, nominal, spec = _fixture(tmp_path)
+    changed_constraints = _o90_changed_constraint_set(DOCUMENT_ID, constraint_kind)
+    evaluator_called = False
+
+    def evaluator(_document: SceneDocument, sample_id: str) -> PerturbationObjectiveResult:
+        nonlocal evaluator_called
+        evaluator_called = True
+        return _o90b_linear_evaluator(_document, sample_id)
+
+    with pytest.raises(ValueError, match='constraint workspace authority mismatch'):
+        evaluate_local_robustness(
+            source_revision=revision,
+            search_spec=search_spec,
+            spec=spec,
+            constraint_set=changed_constraints,
+            nominal_objective=nominal,
+            evaluator=evaluator,
+        )
+
+    assert not evaluator_called
+
+
+class _O90CacheMustNotBeTouched:
+    def save_spec(self, _spec):
+        raise AssertionError('stale authority touched cache.save_spec')
+
+    def list_reusable_samples(self, _spec):
+        raise AssertionError('stale authority touched cache.list_reusable_samples')
+
+    def save_sample(self, _sample):
+        raise AssertionError('stale authority touched cache.save_sample')
+
+    def save_evaluations(self, _evaluations):
+        raise AssertionError('stale authority touched cache.save_evaluations')
+
+
+def test_o90b_all_sampling_models_reject_stale_constraints_before_cache_access(
+    tmp_path,
+) -> None:
+    from htdt.optimization_robustness import (
+        DiscreteUncertaintyModel,
+        EmpiricalUncertaintyModel,
+        ExplicitPerturbationState,
+    )
+    from htdt.optimization_robustness_multidimensional import (
+        derive_multidimensional_robustness_spec,
+        execute_multidimensional_robustness,
+    )
+    from htdt.optimization_robustness_uncertainty import (
+        derive_uncertainty_robustness_spec,
+        evaluate_uncertainty_robustness,
+    )
+
+    revision, _constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    changed_constraints = _o90_changed_constraint_set(DOCUMENT_ID, 'allowed')
+    cache = _O90CacheMustNotBeTouched()
+
+    bounded = derive_multidimensional_robustness_spec(
+        base_spec,
+        sample_count=5,
+        seed=501,
+        created_at_utc='2026-09-19T00:30:00+00:00',
+    )
+    with pytest.raises(ValueError, match='constraint workspace authority mismatch'):
+        execute_multidimensional_robustness(
+            source_revision=revision,
+            search_spec=search_spec,
+            spec=bounded,
+            constraint_set=changed_constraints,
+            nominal_objective=nominal,
+            evaluator=_o90b_linear_evaluator,
+            cache=cache,
+        )
+
+    explicit_models = (
+        (
+            _o90b_distribution_model(base_spec),
+            {'sample_count': 5, 'seed': 502},
+        ),
+        (
+            EmpiricalUncertaintyModel(
+                model_id='stale-empirical',
+                samples=(
+                    ExplicitPerturbationState(
+                        state_id='observed',
+                        parameter_deltas={'speaker-x': 0.01},
+                    ),
+                ),
+            ),
+            {},
+        ),
+        (
+            DiscreteUncertaintyModel(
+                model_id='stale-discrete',
+                states=(
+                    ExplicitPerturbationState(
+                        state_id='mount-a',
+                        parameter_deltas={'speaker-x': -0.01},
+                    ),
+                ),
+            ),
+            {},
+        ),
+    )
+    for index, (model, kwargs) in enumerate(explicit_models):
+        uncertainty_spec = derive_uncertainty_robustness_spec(
+            base_spec,
+            uncertainty_model=model,
+            created_at_utc=f'2026-09-19T00:31:0{index}+00:00',
+            **kwargs,
+        )
+        with pytest.raises(ValueError, match='constraint workspace authority mismatch'):
+            evaluate_uncertainty_robustness(
+                source_revision=revision,
+                search_spec=search_spec,
+                spec=uncertainty_spec,
+                constraint_set=changed_constraints,
+                nominal_objective=nominal,
+                evaluator=_o90b_linear_evaluator,
+                cache=cache,
+            )
+
+
+def test_o90b_stale_constraint_resume_leaves_cached_evidence_immutable(tmp_path) -> None:
+    from htdt.optimization_robustness_uncertainty import (
+        derive_uncertainty_robustness_spec,
+        evaluate_uncertainty_robustness,
+    )
+
+    revision, constraints, search_spec, nominal, base_spec = _fixture(tmp_path)
+    spec = derive_uncertainty_robustness_spec(
+        base_spec,
+        uncertainty_model=_o90b_distribution_model(base_spec),
+        sample_count=5,
+        seed=512,
+        created_at_utc='2026-09-19T00:32:00+00:00',
+    )
+    repository = CadRobustnessRepository(tmp_path / 'stale-resume.sqlite3')
+    cancel_calls = {'count': 0}
+
+    def cancel_after_one_perturbation() -> bool:
+        cancel_calls['count'] += 1
+        return cancel_calls['count'] > 2
+
+    cancelled = evaluate_uncertainty_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        cache=repository,
+        cancel_requested=cancel_after_one_perturbation,
+        created_at_utc='2026-09-19T00:33:00+00:00',
+    )
+    assert cancelled.status == 'cancelled'
+    before = repository.list_samples(spec.robustness_spec_id)
+    assert before == cancelled.samples
+
+    with pytest.raises(ValueError, match='constraint workspace authority mismatch'):
+        evaluate_uncertainty_robustness(
+            source_revision=revision,
+            search_spec=search_spec,
+            spec=spec,
+            constraint_set=_o90_changed_constraint_set(DOCUMENT_ID, 'allowed'),
+            nominal_objective=nominal,
+            evaluator=_o90b_linear_evaluator,
+            cache=repository,
+            created_at_utc='2026-09-19T00:34:00+00:00',
+        )
+
+    assert repository.list_samples(spec.robustness_spec_id) == before
+    assert repository.list_evaluations(spec.robustness_spec_id) == ()
+
+
+def test_cad_robustness_repository_closes_every_connection_without_gc(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import sqlite3
+
+    revision, constraints, search_spec, nominal, spec = _fixture(tmp_path)
+    samples, evaluations = evaluate_local_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=_o90b_linear_evaluator,
+        created_at_utc='2026-09-19T00:35:00+00:00',
+    )
+    db_path = tmp_path / 'close.sqlite3'
+    real_connect = CadRobustnessRepository._connect
+    opened = []
+
+    def tracked_connect(self):
+        connection = real_connect(self)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(CadRobustnessRepository, '_connect', tracked_connect)
+    repository = CadRobustnessRepository(db_path)
+    repository.save_spec(spec)
+    repository.save_samples(samples)
+    repository.save_evaluations(evaluations)
+    assert repository.get_spec(spec.robustness_spec_id) == spec
+    assert repository.list_samples(spec.robustness_spec_id) == samples
+    assert repository.list_evaluations(spec.robustness_spec_id) == evaluations
+    assert repository.list_specs_for_candidate(
+        document_id=spec.document_id,
+        scene_revision_id=spec.scene_revision_id,
+        candidate_id=spec.candidate_id,
+    ) == (spec,)
+
+    conflicting = spec.model_copy(
+        update={'robustness_spec_sha256': '0' * 64},
+    )
+    with pytest.raises(ValueError, match='immutable identity conflict'):
+        repository.save_spec(conflicting)
+
+    assert opened
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match='closed'):
+            connection.execute('SELECT 1')
+
+    renamed = tmp_path / 'close-renamed.sqlite3'
+    db_path.rename(renamed)
+    renamed.unlink()
+
+
+@pytest.mark.parametrize('case', ('future', 'invalid_metadata', 'unrelated'))
+def test_cad_robustness_repository_rejects_incompatible_native_db_without_mutation(
+    tmp_path,
+    case,
+) -> None:
+    import sqlite3
+
+    from htdt.cad_schema import NATIVE_SCHEMA_VERSION, NativeSchemaError
+
+    path = tmp_path / f'{case}.sqlite3'
+    with sqlite3.connect(path) as connection:
+        if case == 'future':
+            connection.execute(
+                'CREATE TABLE native_schema_metadata ('
+                'singleton INTEGER PRIMARY KEY CHECK(singleton=1), '
+                'schema_version INTEGER NOT NULL)'
+            )
+            connection.execute(
+                'INSERT INTO native_schema_metadata(singleton, schema_version) '
+                'VALUES (1, ?)',
+                (NATIVE_SCHEMA_VERSION + 1,),
+            )
+            connection.execute('CREATE TABLE sentinel(value TEXT NOT NULL)')
+            connection.execute("INSERT INTO sentinel VALUES ('keep')")
+        elif case == 'invalid_metadata':
+            connection.execute(
+                'CREATE TABLE native_schema_metadata ('
+                'singleton INTEGER PRIMARY KEY CHECK(singleton=1), '
+                'schema_version INTEGER NOT NULL)'
+            )
+            connection.execute('CREATE TABLE sentinel(value TEXT NOT NULL)')
+            connection.execute("INSERT INTO sentinel VALUES ('keep')")
+        else:
+            connection.execute('CREATE TABLE unrelated(value TEXT NOT NULL)')
+            connection.execute("INSERT INTO unrelated VALUES ('keep')")
+
+    before = path.read_bytes()
+    with pytest.raises(NativeSchemaError):
+        CadRobustnessRepository(path)
+    assert path.read_bytes() == before
+
+
+def test_cad_robustness_repository_uses_native_schema_authority_for_new_and_legacy_db(
+    tmp_path,
+) -> None:
+    import sqlite3
+
+    from htdt.cad_schema import NATIVE_SCHEMA_VERSION, read_native_schema_version
+
+    new_path = tmp_path / 'new-robust.sqlite3'
+    CadRobustnessRepository(new_path)
+    assert read_native_schema_version(new_path) == NATIVE_SCHEMA_VERSION
+
+    legacy_path = tmp_path / 'legacy-robust.sqlite3'
+    with sqlite3.connect(legacy_path) as connection:
+        connection.execute(
+            'CREATE TABLE cad_legacy_evidence('
+            'id INTEGER PRIMARY KEY, payload TEXT NOT NULL)'
+        )
+        connection.execute(
+            "INSERT INTO cad_legacy_evidence(id, payload) VALUES (1, 'preserve')"
+        )
+
+    CadRobustnessRepository(legacy_path)
+    assert read_native_schema_version(legacy_path) == NATIVE_SCHEMA_VERSION
+    with sqlite3.connect(legacy_path) as connection:
+        assert connection.execute(
+            'SELECT payload FROM cad_legacy_evidence WHERE id=1'
+        ).fetchone() == ('preserve',)
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert 'cad_robustness_specs' in tables
+    assert 'cad_perturbation_samples' in tables
+    assert 'cad_robustness_evaluations' in tables
+

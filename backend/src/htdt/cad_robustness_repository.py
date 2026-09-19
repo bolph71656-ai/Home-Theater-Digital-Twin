@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import closing
 import json
 import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .cad_schema import ensure_native_schema
 from .optimization_robustness import (
     PerturbationSample,
     RobustnessEvaluation,
@@ -18,6 +20,7 @@ class CadRobustnessRepository:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_native_schema(self.db_path)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -27,7 +30,7 @@ class CadRobustnessRepository:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS cad_robustness_specs (
@@ -113,7 +116,7 @@ class CadRobustnessRepository:
 
     def save_spec(self, spec: RobustnessSpec) -> RobustnessSpec:
         payload = self._payload(spec)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 """
                 SELECT payload_json
@@ -168,7 +171,7 @@ class CadRobustnessRepository:
         return spec
 
     def get_spec(self, robustness_spec_id: str) -> RobustnessSpec:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 """
                 SELECT payload_json
@@ -189,7 +192,7 @@ class CadRobustnessRepository:
         ):
             raise ValueError('PerturbationSample robustness authority mismatch')
         payload = self._payload(sample)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 """
                 SELECT payload_json
@@ -244,7 +247,7 @@ class CadRobustnessRepository:
         self,
         robustness_spec_id: str,
     ) -> tuple[PerturbationSample, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 """
                 SELECT payload_json
@@ -293,7 +296,7 @@ class CadRobustnessRepository:
         ):
             raise ValueError('RobustnessEvaluation robustness authority mismatch')
         payload = self._payload(evaluation)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 """
                 SELECT payload_json
@@ -346,7 +349,7 @@ class CadRobustnessRepository:
         self,
         robustness_spec_id: str,
     ) -> tuple[RobustnessEvaluation, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 """
                 SELECT payload_json
@@ -368,7 +371,7 @@ class CadRobustnessRepository:
         scene_revision_id: str,
         candidate_id: str,
     ) -> tuple[RobustnessSpec, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 """
                 SELECT payload_json
