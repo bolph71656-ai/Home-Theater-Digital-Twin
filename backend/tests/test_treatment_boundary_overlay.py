@@ -1,0 +1,578 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from htdt.acoustic_benchmark import (
+    AcousticMaterial,
+    GeometricAcousticBand,
+    SpecificImpedancePoint,
+)
+from htdt.cad_acoustic_treatment import (
+    TreatmentAcousticModel,
+    TreatmentCoverage,
+    TreatmentDimensions,
+    TreatmentFrequencyBand,
+    TreatmentLayer,
+    TreatmentProvenance,
+    TreatmentUncertainty,
+    build_acoustic_treatment_definition,
+    build_treatment_placement,
+    revise_treatment_placement,
+)
+from htdt.cad_acoustic_treatment_repository import CadAcousticTreatmentRepository
+from htdt.cad_repository import SceneRepository
+from htdt.cad_scene import Position3, SceneDocument, SceneEntity
+from htdt.cad_system_variant_repository import CadSystemVariantRepository
+from htdt.r120_geometry_compiler import (
+    ExactExternalAuthorityRef,
+    SurfaceBoundaryAuthorityBinding,
+    compile_r120_geometry,
+    make_r120_geometry_compilation_request,
+)
+from htdt.r120_geometry_compiler_repository import R120GeometryCompilerRepository
+from htdt.raw_mesh import import_raw_visual_mesh
+from htdt.semantic_geometry import (
+    SurfaceSemanticAssignment,
+    convert_raw_visual_mesh_to_semantic_geometry,
+    explicit_identity_source_to_scene_transform,
+    make_semantic_geometry_conversion_request,
+    raw_triangle_ids,
+)
+from htdt.treatment_boundary_overlay import (
+    TreatmentBoundaryCompileInput,
+    compile_treatment_boundary_overlays,
+)
+from htdt.treatment_boundary_overlay_repository import TreatmentBoundaryOverlayRepository
+
+
+CLOSED_TETRA = b'''\
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 0 0 1
+f 1 3 2
+f 1 2 4
+f 1 4 3
+f 2 3 4
+'''
+
+
+def _external(name: str, token: str) -> ExactExternalAuthorityRef:
+    return ExactExternalAuthorityRef(
+        authority_id=name,
+        authority_version='fixture-v1',
+        semantic_hash_sha256=token * 64,
+    )
+
+
+def _provenance() -> TreatmentProvenance:
+    return TreatmentProvenance(
+        source_kind='measurement',
+        source_id='treatment-boundary-fixture',
+        source_version='1',
+        source_sha256='1' * 64,
+        reference='Issue #171 x #101 boundary overlay fixture',
+    )
+
+
+def _model(kind: str) -> TreatmentAcousticModel | None:
+    provenance = _provenance()
+    material: AcousticMaterial
+    if kind == 'none':
+        return None
+    if kind == 'geometric':
+        material = AcousticMaterial(
+            material_id='fixture-geometric-treatment',
+            provenance='fixture',
+            version='1',
+            wave_model='unsupported',
+            geometric_model='banded',
+            geometric_bands=(
+                GeometricAcousticBand(
+                    center_hz=500.0,
+                    absorption=0.40,
+                    scattering=0.20,
+                ),
+                GeometricAcousticBand(
+                    center_hz=1000.0,
+                    absorption=0.55,
+                    scattering=0.25,
+                ),
+            ),
+        )
+    elif kind == 'wave':
+        material = AcousticMaterial(
+            material_id='fixture-wave-treatment',
+            provenance='fixture measured complex impedance',
+            version='1',
+            wave_model='specific_impedance_table',
+            specific_impedance=(
+                SpecificImpedancePoint(
+                    frequency_hz=100.0,
+                    resistance_pa_s_m=420.0,
+                    reactance_pa_s_m=-80.0,
+                ),
+                SpecificImpedancePoint(
+                    frequency_hz=200.0,
+                    resistance_pa_s_m=450.0,
+                    reactance_pa_s_m=-40.0,
+                ),
+            ),
+            geometric_model='unsupported',
+        )
+    elif kind == 'both':
+        material = AcousticMaterial(
+            material_id='fixture-both-treatment',
+            provenance='fixture measured wave plus geometric authority',
+            version='1',
+            wave_model='specific_impedance_table',
+            specific_impedance=(
+                SpecificImpedancePoint(
+                    frequency_hz=100.0,
+                    resistance_pa_s_m=410.0,
+                    reactance_pa_s_m=-70.0,
+                ),
+                SpecificImpedancePoint(
+                    frequency_hz=200.0,
+                    resistance_pa_s_m=440.0,
+                    reactance_pa_s_m=-35.0,
+                ),
+            ),
+            geometric_model='banded',
+            geometric_bands=(
+                GeometricAcousticBand(
+                    center_hz=500.0,
+                    absorption=0.50,
+                    scattering=0.15,
+                ),
+            ),
+        )
+    else:
+        raise ValueError(kind)
+    return TreatmentAcousticModel(
+        model_id=f'fixture-{kind}-model',
+        model_version='1',
+        evidence_basis='measured',
+        valid_frequency_band=TreatmentFrequencyBand(min_hz=80.0, max_hz=4000.0),
+        uncertainty=TreatmentUncertainty(
+            kind='quantified',
+            value=0.05,
+            unit='fixture',
+            note='fixture uncertainty',
+        ),
+        provenance=provenance,
+        material=material,
+    )
+
+
+def _definition(kind: str, suffix: str = ''):
+    return build_acoustic_treatment_definition(
+        definition_id=f'treatment-{kind}{suffix}',
+        version='1.0',
+        name=f'{kind} treatment {suffix}',
+        treatment_type='porous_absorber',
+        provenance=_provenance(),
+        dimensions=TreatmentDimensions(width_m=1.0, height_m=1.0, thickness_m=0.1),
+        air_gap_m=0.05,
+        layers=(
+            TreatmentLayer(
+                layer_id='core',
+                material_name='fixture core',
+                thickness_m=0.1,
+                density_kg_m3=48.0,
+            ),
+        ),
+        acoustic_model=_model(kind),
+    )
+
+
+def _fixture(tmp_path: Path):
+    scene_repository = SceneRepository(tmp_path / 'cad.sqlite3')
+    mesh = import_raw_visual_mesh(CLOSED_TETRA, source_name='treatment-boundary.obj')
+    triangle_ids = raw_triangle_ids(mesh)
+    conversion = make_semantic_geometry_conversion_request(
+        mesh,
+        source_scene_revision_id=None,
+        source_to_scene_transform=explicit_identity_source_to_scene_transform(
+            reason='fixture coordinates are exact HTDT metres',
+        ),
+        surface_assignments=(
+            SurfaceSemanticAssignment(
+                surface_key='room-shell',
+                triangle_ids=triangle_ids,
+                semantic_class='room_boundary',
+            ),
+        ),
+    )
+    geometry = convert_raw_visual_mesh_to_semantic_geometry(mesh, conversion)
+    revision = scene_repository.save(
+        SceneDocument(
+            document_id='treatment-boundary-fixture',
+            schema_version=4,
+            room=None,
+            r120_semantic_geometry=geometry,
+            entities=(),
+        ),
+        parent_revision_id=None,
+    ).revision
+    surface_id = geometry.surfaces[0].surface_id
+    base_binding = SurfaceBoundaryAuthorityBinding(
+        source_surface_id=surface_id,
+        material_authority=_external('base-construction-material', 'a'),
+        boundary_physics_authority=_external('base-boundary-physics', 'b'),
+    )
+    request = make_r120_geometry_compilation_request(
+        revision,
+        geometric_tolerance_m=1.0e-6,
+    )
+    compiled = compile_r120_geometry(
+        revision,
+        request,
+        surface_boundary_bindings=(base_binding,),
+    )
+    r120_repository = R120GeometryCompilerRepository(scene_repository)
+    r120_repository.save_compiled_geometry(compiled)
+    variant_repository = CadSystemVariantRepository(scene_repository)
+    treatment_repository = CadAcousticTreatmentRepository(
+        scene_repository,
+        variant_repository,
+    )
+    return {
+        'scene_repository': scene_repository,
+        'treatment_repository': treatment_repository,
+        'r120_repository': r120_repository,
+        'revision': revision,
+        'compiled': compiled,
+        'surface_id': surface_id,
+        'base_binding': base_binding,
+    }
+
+
+def _input(
+    fixture,
+    definition,
+    *,
+    instance_id: str,
+    fraction: float | None = 1.0,
+    installed: bool = False,
+    evaluated_revision=None,
+):
+    treatment_repository = fixture['treatment_repository']
+    revision = fixture['revision']
+    definition = treatment_repository.save_definition(definition)
+    proposed = build_treatment_placement(
+        definition=definition,
+        revision=revision,
+        instance_id=instance_id,
+        position=Position3(x_m=0.0, y_m=0.0, z_m=0.0),
+        coverage=TreatmentCoverage(
+            width_m=1.0,
+            height_m=1.0,
+            host_surface_fraction=fraction,
+        ),
+        host_surface_id=fixture['surface_id'],
+    )
+    treatment_repository.save_placement(proposed)
+    placement = proposed
+    if installed:
+        placement = revise_treatment_placement(
+            proposed,
+            revision=revision,
+            lifecycle='installed',
+        )
+        treatment_repository.save_placement(placement)
+    target_revision = revision if evaluated_revision is None else evaluated_revision
+    evaluation = treatment_repository.evaluate_placement_surface_binding(
+        placement,
+        scene_revision_id=target_revision.revision_id,
+    )
+    return TreatmentBoundaryCompileInput(
+        definition=definition,
+        placement=placement,
+        surface_binding_evaluation=evaluation,
+    )
+
+
+def _compile(fixture, item, target: str, *, revision=None, compiled=None):
+    return compile_treatment_boundary_overlays(
+        fixture['revision'] if revision is None else revision,
+        fixture['compiled'] if compiled is None else compiled,
+        (item,),
+        target_domain=target,
+        base_surface_bindings=(fixture['base_binding'],),
+    )[0]
+
+
+def _second_revision_and_compiled(fixture):
+    original = fixture['revision']
+    document = SceneDocument(
+        document_id=original.document.document_id,
+        schema_version=original.document.schema_version,
+        room=original.document.room,
+        wall_topology=original.document.wall_topology,
+        r120_semantic_geometry=original.document.r120_semantic_geometry,
+        entities=(
+            SceneEntity(
+                entity_id='revision-marker',
+                kind='measurement_point',
+                name='revision marker',
+                position=Position3(x_m=0.1, y_m=0.1, z_m=0.1),
+            ),
+        ),
+    )
+    revision = fixture['scene_repository'].save(
+        document,
+        parent_revision_id=original.revision_id,
+    ).revision
+    request = make_r120_geometry_compilation_request(
+        revision,
+        geometric_tolerance_m=1.0e-6,
+    )
+    compiled = compile_r120_geometry(
+        revision,
+        request,
+        surface_boundary_bindings=(fixture['base_binding'],),
+    )
+    return revision, compiled
+
+
+def test_full_surface_geometric_treatment_is_available_without_coefficient_folding(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('geometric'), instance_id='panel-geometric')
+    result = _compile(fixture, item, 'geometric')
+
+    assert result.status == 'AVAILABLE'
+    assert result.overlay is not None
+    assert result.overlay.geometric_capability_state == 'AVAILABLE'
+    assert result.overlay.wave_capability_state == 'UNKNOWN'
+    assert result.overlay.transmission_capability_state == 'UNKNOWN'
+    bands = item.definition.acoustic_model.material.geometric_bands
+    assert bands[0].absorption == 0.40
+    assert bands[0].scattering == 0.20
+    assert result.composition_request.transmission_capability_state == 'UNKNOWN'
+
+
+def test_wave_capable_treatment_requires_concrete_wave_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('wave'), instance_id='panel-wave')
+
+    wave = _compile(fixture, item, 'wave')
+    geometric = _compile(fixture, item, 'geometric')
+
+    assert wave.status == 'AVAILABLE'
+    assert wave.overlay.wave_capability_state == 'AVAILABLE'
+    assert wave.overlay.wave_material_candidate_ref is not None
+    assert geometric.status == 'BLOCKED_GEOMETRIC_MODEL_UNAVAILABLE'
+    assert item.definition.acoustic_model.material.specific_impedance
+
+
+def test_no_acoustic_model_is_blocked(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('none'), instance_id='panel-no-model')
+
+    result = _compile(fixture, item, 'geometric')
+
+    assert result.status == 'BLOCKED_NO_ACOUSTIC_MODEL'
+    assert result.overlay.wave_capability_state == 'UNKNOWN'
+    assert result.overlay.geometric_capability_state == 'UNKNOWN'
+    assert result.composition_request is None
+
+
+def test_geometric_only_treatment_never_becomes_fake_wave_impedance(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('geometric'), instance_id='panel-ga-only')
+
+    wave = _compile(fixture, item, 'wave')
+    geometric = _compile(fixture, item, 'geometric')
+
+    assert wave.status == 'BLOCKED_WAVE_MODEL_UNAVAILABLE'
+    assert wave.overlay.wave_material_candidate_ref is None
+    assert item.definition.acoustic_model.material.specific_impedance == ()
+    assert geometric.status == 'AVAILABLE'
+
+
+def test_partial_coverage_is_fail_closed_without_surface_subdivision(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(
+        fixture,
+        _definition('both'),
+        instance_id='panel-partial',
+        fraction=0.5,
+    )
+
+    result = _compile(fixture, item, 'geometric')
+
+    assert result.status == 'BLOCKED_PARTIAL_COVERAGE'
+    assert result.overlay.treatment_coverage.host_surface_fraction == 0.5
+    assert result.r120_surface_binding is None
+
+
+def test_stale_surface_binding_is_rejected(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    revision2, compiled2 = _second_revision_and_compiled(fixture)
+    item = _input(
+        fixture,
+        _definition('both'),
+        instance_id='panel-stale-surface',
+        evaluated_revision=revision2,
+    )
+
+    result = _compile(
+        fixture,
+        item,
+        'geometric',
+        revision=revision2,
+        compiled=compiled2,
+    )
+
+    assert item.surface_binding_evaluation.binding_state == 'stale_scene_revision'
+    assert result.status == 'BLOCKED_STALE_SURFACE'
+
+
+def test_stale_r120_compiled_geometry_is_rejected(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    revision2, _compiled2 = _second_revision_and_compiled(fixture)
+    item = _input(
+        fixture,
+        _definition('both'),
+        instance_id='panel-stale-r120',
+        evaluated_revision=revision2,
+    )
+
+    result = _compile(
+        fixture,
+        item,
+        'geometric',
+        revision=revision2,
+        compiled=fixture['compiled'],
+    )
+
+    assert result.status == 'BLOCKED_STALE_R120_COMPILED_GEOMETRY'
+
+
+def test_multiple_treatments_on_same_surface_fail_closed_as_overlap(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    first = _input(
+        fixture,
+        _definition('both', '-a'),
+        instance_id='panel-overlap-a',
+    )
+    second = _input(
+        fixture,
+        _definition('both', '-b'),
+        instance_id='panel-overlap-b',
+    )
+
+    results = compile_treatment_boundary_overlays(
+        fixture['revision'],
+        fixture['compiled'],
+        (first, second),
+        target_domain='geometric',
+        base_surface_bindings=(fixture['base_binding'],),
+    )
+
+    assert [item.status for item in results] == ['BLOCKED_OVERLAP', 'BLOCKED_OVERLAP']
+    assert all(item.composition_request is None for item in results)
+
+
+def test_proposed_lifecycle_is_exact_solver_scenario_selection(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('both'), instance_id='panel-proposed')
+    result = _compile(fixture, item, 'wave')
+
+    assert result.status == 'AVAILABLE'
+    assert result.overlay.lifecycle == 'proposed'
+    assert result.composition_request.selected_treatment_lifecycle == 'proposed'
+
+
+def test_installed_lifecycle_is_distinct_and_not_implicitly_selected(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(
+        fixture,
+        _definition('both'),
+        instance_id='panel-installed',
+        installed=True,
+    )
+    result = _compile(fixture, item, 'wave')
+
+    assert item.placement.lifecycle == 'installed'
+    assert result.status == 'AVAILABLE'
+    assert result.overlay.lifecycle == 'installed'
+    assert result.composition_request.selected_treatment_lifecycle == 'installed'
+
+
+def test_base_material_is_preserved_and_composition_keeps_base_boundary(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('both'), instance_id='panel-base-preserved')
+    result = _compile(fixture, item, 'wave')
+
+    assert result.status == 'AVAILABLE'
+    assert result.r120_surface_binding.material_authority == (
+        fixture['base_binding'].material_authority
+    )
+    assert result.composition_request.base_material_authority == (
+        fixture['base_binding'].material_authority
+    )
+    assert result.composition_request.base_boundary_physics_authority == (
+        fixture['base_binding'].boundary_physics_authority
+    )
+    assert (
+        result.r120_surface_binding.boundary_physics_authority.authority_id
+        == result.composition_request.composition_id
+    )
+
+
+def test_same_exact_input_produces_same_overlay_and_composition_hash(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('both'), instance_id='panel-deterministic')
+
+    first = _compile(fixture, item, 'geometric')
+    second = _compile(fixture, item, 'geometric')
+
+    assert first.status == second.status == 'AVAILABLE'
+    assert first.overlay.overlay_hash_sha256 == second.overlay.overlay_hash_sha256
+    assert first.overlay.overlay_id == second.overlay.overlay_id
+    assert (
+        first.composition_request.composition_hash_sha256
+        == second.composition_request.composition_hash_sha256
+    )
+
+
+def test_overlay_and_composition_save_reopen_reresolve_all_authorities(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    item = _input(fixture, _definition('both'), instance_id='panel-persisted')
+    result = _compile(fixture, item, 'geometric')
+    assert result.status == 'AVAILABLE'
+
+    repository = TreatmentBoundaryOverlayRepository(
+        fixture['scene_repository'],
+        fixture['treatment_repository'],
+        fixture['r120_repository'],
+    )
+    repository.save_overlay(result.overlay)
+    repository.save_composition(result.composition_request)
+
+    reopened_scene = SceneRepository(fixture['scene_repository'].path)
+    reopened_variants = CadSystemVariantRepository(reopened_scene)
+    reopened_treatments = CadAcousticTreatmentRepository(
+        reopened_scene,
+        reopened_variants,
+    )
+    reopened_r120 = R120GeometryCompilerRepository(reopened_scene)
+    reopened = TreatmentBoundaryOverlayRepository(
+        reopened_scene,
+        reopened_treatments,
+        reopened_r120,
+    )
+
+    assert reopened.get_overlay(result.overlay.overlay_id) == result.overlay
+    assert (
+        reopened.get_composition(result.composition_request.composition_id)
+        == result.composition_request
+    )
