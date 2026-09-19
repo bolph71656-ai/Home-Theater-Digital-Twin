@@ -307,7 +307,7 @@ Issue #166の子Issue #167–#176は、独立できるgeometry/report/measuremen
 | #168 | EquipmentDefinition / directivity import | **completed**。EquipmentDefinition、DirectivityDataset、strict import registry、R110 source compiler。native CLF/CF2は根拠不足のためDEFERRED | native format追加は独立follow-up。推測parserは禁止 |
 | #169 | coverage / SPL / headroom / worst-seat objectives | **completed**。objective quantity/unit/direction/domain、coverage、direct SPL/headroom、amplifier electrical headroom、named topology comparison、Paretoをexact authorityで成立 | R-series prediction由来objectiveは対応solver capability成立後のみ |
 | #170 | StandardsProfile | **completed**。versioned criterion/provenance/evaluation、historical re-evaluation、explicit hard-constraint opt-in | UX表示はUX140側 |
-| #171 | AcousticTreatment | **open**。definition/placement/lifecycle、R120 treatment boundary overlay/composition、AcousticSceneSnapshot v2までmerge済み。named A/B/no-treatment comparisonはPR #223で検証中 | numerical before/after、measured validation execution、optimizationは対応prediction/evidence gate後 |
+| #171 | AcousticTreatment | **completed**。definition/placement/lifecycle、R120 treatment boundary overlay/composition、AcousticSceneSnapshot v2、named A/B/no-treatment exact comparisonをPR #197/#211/#219/#223で成立 | numerical before/after、measured validation execution、optimizationは対応prediction/evidence gate後 |
 | #172 | guided measurement / MeasurementQualityReport | **completed** | owned-room実測evidenceは#83など実データgateと分離 |
 | #173 | CalibrationPlan / device-neutral export / re-measure | **completed** | 実機device integrationは明示capabilityがある経路だけ |
 | #174 | joint physical placement + DSP optimization | **completed** | production recommendationはO60/R180 evidence gateを迂回しない |
