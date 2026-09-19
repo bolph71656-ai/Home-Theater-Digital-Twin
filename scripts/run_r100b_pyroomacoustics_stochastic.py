@@ -534,7 +534,7 @@ def _execute(
         observations=tuple(observations),
     )
     evidence, evaluation = evaluate_pyroom_stochastic_fixture(
-        benchmark, fixture, authority, raw
+        benchmark, candidates, fixture, authority, raw
     )
 
     run = BakeoffRun(
