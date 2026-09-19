@@ -113,7 +113,7 @@ Every perturbation continues to run the existing G10 and O80 hard-constraint aut
 
 Two different outputs are intentionally retained:
 
-- `feasible_fraction`: unweighted fraction of evaluated perturbation states that satisfy hard constraints;
+- `feasible_fraction`: the existing PR #149 unweighted finite-design fraction (including the nominal reference sample) that satisfies hard constraints;
 - `constraint_violation_probability`: probability-weighted infeasible mass, available only when an explicit probability model exists.
 
 These values can differ and must not be substituted for one another.
