@@ -2,7 +2,7 @@
 
 > Tracking: Issue #101
 > Depends on: R100A merged by PR #110 (`1714c078d4063f59da93f0d733171547f7eb486d`)
-> Current state: R100B authority, pyroomacoustics direct/first-reflection + stochastic evidence, PFFDTD Windows reuse + rigid modes + complex-pressure convergence + native impedance gate, MFEM rigid + concave independent-reference evidence, fail-closed low-band adoption profile, MFEM Portal continuity, R100A-3 radiation authority, and MFEM radiation candidate gate are merged. PR #151 impedance representation passes; PR #154 concave reference is FAIL and MFEM complex-R extraction is BLOCKED; PR #155 stochastic evidence is FAIL/non-converged; PR #160 Portal continuity is PASS; PR #177 radiation fixture is FAIL because the frozen 360 s resource budget is exceeded. These mixed results are retained as bakeoff evidence. PFFDTD exact-concave candidate evidence is now merged as PR #181 and is FAIL/non-converged; solver-neutral spatial reflection decomposition, a qualified independent finite-record concave reference, obstacle, candidate-wide hard gates, and production solver selection remain pending.
+> Current state: R100B authority, pyroomacoustics direct/first-reflection + stochastic evidence, PFFDTD Windows reuse + rigid modes + complex-pressure convergence + native impedance gate + exact-concave evidence, MFEM rigid + concave independent-reference evidence, fail-closed low-band adoption profile, MFEM Portal continuity, R100A-3 radiation authority, and MFEM radiation candidate gate are merged. R100A-4 now freezes solver-neutral finite-record `P/Q` semantics for the rectangular-convergence and concave fixtures. PR #151 impedance representation passes; PR #154 concave reference is FAIL and MFEM complex-R extraction is BLOCKED; PR #155 stochastic evidence is FAIL/non-converged; PR #160 Portal continuity is PASS; PR #177 radiation fixture is FAIL because the frozen 360 s resource budget is exceeded. These mixed results are retained as bakeoff evidence. PFFDTD exact-concave candidate evidence is now merged as PR #181 and is FAIL/non-converged; solver-neutral spatial reflection decomposition, a qualified independent finite-record concave reference, obstacle, candidate-wide hard gates, and production solver selection remain pending.
 
 ## Purpose
 
@@ -119,6 +119,16 @@ Issue #161 advances the benchmark authority because `BoundaryTermination(kind='r
 The termination fixture also carries a semi-analytical rectangular-waveguide modal reference on the full 20–300 Hz / 1 Hz grid. `scripts/check_r100a_radiation_reference.py` independently reconstructs the reference and checks N=8 -> N=12 modal convergence before accepting the stored samples.
 
 This R100A revision intentionally changes the manifest semantic hash. It does **not** add `wave_radiation_termination` to any candidate merely to make adoption pass. Existing candidate evidence must replay under R100A-3; a later solver adapter may claim the new capability only after implementing and verifying the exact frozen boundary.
+
+## R100A-4 finite-record transfer boundary
+
+Issue #180 advances the benchmark authority because the 2 s rectangular-convergence and concave fixtures previously depended on adapter-local assumptions about temporal impulse sampling and finite-record Fourier normalization. R100A-4 freezes a solver-neutral contract instead of copying one backend's internal source representation.
+
+For exactly `wave-rectangular-convergence-v1` and `wave-concave-l-room-v1`, R100A-4 requires a causal unit-sample volume-velocity source at `source_t0`, solver-native recorded `dt`, the half-open record `[0,2 s)`, direct scored-frequency `exp(-i*2*pi*f*n*dt)` DTFT, no window/filter/zero-padding interpolation, and normalized `P_T(f)/Q_T(f)` using the pressure and actual injected source records on the same time grid. A zero/non-finite source spectrum blocks the evidence.
+
+The revision intentionally does **not** prescribe one common `dt`; independent solvers may refine time differently as long as the actual time grid and source record are retained as provenance and the same transfer definition is used. Harmonic Portal/radiation evidence is not silently reclassified as finite-record evidence.
+
+The R100A semantic hash therefore changes again. Existing R100B workflows must replay under R100A-4. This authority change does not alter any existing physics tolerance or turn the current MFEM/PFFDTD concave negative evidence into PASS.
 
 ## Accepted external evidence so far
 
