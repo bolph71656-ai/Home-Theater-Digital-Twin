@@ -26,9 +26,9 @@ def _fixture(manifest: AcousticBenchmarkManifest, fixture_id: str) -> AcousticBe
 def test_r100a_manifest_loads_as_immutable_canonical_authority() -> None:
     manifest = _manifest()
 
-    assert manifest.schema_version == 'r100a-3'
+    assert manifest.schema_version == 'r100a-4'
     assert manifest.manifest_id == 'htdt-issue-101-r100a-benchmark-authority'
-    assert manifest.revision == 3
+    assert manifest.revision == 4
     assert len(manifest.fixtures) == 10
     assert len(manifest.hard_gates) == 6
     assert all(item.environment.density_kg_m3 == pytest.approx(1.2) for item in manifest.fixtures)
@@ -39,14 +39,19 @@ def test_r100a_manifest_loads_as_immutable_canonical_authority() -> None:
     assert reparsed.semantic_hash() == manifest.semantic_hash()
 
     with pytest.raises(Exception):
-        manifest.revision = 3  # type: ignore[misc]
+        manifest.revision = 4  # type: ignore[misc]
 
 
 def test_r100a_schema_version_and_revision_are_bound() -> None:
     manifest = _manifest()
     payload = manifest.model_dump(mode='python')
 
-    payload['revision'] = 2
+    payload['revision'] = 3
+    with pytest.raises(ValueError, match='r100a-4 requires revision 4'):
+        AcousticBenchmarkManifest.model_validate(payload)
+
+    payload = manifest.model_dump(mode='python')
+    payload['schema_version'] = 'r100a-3'
     with pytest.raises(ValueError, match='r100a-3 requires revision 3'):
         AcousticBenchmarkManifest.model_validate(payload)
 
@@ -56,16 +61,23 @@ def test_r100a_schema_version_and_revision_are_bound() -> None:
         AcousticBenchmarkManifest.model_validate(payload)
 
 
+def _remove_r100a4_finite_record_semantics(payload: dict[str, object]) -> None:
+    for fixture in payload['fixtures']:
+        fixture['comparison']['finite_record_transfer'] = None
+
+
 def test_r100a2_rejects_r100a3_radiation_semantics() -> None:
     manifest = _manifest()
 
     capability_payload = manifest.model_dump(mode='python')
+    _remove_r100a4_finite_record_semantics(capability_payload)
     capability_payload['schema_version'] = 'r100a-2'
     capability_payload['revision'] = 2
     with pytest.raises(ValueError, match='cannot declare wave_radiation_termination'):
         AcousticBenchmarkManifest.model_validate(capability_payload)
 
     semantics_payload = manifest.model_dump(mode='python')
+    _remove_r100a4_finite_record_semantics(semantics_payload)
     semantics_payload['schema_version'] = 'r100a-2'
     semantics_payload['revision'] = 2
     radiation_fixture = next(
@@ -76,6 +88,78 @@ def test_r100a2_rejects_r100a3_radiation_semantics() -> None:
     radiation_fixture['required_capabilities'] = ['wave_rigid']
     with pytest.raises(ValueError, match='cannot carry R100A-3 radiation semantics'):
         AcousticBenchmarkManifest.model_validate(semantics_payload)
+
+
+def test_r100a4_finite_record_transfer_authority_is_explicit() -> None:
+    manifest = _manifest()
+    finite_record = {
+        fixture.fixture_id: fixture.comparison.finite_record_transfer
+        for fixture in manifest.fixtures
+        if fixture.comparison.finite_record_transfer is not None
+    }
+
+    assert set(finite_record) == {
+        'wave-rectangular-convergence-v1',
+        'wave-concave-l-room-v1',
+    }
+    for fixture_id, contract in finite_record.items():
+        assert contract is not None
+        fixture = _fixture(manifest, fixture_id)
+        assert fixture.comparison.time_step_s is None
+        assert fixture.comparison.observation_time_s == pytest.approx(2.0)
+        assert contract.excitation_model == 'causal_discrete_unit_sample_volume_velocity'
+        assert contract.sample_zero_reference == 'source_t0'
+        assert contract.record_interval == 'half_open_0_T'
+        assert contract.solver_time_step_policy == 'solver_native_recorded'
+        assert contract.dtft_kernel == 'exp(-i*2*pi*f*n*dt)'
+        assert contract.dtft_measure == 'dt_weighted_sum'
+        assert contract.transfer_definition == 'pressure_over_volume_velocity'
+        assert contract.frequency_evaluation == 'direct_scored_frequency_dtft'
+        assert contract.source_spectrum_requirement == 'finite_nonzero_on_scored_grid'
+        assert contract.zero_padding == 'none'
+
+
+def test_r100a3_rejects_r100a4_finite_record_semantics() -> None:
+    payload = _manifest().model_dump(mode='python')
+    payload['schema_version'] = 'r100a-3'
+    payload['revision'] = 3
+
+    with pytest.raises(ValueError, match='cannot carry R100A-4 finite-record transfer semantics'):
+        AcousticBenchmarkManifest.model_validate(payload)
+
+
+def test_r100a4_finite_record_contract_fails_closed_on_fixture_or_dt_drift() -> None:
+    manifest = _manifest()
+
+    missing_payload = manifest.model_dump(mode='python')
+    concave = next(
+        item
+        for item in missing_payload['fixtures']
+        if item['fixture_id'] == 'wave-concave-l-room-v1'
+    )
+    concave['comparison']['finite_record_transfer'] = None
+    with pytest.raises(ValueError, match='finite-record transfer fixtures must be exactly'):
+        AcousticBenchmarkManifest.model_validate(missing_payload)
+
+    dt_payload = manifest.model_dump(mode='python')
+    convergence = next(
+        item
+        for item in dt_payload['fixtures']
+        if item['fixture_id'] == 'wave-rectangular-convergence-v1'
+    )
+    convergence['comparison']['time_step_s'] = 1.0 / 6000.0
+    with pytest.raises(ValueError, match='must leave time_step_s solver-native'):
+        AcousticBenchmarkManifest.model_validate(dt_payload)
+
+    phase_payload = manifest.model_dump(mode='python')
+    concave = next(
+        item
+        for item in phase_payload['fixtures']
+        if item['fixture_id'] == 'wave-concave-l-room-v1'
+    )
+    concave['sources'][0]['phase_deg'] = 5.0
+    with pytest.raises(ValueError, match='requires the frozen unit volume-velocity source'):
+        AcousticBenchmarkManifest.model_validate(phase_payload)
 
 
 def test_r100a_required_fixture_roles_are_present() -> None:
@@ -163,6 +247,7 @@ def test_radiation_termination_rejects_implicit_or_mismatched_model() -> None:
         AcousticBenchmarkManifest.model_validate(current_payload)
 
     legacy_manifest_payload = manifest.model_dump(mode='python')
+    _remove_r100a4_finite_record_semantics(legacy_manifest_payload)
     legacy_manifest_payload['schema_version'] = 'r100a-2'
     legacy_manifest_payload['revision'] = 2
     legacy_fixture = next(
