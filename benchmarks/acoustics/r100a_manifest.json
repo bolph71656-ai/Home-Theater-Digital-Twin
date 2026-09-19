@@ -2059,7 +2059,7 @@
           "acceptance_relation": "matches_reference",
           "tolerance": {
             "absolute": 1,
-            "relative": 0.08,
+            "relative": null,
             "phase_deg": null,
             "null_mask_below_db": -60,
             "statistical_stddev_max": null,
@@ -3482,7 +3482,7 @@
           "reference_description": "Complex pressure samples from the same R100A-3 semi-analytical modal Green-function reference; this preserves magnitude and phase under exp(-i*omega*t).",
           "acceptance_relation": "matches_reference",
           "tolerance": {
-            "absolute": 0.05,
+            "absolute": null,
             "relative": 0.08,
             "phase_deg": 8,
             "null_mask_below_db": -60,
@@ -5195,6 +5195,7 @@
         "R100A-3 radiation authority: outward normal is from the modeled region; p/u_n=rho*c; k=omega/c; with exp(-i*omega*t), dp/dn-i*k*p=0.",
         "The radiation model is a local first-order outgoing approximation, not an exact arbitrary-incidence exterior-domain solution.",
         "Reference samples use normalized Neumann transverse modes and an analytic one-dimensional Green function per mode. Modal truncation N=12 is independently convergence-qualified by the repository checker.",
+        "Magnitude acceptance uses absolute dB error only; complex-pressure acceptance carries the 8% relative magnitude and 8 degree phase limits so dB values are never treated as linear quantities.",
         "Changing termination kind, radiation model, sign convention, normal convention, or reference samples is a semantic fixture change and must change benchmark identity."
       ]
     },
