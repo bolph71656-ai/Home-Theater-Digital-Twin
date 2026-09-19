@@ -438,10 +438,7 @@ def build_uncertainty_robustness_evaluations(
     uncertainty_samples = ordered[1:]
     if not uncertainty_samples:
         raise ValueError('explicit uncertainty evaluation requires perturbation samples')
-    feasible_fraction = (
-        sum(1 for item in uncertainty_samples if item.feasible)
-        / len(uncertainty_samples)
-    )
+    feasible_fraction = sum(1 for item in ordered if item.feasible) / len(ordered)
     model = spec.input_uncertainty_model
     assert model is not None
     probability_enabled = _has_explicit_probability(model)
