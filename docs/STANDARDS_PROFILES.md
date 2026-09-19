@@ -131,9 +131,12 @@ No built-in DTS:X criterion is included in Issue #170 because an official public
 with a sufficiently explicit criterion boundary/provenance was not established for this
 slice.
 
-The public **Auro-3D Home Theater Setup Guidelines** was reviewed, including its stated
-speaker target angles. Issue #170 does not encode those targets as pass/fail criteria
-because the reviewed public guidance does not establish the tolerance/boundary semantics
+The public **Auro-3D Home Theater Setup Guidelines** was reviewed, including §§3.3 and
+3.3.1.1 and their stated speaker target angles. Reviewed source:
+<https://www.auro-3d.com/wp-content/uploads/2022/09/Auro-3D-Home-Theater-Setup-Guidelines_lores.pdf>.
+The reviewed PDF is copyright 2015; no revision identifier is stated in the reviewed
+source, so HTDT does not invent one. Issue #170 does not encode those targets as pass/fail
+criteria because the public guidance does not establish the tolerance/boundary semantics
 needed to convert a target angle into a compliance interval without inference. HTDT does
 not invent that interval.
 
