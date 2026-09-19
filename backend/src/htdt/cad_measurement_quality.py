@@ -307,17 +307,17 @@ class CadMeasurementQualityReport(BaseModel):
 
     retake_recommendation: RetakeRecommendation
     retake_reasons: tuple[str, ...]
-    capabilities: tuple[CadMeasurementCapability, ...] = Field(
-        min_length=len(_ALL_CAPABILITY_CLAIMS),
-        max_length=len(_ALL_CAPABILITY_CLAIMS),
-    )
+    capabilities: tuple[CadMeasurementCapability, ...] = Field(min_length=1)
     report_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
     @model_validator(mode='after')
     def valid_identity(self) -> 'CadMeasurementQualityReport':
         claims = tuple(item.claim for item in self.capabilities)
-        if claims != _ALL_CAPABILITY_CLAIMS:
-            raise ValueError('measurement capability matrix must contain every claim in canonical order')
+        if len(claims) != len(set(claims)):
+            raise ValueError('measurement capability matrix must not contain duplicate claims')
+        canonical_subset = tuple(claim for claim in _ALL_CAPABILITY_CLAIMS if claim in claims)
+        if claims != canonical_subset:
+            raise ValueError('measurement capability matrix must use canonical claim ordering')
         if self.report_sha256 != _hash(self.identity_payload()):
             raise ValueError('measurement quality report hash mismatch')
         return self
