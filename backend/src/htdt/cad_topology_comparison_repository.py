@@ -5,6 +5,7 @@ from contextlib import closing
 from pathlib import Path
 import sqlite3
 
+from .cad_amplifier_headroom import amplifier_headroom_objective_vector
 from .cad_amplifier_headroom_repository import CadAmplifierHeadroomRepository
 from .cad_coverage_repository import CadCoverageRepository
 from .cad_direct_level_repository import CadDirectLevelRepository
@@ -346,6 +347,25 @@ class CadTopologyComparisonRepository:
                 raise ValueError(
                     'bundle PlaybackChainEvaluation exact authority mismatch'
                 )
+            canonical_vector = amplifier_headroom_objective_vector(evaluation)
+            for binding in bundle.objective_evidence:
+                if (
+                    binding.source_authority_kind != ref.authority_kind
+                    or binding.source_authority_id != ref.authority_id
+                    or binding.source_semantic_sha256 != ref.semantic_sha256
+                ):
+                    continue
+                try:
+                    expected_metric = canonical_vector.metric(binding.objective_id)
+                    actual_metric = bundle.objective_vector.metric(binding.objective_id)
+                except KeyError as exc:
+                    raise ValueError(
+                        'bundle PlaybackChainEvaluation objective evidence is not canonical'
+                    ) from exc
+                if actual_metric != expected_metric:
+                    raise ValueError(
+                        'bundle PlaybackChainEvaluation objective metric mismatch'
+                    )
             return
 
         if ref.authority_kind == 'standards_evaluation':
