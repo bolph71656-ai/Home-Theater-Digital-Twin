@@ -188,14 +188,7 @@ class BoundaryTermination(BaseModel):
             self.wavenumber_equation,
             self.helmholtz_robin_equation,
         )
-        if self.kind == 'radiation':
-            if self.boundary_id is None:
-                raise ValueError('radiation termination requires boundary_id')
-            if any(value is None for value in radiation_fields):
-                raise ValueError(
-                    'radiation termination requires explicit model/sign/normal authority'
-                )
-        elif any(value is not None for value in radiation_fields):
+        if self.kind != 'radiation' and any(value is not None for value in radiation_fields):
             raise ValueError(
                 'radiation-specific authority is only valid for radiation termination'
             )
@@ -666,6 +659,35 @@ class AcousticBenchmarkManifest(BaseModel):
         ]
         if dangling_peers:
             raise ValueError(f'observables reference unknown peer fixtures: {dangling_peers}')
+
+        if self.schema_version == 'r100a-3':
+            for fixture in self.fixtures:
+                radiation_terminations = [
+                    item for item in fixture.terminations if item.kind == 'radiation'
+                ]
+                if not radiation_terminations:
+                    continue
+                if 'wave_radiation_termination' not in fixture.required_capabilities:
+                    raise ValueError(
+                        f'R100A-3 radiation fixture {fixture.fixture_id} must require '
+                        'wave_radiation_termination capability'
+                    )
+                for termination in radiation_terminations:
+                    radiation_fields = (
+                        termination.radiation_model,
+                        termination.normal_convention,
+                        termination.characteristic_impedance_model,
+                        termination.pressure_velocity_equation,
+                        termination.wavenumber_equation,
+                        termination.helmholtz_robin_equation,
+                    )
+                    if termination.boundary_id is None or any(
+                        value is None for value in radiation_fields
+                    ):
+                        raise ValueError(
+                            f'R100A-3 radiation termination {termination.termination_id} '
+                            'requires explicit boundary/model/sign/normal authority'
+                        )
         return self
 
     def canonical_json(self) -> str:
