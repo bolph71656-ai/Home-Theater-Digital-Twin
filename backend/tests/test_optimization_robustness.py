@@ -17,7 +17,12 @@ from htdt.cad_scene import (
 )
 from htdt.cad_search import build_cad_search_spec, generate_cad_candidates
 from htdt.cad_search_models import CadCandidate, CadSearchAxis
-from htdt.optimization_objectives import ObjectiveMetric, ObjectiveVector
+from htdt.optimization_objectives import (
+    ObjectiveDefinition,
+    ObjectiveMetric,
+    ObjectiveValidDomain,
+    ObjectiveVector,
+)
 from htdt.optimization_robustness import (
     PerturbationObjectiveResult,
     UncertaintyAxis,
@@ -1359,3 +1364,289 @@ def test_cad_robustness_repository_uses_native_schema_authority_for_new_and_lega
     assert 'cad_perturbation_samples' in tables
     assert 'cad_robustness_evaluations' in tables
 
+
+
+
+def _direction_fixture_definition(
+    objective_id: str,
+    *,
+    quantity: str,
+    unit: str,
+    direction: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> ObjectiveDefinition:
+    domain = (
+        ObjectiveValidDomain(kind='finite_real')
+        if minimum is None and maximum is None
+        else ObjectiveValidDomain(
+            kind='bounded_real',
+            minimum=minimum,
+            maximum=maximum,
+        )
+    )
+    return ObjectiveDefinition(
+        objective_id=objective_id,
+        quantity=quantity,
+        unit=unit,
+        direction=direction,
+        valid_domain=domain,
+        comparison_model_id='direction-fixture-model',
+        comparison_model_version='1',
+    )
+
+
+def test_o90a_maximize_sampled_worst_uses_low_side_and_round_trips(tmp_path) -> None:
+    revision, constraints, search_spec, _legacy_nominal, base_spec = _fixture(tmp_path)
+    candidate = CadCandidate.model_validate_json(base_spec.candidate_payload_json)
+    definition = _direction_fixture_definition(
+        'fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        minimum=0.0,
+        maximum=1.0,
+    )
+    prediction_ref = f'prediction:maximize:{candidate.candidate_id}'
+    nominal = build_objective_evaluation(
+        revision,
+        search_spec,
+        candidate.candidate_id,
+        ObjectiveVector(
+            candidate_id=candidate.candidate_id,
+            metrics=(
+                ObjectiveMetric(
+                    objective_id=definition.objective_id,
+                    value=0.8,
+                    unit=definition.unit,
+                    direction=definition.direction,
+                    definition=definition,
+                ),
+            ),
+        ),
+        evaluation_spec={
+            'algorithm_version': 'fixture-maximize-1',
+            'objectives': [definition.objective_id],
+        },
+        input_refs=(
+            CadObjectiveInputRef(
+                evidence_class='derived',
+                source_kind='candidate_geometry',
+                source_id=candidate.candidate_id,
+            ),
+            CadObjectiveInputRef(
+                evidence_class='predicted',
+                source_kind='prediction_fixture',
+                source_id=prediction_ref,
+            ),
+        ),
+    )
+    spec = build_robustness_spec(
+        source_revision=revision,
+        search_spec=search_spec,
+        candidate=candidate,
+        candidate_set_sha256=base_spec.candidate_set_sha256,
+        nominal_objective=nominal,
+        nominal_prediction_result_ref=prediction_ref,
+        model_id=base_spec.model_id,
+        model_version=base_spec.model_version,
+        prediction_provider_id=base_spec.prediction_provider_id,
+        fidelity=base_spec.fidelity,
+        axes=base_spec.axes,
+        software_version='test',
+        created_at_utc='2026-09-19T01:00:00+00:00',
+    )
+
+    def evaluator(document: SceneDocument, sample_id: str) -> PerturbationObjectiveResult:
+        speaker = document.entity('speaker-fl')
+        value = 0.8 + (speaker.position.x_m - 1.0) * 2.0
+        return PerturbationObjectiveResult(
+            prediction_result_ref=f'prediction:{sample_id}',
+            objective_vector=ObjectiveVector(
+                candidate_id=sample_id,
+                metrics=(
+                    ObjectiveMetric(
+                        objective_id=definition.objective_id,
+                        value=value,
+                        unit=definition.unit,
+                        direction=definition.direction,
+                        definition=definition,
+                    ),
+                ),
+            ),
+        )
+
+    samples, evaluations = evaluate_local_robustness(
+        source_revision=revision,
+        search_spec=search_spec,
+        spec=spec,
+        constraint_set=constraints,
+        nominal_objective=nominal,
+        evaluator=evaluator,
+        created_at_utc='2026-09-19T01:01:00+00:00',
+    )
+    evaluation = evaluations[0]
+    scored_values = [
+        sample.objective_vector.metric(definition.objective_id).comparison_value()
+        for sample in samples
+        if sample.objective_vector is not None
+    ]
+
+    assert evaluation.direction == 'maximize'
+    assert evaluation.sampled_worst_value == pytest.approx(min(scored_values))
+    assert evaluation.sampled_worst_value < evaluation.nominal_value
+    assert evaluation.objective_definition is not None
+    assert evaluation.objective_definition.definition_id == definition.definition_id
+
+    repository_path = tmp_path / 'maximize-o90.sqlite3'
+    repository = CadRobustnessRepository(repository_path)
+    repository.save_spec(spec)
+    repository.save_samples(samples)
+    repository.save_evaluations(evaluations)
+    reopened = CadRobustnessRepository(repository_path)
+    assert reopened.get_spec(spec.robustness_spec_id) == spec
+    assert reopened.list_samples(spec.robustness_spec_id) == samples
+    assert reopened.list_evaluations(spec.robustness_spec_id) == evaluations
+
+
+def test_o90_robust_pareto_preserves_mixed_objective_directions() -> None:
+    from htdt.optimization_robustness import (
+        RobustnessEvaluation,
+        SampledObjectiveEnvelope,
+        canonical_robustness_sha256,
+    )
+    from htdt.optimization_robustness_multidimensional import (
+        RobustParetoSelection,
+        build_nominal_robust_pareto_vector,
+        robust_pareto_front,
+    )
+
+    error = _direction_fixture_definition(
+        'fixture.error',
+        quantity='response_error',
+        unit='dB',
+        direction='minimize',
+        minimum=0.0,
+    )
+    coverage = _direction_fixture_definition(
+        'fixture.coverage',
+        quantity='coverage_fraction',
+        unit='1',
+        direction='maximize',
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+    def nominal_vector(
+        candidate_id: str,
+        error_value: float,
+        coverage_value: float,
+    ) -> ObjectiveVector:
+        return ObjectiveVector(
+            candidate_id=candidate_id,
+            metrics=(
+                ObjectiveMetric(
+                    objective_id=error.objective_id,
+                    value=error_value,
+                    unit=error.unit,
+                    direction=error.direction,
+                    definition=error,
+                ),
+                ObjectiveMetric(
+                    objective_id=coverage.objective_id,
+                    value=coverage_value,
+                    unit=coverage.unit,
+                    direction=coverage.direction,
+                    definition=coverage,
+                ),
+            ),
+        )
+
+    def robust_evaluation(
+        candidate_id: str,
+        definition: ObjectiveDefinition,
+        nominal_value: float,
+        worst_value: float,
+    ) -> RobustnessEvaluation:
+        nominal_sample_id = f'{candidate_id}-{definition.objective_id}-nominal'
+        worst_sample_id = f'{candidate_id}-{definition.objective_id}-worst'
+        sampled_min_value = min(nominal_value, worst_value)
+        sampled_max_value = max(nominal_value, worst_value)
+        envelope = SampledObjectiveEnvelope(
+            sampled_min_sample_id=(
+                worst_sample_id
+                if worst_value == sampled_min_value
+                else nominal_sample_id
+            ),
+            sampled_min_value=sampled_min_value,
+            sampled_max_sample_id=(
+                worst_sample_id
+                if worst_value == sampled_max_value
+                else nominal_sample_id
+            ),
+            sampled_max_value=sampled_max_value,
+            percentile_values=None,
+        )
+        identity = {
+            'schema_version': 1,
+            'robustness_spec_id': f'rob-{candidate_id}-{definition.objective_id}',
+            'robustness_spec_sha256': '1' * 64,
+            'candidate_id': candidate_id,
+            'objective_id': definition.objective_id,
+            'objective_unit': definition.unit,
+            'direction': definition.direction,
+            'objective_definition': definition.model_dump(mode='json'),
+            'nominal_sample_id': nominal_sample_id,
+            'nominal_value': nominal_value,
+            'local_sensitivities': [],
+            'sampled_worst_semantics': 'sampled_worst',
+            'sampled_worst_sample_id': worst_sample_id,
+            'sampled_worst_value': worst_value,
+            'sample_ids': [nominal_sample_id, worst_sample_id],
+            'infeasible_sample_ids': [],
+            'failed_sample_ids': [],
+            'sampled_envelope': envelope.model_dump(mode='json'),
+            'feasible_fraction': 1.0,
+            'sampling_provenance_sha256': '2' * 64,
+            'percentile_semantics': 'not_available_bounded_interval',
+        }
+        digest = canonical_robustness_sha256(identity)
+        return RobustnessEvaluation(
+            **identity,
+            evaluation_id=f're-{digest[:24]}',
+            evaluation_sha256=digest,
+            created_at_utc='2026-09-19T01:02:00+00:00',
+        )
+
+    a = nominal_vector('a', 1.0, 0.70)
+    b = nominal_vector('b', 2.0, 0.90)
+    a_robust = (
+        robust_evaluation('a', error, 1.0, 1.5),
+        robust_evaluation('a', coverage, 0.70, 0.60),
+    )
+    b_robust = (
+        robust_evaluation('b', error, 2.0, 2.2),
+        robust_evaluation('b', coverage, 0.90, 0.80),
+    )
+    selection = RobustParetoSelection(
+        nominal_objective_ids=(error.objective_id, coverage.objective_id),
+        robustness_objective_ids=(error.objective_id, coverage.objective_id),
+    )
+
+    derived = build_nominal_robust_pareto_vector(a, a_robust, selection)
+    assert derived.metric('nominal::fixture.error').direction == 'minimize'
+    assert derived.metric('nominal::fixture.coverage').direction == 'maximize'
+    assert derived.metric('robust.sampled_worst::fixture.error').direction == 'minimize'
+    assert derived.metric('robust.sampled_worst::fixture.coverage').direction == 'maximize'
+    assert (
+        derived.metric('robust.sampled_worst::fixture.coverage').value
+        == pytest.approx(0.60)
+    )
+
+    result = robust_pareto_front(
+        ((a, a_robust), (b, b_robust)),
+        selection,
+    )
+    assert result.algorithm_version == 'pareto-front-2'
+    assert result.non_dominated_candidate_ids == ('a', 'b')
+    assert result.dominated_by == {'a': (), 'b': ()}
