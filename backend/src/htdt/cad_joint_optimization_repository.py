@@ -311,7 +311,7 @@ class CadJointOptimizationRepository:
         candidate = JointCandidate.model_validate(
             candidate.model_dump(mode='python')
         )
-        self._validate_candidate_authorities(candidate)
+        spec = self._validate_candidate_authorities(candidate)
         calibration_plan_id = (
             None
             if candidate.calibration_candidate is None
@@ -335,6 +335,19 @@ class CadJointOptimizationRepository:
                         'JointCandidate ID already exists with different semantics'
                     )
                 return persisted
+            count_row = connection.execute(
+                """
+                SELECT COUNT(*) AS candidate_count
+                FROM cad_joint_candidates
+                WHERE spec_id=?
+                """,
+                (candidate.parent_spec_id,),
+            ).fetchone()
+            assert count_row is not None
+            if int(count_row['candidate_count']) >= spec.candidate_budget:
+                raise ValueError(
+                    'JointOptimizationSpec candidate budget is exhausted'
+                )
             connection.execute(
                 """
                 INSERT INTO cad_joint_candidates(
