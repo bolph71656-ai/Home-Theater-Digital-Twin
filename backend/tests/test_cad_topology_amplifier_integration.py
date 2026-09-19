@@ -88,7 +88,7 @@ def _equipment():
             peak_db_spl=116.0,
             reference_distance_m=1.0,
             valid_frequency_domain=domain,
-            continuous_duration_s=60.0,
+            continuous_duration_s=continuous_duration_s,
             peak_duration_s=0.1,
             provenance=provenance,
         ),
@@ -100,7 +100,15 @@ def _equipment():
     )
 
 
-def _amplifier(capability_id: str, digit: str, continuous: float, peak: float, *, quantity: str = 'voltage_v_rms'):
+def _amplifier(
+    capability_id: str,
+    digit: str,
+    continuous: float,
+    peak: float,
+    *,
+    quantity: str = 'voltage_v_rms',
+    continuous_duration_s: float = 60.0,
+):
     provenance = _provenance(capability_id, digit)
     return build_amplifier_output_capability(
         capability_id=capability_id,
@@ -384,7 +392,7 @@ def test_missing_and_incompatible_amplifier_semantics_are_not_coerced(tmp_path: 
         _evaluation(repository=amplifier_repository, revision=baseline, variant=optional_missing, definition=definition, load=load, amplifier=_amplifier('amp-b', '4', 12.0, 24.0)),
         _evaluation(repository=amplifier_repository, revision=baseline, variant=required_missing, definition=definition, load=load, amplifier=_amplifier('amp-c', '5', 11.0, 22.0)),
         _evaluation(repository=amplifier_repository, revision=baseline, variant=power_variant, definition=definition, load=load, amplifier=_amplifier('amp-d', '6', 50.0, 100.0, quantity='power_w'), quantity='power_w'),
-        _evaluation(repository=amplifier_repository, revision=baseline, variant=duration_variant, definition=definition, load=load, amplifier=_amplifier('amp-e', '7', 13.0, 26.0), duration=120.0),
+        _evaluation(repository=amplifier_repository, revision=baseline, variant=duration_variant, definition=definition, load=load, amplifier=_amplifier('amp-e', '7', 13.0, 26.0, continuous_duration_s=120.0), duration=120.0),
     )
     continuous, peak, _ = amplifier_headroom_objective_definitions(evaluations[0].scenario)
     spec = build_system_topology_comparison_spec(
