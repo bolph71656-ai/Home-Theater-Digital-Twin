@@ -238,6 +238,9 @@ def test_exact_external_authorities_can_complete_closed_geometry_readiness_witho
     assert compiled.readiness.boundary_physics_missing is False
     assert compiled.readiness.wave_geometry_ready is True
     assert compiled.readiness.geometric_acoustics_geometry_ready is True
+    without_physics = _compile(revision)
+    assert compiled.topology_identity_sha256 == without_physics.topology_identity_sha256
+    assert compiled.compiled_hash_sha256 != without_physics.compiled_hash_sha256
     assert compiled.surface_mapping[0].material_authority == bindings[0].material_authority
     assert compiled.surface_mapping[0].boundary_physics_authority == bindings[0].boundary_physics_authority
 
@@ -395,7 +398,9 @@ def test_approximation_policy_records_every_dropped_feature_and_preserves_surfac
 
     assert len(compiled.approximation_operations) == 4
     assert len(compiled.dropped_features) == 4
-    assert compiled.maximum_recorded_approximation_error_m > 0.0
+    assert compiled.approximation_error_bound_m is None
+    assert compiled.approximation_error_status == 'not_computed_for_dropped_features'
+    assert compiled.maximum_dropped_feature_extent_m > 0.0
     assert all(item.tolerance_m == 0.001 for item in compiled.approximation_operations)
     assert compiled.surface_mapping[0].source_surface_id == geometry.surfaces[0].surface_id
     assert len(compiled.surface_mapping[0].source_triangle_ids) == 8
