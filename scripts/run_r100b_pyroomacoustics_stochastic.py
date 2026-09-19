@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import subprocess
 import threading
 import time
 
@@ -36,6 +37,59 @@ CANDIDATE_ID = 'pyroomacoustics-v0.10.1-f02b01d'
 FIXTURE_ID = 'geometric-seed-repeatability-v1'
 ADAPTER_ID = 'htdt-r100b-pyroomacoustics-stochastic-ray'
 ADAPTER_VERSION = '1'
+
+
+def _git_rev_parse(revision: str) -> str | None:
+    completed = subprocess.run(
+        ['git', 'rev-parse', '--verify', revision],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip().lower()
+    return value or None
+
+
+def _htdt_git_provenance() -> dict[str, str]:
+    checkout = _git_rev_parse('HEAD')
+    if checkout is None:
+        raise RuntimeError('cannot resolve HTDT checkout commit')
+
+    event_head = os.environ.get('HTDT_PR_HEAD_SHA', '').strip().lower()
+    if len(event_head) == 40 and all(ch in '0123456789abcdef' for ch in event_head):
+        pr_head = event_head
+    else:
+        pr_head = _git_rev_parse('HEAD^2') or checkout
+    return {
+        'checkout_commit_sha': checkout,
+        'pr_head_commit_sha': pr_head,
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open('rb') as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _htdt_source_provenance(authority_path: Path) -> dict[str, str]:
+    root = Path(__file__).resolve().parents[1]
+    provenance = _htdt_git_provenance()
+    provenance.update(
+        {
+            'probe_sha256': _sha256_file(Path(__file__).resolve()),
+            'evaluator_sha256': _sha256_file(
+                root / 'backend' / 'src' / 'htdt' / 'acoustic_pyroom_stochastic.py'
+            ),
+            'stochastic_authority_file_sha256': _sha256_file(authority_path),
+        }
+    )
+    return provenance
 
 
 class PeakRssMonitor:
@@ -407,6 +461,7 @@ def _write_blocked_artifact(
     *,
     reason: str,
     environment_setup_s: float,
+    authority_path: Path,
 ) -> None:
     fixture = _fixture(benchmark)
     candidate = _candidate(candidates)
@@ -428,6 +483,7 @@ def _write_blocked_artifact(
         'fixture_authority': fixture.model_dump(mode='json'),
         'stochastic_authority': authority.model_dump(mode='json'),
         'candidate_provenance': candidate.model_dump(mode='json'),
+        'htdt_source_provenance': _htdt_source_provenance(authority_path),
         'raw_evidence': None,
         'evaluation': None,
         'bakeoff_run': run.model_dump(mode='json'),
@@ -568,6 +624,7 @@ def _write_artifact(
     evaluation,
     run: BakeoffRun,
     environment_setup_s: float,
+    authority_path: Path,
 ) -> None:
     fixture = _fixture(benchmark)
     candidate = _candidate(candidates)
@@ -595,6 +652,7 @@ def _write_artifact(
             'wheel_filename': raw.wheel_filename,
             'wheel_sha256': raw.wheel_sha256,
             'dependencies': list(raw.dependencies),
+            **_htdt_source_provenance(authority_path),
         },
         'raw_evidence': raw.model_dump(mode='json'),
         'evaluation': evaluation.model_dump(mode='json'),
@@ -643,6 +701,7 @@ def main(argv: list[str] | None = None) -> int:
             run,
             reason=args.blocked_reason,
             environment_setup_s=args.environment_setup_s,
+            authority_path=args.authority,
         )
         print(
             json.dumps(
@@ -676,6 +735,7 @@ def main(argv: list[str] | None = None) -> int:
         evaluation=evaluation,
         run=run,
         environment_setup_s=args.environment_setup_s,
+        authority_path=args.authority,
     )
     print(
         json.dumps(
