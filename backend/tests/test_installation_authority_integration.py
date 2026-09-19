@@ -31,7 +31,6 @@ from htdt.cad_system_variant import (
     ProposedEntitySpec,
     build_system_variant,
 )
-from htdt.cad_system_variant_repository import CadSystemVariantRepository
 from htdt.cad_video_geometry import (
     AngleRange,
     AspectRatio,
@@ -446,7 +445,7 @@ def test_csv_html_and_export_timestamp_keep_semantic_identity_deterministic(
     first_csv = render_installation_csv(output)
     second_csv = render_installation_csv(output)
     assert first_csv == second_csv
-    assert '"projector"' in first_csv
+    assert 'authority_record,projector,' in first_csv
     assert specification.specification_sha256 in first_csv
     assert standards.evaluation_sha256 in first_csv
 
