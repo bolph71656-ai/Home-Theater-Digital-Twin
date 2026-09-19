@@ -191,6 +191,16 @@ def test_r100a4_finite_record_contract_fails_closed_on_fixture_or_dt_drift() -> 
     with pytest.raises(ValueError, match='must leave time_step_s solver-native'):
         AcousticBenchmarkManifest.model_validate(dt_payload)
 
+    explicit_payload = manifest.model_dump(mode='python')
+    convergence = next(
+        item
+        for item in explicit_payload['fixtures']
+        if item['fixture_id'] == 'wave-rectangular-convergence-v1'
+    )
+    del convergence['comparison']['finite_record_transfer']['numerator_quantity']
+    with pytest.raises(ValueError, match='numerator_quantity'):
+        AcousticBenchmarkManifest.model_validate(explicit_payload)
+
     phase_payload = manifest.model_dump(mode='python')
     concave = next(
         item
